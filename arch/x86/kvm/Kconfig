@@ -77,5 +77,6 @@ config KVM_MMU_AUDIT
 source drivers/vhost/Kconfig
 source drivers/lguest/Kconfig
 source drivers/virtio/Kconfig
+source drivers/dsm/Kconfig
 
 endif # VIRTUALIZATION

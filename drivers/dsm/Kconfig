@@ -1,0 +1,6 @@
+config DSM
+	bool "DSM"
+	depends on MMU_NOTIFIER && MMU && RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET
+	default y
+	help
+	  Enable DSM - running single VM over several linux hosts with qemu/kvm.

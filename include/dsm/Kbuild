@@ -1,1 +1,5 @@
-header-y += dsm_rdma.h
+header-y += dsm_op.h
+header-y += dsm_ctl.h
+header-y += dsm_handlers.h
+header-y += dsm_def.h
+header-y += dsm_rb.h

@@ -1,1 +1,1 @@
-obj-$(CONFIG_DSM) += dsm_rdma.o
+obj-$(CONFIG_DSM) += dsm_rb.o dsm_op.o dsm_ctl.o dsm_handlers.o 

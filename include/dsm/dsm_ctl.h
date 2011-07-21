@@ -17,19 +17,23 @@
 #define htonll(x) cpu_to_be64(x)
 
 #define RDMAIO 0xFF
-#define RDMA_INIT			_IOW(RDMAIO, 0xA0, struct connect_data)
-#define RDMA_CONNECT		_IOW(RDMAIO, 0xA1, struct connect_data)
+#define RDMA_INIT			_IOW(RDMAIO, 0xA0, struct init_data)
+#define RDMA_LISTEN			_IO(RDMAIO, 0xA1)
+#define RDMA_CONNECT		_IOW(RDMAIO, 0xA2, struct connect_data)
 
+typedef struct init_data
+{
+	char *ip;
+	int port;
+	int id;
+
+} init_data;
 
 typedef struct connect_data
 {
-	char *src_ip;
-	int src_port;
+	char *ip;
+	int port;
 
-	char *dst_ip;
-	int dst_port;
-
-	int vm_id;
 } connect_data;
 
 typedef struct fd_data

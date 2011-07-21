@@ -18,12 +18,12 @@ void insert_rb_conn(struct rb_root *root, conn_element *ele)
 
 		parent = *new;
 
-		if (ele->send_info->node_id < this->send_info->node_id)
+		if (ele->id < this->id)
 		{
 			new = &((*new)->rb_left);
 		}
 		else
-			if (ele->send_info->node_id > this->send_info->node_id)
+			if (ele->id > this->id)
 			{
 				new = &((*new)->rb_right);
 			}
@@ -34,7 +34,7 @@ void insert_rb_conn(struct rb_root *root, conn_element *ele)
 }
 
 // Return NULL if no element contained within tree.
-conn_element* search_rb_conn(struct rb_root *root, int vm_id)
+conn_element* search_rb_conn(struct rb_root *root, int id)
 {
 	struct rb_node *node = root->rb_node;
 
@@ -42,12 +42,12 @@ conn_element* search_rb_conn(struct rb_root *root, int vm_id)
 	{
 		conn_element *this = rb_entry(node, conn_element, rb_node);
 
-		if (vm_id < this->send_info->node_id)
+		if (id < this->id)
 		{
 			node = node->rb_left;
 		}
 		else
-			if (vm_id > this->send_info->node_id)
+			if (id > this->id)
 			{
 				node = node->rb_right;
 			}

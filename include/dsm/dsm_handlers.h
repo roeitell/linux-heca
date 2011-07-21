@@ -10,7 +10,7 @@
 
 int connection_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
 void listener_cq_handle(struct ib_cq *, void *);
-int rcm_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
+int server_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
 void recv_cq_handle(struct ib_cq *, void *);
 void send_cq_handle(struct ib_cq *, void *);
 

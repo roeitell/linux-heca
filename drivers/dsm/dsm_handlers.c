@@ -15,13 +15,17 @@ static struct ib_sge recv_sge;
 static struct ib_recv_wr recv_wr;
 static struct ib_recv_wr *recv_bad_wr;
 
+static void dsm_cq_event_handler(struct ib_event *event, void *data)
+{
+	printk("\n>[dsm_cq_event_handler] event %u data %p\n", event->event, data);
+}
 
 void listener_cq_handle(struct ib_cq *cq, void *cq_context)
 {
 	struct ib_wc wc;
 
 	if (ib_req_notify_cq(cq, IB_CQ_SOLICITED))
-		printk("\n>[ib_req_notify_cq] - Failed to get cq event");
+		printk("\n>[listener_cq_handle] - ib_req_notify_cq: Failed to get cq event");
 
 	if (ib_poll_cq(cq, 1, &wc))		// DSM2 -- num_of_entries?!
 	{
@@ -32,7 +36,7 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context)
 				case IB_WC_RECV:
 				{
 
-					// SERVER SHIT
+					printk("\n>[listener_cq_handle]");
 
 					break;
 				}
@@ -91,6 +95,12 @@ void send_cq_handle(struct ib_cq *cq, void *cq_context)
 void recv_cq_handle(struct ib_cq *cq, void *cq_context)
 {
 	struct ib_wc wc;
+	conn_element *ele = (conn_element *) cq_context;
+	rdma_info *info = ele->recv_info;
+
+	printk("\n<1>\n");
+
+	up(&ele->sem);
 
 	if (ib_req_notify_cq(cq, IB_CQ_SOLICITED))
 		printk("\n>[ib_req_notify_cq] - Failed to get cq event");
@@ -98,24 +108,21 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context)
 	if (ib_poll_cq(cq, 1, &wc))		// DSM2 -- num_of_entries?!
 	{
 
-		printk("* 3 *");
+		printk("<2>\n");
 
 		if (wc.status == IB_WC_SUCCESS)
 		{
 
-			printk("* 4 *");
+			printk("<3>\n");
 
 			switch(wc.opcode)
 			{
 
-				printk("* 5 *");
+			printk("<4>\n");
 
 				case IB_WC_RECV:
 				{
-
-					conn_element *ele = (conn_element *) cq_context;
-
-					rdma_info *info = ele->recv_info;
+					printk("<5>\n");
 
 					printk("\n>SOME SHIT HAPPEND -1 \n");
 
@@ -147,13 +154,15 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context)
 		printk("\n>[ib_poll_cq] - recv FAILURE ");
 	}
 
+	printk("<6>\n");
+
 }
 
 static int send_messages(conn_element *ele)
 {
         int r = 0;
 
-        sge.addr = ele->send_info;
+        sge.addr = (u64) ele->send_info;
         sge.length = sizeof(rdma_info);
         sge.lkey = ele->mr->lkey;
 
@@ -164,7 +173,7 @@ static int send_messages(conn_element *ele)
         send_wr.opcode     = IB_WR_SEND;
         send_wr.send_flags = IB_SEND_SIGNALED;
 
-        recv_sge.addr = ele->recv_info;
+        recv_sge.addr = (u64) ele->recv_info;
         recv_sge.length = sizeof(rdma_info);
         recv_sge.lkey = ele->mr->lkey;
 
@@ -180,27 +189,12 @@ static int send_messages(conn_element *ele)
         return r;
 }
 
-static void dsm_cq_event_handler(struct ib_event *event, void *data)
-{
-	printk("\n>[dsm_cq_event_handler] event %u data %p\n", event->event, data);
-}
-
-
 int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 {
 	int r = 0;
-    struct rdma_conn_param param = {
-                      0,
-                      0,
-                      1,
-                      1,
-                      0,
-                      10,
-                      0,
-                      0,
-                      0,
-      };
+    struct rdma_conn_param param;
     conn_element *ele;
+	struct ib_qp_init_attr attr;
 
 	switch (event->event)
 	{
@@ -230,15 +224,10 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 			memset(ele->recv_info, 0, sizeof(rdma_info));
 
 	        ele->send_info->node_id = htons(1);
-	        ele->send_info->buf_rx_addr = NULL;
+	        ele->send_info->buf_rx_addr = 0;
 	        ele->send_info->buf_msg_addr = htonll((u64) ele->recv_info);
 	        ele->send_info->rkey_msg = htonl(ele->mr->rkey);
-	        ele->send_info->rkey_rx = NULL;
-
-
-			////
-
-			struct ib_qp_init_attr attr;
+	        ele->send_info->rkey_rx = 0;
 
 			ele->send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle, dsm_cq_event_handler, (void *) ele, 2, 0);
 			if (IS_ERR(ele->send_cq))
@@ -248,7 +237,6 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 				goto err;
 			}
 
-			// DSM2 - notify_cq(send_cq)
 
 			ele->recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle, dsm_cq_event_handler, (void *) ele, 2, 0);
 			if (IS_ERR(ele->recv_cq))
@@ -257,12 +245,6 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 				r = -1;
 				goto err;
 			}
-//			if(ib_req_notify_cq(ele->recv_cq, IB_CQ_SOLICITED))
-//			{
-//				r = -1;
-//				printk("notify failed");
-//				goto err;
-//			}
 
 			memset(&attr, 0, sizeof attr);
 
@@ -275,15 +257,20 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 			attr.cap.max_recv_sge = 1;
 			attr.qp_type = IB_QPT_RC;
 			attr.port_num = ele->cm_id->port_num;
-			attr.qp_context = (void *) ele;// DSM1 : return to orig.
+			attr.qp_context = (void *) ele;// DSM1 : qp context
 
 			r = rdma_create_qp(id, ele->pd, &attr);
 
-			///
+
+			memset(&param, 0, sizeof(struct rdma_conn_param));
+			param.responder_resources = 1;
+			param.initiator_depth = 1;
+			param.retry_count = 10;
 
 			r = rdma_connect(id, &param);
 
 			printk("\n> [rdma_connect] %d", r);
+
 err:
 			break;
 
@@ -292,7 +279,7 @@ err:
 			printk("\n>[connection_event_handler] - rdma_cm_event_established");
 
 			exchange_info_clientside(id->context);
-			//send_messages((conn_element *) id->context);
+
 
 			break;
 
@@ -316,48 +303,77 @@ err:
 	return r;
 }
 
-int rcm_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
+int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 {
-	int r = 0;
-	conn_element *ele = NULL;
-	rcm *local_rcm = (rcm *) id->context;
+	int r = -1;
+	conn_element *ele;
+	rcm *rcm;
 
 	switch (event->event)
 	{
 		case RDMA_CM_EVENT_ADDR_RESOLVED:
-			//?DSM2?
+
+			printk("\n[server_event_handler] RDMA_CM_EVENT_ADDR_RESOLVED");
 			break;
 
 		case RDMA_CM_EVENT_CONNECT_REQUEST:
 
-			ele = accept_connection(local_rcm, id);
+			printk("\n[server_event_handler] RDMA_CM_EVENT_CONNECT_REQUEST");
 
+			ele = vmalloc(sizeof(conn_element));
 			if (!ele)
-				return -1;
+				goto out;
+
+			rcm = id->context;
+
+			ele->rcm = rcm;
+			ele->cm_id = id;
+			ele->id = 1;
+
+			accept_connection(ele);
+
+			//DSM3: set element id
+			insert_rb_conn(&rcm->root_conn, ele);
 
 			break;
 
-
 		case RDMA_CM_EVENT_ESTABLISHED:
-			printk("\n>[rcm_event_handler] - RDMA_CM_EVENT_ESTABLISHED");
-			exchange_info_serverside(ele);
+
+			printk("\n>[server_event_handler] - RDMA_CM_EVENT_ESTABLISHED");
+
+			printk("\n[server_event_handler] - down(ele->sem)");
+
+			rcm = id->context;
+
+			ele = search_rb_conn(&rcm->root_conn, 1);
+
+			if (ele)
+			{
+				down_interruptible(&ele->sem);
+
+				exchange_info_serverside(ele);
+			}
+
+			break;
+
+		case RDMA_CM_EVENT_DISCONNECTED:
+
+			printk("\n[server_event_handler] - RDMA_CM_EVENT_DISCONNECTED");
+
+			r = rdma_disconnect(id);
+
 			break;
 
 		case RDMA_CM_EVENT_CONNECT_ERROR:
-
-			printk("\n> [rcm_event_handler] - RDMA_CM_EVENT_CONNECT_ERROR");
-
-		case RDMA_CM_EVENT_DISCONNECTED:
 		case RDMA_CM_EVENT_DEVICE_REMOVAL:
-
 		case RDMA_CM_EVENT_ROUTE_RESOLVED:
 		case RDMA_CM_EVENT_ADDR_ERROR:
 		case RDMA_CM_EVENT_ROUTE_ERROR:
-
-
 		case RDMA_CM_EVENT_UNREACHABLE:
 		case RDMA_CM_EVENT_REJECTED:
 		case RDMA_CM_EVENT_ADDR_CHANGE:
+
+			printk("\n[server_event_handler] - RDMA_CM_EVENT_RANDOM");
 
 			r = rdma_disconnect(id);
 
@@ -367,5 +383,8 @@ int rcm_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 			break;
 	}
 
+	r = 0;
+
+out:
 	return r;
 }

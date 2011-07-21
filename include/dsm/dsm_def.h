@@ -11,6 +11,7 @@
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_verbs.h>
 #include <linux/spinlock.h>
+#include <linux/semaphore.h>
 
 #define TX_BUF_ELEMENTS_NUM 1
 #define RX_BUF_ELEMENTS_NUM 1
@@ -39,14 +40,14 @@ typedef struct rcm
 
 	struct tx_buf_ele *tx_buf;
 
-
-	struct semaphore sem;
-
 } rcm;
 
 typedef struct conn_element
 {
 	rcm *rcm;
+
+	struct ib_mr *mr;
+	struct ib_pd *pd;
 
 	void *send_mem;
 	void *recv_mem;
@@ -62,9 +63,10 @@ typedef struct conn_element
 
 	struct rb_node rb_node;
 
+	int id;
 
-	struct ib_mr *mr;
-	struct ib_pd *pd;
+	struct semaphore sem;
+
 
 } conn_element;
 

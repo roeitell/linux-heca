@@ -20,52 +20,27 @@
 #include <dsm/dsm_rb.h>
 
 
-static rcm *rdma_cm = NULL;
-
-static void BIG_CLEANUP(fd_data *data)
-{
-	if(rdma_cm)
-		destroy_rcm(rdma_cm);
-
-	kfree(data);
-}
-
+static rcm *_rcm;
 
 static int open(struct inode *inode, struct file *f)
 {
-	//fd_data *fd_data = kmalloc(sizeof *fd_data, GFP_KERNEL);
-
-	//f->private_data = fd_data;
 
 	return 0;
 }
 
 static int release(struct inode *inode, struct file *f)
 {
-	//fd_data *fd_data = f->private_data;
-
-	// Get the rdma_cm_id from the RB_TREE and pass it to function close_connection().
-	//conn_element *ele = search_rb_conn(rcm->root_conn, fd_data->vm_id);
-
-//	conn_element *ele = rb_entry(rdma_cm->root_conn.rb_node, conn_element, rb_node);
-//	if(ele){
-//		if (destroy_connection(ele))
-//			printk("\n[close_connection] FAILED");
-//	}
-//	kfree(fd_data);
-
-	// DSM1 - dont fuking leave this here!!
-	//destroy_rcm(_rcm);
+	destroy_rcm(&_rcm);
 
 	return 0;
 }
 
 static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 {
-	int r;
-	//fd_data *fd_data = f->private_data;
+	int r = 0;
 	void __user *argp;
-	connect_data d;
+	connect_data conn_data;
+	init_data i_data;
 
 	argp = (void __user *)arg;
 
@@ -73,55 +48,46 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 	{
 		case RDMA_INIT:
 		{
-//			r = -EFAULT;
-//
-//			if (copy_from_user( (void *) &d, argp, sizeof d))
-//				goto out;
-//
-//			//create_rcm(&_rcm);
-//			rdma_cm = kmalloc(sizeof(rcm), GFP_KERNEL);
-//			if(!rdma_cm)
-//			{
-//				printk("\n> [ioctl] - failed allocating rdma_cm");
-//				goto out;
-//			}
-//			memset(rdma_cm, 0, sizeof(rcm));
-//
-//			rdma_cm->root_conn = RB_ROOT;
-//			rdma_cm->root_route = RB_ROOT;
-//
-//			//sema_init(&rdma_cm->sem, 0);
-//
-//			rdma_cm->cm_id = rdma_create_id(rcm_event_handler, rdma_cm, RDMA_PS_TCP, IB_QPT_RC);
-//			if (IS_ERR(rdma_cm->cm_id))
-//				goto out;
-//
-//			printk("\n> [ioctl] - starting the listener");
-//			printk("\n> [ioctl] - &rcm : %p", rdma_cm);
-//			printk("\n> [ioctl] - &d : %p", &d);
-//			printk("\n> [ioctl] - starting the listener2");
-//			r = start_listener(rdma_cm, &d);
-//			printk("\n> [ioctl] - listener returns %d", r);
-//
-//
-//			//BIG_CLEANUP(fd_data);
+			r = -EFAULT;
+
+			if (copy_from_user( (void *) &i_data, argp, sizeof i_data))
+				goto out;
+
+			r = create_rcm(&_rcm, &i_data);
+
+			break;
+		}
+		case RDMA_LISTEN:
+		{
+
+			if (_rcm)
+			{
+				r = rdma_listen(_rcm->cm_id, 2);
+			}
+			else
+			{
+				r = -1;
+			}
 
 			break;
 		}
 		case RDMA_CONNECT:
 		{
+
 			r = -EFAULT;
 
-			if (copy_from_user( (void *) &d, argp, sizeof d))
+			if (copy_from_user( (void *) &conn_data, argp, sizeof conn_data))
 				goto out;
 
-			//fd_data->vm_id = d.vm_id;
 
-			printk("\n>[RDMA_CONNECT] start");
-
-			r = create_connection(rdma_cm, &d);
-
-			printk("\n>[RDMA_CONNECT] finish");
+			if (_rcm)
+			{
+				r = create_connection(_rcm, &conn_data);
+			}
+			else
+			{
+				r = -1;
+			}
 
 			break;
 		}
@@ -134,7 +100,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 	}
 
 out:
-	kfree(rdma_cm);
 	return r;
 }
 
@@ -153,7 +118,7 @@ static struct miscdevice rdma_misc =
 	"rdma",
 	&rdma_fops,
 };
-//
+
 static void dsm_iw_add_one(struct ib_device *device)
 {
 //	struct ib_device_attr *dev_attr;
@@ -217,16 +182,13 @@ static void dsm_iw_remove_one(struct ib_device *device)
 }
 
 struct ib_client dsm_iw_client = {
-	.name   = "dsm_iw", // DSM1 -- SIW device name?
+	.name   = "dsm_rdma",
 	.add    = dsm_iw_add_one,
 	.remove = dsm_iw_remove_one
 };
 
 static int dsm_init(void)
 {
-	//create_rcm(_rcm);
-
-	//ib_register_client(&dsm_iw_client);
 
 	return misc_register(&rdma_misc);
 
@@ -235,7 +197,6 @@ module_init(dsm_init);
 
 static void dsm_exit(void)
 {
-	//destroy_rcm(_rcm);
 
 	misc_deregister(&rdma_misc);
 }

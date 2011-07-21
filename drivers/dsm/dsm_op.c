@@ -9,76 +9,35 @@
 #include <rdma/ib_cm.h>
 #include <rdma/ib_verbs.h>
 
-//working dsm1
-int start_listener(rcm *rcm, connect_data *d)
+static struct ib_sge recv_sge;
+static struct ib_recv_wr recv_wr;
+static struct ib_recv_wr *recv_bad_wr;
+
+static struct ib_sge send_sge;
+static struct ib_send_wr send_wr;
+static struct ib_send_wr *send_bad_wr;
+
+void destroy_connections(rcm *rcm)
 {
-	int r;
+	conn_element *ele;
+	int i = 0;
 
-	rcm->sin.sin_family = AF_INET;
-//	rcm->sin.sin_addr.s_addr = (__u32) inet_addr(d->src_ip);
-//	rcm->sin.sin_port = (__u16) htons(d->src_port);
-	rcm->sin.sin_addr.s_addr = (__u32) inet_addr("10.55.168.66");
-	rcm->sin.sin_port = (__u16) htons(1025);
-
-	if ( (r = rdma_bind_addr(rcm->cm_id, (struct sockaddr *) &rcm->sin)) )
-		goto bind_err;
-
-	if (!!rcm->cm_id->device)
+	// DSM3: Temporarily using i
+	while ( (ele = search_rb_conn(&rcm->root_conn, i)) )
 	{
-		printk("We has device");
+		destroy_connection(&ele);
+
+		++i;
 	}
-		printk("we has no device");
 
-	rcm->pd = ib_alloc_pd(rcm->cm_id->device);
-	if (IS_ERR(rcm->pd))
-		goto pd_err;
-
-	printk("\n>[start_listener] - Alloc pd successful");
-
-	rcm->listen_cq = ib_create_cq(rcm->cm_id->device, listener_cq_handle, NULL, rcm, 2, 0);
-	if (IS_ERR(rcm->listen_cq))
-		goto cq_err;
-
-	if (ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))
-		goto notif_err;
-
-	rcm->mr = ib_get_dma_mr(rcm->pd, IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
-	if (IS_ERR(rcm->mr))
-		goto map_err;
-
-// DSM3 - BACKLOG! - do we need to set higher?
-	if ( (r = rdma_listen(rcm->cm_id, 2)) )
-		goto list_err;
-
-	printk("\n---flush---");
-
-	return r;
-
-list_err:
-	printk("\n>[start_listener] - rdma_listen returns %d", r);
-map_err:
-	printk("\n>[start_listener] - mapping failed");
-notif_err:
-	printk("\n>[start_listener] - cq notification failed");
-cq_err:
-	printk("\n>[start_listener] - cq creation failed");
-	ib_dealloc_pd(rcm->pd);
-pd_err:
-	printk("\n>[start_listener] - ib_alloc_pd err");
-bind_err:
-	printk("\n>[start_listener] - rdma_bind_addr returns %d", r);
-
-	return r;
 }
 
 void exchange_info_clientside(conn_element *ele)
 {
-	int i;
-	int r;
 	// DSM1 : lol come back and sort this
-	r = dsm_recv_info(ele);
+	dsm_recv_info(ele);
 
-	r = dsm_send_info(ele);
+	dsm_send_info(ele);
 	//wait
 //	for(i = 0; i < RX_BUF_ELEMENTS_NUM; ++i)
 //	{
@@ -91,17 +50,28 @@ void exchange_info_clientside(conn_element *ele)
 
 void exchange_info_serverside(conn_element *ele)
 {
-	int i;
+//	int i;
 	int r = 0;
 	//wait
+
+	printk("\n [1]\n");
+
+	r = dsm_recv_info(ele);
+
+	printk("[2] \n");
+
 	r = dsm_send_info(ele);
 	//wait
 
-	for(i = 0; i < RX_BUF_ELEMENTS_NUM; ++i)
-	{
-		dsm_recv_msg(ele, i);
-	}
+//	for(i = 0; i < RX_BUF_ELEMENTS_NUM; ++i)
+//	{
+//		dsm_recv_msg(ele, i);
+//	}
+	printk("[3] \n");
+
 	r = dsm_send_info(ele);
+
+	printk("[4] \n");
 }
 
 int dsm_send_msg(conn_element *ele, int i)
@@ -154,125 +124,168 @@ int init_dsm_info(conn_element *ele)
 	return 0;
 }
 
-// DSM1 - store this in workrequest - pre fill idea.
 int dsm_send_info(conn_element *ele)
 {
 	// DSM1 : msg_buf - msg_rx_buf request etc!
-	static struct ib_sge sge;
-	static struct ib_send_wr wr;
-	static struct ib_send_wr *bad_wr;
 
-	sge.addr = (u64) ele->send_info;
-	sge.length = sizeof(rdma_info);
-	sge.lkey = ele->mr->lkey;
+	send_sge.addr = (u64) ele->send_info;
+	send_sge.length = sizeof(rdma_info);
+	send_sge.lkey = ele->mr->lkey;
 
-	wr.next	   = NULL;
-	wr.wr_id	   = 1;
-	wr.sg_list	   = &sge; // From tx_desc??
-	wr.num_sge	   = 1;
-	wr.opcode	   = IB_WR_SEND;
-	wr.send_flags = IB_SEND_SIGNALED;
+	send_wr.next	   = NULL;
+	send_wr.wr_id	   = 1;
+	send_wr.sg_list	   = &send_sge; // From tx_desc??
+	send_wr.num_sge	   = 1;
+	send_wr.opcode	   = IB_WR_SEND;
+	send_wr.send_flags = IB_SEND_SIGNALED;
 
-	return ib_post_send(ele->cm_id->qp, &wr, &bad_wr);
+	return ib_post_send(ele->cm_id->qp, &send_wr, &send_bad_wr);
 }
 
-// DSM1: dsm_post_recv - what do we recieve?
 int dsm_recv_info(conn_element *ele)
 {
-	// DSM1 : msg_buf - msg_rx_buf request etc!
-	static struct ib_sge sge;
-	static struct ib_recv_wr wr;
-	static struct ib_recv_wr *bad_wr;
 
-	sge.addr = (u64) ele->recv_info; //DSM1 - sge addr = dma mapped addr
-	sge.length = sizeof(rdma_info); // What should this be - dsm_message or rdma_info?
-	sge.lkey = ele->mr->lkey;
+	recv_sge.addr = (u64) ele->recv_info; //DSM1 - sge addr = dma mapped addr
+	recv_sge.length = sizeof(rdma_info); // What should this be - dsm_message or rdma_info?
+	recv_sge.lkey = ele->mr->lkey;
 
-	wr.next = NULL;
-	wr.wr_id = 2;	// DSM2: Some sort of unique id required for post_recv
-	wr.sg_list = &sge;
-	wr.num_sge = 1;
+	recv_wr.next = NULL;
+	recv_wr.wr_id = 2;	// DSM2: Some sort of unique id required for post_recv
+	recv_wr.sg_list = &recv_sge;
+	recv_wr.num_sge = 1;
 
-	// DSM3 : post_recv ref count?
-
-	return ib_post_recv(ele->cm_id->qp, &wr, &bad_wr);
+	return ib_post_recv(ele->cm_id->qp, &recv_wr, &recv_bad_wr);
 
 }
 
-int create_rcm(rcm **rcm)
+int create_rcm(rcm **rcm, init_data *i_data)
 {
-//	*rcm = kmalloc(sizeof(rcm), GFP_KERNEL);
-//
-//	rcm->root_conn = RB_ROOT;
-//	rcm->root_route = RB_ROOT;
-//
-//	rcm->cm_id = rdma_create_id(rcm_event_handler, rcm, RDMA_PS_TCP, IB_QPT_RC);
-//	if (IS_ERR(*rcm->cm_id))
-//		goto cm_id_err;
+	int r;
 
+	printk("\n{a}");
 
-//	rcm->pd = ib_alloc_pd(rcm->cm_id->device);
-//	if (IS_ERR(rcm->pd))
-//		goto pd_err;
-//
-//	rcm->listen_cq = ib_create_cq(rcm->cm_id->device, listener_cq_handle, NULL, rcm, 2, 0);
-//	if (IS_ERR(rcm->listen_cq))
-//		goto cq_err;
-//
-//	if (ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))
-//		goto cq_arm_err;
-//
-//	rcm->mr = ib_get_dma_mr(rcm->pd, IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
-//	if (IS_ERR(rcm->mr))
-//		goto mr_err;
-//
-//	// dev handler
-//
-//	create_tx_buffer(rcm);
+	*rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
 
-	return 0;
+	(*rcm)->root_conn = RB_ROOT;
+	(*rcm)->root_route = RB_ROOT;
 
-//handler_err: DSM1 - device handler?
-//	ib_dereg_mr(rcm->mr);
-//mr_err:
-//cq_arm_err:
-//	ib_destroy_cq(rcm->listen_cq);
-//cq_err:
-//	ib_dealloc_pd(rcm->pd);
-//pd_err:
-//	rdma_destroy_id(rcm->cm_id);
-//cm_id_err:
-//	printk("\n>[create_rcm] Failed.");
+	(*rcm)->sin.sin_family = AF_INET;
+	(*rcm)->sin.sin_addr.s_addr = (__u32) inet_addr(i_data->ip);
+	(*rcm)->sin.sin_port = (__u16) htons(i_data->port);
 
-	return -1;
+	printk("\n{b}");
+
+	(*rcm)->cm_id = rdma_create_id(server_event_handler, *rcm, RDMA_PS_TCP, IB_QPT_RC);
+	if (IS_ERR((*rcm)->cm_id))
+		goto err_cm_id;
+
+	printk("\n{c}");
+
+	if ( (r = rdma_bind_addr((*rcm)->cm_id, (struct sockaddr *) &((*rcm)->sin) )) )
+	{
+		printk("\n{r = %d}", r);
+		goto err_bind;
+	}
+
+	printk("\n R : %d\n", r);
+
+	printk("\n{d}");
+
+	(*rcm)->pd = ib_alloc_pd((*rcm)->cm_id->device);
+	if (IS_ERR((*rcm)->pd))
+		goto err_pd;
+
+	printk("\n{e}");
+
+	(*rcm)->listen_cq = ib_create_cq((*rcm)->cm_id->device, listener_cq_handle, NULL, (*rcm), 2, 0);
+	if (IS_ERR((*rcm)->listen_cq))
+		goto err_cq;
+
+	printk("\n{f}");
+
+	if (ib_req_notify_cq((*rcm)->listen_cq, IB_CQ_NEXT_COMP))
+		goto err_notify;
+
+	printk("\n{g}");
+
+	(*rcm)->mr = ib_get_dma_mr((*rcm)->pd, IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
+	if (IS_ERR((*rcm)->mr))
+		goto err_mr;
+
+	printk("\n{h}");
+
+	create_tx_buffer((*rcm));
+
+	printk("\n{i}");
+
+	printk("\n R : %d\n", r);
+
+	return r;
+
+err_mr:
+err_notify:
+	ib_destroy_cq((*rcm)->listen_cq);
+err_cq:
+	ib_dealloc_pd((*rcm)->pd);
+err_pd:
+err_bind:
+	rdma_destroy_id((*rcm)->cm_id);
+err_cm_id:
+	printk("\n>[create_rcm] Failed.");
+
+	return r;
+
 }
 
-void destroy_rcm(rcm *rcm)
+void destroy_rcm(rcm **rcm)
 {
+	printk("\n(1)");
 
-	destroy_connection( search_rb_conn(&rcm->root_conn, 7) );
+	if (*rcm)
+	{
+		printk("\n(2)");
+		destroy_connections(*rcm);
 
-	if(rcm->cm_id->qp)
-		ib_destroy_qp(rcm->cm_id->qp);
+		printk("\n(3)");
 
-	if(rcm->listen_cq)
-		ib_destroy_cq(rcm->listen_cq);
+		destroy_tx_buffer((*rcm));
 
-	destroy_tx_buffer(rcm);
 
-	if(rcm->mr)
-		rcm->cm_id->device->dereg_mr(rcm->mr);
+		if ((*rcm)->cm_id)
+		{
+			printk("\n(4)");
 
-	if(rcm->pd)
-		ib_dealloc_pd(rcm->pd);
+			if((*rcm)->cm_id->qp)
+				ib_destroy_qp((*rcm)->cm_id->qp);
 
-	if(rcm->cm_id)
-	rdma_destroy_id(rcm->cm_id);
+			printk("\n(5)");
 
-	kfree(rcm);
+			if((*rcm)->mr)
+				(*rcm)->cm_id->device->dereg_mr((*rcm)->mr);
+
+			printk("\n(6)");
+
+			if((*rcm)->pd)
+				ib_dealloc_pd((*rcm)->pd);
+
+			printk("\n(7)");
+
+			if((*rcm)->cm_id)
+				rdma_destroy_id((*rcm)->cm_id);
+
+		}
+
+		printk("\n(8)");
+
+		kfree(*rcm);
+		*rcm = 0;
+
+		printk("\n(9)\n\n");
+	}
+
 }
 
-int create_tx_buffer(rcm *rcm)
+void create_tx_buffer(rcm *rcm)
 {
 	//DSM2 - sort this *
 	rcm->tx_buf = kmalloc(sizeof(tx_buf_ele), GFP_KERNEL);
@@ -284,7 +297,6 @@ int create_tx_buffer(rcm *rcm)
 	rcm->tx_buf->wrk_req->wr_ele = kmalloc(sizeof(work_request_ele), GFP_KERNEL);
 	rcm->tx_buf->wrk_req->wr_ele->dsm_msg = rcm->tx_buf->dsm_msg;
 
-	return 0;
 }
 
 void destroy_tx_buffer(rcm *rcm)
@@ -332,218 +344,187 @@ void destroy_rx_buffer(conn_element *ele)
 	}
 }
 
-int create_connection(rcm *rcm, connect_data *d)
+int create_connection(rcm *rcm, connect_data *conn_data)
 {
 	int r;
-	struct sockaddr_in dst, src;
-	struct ib_device_attr dev_attr;
+	struct sockaddr_in dst;
 	struct rdma_conn_param param;
-	conn_element *ele = NULL;
+	conn_element *ele;
 
 	memset(&param, 0, sizeof(struct rdma_conn_param));
-
 	param.responder_resources = 1;
 	param.initiator_depth = 1;
 	param.retry_count = 10;
 
-	// DSM1 : TEST STUFF - remove cause wil be set in listener!!!
-	src.sin_family = AF_INET;
-	src.sin_addr.s_addr = (__u32) inet_addr(d->src_ip);
-	src.sin_port = (__u16) htons(d->src_port);
-	// - Test STUFF -
-
 	dst.sin_family = AF_INET;
-	dst.sin_addr.s_addr = (__u32) inet_addr(d->dst_ip);
-	dst.sin_port = (__u16) htons(d->dst_port);
+	dst.sin_addr.s_addr = (__u32) inet_addr(conn_data->ip);
+	dst.sin_port = (__u16) htons(conn_data->port);
 
 	ele = vmalloc(sizeof(conn_element));
 
-	//insert_rb_conn(&rcm->root_conn, ele);
+	insert_rb_conn(&rcm->root_conn, ele);
 
-	//ele->rcm = rcm;
 	ele->cm_id = rdma_create_id(connection_event_handler, ele, RDMA_PS_TCP, IB_QPT_RC);
 
-	r = rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src, (struct sockaddr*) &dst, 2000);
+	r = rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &rcm->sin, (struct sockaddr*) &dst, 2000);
 
 	return r;
 }
 
-conn_element *accept_connection(rcm* rcm, struct rdma_cm_id *id)
+void accept_connection(conn_element *ele)
 {
 	int r;
 	struct rdma_conn_param conn_param;
-//	struct ib_device_attr dev_attr;
-	conn_element *ele = kmalloc(sizeof(conn_element), GFP_KERNEL);
-	if(!ele)
-		goto err1;
-
-	//ele->send_info = kmalloc(sizeof(rdma_info), GFP_KERNEL);
-
-	//ele->send_info->node_id = 7;
-
-	//insert_rb_conn(&rcm->root_conn, ele);
 
 	printk("\n* a *");
 
-	memset(ele, 0, sizeof(conn_element));
-	memset(&conn_param, 0, sizeof(struct rdma_conn_param));
+	sema_init(&
+	ele->sem, 1);
 
-	ele->rcm = rcm;
-	ele->cm_id = id;
-	id->context = (void *) ele;
+	ele->send_mem = vmalloc(sizeof(rdma_info));
+
+	ele->send_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->send_mem, sizeof(rdma_info), DMA_TO_DEVICE);
+	memset(ele->send_info, 0, sizeof(rdma_info));
 
 	printk("\n* b *");
 
-	// DSM3: - do we need a new port??! -- is this done in rdma_accept?!
-//	r = rdma_bind_addr(ele->cm_id, (struct sockaddr *) &rcm->sin);
+
+
+
+	ele->recv_mem = vmalloc(sizeof(rdma_info));
+
+	ele->recv_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->recv_mem, sizeof(rdma_info), DMA_FROM_DEVICE);
+
+	memset(ele->recv_info, 0, sizeof(rdma_info));
+
+
+	ele->pd = ib_alloc_pd(ele->cm_id->device);
+
+	ele->mr = ib_get_dma_mr(ele->pd, IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
+
+
+	ele->send_info->node_id = htons(1);
+	ele->send_info->buf_rx_addr = 0;
+	ele->send_info->buf_msg_addr = htonll((u64) ele->recv_info);
+	ele->send_info->rkey_msg = htonl(ele->mr->rkey);
+	ele->send_info->rkey_rx = 0;
+
 
 	printk("\n* c *");
 
-	//r = ib_query_device(ele->cm_id->device, &dev_attr);
-
 	if ( (r = create_qp(ele)) )
-	{
-		printk("\n>[accept_connection] create_qp returns: %d", r);
 		goto err1;
-	}
+
 
 
 	printk("\n* d *");
 
-	//create_tx_buffer(rcm);
+	create_tx_buffer(ele->rcm);
 
 	printk("\n* e *");
 
-	//create_rx_buffer(ele);
+	create_rx_buffer(ele);
 
 	printk("\n* f *");
 
-	//init_dsm_info(ele);
+	init_dsm_info(ele);
 
 	printk("\n* g *");
 
-	//dsm_recv_info(ele);
+
+	dsm_recv_info(ele);
+
+	down_interruptible(&ele->sem);
+
+
 
 	printk("\n* h *");
 
-	//conn_param.responder_resources = 1;
-	//conn_param.initiator_depth = 1;
-
-	//rdma_accept(ele->cm_id, &conn_param);
+	memset(&conn_param, 0, sizeof(struct rdma_conn_param));
+	conn_param.responder_resources = 1;
+	conn_param.initiator_depth = 1;
 
 	printk("\n* i *");
 
-	//insert_rb_conn(&rcm->root_conn, ele);
+	rdma_accept(ele->cm_id, &conn_param);
 
 	printk("\n* j *");
 
-	return ele;
+	return;
 
 err1:
 
 	printk("\n>[accept_connection] - failed creating connection element");
 	printk("\n---flush---\n");
 
-	return NULL;
+	return;
 
 }
 
-int destroy_connection(conn_element *ele)
+void destroy_connection(conn_element **ele)
 {
-	if(ele)
+	if(*ele)
 	{
-		if(ele->cm_id)
+		if((*ele)->cm_id)
 		{
-			rdma_disconnect(ele->cm_id);
+			rdma_disconnect((*ele)->cm_id);
 
-			if(ele->cm_id->qp)
-				ib_destroy_qp(ele->cm_id->qp);
+			if((*ele)->cm_id->qp)
+				ib_destroy_qp((*ele)->cm_id->qp);
 
-			rdma_destroy_id(ele->cm_id);
+			if((*ele)->mr)
+				(*ele)->cm_id->device->dereg_mr((*ele)->mr);
+
+			if((*ele)->pd)
+				ib_dealloc_pd((*ele)->pd);
+
+			rdma_destroy_id((*ele)->cm_id);
 		}
 
-		if(ele->send_cq)
-			ib_destroy_cq(ele->send_cq);
-		if(ele->recv_cq)
-			ib_destroy_cq(ele->recv_cq);
+		if((*ele)->send_cq)
+			ib_destroy_cq((*ele)->send_cq);
+		if((*ele)->recv_cq)
+			ib_destroy_cq((*ele)->recv_cq);
 
-		destroy_rx_buffer(ele);
+		destroy_rx_buffer((*ele));
 
-		kfree(ele->send_info);
-		kfree(ele);
+		if ((*ele)->send_info)
+			kfree((*ele)->send_info);
+
+		if ((*ele)->recv_info)
+			kfree((*ele)->recv_info);
+
+		kfree(*ele);
+		*ele = 0;
 	}
-	return 0;
+
 }
-
-struct rdma_id_private {
-	struct rdma_cm_id	id;
-
-	struct rdma_bind_list	*bind_list;
-	struct hlist_node	node;
-	struct list_head	list; /* listen_any_list or cma_device.list */
-	struct list_head	listen_list; /* per device listens */
-	struct cma_device	*cma_dev;
-	struct list_head	mc_list;
-
-	int			internal_id;
-	enum rdma_cm_state	state;
-	spinlock_t		lock;
-	struct mutex		qp_mutex;
-
-	struct completion	comp;
-	atomic_t		refcount;
-	struct mutex		handler_mutex;
-
-	int			backlog;
-	int			timeout_ms;
-	struct ib_sa_query	*query;
-	int			query_id;
-	union {
-		struct ib_cm_id	*ib;
-		struct iw_cm_id	*iw;
-	} cm_id;
-
-	u32			seq_num;
-	u32			qkey;
-	u32			qp_num;
-	pid_t			owner;
-	u8			srq;
-	u8			tos;
-	u8			reuseaddr;
-};
 
 int create_qp(conn_element *ele)
 {
 	struct ib_qp_init_attr attr;
 	struct rdma_cm_id *id = ele->cm_id;
 	int r = 0;
-	struct rdma_id_private *id_priv;
-	struct ib_qp *qp;
-	int ret;
 
-	printk("\n * z * ");
 
-	ele->send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle, NULL, (void *) ele->rcm, 2, 0);
+
+	ele->send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle, NULL, (void *) ele, 2, 0);
 	if (IS_ERR(ele->send_cq))
 	{
-		printk("\n>[] - send_cq creation failed");
 		r = -1;
 		goto err;
 	}
 
-	// DSM2 - notify_cq(send_cq)
-
-	ele->recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle, NULL, (void *) ele->rcm, 2, 0);
+	ele->recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle, NULL, (void *) ele, 2, 0);
 	if (IS_ERR(ele->recv_cq))
 	{
-		printk("\n>[] - recv_cq creation failed");
 		r = -1;
 		goto err;
 	}
+
 	if(ib_req_notify_cq(ele->recv_cq, IB_CQ_SOLICITED))
 	{
 		r = -1;
-		printk("notify failed");
 		goto err;
 	}
 
@@ -558,44 +539,15 @@ int create_qp(conn_element *ele)
 	attr.cap.max_recv_sge = 1;
 	attr.qp_type = IB_QPT_RC;
 	attr.port_num = ele->cm_id->port_num;
-	attr.qp_context = (void *) ele->rcm;// DSM1 : return to orig.
+	attr.qp_context = (void *) ele;// DSM1 : return to orig.
 
-	printk("\n *  y * ");
+	r = rdma_create_qp(id, ele->pd, &attr);
 
-	r = rdma_create_qp(id, ele->rcm->pd, &attr);
-//
-//	id_priv = container_of(id, struct rdma_id_private, id);
-//	if (id->device != ele->rcm->pd->device)
-//		return -EINVAL;
-//
-//	qp = ib_create_qp(ele->rcm->pd, &attr);
-//	if (IS_ERR(qp))
-//		return PTR_ERR(qp);
-
-//	if (id->qp_type == IB_QPT_UD)
-//		ret = cma_init_ud_qp(id_priv, qp);
-//	else
-//		ret = cma_init_conn_qp(id_priv, qp);
-//	if (ret)
-//		goto err;
-
-//	id->qp = qp;
-//	id_priv->qp_num = qp->qp_num;
-//	id_priv->srq = (qp->srq != NULL);
-
-	printk("\n * x*\n\n");
-
-	//return 0;
-//err:
-
-	//return ret;
-
-	printk("\n Rdma create qp returns : %d ", r);
 	return r;
 
 err:
-printk("\n ERROR SHIT\n\n");
-ib_destroy_qp(qp);
+	printk("\n ERROR SHIT\n\n");
+
 	return r;
 
 }

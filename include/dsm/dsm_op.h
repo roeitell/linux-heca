@@ -13,18 +13,18 @@
 #include <dsm/dsm_handlers.h>
 #include <dsm/dsm_rb.h>
 
-int create_tx_buffer(rcm *);
+void create_tx_buffer(rcm *);
 void destroy_tx_buffer(rcm *);
 
 unsigned int inet_addr(char *);
 
 int create_connection(rcm *, connect_data *);
-int destroy_connection(conn_element *);
+void destroy_connection(conn_element **);
 
-conn_element *accept_connection(rcm *, struct rdma_cm_id *);
+void accept_connection(conn_element *);
 
-int create_rcm(rcm **);
-void destroy_rcm(rcm *);
+int create_rcm(rcm **, init_data *);
+void destroy_rcm(rcm **);
 
 void create_rx_buffers(conn_element *);
 void destroy_rx_buffers(conn_element *);
@@ -40,5 +40,7 @@ int dsm_recv_msg(conn_element *, int);
 int dsm_send_msg(conn_element *, int);
 int dsm_send_info(conn_element *);
 int dsm_recv_info(conn_element *);
+
+void destroy_connections(rcm *rcm);
 
 #endif /* DSM_OP_H_ */

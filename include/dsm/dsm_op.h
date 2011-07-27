@@ -23,11 +23,11 @@ void destroy_connection(conn_element **);
 
 void accept_connection(conn_element *);
 
-int create_rcm(rcm **, init_data *);
+int create_rcm(rcm **,  char *, int);
 void destroy_rcm(rcm **);
 
-void create_rx_buffers(conn_element *);
-void destroy_rx_buffers(conn_element *);
+int create_rx_buffer(conn_element *);
+void destroy_rx_buffer(conn_element *);
 
 int create_qp(conn_element *);
 

@@ -12,6 +12,7 @@
 #include <rdma/ib_verbs.h>
 #include <linux/spinlock.h>
 #include <linux/semaphore.h>
+#include <linux/rwlock_types.h>
 
 #define TX_BUF_ELEMENTS_NUM 1
 #define RX_BUF_ELEMENTS_NUM 1
@@ -20,7 +21,7 @@
 
 typedef struct rcm
 {
-	int node_id;
+	int node_ip;
 
 	struct rdma_cm_id *cm_id;
 	struct ib_device *dev;
@@ -29,9 +30,8 @@ typedef struct rcm
 
 	struct ib_cq *listen_cq;
 
-	// DSM2: Implement rwlocks for conn+routing rb_trees.
-	spinlock_t conn_lock;
-	spinlock_t route_lock;
+	rwlock_t conn_lock;
+	rwlock_t route_lock;
 
 	struct rb_root root_conn;
 	struct rb_root root_route;
@@ -46,11 +46,14 @@ typedef struct conn_element
 {
 	rcm *rcm;
 
+	int remote_node_ip;
+
 	struct ib_mr *mr;
 	struct ib_pd *pd;
 
 	void *send_mem;
 	void *recv_mem;
+
 	struct rdma_info *send_info;
 	struct rdma_info *recv_info;
 
@@ -63,15 +66,14 @@ typedef struct conn_element
 
 	struct rb_node rb_node;
 
-	int id;
-
 	struct semaphore sem;
 
+	int phase;
 
 } conn_element;
 
 typedef struct rdma_info {
-	u16 node_id;
+	u16 node_ip;
 	u64 buf_msg_addr;
 	u32 rkey_msg;
 	u64 buf_rx_addr;
@@ -79,13 +81,6 @@ typedef struct rdma_info {
 	u32 rx_buf_size;
 
 } rdma_info;
-
-typedef struct dsm_id
-{
-	u16 dsm_vm_id;
-	u8 vm_id;
-
-} dsm_id;
 
 typedef struct dsm_message {
     u32 msg_type;
@@ -99,13 +94,31 @@ typedef struct dsm_message {
 
 } dsm_message;
 
+typedef struct dsm_vm_id
+{
+	u16 dsm_id;
+	u8 vm_id;
+
+} dsm_vm_id;
+
+enum route_type
+{
+	local,
+	remote
+};
+
 typedef struct route_element
 {
-	struct rcm *rcm;
-	dsm_id id;
+	conn_element *ele;
+	dsm_vm_id id;
 	struct mm_struct *mm;
 
+	// Local / Remote
+	enum route_type type;
+
 	struct rb_node rb_node;
+
+	// DSM2: function ptrs may be required here - send / request page etc etc.
 
 } route_element;
 

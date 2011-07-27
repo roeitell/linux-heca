@@ -17,29 +17,30 @@
 #define htonll(x) cpu_to_be64(x)
 
 #define RDMAIO 0xFF
-#define RDMA_INIT			_IOW(RDMAIO, 0xA0, struct init_data)
-#define RDMA_LISTEN			_IO(RDMAIO, 0xA1)
-#define RDMA_CONNECT		_IOW(RDMAIO, 0xA2, struct connect_data)
+#define RDMA_REG_VM			_IOW(RDMAIO, 0xA0, struct r_data)
+#define RDMA_CONNECT		_IOW(RDMAIO, 0xA1, struct connect_data)
 
-typedef struct init_data
+typedef struct r_data
 {
-	char *ip;
-	int port;
-	int id;
+	int vm_id;
+	int dsm_id;
 
-} init_data;
+} r_data;
 
 typedef struct connect_data
 {
 	char *ip;
 	int port;
+	int vm_id;
+	int dsm_id;
 
 } connect_data;
 
-typedef struct fd_data
+typedef struct vm_data
 {
-	int vm_id;
-} fd_data;
+	// DSM2: make use of file descriptor to allow quick fast data access for process/vm
+
+} vm_data;
 
 
 void qp_event_handler(struct ib_event *, void *);

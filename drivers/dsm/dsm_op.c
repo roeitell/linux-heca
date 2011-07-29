@@ -22,8 +22,11 @@ int create_rcm(rcm **rcm, char *ip, int port)
 	(*rcm)->root_conn = RB_ROOT;
 	(*rcm)->root_route = RB_ROOT;
 
+	rwlock_init(&(*rcm)->conn_lock);
+	rwlock_init(&(*rcm)->route_lock);
+
 	(*rcm)->sin.sin_family = AF_INET;
-	(*rcm)->sin.sin_addr.s_addr = (__u32) inet_addr((*rcm)->node_ip);
+	(*rcm)->sin.sin_addr.s_addr = (__u32) (*rcm)->node_ip;
 	(*rcm)->sin.sin_port = (__u16) htons(port);
 
 	(*rcm)->cm_id = rdma_create_id(server_event_handler, *rcm, RDMA_PS_TCP, IB_QPT_RC);
@@ -103,8 +106,7 @@ void destroy_rcm(rcm **rcm)
 
 int create_connection(rcm *rcm, connect_data *conn_data)
 {
-	int r;
-	struct sockaddr_in dst;
+	struct sockaddr_in dst, src;
 	struct rdma_conn_param param;
 	conn_element *ele;
 
@@ -117,6 +119,10 @@ int create_connection(rcm *rcm, connect_data *conn_data)
 	dst.sin_addr.s_addr = (__u32) inet_addr(conn_data->ip);
 	dst.sin_port = (__u16) htons(conn_data->port);
 
+	src.sin_family = AF_INET;
+	src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
+	src.sin_port = htons(5001);
+
 	ele = vmalloc(sizeof(conn_element));
 
 	ele->remote_node_ip = inet_addr(conn_data->ip);
@@ -125,9 +131,7 @@ int create_connection(rcm *rcm, connect_data *conn_data)
 
 	ele->cm_id = rdma_create_id(connection_event_handler, ele, RDMA_PS_TCP, IB_QPT_RC);
 
-	r = rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &rcm->sin, (struct sockaddr*) &dst, 2000);
-
-	return r;
+	return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src, (struct sockaddr*) &dst, 2000);
 
 }
 
@@ -135,8 +139,6 @@ void accept_connection(conn_element *ele)
 {
 	int r;
 	struct rdma_conn_param conn_param;
-
-	sema_init(&ele->sem, 1);
 
 	ele->send_mem = vmalloc(sizeof(rdma_info));
 
@@ -168,7 +170,7 @@ void accept_connection(conn_element *ele)
 
 	init_dsm_info(ele);
 
-	printk("\n[accept_connection] post_recv : %d \n\n", dsm_recv_info(ele));
+	dsm_recv_info(ele);
 
 	memset(&conn_param, 0, sizeof(struct rdma_conn_param));
 	conn_param.responder_resources = 1;

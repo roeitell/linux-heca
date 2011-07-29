@@ -138,7 +138,7 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context)
 							// We find that a connection is already open with that node - delete this connection request.
 							if (ele_found)
 							{
-								printk("[recv_cq_handle] - destroy_connection duplicate : %d", ele->remote_node_ip);
+								printk("[recv_cq_handle] - destroy_connection duplicate : %d\n", ele->remote_node_ip);
 
 								destroy_connection(&ele);
 
@@ -146,6 +146,8 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context)
 							else
 							{
 								insert_rb_conn(ele->rcm, ele);
+
+								printk("[recv_cq_handle] inserted conn_element to rb_tree.\n");
 
 							}
 
@@ -188,7 +190,7 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 
 			r = rdma_resolve_route(id, 2000);
 
-			printk("\n>[connection_event_handler] - rdma_resolve_route r: %d", r);
+			printk("[connection_event_handler] - rdma_resolve_route r: %d\n", r);
 
 			break;
 
@@ -220,6 +222,14 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 			{
 				r = -1;
 				goto err;
+
+			}
+
+			if(ib_req_notify_cq(ele->send_cq, IB_CQ_NEXT_COMP))
+			{
+				r = -1;
+				goto err;
+
 			}
 
 			ele->recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle, dsm_cq_event_handler, (void *) ele, 2, 0);
@@ -227,6 +237,14 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 			{
 				r = -1;
 				goto err;
+
+			}
+
+			if(ib_req_notify_cq(ele->recv_cq, IB_CQ_NEXT_COMP))
+			{
+				r = -1;
+				goto err;
+
 			}
 
 			memset(&attr, 0, sizeof attr);
@@ -251,14 +269,12 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 
 			r = rdma_connect(id, &param);
 
-			printk("\n> [rdma_connect] %d", r);
-
 err:
 			break;
 
 		case RDMA_CM_EVENT_ESTABLISHED:
 
-			printk("\n>[connection_event_handler] - rdma_cm_event_established");
+			printk("[connection_event_handler] - rdma_cm_event_established\n");
 
 			exchange_info_clientside(id->context);
 
@@ -294,12 +310,12 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 	{
 		case RDMA_CM_EVENT_ADDR_RESOLVED:
 
-			printk("\n[server_event_handler] RDMA_CM_EVENT_ADDR_RESOLVED");
+			printk("[server_event_handler] RDMA_CM_EVENT_ADDR_RESOLVED\n");
 			break;
 
 		case RDMA_CM_EVENT_CONNECT_REQUEST:
 
-			printk("\n[server_event_handler] RDMA_CM_EVENT_CONNECT_REQUEST");
+			printk("[server_event_handler] RDMA_CM_EVENT_CONNECT_REQUEST\n");
 
 			ele = vmalloc(sizeof(conn_element));
 			if (!ele)
@@ -317,13 +333,13 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 
 		case RDMA_CM_EVENT_ESTABLISHED:
 
-			printk("\n>[server_event_handler] - RDMA_CM_EVENT_ESTABLISHED");
+			printk("[server_event_handler] - RDMA_CM_EVENT_ESTABLISHED\n");
 
 			break;
 
 		case RDMA_CM_EVENT_DISCONNECTED:
 
-			printk("\n[server_event_handler] - RDMA_CM_EVENT_DISCONNECTED");
+			printk("[server_event_handler] - RDMA_CM_EVENT_DISCONNECTED\n");
 
 			r = rdma_disconnect(id);
 
@@ -338,7 +354,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 		case RDMA_CM_EVENT_REJECTED:
 		case RDMA_CM_EVENT_ADDR_CHANGE:
 
-			printk("\n[server_event_handler] - RDMA_CM_EVENT_RANDOM");
+			printk("[server_event_handler] - RDMA_CM_EVENT_RANDOM\n");
 
 			r = rdma_disconnect(id);
 

@@ -17,10 +17,17 @@ static struct ib_send_wr *send_bad_wr;
 
 void exchange_info_clientside(conn_element *ele)
 {
+	int r = 0;
+	printk("[exchange_info_clientside] start\n");
 
-	dsm_recv_info(ele);
+	r = dsm_recv_info(ele);
+
+	printk("[exchange_info_clientside] dsm_recv_info : %d\n", r);
 
 	dsm_send_info(ele);
+
+	r = printk("[exchange_info_clientside] dsm_send_info : %d\n", r);
+
 	//wait
 //	for(i = 0; i < RX_BUF_ELEMENTS_NUM; ++i)
 //	{
@@ -37,25 +44,23 @@ void exchange_info_serverside(conn_element *ele)
 	int r = 0;
 	//wait
 
-	printk("\n [1]\n");
+	printk("[exchange_info_serverside] start\n");
 
 	r = dsm_recv_info(ele);
 
-	printk("[2] \n");
+	printk("[exchange_info_serverside] dsm_recv_info : %d\n", r);
 
 	r = dsm_send_info(ele);
-	//wait
+
+	printk("[exchange_info_serverside] dsm_send_info : %d\n", r);
 
 //	for(i = 0; i < RX_BUF_ELEMENTS_NUM; ++i)
 //	{
 //		dsm_recv_msg(ele, i);
 //	}
-	printk("[3] \n");
+
 
 	//r = dsm_send_info(ele);
-
-	printk("[4] \n");
-
 }
 
 int dsm_send_msg(conn_element *ele, int i)

@@ -38,7 +38,7 @@ typedef struct connect_data
 
 typedef struct vm_data
 {
-	// DSM2: make use of file descriptor to allow quick fast data access for process/vm
+	dsm_vm_id id;
 
 } vm_data;
 

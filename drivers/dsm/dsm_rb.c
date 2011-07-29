@@ -107,6 +107,8 @@ void insert_rb_route(rcm *rcm, route_element *rele)
 
 	write_lock(&rcm->route_lock);
 
+	printk("[id_to_u32]\n\tdsm_id : %d\n\tvm_id : %d\n\tval : %llu\n\n", (int) rele->id.dsm_id, (int) rele->id.vm_id, (unsigned long long) val);
+
 	while (*new)
 	{
 		route_element *this = rb_entry(*new, route_element, rb_node);
@@ -135,7 +137,6 @@ void insert_rb_route(rcm *rcm, route_element *rele)
 	write_unlock(&rcm->route_lock);
 
 }
-EXPORT_SYMBOL(insert_rb_route);
 
 // Return NULL if no element contained within tree.
 route_element* search_rb_route(rcm *rcm, dsm_vm_id *id)
@@ -147,6 +148,8 @@ route_element* search_rb_route(rcm *rcm, dsm_vm_id *id)
 	route_element *this = 0;
 
 	read_lock(&rcm->route_lock);
+
+	printk("[id_to_u32]\n\tdsm_id : %d\n\tvm_id : %d\n\tval : %llu\n\n", (int) id->dsm_id, (int) id->vm_id, (unsigned long long) val);
 
 	while (node)
 	{
@@ -175,7 +178,6 @@ route_element* search_rb_route(rcm *rcm, dsm_vm_id *id)
 	return this;
 
 }
-EXPORT_SYMBOL(search_rb_route);
 
 // Function will free the element
 void erase_rb_route(struct rb_root *root, route_element *rele)

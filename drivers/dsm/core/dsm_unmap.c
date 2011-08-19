@@ -21,6 +21,7 @@
 #include <dsm/dsm_core.h>
 
 struct dsm_functions *funcs;
+struct page *kpage;
 
 void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm_vm_id *),
 						void (*_erase_rb_swap)(struct rb_root *, struct swp_element *),

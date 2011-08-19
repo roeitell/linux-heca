@@ -36,12 +36,33 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 	struct swp_element *ele;
 	struct rb_root *swp_root;
 
-	// DSM1 : temp code
-	dst_addr = msg->dst_addr;
-	printk("[*] dst_addr(1) : %lu\n", dst_addr);
-	printk("[*] req_addr : %lu\n", msg->req_addr);
+	// DSM1 : temp code test kernel mem swap
+	dst_addr = 0;
 
-	void *buf = kmalloc(sizeof(PAGE_SIZE), GFP_KERNEL);
+	kpage = alloc_page(GFP_KERNEL);
+	if (!kpage)
+		return -1;
+
+	get_page(kpage);
+
+	// DSM1 : temp code
+	dst_addr =  (unsigned long) kmap(kpage);
+	if (!dst_addr)
+	{
+		free_page(kpage);
+
+		return -1;
+
+	}
+
+	printk("[*] dst_addr : %lu\n", dst_addr);
+
+	memset((void *) dst_addr, 'X', PAGE_SIZE);
+
+	printk("[*] <extract_page> req_addr : %lu\n", msg->req_addr);
+
+	printk("[*] kpage : %10.10s\n", (char *) dst_addr);
+
 
 	vma = find_vma_intersection(mm, msg->req_addr, msg->req_addr + PAGE_SIZE);
 
@@ -65,10 +86,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 	if (!pte)
 		return -EFAULT;
 
-	printk("[*] pte(1) : %lu\n", pte->pte);
 
-
-	printk("[EXTRACT_PAGE] c\n");
 
 	if (funcs->_page_blue(msg->req_addr, &id))
 	{
@@ -98,17 +116,6 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 	pte_unmap_unlock(pte, ptl);
 
 	put_page(page);
-
-
-	/* DSM1 = testCODE ************************************************************************/
-
-	printk("[extract_page] Entering handle_mm_fault\n");
-
-	r = handle_mm_fault(vma->vm_mm, vma, msg->req_addr, FAULT_FLAG_WRITE);
-
-	printk("[extract_page] handle_mm_fault returns : %d \n\n\n\n", r);
-
-	/******************************************************************************************/
 
 	return r;
 

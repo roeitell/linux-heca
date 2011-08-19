@@ -74,7 +74,6 @@ static int release(struct inode *inode, struct file *f)
 	struct route_element *rele;
 	struct dsm_vm_id id;
 
-	printk("\n[release]\n");
 	id.dsm_id = 1;//data->id.dsm_id;
 
 	for (i = 0; i < 5; ++i)
@@ -85,13 +84,9 @@ static int release(struct inode *inode, struct file *f)
 		// DSM1: think of some way to search and destroy all routes with same dsm_id.
 		rele = search_rb_route(_rcm, &id);
 
-		printk("\n[release] searched rb_route. found = %d\n", !!rele);
-
 		if (rele)
 		{
 			erase_rb_route(&_rcm->root_route, rele);
-
-			printk("\n[release] erased_rb_root\n");
 
 			// DSM1: TEMPORARY
 			break;
@@ -104,7 +99,7 @@ static int release(struct inode *inode, struct file *f)
 
 	kfree(data);
 
-	printk("\n[release] kfree(data)\n");
+	printk("\n[*] <release> Exit\n");
 
 	return 0;
 
@@ -247,8 +242,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 		}
 		case PAGE_SWAP:
 		{
-			printk("[PAGE_SWAP] start\n");
-
 			r = -EFAULT;
 
 			struct dsm_message msg;
@@ -270,13 +263,14 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
 			data->id.dsm_id = 1;
 
-			printk("[PAGE_SWAP] dsm_vm_id - u32 : %llu \n", (unsigned long long) msg.dest);
+			printk("[*] <PAGE_SWAP> dsm_vm_id - u32 : %llu \n", (unsigned long long) msg.dest);
 
 			data->remote_addr = msg.req_addr;
 
+			printk("[*] <page_swap> msg.req_addr : %lu \n", msg.req_addr);
+
 			r = dsm_extract_page(current->mm, &msg);
 
-			printk("[PAGE_SWAP] end\n");
 
 			break;
 

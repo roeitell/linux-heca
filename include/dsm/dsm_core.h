@@ -51,5 +51,6 @@ int dsm_insert_page(struct mm_struct *, dsm_message *, struct dsm_vm_id *);
 
 extern struct dsm_functions *funcs;
 extern unsigned long dst_addr;
+extern struct page *kpage;
 
 #endif /* DSM_PAGE_FAULT_H_ */

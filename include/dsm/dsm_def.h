@@ -19,7 +19,38 @@
 #define DSM_MESSAGE_NUM 1
 #define MSG_WORK_REQUEST_NUM 1
 
-typedef struct rcm
+struct dsm_vm_id
+{
+	u16 dsm_id;
+	u8 vm_id;
+
+};
+
+static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id)
+{
+	u32 val = id->dsm_id;
+
+	val = val << 8;
+
+	val |= id->vm_id;
+
+	return val;
+
+}
+
+static inline u16 u32_to_dsm_id(u32 val)
+{
+	return val >> 8;
+
+}
+
+static inline u8 u32_to_vm_id(u32 val)
+{
+	return val & 0xFF;
+
+}
+
+struct rcm
 {
 	int node_ip;
 
@@ -40,11 +71,11 @@ typedef struct rcm
 
 	struct tx_buf_ele *tx_buf;
 
-} rcm;
+};
 
-typedef struct conn_element
+struct conn_element
 {
-	rcm *rcm;
+	struct rcm *rcm;
 
 	int remote_node_ip;
 
@@ -70,7 +101,7 @@ typedef struct conn_element
 
 	int phase;
 
-} conn_element;
+};
 
 typedef struct rdma_info {
 	u16 node_ip;
@@ -94,37 +125,35 @@ typedef struct dsm_message {
 
 } dsm_message;
 
-typedef struct dsm_vm_id
+typedef struct dsm_data
 {
-	u16 dsm_id;
-	u8 vm_id;
+	struct dsm_vm_id id;
 
-} dsm_vm_id;
+	struct rb_root root_swap;
 
-enum route_type
-{
-	local,
-	remote
-};
-
-typedef struct route_element
-{
-	conn_element *ele;
-	dsm_vm_id id;
 	struct mm_struct *mm;
 
-	// Local / Remote
-	enum route_type type;
+	// TEMPORARY
+	unsigned long remote_addr;
+
+} dsm_data;
+
+struct route_element
+{
+	struct conn_element *ele;
+	struct dsm_vm_id id;
+
+	dsm_data *data;
 
 	struct rb_node rb_node;
 
 	// DSM2: function ptrs may be required here - send / request page etc etc.
 
-} route_element;
+};
 
 typedef struct work_request_ele
 {
-	conn_element *ele;
+	struct conn_element *ele;
 
 	struct ib_send_wr wr;
 	struct ib_sge sg;

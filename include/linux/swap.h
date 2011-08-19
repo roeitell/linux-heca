@@ -63,8 +63,18 @@ static inline int current_is_kswapd(void)
 #define SWP_HWPOISON_NUM 0
 #endif
 
+/*
+ * DSM support
+ */
+#ifdef CONFIG_DSM_CORE
+#define SWP_DSM_NUM 1
+#define SWP_DSM (MAX_SWAPFILES + SWP_HWPOISON_NUM + SWP_MIGRATION_NUM)
+#else
+#define SWP_DSM_NUM 0
+#endif /* CONFIG_DSM_CORE */
+
 #define MAX_SWAPFILES \
-	((1 << MAX_SWAPFILES_SHIFT) - SWP_MIGRATION_NUM - SWP_HWPOISON_NUM)
+	((1 << MAX_SWAPFILES_SHIFT) - SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - SWP_DSM_NUM)
 
 /*
  * Magic header for a swap area. The first part of the union is

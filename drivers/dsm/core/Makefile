@@ -1,0 +1,1 @@
+obj-$(CONFIG_DSM_CORE) += dsm_page_fault.o dsm_page_request.o dsm_unmap.o

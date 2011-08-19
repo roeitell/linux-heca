@@ -13,34 +13,34 @@
 #include <dsm/dsm_handlers.h>
 #include <dsm/dsm_rb.h>
 
-void create_tx_buffer(rcm *);
-void destroy_tx_buffer(rcm *);
+void create_tx_buffer(struct rcm *);
+void destroy_tx_buffer(struct rcm *);
 
 unsigned int inet_addr(char *);
 
-int create_connection(rcm *, connect_data *);
-void destroy_connection(conn_element **);
+int create_connection(struct rcm *, struct connect_data *);
+void destroy_connection(struct conn_element **);
 
-void accept_connection(conn_element *);
+void accept_connection(struct conn_element *);
 
-int create_rcm(rcm **,  char *, int);
-void destroy_rcm(rcm **);
+int create_rcm(struct rcm **,  char *, int);
+void destroy_rcm(struct rcm **);
 
-int create_rx_buffer(conn_element *);
-void destroy_rx_buffer(conn_element *);
+int create_rx_buffer(struct conn_element *);
+void destroy_rx_buffer(struct conn_element *);
 
-int create_qp(conn_element *);
+int create_qp(struct conn_element *);
 
-int start_listener(rcm *, connect_data *);
+int start_listener(struct rcm *, struct connect_data *);
 
-void exchange_info_serverside(conn_element *);
-void exchange_info_clientside(conn_element *);
+void exchange_info_serverside(struct conn_element *);
+void exchange_info_clientside(struct conn_element *);
 
-int dsm_recv_msg(conn_element *, int);
-int dsm_send_msg(conn_element *, int);
-int dsm_send_info(conn_element *);
-int dsm_recv_info(conn_element *);
+int dsm_recv_msg(struct conn_element *, int);
+int dsm_send_msg(struct conn_element *, int);
+int dsm_send_info(struct conn_element *);
+int dsm_recv_info(struct conn_element *);
 
-void destroy_connections(rcm *rcm);
+void destroy_connections(struct rcm *);
 
 #endif /* DSM_OP_H_ */

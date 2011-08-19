@@ -169,3 +169,50 @@ static inline int non_swap_entry(swp_entry_t entry)
 	return 0;
 }
 #endif
+
+#ifdef CONFIG_DSM_CORE
+// SWP_DSM
+static inline swp_entry_t make_dsm_entry(uint16_t dsm_id, uint8_t vm_id)
+{
+	unsigned long val = dsm_id;
+
+	val = val << 8;
+
+	val |= vm_id;
+
+	return swp_entry(SWP_DSM, val);
+
+}
+
+static inline int is_dsm_entry(swp_entry_t entry)
+{
+	return swp_type(entry) == SWP_DSM;
+
+}
+
+static inline void dsm_entry_to_val(swp_entry_t entry, uint16_t *dsm_id, uint8_t *vm_id)
+{
+	unsigned long val = swp_offset(entry);
+
+	*dsm_id = val >> 8;
+	*vm_id =  val & ((1ul << 9) - 1);
+
+}
+
+#else
+// SWP_DSM dummy
+static inline swp_entry_t make_dsm_entry(uint16_t dsm_id, uint8_t vm_id)
+{
+	return swp_entry(0, 0);
+
+}
+
+static inline int is_dsm_entry(swp_entry_t entry)
+{
+	return 0;
+
+}
+
+static inline void dsm_entry_to_val(swp_entry_t entry, uint16_t *dsm_id, uint8_t *vm_id) {}
+
+#endif /* CONFIG_DSM */

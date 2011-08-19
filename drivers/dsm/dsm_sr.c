@@ -15,7 +15,7 @@ static struct ib_sge send_sge;
 static struct ib_send_wr send_wr;
 static struct ib_send_wr *send_bad_wr;
 
-void exchange_info_clientside(conn_element *ele)
+void exchange_info_clientside(struct conn_element *ele)
 {
 	int r = 0;
 	printk("[exchange_info_clientside] start\n");
@@ -38,7 +38,7 @@ void exchange_info_clientside(conn_element *ele)
 
 }
 
-void exchange_info_serverside(conn_element *ele)
+void exchange_info_serverside(struct conn_element *ele)
 {
 //	int i;
 	int r = 0;
@@ -63,7 +63,7 @@ void exchange_info_serverside(conn_element *ele)
 	//r = dsm_send_info(ele);
 }
 
-int dsm_send_msg(conn_element *ele, int i)
+int dsm_send_msg(struct conn_element *ele, int i)
 {
 	struct ib_send_wr wr = ele->rcm->tx_buf->wrk_req->wr_ele->wr;
 	struct ib_sge *sge = &ele->rcm->tx_buf->wrk_req->wr_ele->sg;
@@ -83,7 +83,7 @@ int dsm_send_msg(conn_element *ele, int i)
 
 }
 
-int dsm_recv_msg(conn_element *ele, int i)
+int dsm_recv_msg(struct conn_element *ele, int i)
 {
 	struct ib_recv_wr wr = ele->rx_buf[i].reply_work_req->recv_wrk_rq_ele->sq_wr;
 	struct ib_sge sge;
@@ -101,7 +101,7 @@ int dsm_recv_msg(conn_element *ele, int i)
 
 }
 
-int init_dsm_info(conn_element *ele)
+int init_dsm_info(struct conn_element *ele)
 {
 	ele->send_info->buf_msg_addr = (u64) ele->rcm->tx_buf;
 	ele->send_info->buf_rx_addr = (u64) ele->rx_buf;
@@ -116,7 +116,7 @@ int init_dsm_info(conn_element *ele)
 
 }
 
-int dsm_send_info(conn_element *ele)
+int dsm_send_info(struct conn_element *ele)
 {
 	send_sge.addr = (u64) ele->send_info;
 	send_sge.length = sizeof(rdma_info);
@@ -133,7 +133,7 @@ int dsm_send_info(conn_element *ele)
 
 }
 
-int dsm_recv_info(conn_element *ele)
+int dsm_recv_info(struct conn_element *ele)
 {
 	recv_sge.addr = (u64) ele->recv_info;
 	recv_sge.length = sizeof(rdma_info);

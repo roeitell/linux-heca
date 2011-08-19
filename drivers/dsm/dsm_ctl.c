@@ -18,16 +18,46 @@
 #include <dsm/dsm_ctl.h>
 #include <dsm/dsm_op.h>
 #include <dsm/dsm_rb.h>
+#include <dsm/dsm_core.h>
 
 #include <linux/stat.h>
 
-static rcm *_rcm;
+static struct rcm *_rcm;
 static char *ip = 0;
-static int port =0;
+static int port = 0;
+
+struct route_element *find_routing_element(struct dsm_vm_id *id)
+{
+	return search_rb_route(_rcm, id);
+
+}
+
+/*
+ *  Blue pages are local to this machine.
+ */
+int page_blue(unsigned long addr, struct dsm_vm_id *id)
+{
+	struct route_element *rele = search_rb_route(_rcm, id);
+	struct dsm_data *data = rele->data;
+	int r = 0;
+
+	if (data->remote_addr == addr)
+		r = 1;
+
+	return r;
+
+}
 
 static int open(struct inode *inode, struct file *f)
 {
-	vm_data *data = kmalloc(sizeof(vm_data), GFP_KERNEL);
+	dsm_data *data;
+
+	data = kmalloc(sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -EFAULT;
+
+	data->root_swap = RB_ROOT;
+	data->mm = current->mm;
 
 	printk("[open]\n");
 
@@ -39,13 +69,13 @@ static int open(struct inode *inode, struct file *f)
 
 static int release(struct inode *inode, struct file *f)
 {
-	vm_data *data = (vm_data *) f->private_data;
+	dsm_data *data = (dsm_data *) f->private_data;
 	int i;
-	route_element *rele;
-	dsm_vm_id id;
+	struct route_element *rele;
+	struct dsm_vm_id id;
 
 	printk("\n[release]\n");
-	id.dsm_id = data->id.dsm_id;
+	id.dsm_id = 1;//data->id.dsm_id;
 
 	for (i = 0; i < 5; ++i)
 	{
@@ -58,13 +88,19 @@ static int release(struct inode *inode, struct file *f)
 		printk("\n[release] searched rb_route. found = %d\n", !!rele);
 
 		if (rele)
+		{
 			erase_rb_route(&_rcm->root_route, rele);
+
+			printk("\n[release] erased_rb_root\n");
+
+			// DSM1: TEMPORARY
+			break;
+
+		}
 
 	}
 
 
-
-	printk("\n[release] erased_rb_root\n");
 
 	kfree(data);
 
@@ -76,16 +112,18 @@ static int release(struct inode *inode, struct file *f)
 
 static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 {
-	int r = 0;
-	vm_data *data = (vm_data *) f->private_data;
+	int r = -1;
+	dsm_data *data = (dsm_data *) f->private_data;
 	void __user *argp = (void __user *)arg;
-	connect_data c_data;
-	r_data r_data;
+	struct connect_data c_data;
+	struct r_data r_data;
 
-	route_element *rele;
-	dsm_vm_id id;
-	conn_element *cele;
+	struct route_element *rele;
+	struct dsm_vm_id id;
+	struct conn_element *cele;
 	int ip_addr;
+
+	printk("[IOCTL]\n");
 
 	switch (ioctl)
 	{
@@ -109,15 +147,21 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 			{
 				printk("[RDMA_REG_VM] About to create route_element\n");
 
-				rele = kmalloc(sizeof(route_element), GFP_KERNEL);
+				rele = kmalloc(sizeof(*rele), GFP_KERNEL);
+				if (!rele)
+				{
+					r = -EFAULT;
+					goto out;
+
+				}
+
 
 				// DSM1 - loopback connection will cause issues.
 				//rele->ele = search_rb_conn(_rcm, inet_addr("127.0.0.1"));
 
 				rele->id.dsm_id = id.dsm_id;
 				rele->id.vm_id = id.vm_id;
-				rele->mm = current->mm;
-				rele->type = local;
+				rele->data = data;
 
 				insert_rb_route(_rcm, rele);
 
@@ -173,13 +217,18 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 				{
 					printk("[RDMA_CONNECT] no route\n");
 
-					rele = kmalloc(sizeof(route_element), GFP_KERNEL);
+					rele = kmalloc(sizeof(*rele), GFP_KERNEL);
+					if (!rele)
+					{
+						r = -EFAULT;
+						goto out;
+
+					}
 
 					rele->ele = search_rb_conn(_rcm, ip_addr);
 					rele->id.dsm_id = id.dsm_id;
 					rele->id.vm_id = id.vm_id;
-					rele->mm = current->mm;
-					rele->type = remote;
+					rele->data = 0;
 
 					insert_rb_route(_rcm, rele);
 
@@ -193,7 +242,41 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 			else
 				r = -1;
 
+			break;
 
+		}
+		case PAGE_SWAP:
+		{
+			printk("[PAGE_SWAP] start\n");
+
+			r = -EFAULT;
+
+			struct dsm_message msg;
+
+			if (copy_from_user( (void *) &msg, argp, sizeof msg))
+				goto out;
+
+
+			// Create a routing element
+			struct route_element *rele = kmalloc(sizeof(*rele), GFP_KERNEL);
+
+			rele->data = data;
+			rele->ele = 0;
+			rele->id.dsm_id = 1;
+			rele->id.vm_id = 1;
+
+			insert_rb_route(_rcm, rele);
+
+
+			data->id.dsm_id = 1;
+
+			printk("[PAGE_SWAP] dsm_vm_id - u32 : %llu \n", (unsigned long long) msg.dest);
+
+			data->remote_addr = msg.req_addr;
+
+			r = dsm_extract_page(current->mm, &msg);
+
+			printk("[PAGE_SWAP] end\n");
 
 			break;
 
@@ -234,11 +317,14 @@ static struct miscdevice rdma_misc =
 module_param(ip, charp, S_IRUGO|S_IWUSR);
 module_param(port, int, S_IRUGO|S_IWUSR);
 
-MODULE_PARM_DESC(ip, "[ip] of the machine - will be used at node_id");
-MODULE_PARM_DESC(port, "[port] of DSM_RDMA");
+MODULE_PARM_DESC(ip, "The ip of the machine running this module - will be used as node_id.");
+MODULE_PARM_DESC(port, "The port on the machine running this module - used for DSM_RDMA communication.");
 
 static int dsm_init(void)
 {
+	reg_dsm_functions(&find_routing_element, &erase_rb_swap, &insert_rb_swap,
+						&page_blue, &search_rb_swap);
+
 	printk("[dsm_init] ip : %s\n", ip);
 	printk("[dsm_init] port : %d\n", port);
 
@@ -255,9 +341,12 @@ module_init(dsm_init);
 
 static void dsm_exit(void)
 {
+	dereg_dsm_functions();
+
 	destroy_rcm(&_rcm);
 
 	misc_deregister(&rdma_misc);
+
 }
 module_exit(dsm_exit);
 

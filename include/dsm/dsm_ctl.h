@@ -20,33 +20,26 @@
 #define RDMA_REG_VM			_IOW(RDMAIO, 0xA0, struct r_data)
 #define RDMA_CONNECT		_IOW(RDMAIO, 0xA1, struct connect_data)
 
-typedef struct r_data
+#define PAGE_SWAP			_IOW(RDMAIO, 0xA2, struct dsm_message)
+
+struct r_data
 {
 	int vm_id;
 	int dsm_id;
 
-} r_data;
+};
 
-typedef struct connect_data
+struct connect_data
 {
 	char *ip;
 	int port;
 	int vm_id;
 	int dsm_id;
 
-} connect_data;
+};
 
-typedef struct vm_data
-{
-	dsm_vm_id id;
+struct route_element *find_routing_element(struct dsm_vm_id *);
+int page_blue(unsigned long, struct dsm_vm_id *);
 
-} vm_data;
-
-
-void qp_event_handler(struct ib_event *, void *);
-void send_cq_handle(struct ib_cq *, void *);
-void recv_cq_handle(struct ib_cq *, void *);
-
-int close_connection(struct rdma_cm_id *);
 
 #endif /* RDMA_H_ */

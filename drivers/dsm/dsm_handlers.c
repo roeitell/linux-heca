@@ -89,9 +89,9 @@ void send_cq_handle(struct ib_cq *cq, void *cq_context)
 void recv_cq_handle(struct ib_cq *cq, void *cq_context)
 {
 	struct ib_wc wc;
-	conn_element *ele = (conn_element *) cq_context;
-	conn_element *ele_found;
-	rdma_info *info = ele->recv_info;
+	struct conn_element *ele = (struct conn_element *) cq_context;
+	struct conn_element *ele_found;
+	struct rdma_info *info = ele->recv_info;
 
 	if (ib_req_notify_cq(cq, IB_CQ_NEXT_COMP))
 		printk("\n>[ib_req_notify_cq] - Failed to get cq event");
@@ -181,7 +181,7 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 {
 	int r = 0;
     struct rdma_conn_param param;
-    conn_element *ele;
+    struct conn_element *ele;
 	struct ib_qp_init_attr attr;
 
 	switch (event->event)
@@ -202,14 +202,27 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 
 			ele->mr = ib_get_dma_mr(ele->pd, IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
 
-			ele->send_mem = vmalloc(sizeof(rdma_info));
+			ele->send_mem = vmalloc(sizeof(*ele->send_mem));
+			if (!ele->send_mem)
+			{
+				r = -EFAULT;
+				goto err;
 
-			ele->send_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->send_mem, sizeof(rdma_info), DMA_TO_DEVICE);
-			memset(ele->send_info, 0, sizeof(rdma_info));
+			}
 
-			ele->recv_mem = vmalloc(sizeof(rdma_info));
-			ele->recv_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->recv_mem, sizeof(rdma_info), DMA_FROM_DEVICE);
-			memset(ele->recv_info, 0, sizeof(rdma_info));
+			ele->send_info = (struct rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->send_mem, sizeof(rdma_info), DMA_TO_DEVICE);
+			memset(ele->send_info, 0, sizeof(*ele->send_info));
+
+			ele->recv_mem = vmalloc(sizeof(*ele->recv_mem));
+			if (!ele->recv_mem)
+			{
+				r = -EFAULT;
+				goto err;
+
+			}
+
+			ele->recv_info = (struct rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->recv_mem, sizeof(rdma_info), DMA_FROM_DEVICE);
+			memset(ele->recv_info, 0, sizeof(*ele->recv_info));
 
 	        ele->send_info->node_ip = htons(1);
 	        ele->send_info->buf_rx_addr = 0;
@@ -303,8 +316,8 @@ err:
 int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 {
 	int r = -1;
-	conn_element *ele;
-	rcm *rcm;
+	struct conn_element *ele;
+	struct rcm *rcm;
 
 	switch (event->event)
 	{
@@ -317,9 +330,14 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 
 			printk("[server_event_handler] RDMA_CM_EVENT_CONNECT_REQUEST\n");
 
-			ele = vmalloc(sizeof(conn_element));
+			ele = vmalloc(sizeof(*ele));
 			if (!ele)
+			{
+				r = -EFAULT;
 				goto out;
+
+			}
+
 
 			rcm = id->context;
 

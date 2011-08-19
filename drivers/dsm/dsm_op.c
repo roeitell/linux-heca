@@ -11,7 +11,7 @@
 #include <dsm/dsm_sr.h>
 
 
-int create_rcm(rcm **rcm, char *ip, int port)
+int create_rcm(struct rcm **rcm, char *ip, int port)
 {
 	int r = 0;
 
@@ -73,7 +73,7 @@ err_cm_id:
 
 }
 
-void destroy_rcm(rcm **rcm)
+void destroy_rcm(struct rcm **rcm)
 {
 	if (*rcm)
 	{
@@ -104,11 +104,11 @@ void destroy_rcm(rcm **rcm)
 
 }
 
-int create_connection(rcm *rcm, connect_data *conn_data)
+int create_connection(struct rcm *rcm, struct connect_data *conn_data)
 {
 	struct sockaddr_in dst, src;
 	struct rdma_conn_param param;
-	conn_element *ele;
+	struct conn_element *ele;
 
 	memset(&param, 0, sizeof(struct rdma_conn_param));
 	param.responder_resources = 1;
@@ -123,7 +123,7 @@ int create_connection(rcm *rcm, connect_data *conn_data)
 	src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
 	src.sin_port = htons(5001);
 
-	ele = vmalloc(sizeof(conn_element));
+	ele = vmalloc(sizeof(*ele));
 
 	ele->remote_node_ip = inet_addr(conn_data->ip);
 
@@ -135,17 +135,17 @@ int create_connection(rcm *rcm, connect_data *conn_data)
 
 }
 
-void accept_connection(conn_element *ele)
+void accept_connection(struct conn_element *ele)
 {
 	int r;
 	struct rdma_conn_param conn_param;
 
-	ele->send_mem = vmalloc(sizeof(rdma_info));
+	ele->send_mem = vmalloc(sizeof(*ele->send_mem));
 
 	ele->send_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->send_mem, sizeof(rdma_info), DMA_TO_DEVICE);
 	memset(ele->send_info, 0, sizeof(rdma_info));
 
-	ele->recv_mem = vmalloc(sizeof(rdma_info));
+	ele->recv_mem = vmalloc(sizeof(*ele->recv_mem));
 
 	ele->recv_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device, ele->recv_mem, sizeof(rdma_info), DMA_FROM_DEVICE);
 
@@ -188,7 +188,7 @@ err1:
 
 }
 
-void destroy_connection(conn_element **ele)
+void destroy_connection(struct conn_element **ele)
 {
 	if(*ele)
 	{
@@ -229,9 +229,9 @@ void destroy_connection(conn_element **ele)
 
 }
 
-void destroy_connections(rcm *rcm)
+void destroy_connections(struct rcm *rcm)
 {
-	conn_element *ele;
+	struct conn_element *ele;
 	int i = 0;
 
 	// DSM3: Temporarily using i - this doesn't make sense - what if nodes = 1, 3, 4?  We only free first!
@@ -247,10 +247,10 @@ void destroy_connections(rcm *rcm)
 
 }
 
-void create_tx_buffer(rcm *rcm)
+void create_tx_buffer(struct rcm *rcm)
 {
 	rcm->tx_buf = kmalloc(sizeof(tx_buf_ele), GFP_KERNEL);
-	rcm->tx_buf->mem = vmalloc(sizeof(dsm_message));
+	rcm->tx_buf->mem = vmalloc(sizeof(*rcm->tx_buf->mem));
 
 	rcm->tx_buf->dsm_msg = (dsm_message *) ib_dma_map_single(rcm->cm_id->device, rcm->tx_buf->mem, sizeof(dsm_message), DMA_TO_DEVICE);
 
@@ -260,7 +260,7 @@ void create_tx_buffer(rcm *rcm)
 
 }
 
-void destroy_tx_buffer(rcm *rcm)
+void destroy_tx_buffer(struct rcm *rcm)
 {
 	if(rcm->tx_buf)
 	{
@@ -277,10 +277,10 @@ void destroy_tx_buffer(rcm *rcm)
 
 }
 
-int create_rx_buffer(conn_element *ele)
+int create_rx_buffer(struct conn_element *ele)
 {
 	ele->rx_buf = kmalloc(sizeof(rx_buf_ele), GFP_KERNEL);
-	ele->rx_buf->mem = vmalloc(sizeof(dsm_message));
+	ele->rx_buf->mem = vmalloc(sizeof(*ele->rx_buf->mem));
 	ele->rx_buf->dsm_msg = (dsm_message *) ib_dma_map_single(ele->cm_id->device, ele->rx_buf->mem, sizeof(dsm_message),DMA_FROM_DEVICE);
 
 	ele->rx_buf->reply_work_req = kmalloc(sizeof(reply_work_request), GFP_KERNEL);
@@ -291,7 +291,7 @@ int create_rx_buffer(conn_element *ele)
 
 }
 
-void destroy_rx_buffer(conn_element *ele)
+void destroy_rx_buffer(struct conn_element *ele)
 {
 	if(ele->rx_buf)
 	{
@@ -308,7 +308,7 @@ void destroy_rx_buffer(conn_element *ele)
 	}
 }
 
-int create_qp(conn_element *ele)
+int create_qp(struct conn_element *ele)
 {
 	struct ib_qp_init_attr attr;
 	struct rdma_cm_id *id = ele->cm_id;

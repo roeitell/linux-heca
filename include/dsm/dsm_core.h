@@ -40,7 +40,7 @@ void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm
 						int (*_page_blue)(unsigned long, struct dsm_vm_id *),
 						struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long));
 void dereg_dsm_functions(void);
-int dsm_flag_remote(unsigned long, int);
+int dsm_flag_remote(unsigned long, struct dsm_vm_id *);
 
 // dsm_page_request
 int dsm_extract_page(struct mm_struct *, dsm_message *);

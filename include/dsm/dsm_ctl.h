@@ -22,6 +22,8 @@
 
 #define PAGE_SWAP			_IOW(RDMAIO, 0xA2, struct dsm_message)
 
+#define UNMAP_PAGE			_IOW(RDMAIO, 0xA3, struct unmap_data)
+
 struct r_data
 {
 	int vm_id;
@@ -36,6 +38,12 @@ struct connect_data
 	int vm_id;
 	int dsm_id;
 
+};
+
+struct unmap_data
+{
+	unsigned long addr;
+	struct dsm_vm_id id;
 };
 
 struct route_element *find_routing_element(struct dsm_vm_id *);

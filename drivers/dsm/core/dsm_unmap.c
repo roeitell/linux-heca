@@ -49,29 +49,54 @@ void dereg_dsm_functions(void)
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 
-static int unmap_remote_page(struct page *page, struct vm_area_struct *vma, unsigned long addr, int node_id, int dsm_index)
+static int unmap_remote_page(struct page *page,  unsigned long addr, struct dsm_vm_id *id)
 {
 	int r = 0;
-	struct mm_struct *mm;
 	spinlock_t *ptl;
 	pte_t *pte;
+	struct mm_struct *mm = current->mm;
 
-	mm = vma->vm_mm;
+
+	/* DSM1 : temp code test kernel mem swap **********/
+	dst_addr = 0;
+
+	kpage = alloc_page(GFP_KERNEL);
+	if (!kpage)
+		return -1;
+
+	get_page(kpage);
+
+	// DSM1 : temp code
+	dst_addr =  (unsigned long) kmap(kpage);
+	if (!dst_addr)
+	{
+		free_page((unsigned long) kpage);
+
+		return -1;
+
+	}
+	printk("[*] dst_addr : %lu\n", dst_addr);
+
+	memset((void *) dst_addr, 'X', PAGE_SIZE);
+
+	printk("[*] <unmap_remote_page> req_addr : %llu\n", (unsigned long long) addr);
+
+	printk("[*] kpage : %10.10s\n", (char *) dst_addr);
+	/**********************/
+
 
 	pte = page_check_address(page, mm, addr, &ptl, 0);
 
 	if (!pte)
 		return -EFAULT;
 
-	flush_cache_page(vma, addr, pte_pfn(*pte));
-	ptep_clear_flush_notify(vma, addr, pte);
-
 	page_remove_rmap(page);
 
-	set_pte_at_notify(mm, addr, pte, swp_entry_to_pte( make_dsm_entry(dsm_index, node_id) ));
+	set_pte_at_notify(mm, addr, pte, swp_entry_to_pte( make_dsm_entry(id->dsm_id, id->vm_id) ));
 
 	if (!page_mapped(page))
 		try_to_free_swap(page);
+
 	put_page(page);
 
 	pte_unmap_unlock(pte, ptl);
@@ -80,7 +105,7 @@ static int unmap_remote_page(struct page *page, struct vm_area_struct *vma, unsi
 
 }
 
-int dsm_flag_remote(unsigned long addr, int dsm_index)
+int dsm_flag_remote(unsigned long addr, struct dsm_vm_id *id)
 {
 	int r;
 	struct page *page;
@@ -93,8 +118,7 @@ int dsm_flag_remote(unsigned long addr, int dsm_index)
 	if (!trylock_page(page))
 		goto out;
 
-	// DSM1 : OH NOES
-	r = unmap_remote_page(page, 0, 1, dsm_index, 0);
+	r = unmap_remote_page(page, addr, id);
 
 	unlock_page(page);
 

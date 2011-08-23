@@ -41,7 +41,7 @@ int page_blue(unsigned long addr, struct dsm_vm_id *id)
 	struct dsm_data *data = rele->data;
 	int r = 0;
 
-	if (data->remote_addr == addr)
+	if (data->remote_addr != addr)
 		r = 1;
 
 	return r;
@@ -58,6 +58,8 @@ static int open(struct inode *inode, struct file *f)
 
 	data->root_swap = RB_ROOT;
 	data->mm = current->mm;
+	data->id.dsm_id = 0;
+	data->remote_addr = 0;
 
 	printk("[open]\n");
 
@@ -94,8 +96,6 @@ static int release(struct inode *inode, struct file *f)
 		}
 
 	}
-
-
 
 	kfree(data);
 
@@ -249,27 +249,76 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 			if (copy_from_user( (void *) &msg, argp, sizeof msg))
 				goto out;
 
+			struct dsm_vm_id id;
+			id.dsm_id = u32_to_dsm_id(msg.dest);
+			id.vm_id = u32_to_vm_id(msg.dest);
 
-			// Create a routing element
-			struct route_element *rele = kmalloc(sizeof(*rele), GFP_KERNEL);
+			struct route_element *rele = search_rb_route(_rcm, &id);
 
-			rele->data = data;
-			rele->ele = 0;
-			rele->id.dsm_id = 1;
-			rele->id.vm_id = 1;
+			if (!rele)
+			{
+				rele = kmalloc(sizeof(*rele), GFP_KERNEL);
 
-			insert_rb_route(_rcm, rele);
+				rele->data = data;
+				rele->ele = 0;
 
 
-			data->id.dsm_id = 1;
+				rele->id.dsm_id = id.dsm_id;
+				rele->id.vm_id = id.vm_id;
+
+				insert_rb_route(_rcm, rele);
+
+			}
+
+			if (data->id.dsm_id == 0)
+				data->id.dsm_id = rele->id.dsm_id;
 
 			printk("[*] <PAGE_SWAP> dsm_vm_id - u32 : %llu \n", (unsigned long long) msg.dest);
 
-			data->remote_addr = msg.req_addr;
-
-			printk("[*] <page_swap> msg.req_addr : %lu \n", msg.req_addr);
+			printk("[*] <page_swap> msg.req_addr : %llu \n", (unsigned long long) msg.req_addr);
 
 			r = dsm_extract_page(current->mm, &msg);
+
+
+			break;
+
+		}
+		case UNMAP_PAGE:
+		{
+
+			r = -EFAULT;
+
+			struct unmap_data udata;
+
+			if (copy_from_user( (void *) &udata, argp, sizeof udata))
+				goto out;
+
+			struct route_element *rele = search_rb_route(_rcm, &udata.id);
+
+			if (!rele)
+			{
+				rele = kmalloc(sizeof(*rele), GFP_KERNEL);
+
+				rele->data = data;
+				rele->ele = 0;
+
+				rele->id.dsm_id = udata.id.dsm_id;
+				rele->id.vm_id = udata.id.vm_id;
+
+				insert_rb_route(_rcm, rele);
+
+			}
+
+			if (((int) data->id.dsm_id) == 0)
+				data->id.dsm_id = rele->id.dsm_id;
+
+			printk("[*] <UNMAP_PAGE> dsm_vm_id - u32 : %llu \n", (unsigned long long) dsm_vm_id_to_u32(&udata.id));
+
+			data->remote_addr = udata.addr;
+
+			printk("[*] <UNMAP_PAGE> msg.req_addr : %llu \n", (unsigned long long) udata.addr);
+
+			r = dsm_flag_remote(udata.addr, &udata.id);
 
 
 			break;

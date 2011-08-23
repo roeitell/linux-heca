@@ -49,7 +49,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 	dst_addr =  (unsigned long) kmap(kpage);
 	if (!dst_addr)
 	{
-		free_page(kpage);
+		free_page((unsigned long) kpage);
 
 		return -1;
 
@@ -59,7 +59,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 
 	memset((void *) dst_addr, 'X', PAGE_SIZE);
 
-	printk("[*] <extract_page> req_addr : %lu\n", msg->req_addr);
+	printk("[*] <extract_page> req_addr : %llu\n", (unsigned long long) msg->req_addr);
 
 	printk("[*] kpage : %10.10s\n", (char *) dst_addr);
 
@@ -90,7 +90,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 
 	if (funcs->_page_blue(msg->req_addr, &id))
 	{
-		printk("[*] insert_swp_ele->addr : %lu \n", msg->req_addr);
+		printk("[*] insert_swp_ele->addr : %llu \n", (unsigned long long) msg->req_addr);
 		funcs->_insert_rb_swap(swp_root, msg->req_addr);
 
 	}

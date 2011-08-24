@@ -99,7 +99,7 @@ static int release(struct inode *inode, struct file *f)
 
 	kfree(data);
 
-	printk("\n[*] <release> Exit\n");
+	printk("\n[release]\n");
 
 	return 0;
 
@@ -273,10 +273,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 			if (data->id.dsm_id == 0)
 				data->id.dsm_id = rele->id.dsm_id;
 
-			printk("[*] <PAGE_SWAP> dsm_vm_id - u32 : %llu \n", (unsigned long long) msg.dest);
-
-			printk("[*] <page_swap> msg.req_addr : %llu \n", (unsigned long long) msg.req_addr);
-
 			r = dsm_extract_page(current->mm, &msg);
 
 
@@ -312,14 +308,9 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 			if (((int) data->id.dsm_id) == 0)
 				data->id.dsm_id = rele->id.dsm_id;
 
-			printk("[*] <UNMAP_PAGE> dsm_vm_id - u32 : %llu \n", (unsigned long long) dsm_vm_id_to_u32(&udata.id));
-
 			data->remote_addr = udata.addr;
 
-			printk("[*] <UNMAP_PAGE> msg.req_addr : %llu \n", (unsigned long long) udata.addr);
-
 			r = dsm_flag_remote(udata.addr, &udata.id);
-
 
 			break;
 

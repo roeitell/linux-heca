@@ -24,6 +24,35 @@
 
 unsigned long dst_addr;
 
+static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr)
+{
+	pgd_t *pgd;
+	pud_t *pud;
+	pmd_t *pmd;
+	pte_t *ptep = 0;
+
+	pgd = pgd_offset(mm, addr);
+	if (!pgd_present(*pgd))
+		goto out;
+
+	pud = pud_offset(pgd, addr);
+	if (!pud_present(*pud))
+		goto out;
+
+	pmd = pmd_offset(pud, addr);
+	BUG_ON(pmd_trans_huge(*pmd));
+	if (!pmd_present(*pmd))
+		goto out;
+
+	//down_read(&mm->mmap_sem);
+	//up_read(&mm->mmap_sem);
+	ptep = pte_offset_map(pmd, addr);
+
+out:
+	return ptep;
+
+}
+
 // Add page locking
 static int extract_page(struct mm_struct *mm, dsm_message *msg)
 {
@@ -121,41 +150,35 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 
 }
 
-static int forward_red_page(struct mm_struct *mm, dsm_message *msg)
+static void forward_red_page(struct mm_struct *mm, dsm_message *msg)
 {
-	pte_t *pte;
-	spinlock_t *ptl;
+	pte_t *ptep;
+	pte_t pte;
 	swp_entry_t entry;
 	struct dsm_vm_id id;
-	struct page *page;
 
-	struct vm_area_struct *vma = find_vma_intersection(mm, msg->req_addr, msg->req_addr + PAGE_SIZE);
+	printk("[*] forward_red_page\n");
 
-	page = follow_page(vma, msg->req_addr, FOLL_GET);
+	ptep = dsm_page_walker(mm, msg->req_addr);
 
-	if (!page)
+	printk("[*] z\n");
+
+	pte = *ptep;
+	if (!pte_present(pte))
 	{
-		printk("[extract_page] follow_page fail.\n");
+		BUG_ON(pte_none(pte));
 
-		return -1;
+		entry = pte_to_swp_entry(pte);
 
-	}
+		if (is_dsm_entry(entry))
+		{
+			dsm_entry_to_val(entry, &id.dsm_id, &id.vm_id);
 
-	pte = page_check_address(page, mm, msg->req_addr, &ptl, 0);
+			msg->dest = dsm_vm_id_to_u32(&id);
 
-	entry = pte_to_swp_entry(*pte);
-
-	if (is_dsm_entry(entry))
-	{  //DSM2: swp_ops test - + turn into dsm_vm_id
-		dsm_entry_to_val(entry, &id.dsm_id, &id.vm_id);
-
-		msg->dest = dsm_vm_id_to_u32(&id);
+		}
 
 	}
-
-	pte_unmap_unlock(pte, ptl);
-
-	return 0;
 
 }
 
@@ -172,12 +195,14 @@ int dsm_extract_page(struct mm_struct *mm, dsm_message *msg)
 	struct dsm_vm_id id;
 	struct swp_element *swp_ele;
 
+
 	id.dsm_id = u32_to_dsm_id(msg->dest);
 	id.vm_id = u32_to_vm_id(msg->dest);
 
 	swp_root = &funcs->_find_routing_element(&id)->data->root_swap;
 
 	swp_ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
+
 
 	if (funcs->_page_blue(msg->req_addr, &id))
 	{
@@ -203,7 +228,11 @@ int dsm_extract_page(struct mm_struct *mm, dsm_message *msg)
 		else
 			forward_red_page(mm, msg);
 
+
 	}
+
+	// DSM1 : next step of forward_red_page - the msg needs to be sent on!
+
 
 	return ret;
 

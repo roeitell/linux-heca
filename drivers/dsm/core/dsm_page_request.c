@@ -115,7 +115,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 	if (!pte)
 		return -EFAULT;
 
-
+	printk("[*] version 4");
 
 	if (funcs->_page_blue(msg->req_addr, &id))
 	{
@@ -133,18 +133,22 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 
 	}
 
+	flush_cache_page(vma, msg->req_addr, pte_pfn(*pte));
+	ptep_clear_flush_notify(vma, msg->req_addr, pte);
+	set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry( (uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
 	// page_remove_rmap - tears down all pte entries for this page
 	page_remove_rmap(page);
-
-	set_pte_at_notify(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry( (uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
-
-	update_mmu_cache(vma, msg->req_addr, pte);
+	//update_mmu_cache(vma, msg->req_addr, pte);
 
 	dec_mm_counter(mm, MM_ANONPAGES);
 
+	if (!page_mapped(page))
+		try_to_free_swap(page);
+    put_page(page);
+
 	pte_unmap_unlock(pte, ptl);
 
-	put_page(page);
+
 
 	return r;
 

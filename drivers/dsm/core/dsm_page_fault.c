@@ -112,11 +112,20 @@ retry:
 
 }
 
+#ifdef CONFIG_DSM_CORE
 int dsm_swap_wrapper(struct mm_struct *mm, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
 {
 	return request_page_insert(mm, addr, pte, entry, pmd, flags);
 
 }
+#else
+int dsm_swap_wrapper(struct mm_struct *mm, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
+{
+	return 0;
+
+}
+
+#endif /* CONFIG_DSM */
 
 /*
  * Received a page via dsm_rdma. The kernel buffer containing the page will be consumed,

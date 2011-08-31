@@ -67,9 +67,9 @@
 
 #include "internal.h"
 
-#ifdef CONFIG_DSM_CORE
+
 #include <dsm/dsm_core.h>
-#endif /* CONFIG_DSM */
+
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 /* use the per-pgdat data instead for discontigmem - mbligh */
@@ -2853,15 +2853,10 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			migration_entry_wait(mm, pmd, address);
 		} else if (is_hwpoison_entry(entry)) {
 			ret = VM_FAULT_HWPOISON;
-#ifdef CONFIG_DSM_CORE
-                } else if (is_dsm_entry(entry)) {
-
-                		ret = dsm_swap_wrapper(mm, address, page_table, &entry, pmd, flags);
-
-                        goto out;
-
-#endif /* CONFIG_DSM_CORE */
-		} else {
+        } else if (is_dsm_entry(entry)) {
+        	ret = dsm_swap_wrapper(mm, address, page_table, &entry, pmd, flags);
+        	goto out;
+        } else {
 			print_bad_pte(vma, address, orig_pte, NULL);
 			ret = VM_FAULT_SIGBUS;
 		}

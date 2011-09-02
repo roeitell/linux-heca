@@ -66,7 +66,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg)
 
 	// DSM1 : temp code test kernel mem swap
 	/******************************************/
-        printk("[*] version 11");
+        printk("[*] version 5");
 	dst_addr = 0;
 
 	kpage = alloc_page(GFP_KERNEL);
@@ -155,19 +155,20 @@ retry:
 		}
 		else
 		{
-			char b;
-			up_read(&mm->mmap_sem);
-			// we trigger  page fault
-			printk("[*] we page fault  \n");
-			if (sizeof(char) == copy_from_user(&b, msg->req_addr, sizeof(char)))
-			{
-				goto retry;
+		    printk("[*] mm  faulting \n");
+		    r = handle_mm_fault(mm,vma,msg->req_addr, FAULT_FLAG_WRITE);
+		    if (r & VM_FAULT_ERROR) {
+		        printk("[*] failed at faulting \n");
+		        BUG();
+		    }
+		    else
+		    {
+		        printk("[*] faulting success \n");
+		        r = 0 ;
+		        goto retry;
+		    }
 
-			}
-			else
-			{
-				return -1;
-			}
+
 		}
 
 	}

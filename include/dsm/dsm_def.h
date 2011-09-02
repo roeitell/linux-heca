@@ -119,18 +119,13 @@ typedef struct dsm_message {
 
 } dsm_message;
 
-typedef struct swap_root_element {
-
-    struct rb_root root_swap;
-
-    rwlock_t swap_tree_lock;
-
-} swap_root_element;
 
 typedef struct dsm_data {
     struct dsm_vm_id id;
 
     struct rb_root root_swap;
+
+    spinlock_t root_swap_lock;
 
     struct mm_struct *mm;
 

@@ -52,15 +52,13 @@ static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr) {
 }
 
 // Add page locking
-static int extract_page(struct mm_struct *mm, dsm_message *msg) {
+static int extract_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id id, struct rb_root *swp_root) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
     struct page *page;
-    struct dsm_vm_id id;
     struct vm_area_struct *vma;
     struct swp_element *ele;
-    struct rb_root *swp_root;
     struct route_element *route_e;
 
     // DSM1 : temp code test kernel mem swap
@@ -92,11 +90,10 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg) {
     printk("[*] kpage : %10.10s\n", (char *) dst_addr);
     /************************************************/
 
-    id.dsm_id = u32_to_dsm_id(msg->dest);
-    id.vm_id = u32_to_dsm_id(msg->dest);
-    route_e = funcs->_find_routing_element(&id);
-    BUG_ON(!route_e);
-    swp_root = &route_e->data->root_swap;
+
+
+
+
 
     retry:
 
@@ -256,9 +253,11 @@ int dsm_extract_page(struct mm_struct *mm, dsm_message *msg) {
 
     route_e = funcs->_find_routing_element(&id);
     BUG_ON(!route_e);
+    spin_lock(&route_e->data->root_swap_lock);
     swp_root = &route_e->data->root_swap;
 
     swp_ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
+
 
     if (funcs->_page_blue(msg->req_addr, &id)) {
         /*
@@ -268,7 +267,7 @@ int dsm_extract_page(struct mm_struct *mm, dsm_message *msg) {
         if (swp_ele)
             forward_blue_page(msg, swp_ele);
         else if (1) // DSM1: send buffer empty
-            extract_page(mm, msg);
+            extract_page(mm, msg, id, swp_root);
 
     } else {
         /*
@@ -276,14 +275,14 @@ int dsm_extract_page(struct mm_struct *mm, dsm_message *msg) {
          * If not in the tree, the page is no longer local and we must forward the request.
          */
         if (swp_ele)
-            extract_page(mm, msg);
+            extract_page(mm, msg, id, swp_root);
         else
             forward_red_page(mm, msg);
 
     }
 
     // DSM1 : next step of forward_red_page - the msg needs to be sent on!
-
+    spin_unlock(&route_e->data->root_swap_lock);
     return ret;
 
 }

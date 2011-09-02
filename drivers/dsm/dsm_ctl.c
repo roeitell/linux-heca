@@ -54,6 +54,7 @@ static int open(struct inode *inode, struct file *f) {
         return -EFAULT;
 
     data->root_swap = RB_ROOT;
+    spin_lock_init(&data->root_swap_lock);
     data->mm = current->mm;
     data->id.dsm_id = 0;
     data->remote_addr = 0;

@@ -35,12 +35,16 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
     struct swp_element *swp_ele;
     dsm_message msg;
     struct dsm_vm_id id;
+    struct route_element *route_e;
 
     dsm_entry_to_val(*entry, &id.dsm_id, &id.vm_id);
 
     printk("[*] <request_page_insert> \n");
 
-    swp_root = &funcs->_find_routing_element(&id)->data->root_swap;
+    route_e = funcs->_find_routing_element(&id);
+    BUG_ON(!route_e);
+    spin_lock(&route_e->data->root_swap_lock);
+    swp_root = &route_e->data->root_swap;
 
     swp_ele = funcs->_search_rb_swap(swp_root, addr);
 
@@ -53,7 +57,7 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
         //if (!swp_ele)
         if (!swp_ele->addr) {
             printk("[*] <request_page_insert> return vm_fault_major blue\n");
-            return VM_FAULT_MAJOR;
+            goto vmfault;
         } else {
             swp_ele->pmd = pmd;
 
@@ -70,7 +74,7 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
             if (swp_ele->flags == 1) // DSM1: create flags - 1 = IN
                     {
                 printk("[*] <request_page_insert> return vm_fault_major red\n");
-                return VM_FAULT_MAJOR;
+                goto vmfault;
             } else
                 goto retry;
 
@@ -87,7 +91,8 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
         }
 
     }
-
+    spin_unlock(&route_e->data->root_swap_lock);
+    //DSM1  : we request teh rdma page HERE!!
     printk("[*] <request_page_insert> hi\n");
 
     msg.req_addr = (uint64_t) addr;
@@ -98,6 +103,8 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
 
     return dsm_insert_page(mm, &msg, &id);
 
+    vmfault: spin_unlock(&route_e->data->root_swap_lock);
+    return VM_FAULT_MAJOR;
 }
 
 #ifdef CONFIG_DSM_CORE
@@ -130,10 +137,14 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
     unsigned long addr_fault = msg->req_addr;
     struct vm_area_struct *vma;
     spinlock_t *ptl;
+    struct route_element *route_e;
 
     printk("[*] a \n");
 
-    swp_root = &funcs->_find_routing_element(id)->data->root_swap;
+    route_e = funcs->_find_routing_element(&id);
+    BUG_ON(!route_e);
+    spin_lock(&route_e->data->root_swap_lock);
+    swp_root = &route_e->data->root_swap;
 
     swp_ele = funcs->_search_rb_swap(swp_root, addr_fault);
     BUG_ON(!swp_ele);
@@ -184,7 +195,7 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
     unlock_page(recv_page);
 
     out: pte_unmap_unlock(pte, ptl);
-
+    spin_unlock(&route_e->data->root_swap_lock);
     return VM_FAULT_MAJOR;
 
 }

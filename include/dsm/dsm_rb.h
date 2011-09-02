@@ -29,5 +29,4 @@ int insert_rb_swap(struct rb_root *, unsigned long);
 struct swp_element* search_rb_swap(struct rb_root *, unsigned long);
 void erase_rb_swap(struct rb_root *, struct swp_element *);
 
-
 #endif /* DSM_RB_H_ */

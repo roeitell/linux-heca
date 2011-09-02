@@ -23,107 +23,95 @@
 struct dsm_functions *funcs;
 struct page *kpage;
 
-void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm_vm_id *),
-						void (*_erase_rb_swap)(struct rb_root *, struct swp_element *),
-						int (*_insert_rb_swap)(struct rb_root *, unsigned long),
-						int (*_page_blue)(unsigned long, struct dsm_vm_id *),
-						struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long))
-{
-	printk("[register_dsm_functions] plugin func ptrs\n");
+void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm_vm_id *), void(*_erase_rb_swap)(struct rb_root *, struct swp_element *), int(*_insert_rb_swap)(struct rb_root *, unsigned long), int(*_page_blue)(unsigned long, struct dsm_vm_id *), struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long)) {
+    printk("[register_dsm_functions] plugin func ptrs\n");
 
-	funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
+    funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
 
-	funcs->_find_routing_element = _find_routing_element;
-	funcs->_erase_rb_swap = _erase_rb_swap;
-	funcs->_insert_rb_swap = _insert_rb_swap;
-	funcs->_page_blue = _page_blue;
-	funcs->_search_rb_swap = _search_rb_swap;
+    funcs->_find_routing_element = _find_routing_element;
+    funcs->_erase_rb_swap = _erase_rb_swap;
+    funcs->_insert_rb_swap = _insert_rb_swap;
+    funcs->_page_blue = _page_blue;
+    funcs->_search_rb_swap = _search_rb_swap;
 
 }
 EXPORT_SYMBOL(reg_dsm_functions);
 
-void dereg_dsm_functions(void)
-{
-	kfree(funcs);
+void dereg_dsm_functions(void) {
+    kfree(funcs);
 
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 
-static int unmap_remote_page(struct page *page,  unsigned long addr, struct dsm_vm_id *id)
-{
-	int r = 0;
-	spinlock_t *ptl;
-	pte_t *pte;
-	struct mm_struct *mm = current->mm;
+static int unmap_remote_page(struct page *page, unsigned long addr, struct dsm_vm_id *id) {
+    int r = 0;
+    spinlock_t *ptl;
+    pte_t *pte;
+    struct mm_struct *mm = current->mm;
 
+    /* DSM1 : temp code test kernel mem swap **********/
+    dst_addr = 0;
 
-	/* DSM1 : temp code test kernel mem swap **********/
-	dst_addr = 0;
+    kpage = alloc_page(GFP_KERNEL);
+    if (!kpage)
+        return -1;
 
-	kpage = alloc_page(GFP_KERNEL);
-	if (!kpage)
-		return -1;
+    get_page(kpage);
 
-	get_page(kpage);
+    // DSM1 : temp code
+    dst_addr = (unsigned long) kmap(kpage);
+    if (!dst_addr) {
+        free_page((unsigned long) kpage);
 
-	// DSM1 : temp code
-	dst_addr =  (unsigned long) kmap(kpage);
-	if (!dst_addr)
-	{
-		free_page((unsigned long) kpage);
+        return -1;
 
-		return -1;
+    }
+    printk("[*] dst_addr : %lu\n", dst_addr);
 
-	}
-	printk("[*] dst_addr : %lu\n", dst_addr);
+    memset((void *) dst_addr, 'X', PAGE_SIZE);
 
-	memset((void *) dst_addr, 'X', PAGE_SIZE);
+    printk("[*] <unmap_remote_page> req_addr : %llu\n", (unsigned long long) addr);
 
-	printk("[*] <unmap_remote_page> req_addr : %llu\n", (unsigned long long) addr);
+    printk("[*] kpage : %10.10s\n", (char *) dst_addr);
+    /**********************/
 
-	printk("[*] kpage : %10.10s\n", (char *) dst_addr);
-	/**********************/
+    pte = page_check_address(page, mm, addr, &ptl, 0);
 
+    if (!pte)
+        return -EFAULT;
 
-	pte = page_check_address(page, mm, addr, &ptl, 0);
+    page_remove_rmap(page);
 
-	if (!pte)
-		return -EFAULT;
+    set_pte_at_notify(mm, addr, pte, swp_entry_to_pte(make_dsm_entry(id->dsm_id, id->vm_id)));
 
-	page_remove_rmap(page);
+    if (!page_mapped(page))
+        try_to_free_swap(page);
 
-	set_pte_at_notify(mm, addr, pte, swp_entry_to_pte( make_dsm_entry(id->dsm_id, id->vm_id) ));
+    put_page(page);
 
-	if (!page_mapped(page))
-		try_to_free_swap(page);
+    pte_unmap_unlock(pte, ptl);
 
-	put_page(page);
-
-	pte_unmap_unlock(pte, ptl);
-
-	return r;
+    return r;
 
 }
 
-int dsm_flag_remote(unsigned long addr, struct dsm_vm_id *id)
-{
-	int r;
-	struct page *page;
+int dsm_flag_remote(unsigned long addr, struct dsm_vm_id *id) {
+    int r;
+    struct page *page;
 
-	r = get_user_pages_fast(addr, 1, 1, &page);
+    r = get_user_pages_fast(addr, 1, 1, &page);
 
-	if (r <= 0)
-		goto out;
+    if (r <= 0)
+        goto out;
 
-	if (!trylock_page(page))
-		goto out;
+    if (!trylock_page(page))
+        goto out;
 
-	r = unmap_remote_page(page, addr, id);
+    r = unmap_remote_page(page, addr, id);
 
-	unlock_page(page);
+    unlock_page(page);
 
-out:
-	return r;
+    out: return r;
 
 }
 EXPORT_SYMBOL(dsm_flag_remote);

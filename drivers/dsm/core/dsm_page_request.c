@@ -24,293 +24,267 @@
 
 unsigned long dst_addr;
 
-static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr)
-{
-	pgd_t *pgd;
-	pud_t *pud;
-	pmd_t *pmd;
-	pte_t *ptep = 0;
+static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr) {
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    pte_t *ptep = 0;
 
-	pgd = pgd_offset(mm, addr);
-	if (!pgd_present(*pgd))
-		goto out;
+    pgd = pgd_offset(mm, addr);
+    if (!pgd_present(*pgd))
+        goto out;
 
-	pud = pud_offset(pgd, addr);
-	if (!pud_present(*pud))
-		goto out;
+    pud = pud_offset(pgd, addr);
+    if (!pud_present(*pud))
+        goto out;
 
-	pmd = pmd_offset(pud, addr);
-	BUG_ON(pmd_trans_huge(*pmd));
-	if (!pmd_present(*pmd))
-		goto out;
+    pmd = pmd_offset(pud, addr);
+    BUG_ON(pmd_trans_huge(*pmd));
+    if (!pmd_present(*pmd))
+        goto out;
 
-	//down_read(&mm->mmap_sem);
-	//up_read(&mm->mmap_sem);
-	ptep = pte_offset_map(pmd, addr);
+    //down_read(&mm->mmap_sem);
+    //up_read(&mm->mmap_sem);
+    ptep = pte_offset_map(pmd, addr);
 
-	out: return ptep;
+    out: return ptep;
 
 }
 
 // Add page locking
-static int extract_page(struct mm_struct *mm, dsm_message *msg)
-{
-	spinlock_t *ptl;
-	pte_t *pte;
-	int r = 0;
-	struct page *page;
-	struct dsm_vm_id id;
-	struct vm_area_struct *vma;
-	struct swp_element *ele;
-	struct rb_root *swp_root;
+static int extract_page(struct mm_struct *mm, dsm_message *msg) {
+    spinlock_t *ptl;
+    pte_t *pte;
+    int r = 0;
+    struct page *page;
+    struct dsm_vm_id id;
+    struct vm_area_struct *vma;
+    struct swp_element *ele;
+    struct rb_root *swp_root;
+    struct route_element *route_e;
 
-	// DSM1 : temp code test kernel mem swap
-	/******************************************/
-        printk("[*] version 5");
-	dst_addr = 0;
+    // DSM1 : temp code test kernel mem swap
+    /******************************************/
+    printk("[*] version 1");
+    dst_addr = 0;
 
-	kpage = alloc_page(GFP_KERNEL);
-	if (!kpage)
-		return -1;
+    kpage = alloc_page(GFP_KERNEL);
+    if (!kpage)
+        return -1;
 
-	get_page(kpage);
+    get_page(kpage);
 
-	// DSM1 : temp code
-	dst_addr = (unsigned long) kmap(kpage);
-	if (!dst_addr)
-	{
-		free_page((unsigned long) kpage);
+    // DSM1 : temp code
+    dst_addr = (unsigned long) kmap(kpage);
+    if (!dst_addr) {
+        free_page((unsigned long) kpage);
 
-		return -1;
+        return -1;
 
-	}
+    }
 
-	printk("[*] dst_addr : %lu\n", dst_addr);
+    printk("[*] dst_addr : %lu\n", dst_addr);
 
-	memset((void *) dst_addr, 'X', PAGE_SIZE);
+    memset((void *) dst_addr, 'X', PAGE_SIZE);
 
-	printk("[*] <extract_page> req_addr : %llu\n",(unsigned long long) msg->req_addr);
+    printk("[*] <extract_page> req_addr : %llu\n", (unsigned long long) msg->req_addr);
 
-	printk("[*] kpage : %10.10s\n", (char *) dst_addr);
-	/************************************************/
+    printk("[*] kpage : %10.10s\n", (char *) dst_addr);
+    /************************************************/
 
-        id.dsm_id = u32_to_dsm_id(msg->dest);
-        id.vm_id = u32_to_dsm_id(msg->dest);
-        swp_root = &funcs->_find_routing_element(&id)->data->root_swap;
+    id.dsm_id = u32_to_dsm_id(msg->dest);
+    id.vm_id = u32_to_dsm_id(msg->dest);
+    route_e = funcs->_find_routing_element(&id);
+    BUG_ON(!route_e);
+    swp_root = &route_e->data->root_swap;
 
-retry:
+    retry:
 
-	down_read(&mm->mmap_sem);
+    down_read(&mm->mmap_sem);
 
-	vma = find_vma(mm, msg->req_addr);
-	if (!vma || vma->vm_start > msg->req_addr)
-		goto out;
+    vma = find_vma(mm, msg->req_addr);
+    if (!vma || vma->vm_start > msg->req_addr)
+        goto out;
 
-	page = follow_page(vma, msg->req_addr, FOLL_GET);
-	if (!page)
-	{
-		pgd_t *pgd;
-		pud_t *pud;
-		pmd_t *pmd;
-		swp_entry_t swap_entry;
-		pte_t pte_entry;
+    page = follow_page(vma, msg->req_addr, FOLL_GET);
+    if (!page) {
+        pgd_t *pgd;
+        pud_t *pud;
+        pmd_t *pmd;
+        swp_entry_t swap_entry;
+        pte_t pte_entry;
 
-		printk("\n[*] No page FOUND \n");
-		pgd = pgd_offset(mm, msg->req_addr);
-		if (!pgd_present(*pgd))
-			goto out;
+        printk("\n[*] No page FOUND \n");
+        pgd = pgd_offset(mm, msg->req_addr);
+        if (!pgd_present(*pgd))
+            goto out;
 
-		pud = pud_offset(pgd, msg->req_addr);
-		if (!pud_present(*pud))
-			goto out;
+        pud = pud_offset(pgd, msg->req_addr);
+        if (!pud_present(*pud))
+            goto out;
 
-		pmd = pmd_offset(pud, msg->req_addr);
-		BUG_ON(pmd_trans_huge(*pmd));
-		if (!pmd_present(*pmd))
-			goto out;
+        pmd = pmd_offset(pud, msg->req_addr);
+        BUG_ON(pmd_trans_huge(*pmd));
+        if (!pmd_present(*pmd))
+            goto out;
 
-		pte = pte_offset_map(pmd, msg->req_addr);
-		pte_entry = *pte;
-		if (!pte_present(pte_entry))
-		{
-			printk("[*] Directly inserting PTE  \n");
-			set_pte_at(mm,msg->req_addr,pte,swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id,(uint8_t) id.vm_id)));
-			if (funcs->_page_blue(msg->req_addr, &id))
-			        {
-			                printk("[*] insert_swp_ele->addr : %lu \n",(unsigned long) msg->req_addr);
-			                funcs->_insert_rb_swap(swp_root, msg->req_addr);
+        pte = pte_offset_map(pmd, msg->req_addr);
+        pte_entry = *pte;
+        if (!pte_present(pte_entry)) {
+            printk("[*] Directly inserting PTE  \n");
+            set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
+            if (funcs->_page_blue(msg->req_addr, &id)) {
+                printk("[*] insert_swp_ele->addr : %lu \n", (unsigned long) msg->req_addr);
+                funcs->_insert_rb_swap(swp_root, msg->req_addr);
 
-			        }
-			        else
-			        {
-			                ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
+            } else {
+                ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
 
-			                BUG_ON(!ele);
+                BUG_ON(!ele);
 
-			                funcs->_erase_rb_swap(swp_root, ele);
+                funcs->_erase_rb_swap(swp_root, ele);
 
-			        }
+            }
 
-			goto out;
-		}
-		else
-		{
-		    printk("[*] mm  faulting \n");
-		    r = handle_mm_fault(mm,vma,msg->req_addr, FAULT_FLAG_WRITE);
-		    if (r & VM_FAULT_ERROR) {
-		        printk("[*] failed at faulting \n");
-		        BUG();
-		    }
-		    else
-		    {
-		        printk("[*] faulting success \n");
-		        r = 0 ;
-		        goto retry;
-		    }
+            goto out;
+        } else {
+            printk("[*] mm  faulting \n");
+            r = handle_mm_fault(mm, vma, msg->req_addr, FAULT_FLAG_WRITE);
+            if (r & VM_FAULT_ERROR) {
+                printk("[*] failed at faulting \n");
+                BUG();
+            } else {
+                printk("[*] faulting success \n");
+                r = 0;
+                goto retry;
+            }
 
+        }
 
-		}
+    }
 
-	}
+    if (!trylock_page(page)) {
+        r = -1;
+        goto out;
+    }
 
+    pte = page_check_address(page, mm, msg->req_addr, &ptl, 0);
+    if (!pte) {
+        r = -EFAULT;
+        goto out_page_lock;
+    }
 
+    if (funcs->_page_blue(msg->req_addr, &id)) {
+        printk("[*] page addresse: %lu \n", (unsigned long) page_address_in_vma(page, vma));
+        printk("[*] insert_swp_ele->addr : %lu \n", (unsigned long) msg->req_addr);
+        funcs->_insert_rb_swap(swp_root, msg->req_addr);
 
+    } else {
+        ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
 
+        BUG_ON(!ele);
 
-	if (!trylock_page(page))
-	{
-		r = -1;
-		goto out;
-	}
+        funcs->_erase_rb_swap(swp_root, ele);
 
-	pte = page_check_address(page, mm, msg->req_addr, &ptl, 0);
-	if (!pte)
-	{
-		r = -EFAULT;
-		goto out_page_lock;
-	}
+    }
 
+    flush_cache_page(vma, msg->req_addr, pte_pfn(*pte));
 
-	if (funcs->_page_blue(msg->req_addr, &id))
-	{
-		printk("[*] page addresse: %lu \n",(unsigned long) page_address_in_vma(page, vma));
-		printk("[*] insert_swp_ele->addr : %lu \n",(unsigned long) msg->req_addr);
-		funcs->_insert_rb_swap(swp_root, msg->req_addr);
+    ptep_clear_flush_notify(vma, msg->req_addr, pte);
+    set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
+    // page_remove_rmap - tears down all pte entries for this page
+    page_remove_rmap(page);
+    //update_mmu_cache(vma, msg->req_addr, pte);
 
-	}
-	else
-	{
-		ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
+    dec_mm_counter(mm, MM_ANONPAGES);
 
-		BUG_ON(!ele);
+    if (!page_mapped(page))
+        try_to_free_swap(page);
+    put_page(page);
 
-		funcs->_erase_rb_swap(swp_root, ele);
+    pte_unmap_unlock(pte, ptl);
 
-	}
-
-	flush_cache_page(vma, msg->req_addr, pte_pfn(*pte));
-
-	ptep_clear_flush_notify(vma, msg->req_addr, pte);
-	set_pte_at(mm,msg->req_addr,pte,swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
-	// page_remove_rmap - tears down all pte entries for this page
-	page_remove_rmap(page);
-	//update_mmu_cache(vma, msg->req_addr, pte);
-
-	dec_mm_counter(mm, MM_ANONPAGES);
-
-	if (!page_mapped(page))
-		try_to_free_swap(page);
-	put_page(page);
-
-	pte_unmap_unlock(pte, ptl);
-
-	out_page_lock: unlock_page(page);
-	out: up_read(&mm->mmap_sem);
-	return r;
+    out_page_lock: unlock_page(page);
+    out: up_read(&mm->mmap_sem);
+    return r;
 
 }
 
-static void forward_red_page(struct mm_struct *mm, dsm_message *msg)
-{
-	pte_t *ptep;
-	pte_t pte;
-	swp_entry_t entry;
-	struct dsm_vm_id id;
+static void forward_red_page(struct mm_struct *mm, dsm_message *msg) {
+    pte_t *ptep;
+    pte_t pte;
+    swp_entry_t entry;
+    struct dsm_vm_id id;
 
-	printk("[*] forward_red_page\n");
+    printk("[*] forward_red_page\n");
 
-	ptep = dsm_page_walker(mm, msg->req_addr);
+    ptep = dsm_page_walker(mm, msg->req_addr);
 
-	printk("[*] z\n");
+    printk("[*] z\n");
 
-	pte = *ptep;
-	if (!pte_present(pte))
-	{
-		BUG_ON(pte_none(pte));
+    pte = *ptep;
+    if (!pte_present(pte)) {
+        BUG_ON(pte_none(pte));
 
-		entry = pte_to_swp_entry(pte);
+        entry = pte_to_swp_entry(pte);
 
-		if (is_dsm_entry(entry))
-		{
-			dsm_entry_to_val(entry, &id.dsm_id, &id.vm_id);
+        if (is_dsm_entry(entry)) {
+            dsm_entry_to_val(entry, &id.dsm_id, &id.vm_id);
 
-			msg->dest = dsm_vm_id_to_u32(&id);
+            msg->dest = dsm_vm_id_to_u32(&id);
 
-		}
+        }
 
-	}
+    }
 
 }
 
-static inline void forward_blue_page(dsm_message *msg,
-		struct swp_element *swp_ele)
-{
-	msg->dest = dsm_vm_id_to_u32(&swp_ele->id);
+static inline void forward_blue_page(dsm_message *msg, struct swp_element *swp_ele) {
+    msg->dest = dsm_vm_id_to_u32(&swp_ele->id);
 
 }
 
-int dsm_extract_page(struct mm_struct *mm, dsm_message *msg)
-{
-	int ret = 0;
-	struct rb_root *swp_root;
-	struct dsm_vm_id id;
-	struct swp_element *swp_ele;
+int dsm_extract_page(struct mm_struct *mm, dsm_message *msg) {
+    int ret = 0;
+    struct rb_root *swp_root;
+    struct dsm_vm_id id;
+    struct swp_element *swp_ele;
+    struct route_element *route_e;
 
-	id.dsm_id = u32_to_dsm_id(msg->dest);
-	id.vm_id = u32_to_vm_id(msg->dest);
+    id.dsm_id = u32_to_dsm_id(msg->dest);
+    id.vm_id = u32_to_vm_id(msg->dest);
 
-	swp_root = &funcs->_find_routing_element(&id)->data->root_swap;
+    route_e = funcs->_find_routing_element(&id);
+    BUG_ON(!route_e);
+    swp_root = &route_e->data->root_swap;
 
-	swp_ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
+    swp_ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
 
-	if (funcs->_page_blue(msg->req_addr, &id))
-	{
-		/*
-		 * If a blue page is in the swp_tree, it is stored on another node.
-		 * We must forward the blue page request to the node containing what is actually a red page.
-		 */
-		if (swp_ele)
-			forward_blue_page(msg, swp_ele);
-		else if (1) // DSM1: send buffer empty
-			extract_page(mm, msg);
+    if (funcs->_page_blue(msg->req_addr, &id)) {
+        /*
+         * If a blue page is in the swp_tree, it is stored on another node.
+         * We must forward the blue page request to the node containing what is actually a red page.
+         */
+        if (swp_ele)
+            forward_blue_page(msg, swp_ele);
+        else if (1) // DSM1: send buffer empty
+            extract_page(mm, msg);
 
-	}
-	else
-	{
-		/*
-		 * If a red page is in the swp_tree, it is stored on this node.
-		 * If not in the tree, the page is no longer local and we must forward the request.
-		 */
-		if (swp_ele)
-			extract_page(mm, msg);
-		else
-			forward_red_page(mm, msg);
+    } else {
+        /*
+         * If a red page is in the swp_tree, it is stored on this node.
+         * If not in the tree, the page is no longer local and we must forward the request.
+         */
+        if (swp_ele)
+            extract_page(mm, msg);
+        else
+            forward_red_page(mm, msg);
 
-	}
+    }
 
-	// DSM1 : next step of forward_red_page - the msg needs to be sent on!
+    // DSM1 : next step of forward_red_page - the msg needs to be sent on!
 
-	return ret;
+    return ret;
 
 }
 EXPORT_SYMBOL(dsm_extract_page);

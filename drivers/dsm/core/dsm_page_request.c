@@ -43,8 +43,7 @@ static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr) {
     if (!pmd_present(*pmd))
         goto out;
 
-    //down_read(&mm->mmap_sem);
-    //up_read(&mm->mmap_sem);
+
     ptep = pte_offset_map(pmd, addr);
 
     out: return ptep;
@@ -63,7 +62,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id
 
     // DSM1 : temp code test kernel mem swap
     /******************************************/
-    printk("[*] version 1");
+    printk("[*] version 2");
     dst_addr = 0;
 
     kpage = alloc_page(GFP_KERNEL);
@@ -81,11 +80,11 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id
 
     }
 
-    printk("[*] dst_addr : %lu\n", dst_addr);
+    printk("[*] dst_addr : %p\n", dst_addr);
 
     memset((void *) dst_addr, 'X', PAGE_SIZE);
 
-    printk("[*] <extract_page> req_addr : %llu\n", (unsigned long long) msg->req_addr);
+    printk("[*] <extract_page> req_addr : %p\n",  msg->req_addr);
 
     printk("[*] kpage : %10.10s\n", (char *) dst_addr);
     /************************************************/
@@ -97,7 +96,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id
 
     retry:
 
-    down_read(&mm->mmap_sem);
+
 
     vma = find_vma(mm, msg->req_addr);
     if (!vma || vma->vm_start > msg->req_addr)
@@ -131,7 +130,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id
             printk("[*] Directly inserting PTE  \n");
             set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
             if (funcs->_page_blue(msg->req_addr, &id)) {
-                printk("[*] insert_swp_ele->addr : %lu \n", (unsigned long) msg->req_addr);
+                printk("[*] insert_swp_ele->addr : %p \n", (unsigned long) msg->req_addr);
                 funcs->_insert_rb_swap(swp_root, msg->req_addr);
 
             } else {
@@ -172,8 +171,8 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id
     }
 
     if (funcs->_page_blue(msg->req_addr, &id)) {
-        printk("[*] page addresse: %lu \n", (unsigned long) page_address_in_vma(page, vma));
-        printk("[*] insert_swp_ele->addr : %lu \n", (unsigned long) msg->req_addr);
+        printk("[*] page addresse: %p \n", (unsigned long) page_address_in_vma(page, vma));
+        printk("[*] insert_swp_ele->addr : %p \n", (unsigned long) msg->req_addr);
         funcs->_insert_rb_swap(swp_root, msg->req_addr);
 
     } else {
@@ -202,8 +201,7 @@ static int extract_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id
     pte_unmap_unlock(pte, ptl);
 
     out_page_lock: unlock_page(page);
-    out: up_read(&mm->mmap_sem);
-    return r;
+    out: return r;
 
 }
 
@@ -258,7 +256,7 @@ int dsm_extract_page(struct mm_struct *mm, dsm_message *msg) {
 
     swp_ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
 
-
+    down_read(&mm->mmap_sem);
     if (funcs->_page_blue(msg->req_addr, &id)) {
         /*
          * If a blue page is in the swp_tree, it is stored on another node.
@@ -282,7 +280,9 @@ int dsm_extract_page(struct mm_struct *mm, dsm_message *msg) {
     }
 
     // DSM1 : next step of forward_red_page - the msg needs to be sent on!
+    up_read(&mm->mmap_sem);
     spin_unlock(&route_e->data->root_swap_lock);
+
     return ret;
 
 }

@@ -36,6 +36,8 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
     dsm_message msg;
     struct dsm_vm_id id;
     struct route_element *route_e;
+    //we need to use the page addr and not the fault address in order to have a unique reference
+    unsigned long norm_addr = addr & PAGE_MASK;
 
     dsm_entry_to_val(*entry, &id.dsm_id, &id.vm_id);
 
@@ -46,11 +48,11 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
     spin_lock(&route_e->data->root_swap_lock);
     swp_root = &route_e->data->root_swap;
 
-    swp_ele = funcs->_search_rb_swap(swp_root, addr);
+    swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
 
     retry:
 
-    if (funcs->_page_blue(addr, &id)) {
+    if (funcs->_page_blue(norm_addr, &id)) {
         printk("[*] <request_page_insert> blue page \n");
 
         /* If blue page not in swp_tree - means the page is now local */
@@ -81,10 +83,10 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
         } else {
             printk("[*] <request_page_insert> insert red\n");
 
-            funcs->_insert_rb_swap(swp_root, addr);
+            funcs->_insert_rb_swap(swp_root, norm_addr);
 
             /* DSM3: Maybe avoid having to do this twice - another insert_rb_swap with pmd as param.*/
-            swp_ele = funcs->_search_rb_swap(swp_root, addr);
+            swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
 
             swp_ele->pmd = pmd;
 
@@ -95,7 +97,7 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
     //DSM1  : we request teh rdma page HERE!!
     printk("[*] <request_page_insert> hi\n");
 
-    msg.req_addr = (uint64_t) addr;
+    msg.req_addr = (uint64_t) norm_addr;
 
     msg.dst_addr = (uint64_t) dst_addr;
 

@@ -50,50 +50,23 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
 
     swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
 
-    retry:
+    if (swp_ele) {
+        //we already requested the page , we retry
+        spin_unlock(&route_e->data->root_swap_lock);
 
-    if (funcs->_page_blue(norm_addr, &id)) {
-        printk("[*] <request_page_insert> blue page \n");
-
-        /* If blue page not in swp_tree - means the page is now local */
-        //if (!swp_ele)
-        if (!swp_ele->addr) {
-            printk("[*] <request_page_insert> return vm_fault_major blue\n");
-            goto vmfault;
-        } else {
-            swp_ele->pmd = pmd;
-
-            /* If blue page in swp_tree but already requested - ignore and loop */
-            if (swp_ele->flags == 1) // DSM1: create flags lol - 1 = IN
-                goto retry;
-        }
-
-    } else {
-        printk("[*] <request_page_insert> red page \n");
-
-        /* If red page is in swp_tree - then we have requested it.  If not received - ignore and loop */
-        if (swp_ele) {
-            if (swp_ele->flags == 1) // DSM1: create flags - 1 = IN
-                    {
-                printk("[*] <request_page_insert> return vm_fault_major red\n");
-                goto vmfault;
-            } else
-                goto retry;
-
-        } else {
-            printk("[*] <request_page_insert> insert red\n");
-
-            funcs->_insert_rb_swap(swp_root, norm_addr);
-
-            /* DSM3: Maybe avoid having to do this twice - another insert_rb_swap with pmd as param.*/
-            swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
-
-            swp_ele->pmd = pmd;
-
-        }
-
+        return VM_FAULT_RETRY;
     }
+
+    printk("[*] <request_page_insert> \n");
+
+    funcs->_insert_rb_swap(swp_root, norm_addr);
+
+    /* DSM3: Maybe avoid having to do this twice - another insert_rb_swap with pmd as param.*/
+    swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
+
+    swp_ele->pmd = pmd;
     spin_unlock(&route_e->data->root_swap_lock);
+
     //DSM1  : we request teh rdma page HERE!!
     printk("[*] <request_page_insert> hi\n");
 
@@ -105,8 +78,6 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
 
     return dsm_insert_page(mm, &msg, &id);
 
-    vmfault: spin_unlock(&route_e->data->root_swap_lock);
-    return VM_FAULT_MAJOR;
 }
 
 #ifdef CONFIG_DSM_CORE
@@ -140,10 +111,11 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
     struct vm_area_struct *vma;
     spinlock_t *ptl;
     struct route_element *route_e;
+    int ret = VM_FAULT_ERROR;
 
     printk("[*] a \n");
 
-    route_e = funcs->_find_routing_element(&id);
+    route_e = funcs->_find_routing_element(id);
     BUG_ON(!route_e);
     spin_lock(&route_e->data->root_swap_lock);
     swp_root = &route_e->data->root_swap;
@@ -186,19 +158,14 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
 
     kunmap(kpage);
 
-    if (funcs->_page_blue(addr_fault, id)) {
-        funcs->_erase_rb_swap(swp_root, swp_ele);
-        printk("[*] erased swap ele\n");
-    } else {
-        printk("[*] remote swp_flag = 1\n");
-        swp_ele->flags = 1; // DSM1 - swp_ele flags - 1 = IN/received
-    }
+    funcs->_erase_rb_swap(swp_root, swp_ele);
+    printk("[*] erased swap ele\n");
 
     unlock_page(recv_page);
-
+    ret = VM_FAULT_MAJOR;
     out: pte_unmap_unlock(pte, ptl);
     spin_unlock(&route_e->data->root_swap_lock);
-    return VM_FAULT_MAJOR;
+    return ret;
 
 }
 EXPORT_SYMBOL(dsm_insert_page);

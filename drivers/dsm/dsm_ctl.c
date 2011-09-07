@@ -251,7 +251,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         if (data->id.dsm_id == 0)
             data->id.dsm_id = rele->id.dsm_id;
 
-        r = dsm_extract_page(current->mm, &msg);
+        r = dsm_extract_page( &msg);
 
         break;
 
@@ -285,7 +285,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
         data->remote_addr = udata.addr;
 
-        r = dsm_flag_remote(udata.addr, &udata.id);
+        r = dsm_flag_page_remote(current->mm, udata.id, udata.addr);
 
         break;
 

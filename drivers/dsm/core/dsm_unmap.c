@@ -43,75 +43,123 @@ void dereg_dsm_functions(void) {
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 
-static int unmap_remote_page(struct page *page, unsigned long addr, struct dsm_vm_id *id) {
-    int r = 0;
+int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned long addr) {
     spinlock_t *ptl;
     pte_t *pte;
-    struct mm_struct *mm = current->mm;
+    int r = 0;
+    struct page *page;
+    struct vm_area_struct *vma;
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    pte_t pte_entry;
+    struct rb_root *swp_root;
+    struct route_element *route_e;
+    struct swp_element *ele;
+    swp_entry_t swp_e;
 
-    /* DSM1 : temp code test kernel mem swap **********/
-    dst_addr = 0;
+    down_read(&mm->mmap_sem);
 
-    kpage = alloc_page(GFP_KERNEL);
-    if (!kpage)
-        return -1;
+    retry:
 
-    get_page(kpage);
+    vma = find_vma(mm, addr);
+    if (!vma || vma->vm_start > addr)
+        goto out;
 
-    // DSM1 : temp code
-    dst_addr = (unsigned long) kmap(kpage);
-    if (!dst_addr) {
-        free_page((unsigned long) kpage);
+    page = follow_page(vma, addr, FOLL_GET);
+    if (!page) {
 
-        return -1;
+        printk("\n[*] No page FOUND \n");
+        pgd = pgd_offset(mm, addr);
+        if (!pgd_present(*pgd))
+            goto out;
+
+        pud = pud_offset(pgd, addr);
+        if (!pud_present(*pud))
+            goto out;
+
+        pmd = pmd_offset(pud, addr);
+        BUG_ON(pmd_trans_huge(*pmd));
+        if (!pmd_present(*pmd))
+            goto out;
+
+        // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
+        route_e = funcs->_find_routing_element(&id);
+        BUG_ON(!route_e);
+
+        pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
+        pte_entry = *pte;
+
+        if (!pte_present(pte_entry)) {
+            if (pte_none(pte_entry)) {
+                printk("[*] Directly inserting PTE  because no page exist \n");
+                set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
+                goto out_pte_unlock;
+            } else {
+                swp_e = pte_to_swp_entry(pte_entry);
+                if (non_swap_entry(swp_e)) {
+                    if (is_migration_entry(swp_e)) {
+                        pte_unmap_unlock(pte, ptl);
+                        migration_entry_wait(mm, pmd, addr);
+                        goto retry;
+                    } else {
+                        BUG();
+                    }
+                } else {
+                    chain_fault: printk("[*] mm  faulting because swap\n");
+                    pte_unmap_unlock(pte, ptl);
+                    r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
+                    if (r & VM_FAULT_ERROR) {
+                        printk("[*] failed at faulting \n");
+                        BUG();
+                    }
+                    printk("[*] faulting success \n");
+                    r = 0;
+
+                    goto retry;
+
+                }
+
+            }
+
+        } else {
+            printk("[*] bad pte \n");
+            BUG();
+        }
 
     }
-    printk("[*] dst_addr : %lu\n", dst_addr);
-
-    memset((void *) dst_addr, 'X', PAGE_SIZE);
-
-    printk("[*] <unmap_remote_page> req_addr : %llu\n", (unsigned long long) addr);
-
-    printk("[*] kpage : %10.10s\n", (char *) dst_addr);
-    /**********************/
 
     pte = page_check_address(page, mm, addr, &ptl, 0);
+    if (!pte) {
+        // we can have a double request .. so we just retry
+        goto retry;
+    }
+    if (!trylock_page(page)) {
 
-    if (!pte)
-        return -EFAULT;
+        r = -EFAULT;
+        goto out_pte_unlock;
+    }
 
+    printk("[*] page addresse: %p \n", (unsigned long) page_address_in_vma(page, vma));
+    printk("[*] insert_swp_ele->addr : %p \n", (unsigned long) addr);
+
+    flush_cache_page(vma, addr, pte_pfn(*pte));
+
+    ptep_clear_flush_notify(vma, addr, pte);
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
     page_remove_rmap(page);
 
-    set_pte_at_notify(mm, addr, pte, swp_entry_to_pte(make_dsm_entry(id->dsm_id, id->vm_id)));
-
+    dec_mm_counter(mm, MM_ANONPAGES);
+    // this is a page flagging without data exchange so we can free the page
     if (!page_mapped(page))
         try_to_free_swap(page);
-
     put_page(page);
-
-    pte_unmap_unlock(pte, ptl);
+    unlock_page(page);
+    out_pte_unlock: pte_unmap_unlock(pte, ptl);
+    out: up_read(&mm->mmap_sem);
 
     return r;
 
 }
+EXPORT_SYMBOL(dsm_flag_page_remote);
 
-int dsm_flag_remote(unsigned long addr, struct dsm_vm_id *id) {
-    int r;
-    struct page *page;
-
-    r = get_user_pages_fast(addr, 1, 1, &page);
-
-    if (r <= 0)
-        goto out;
-
-    if (!trylock_page(page))
-        goto out;
-
-    r = unmap_remote_page(page, addr, id);
-
-    unlock_page(page);
-
-    out: return r;
-
-}
-EXPORT_SYMBOL(dsm_flag_remote);

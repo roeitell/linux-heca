@@ -33,10 +33,10 @@ struct dsm_functions {
 // dsm_unmap
 void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm_vm_id *), void(*_erase_rb_swap)(struct rb_root *, struct swp_element *), int(*_insert_rb_swap)(struct rb_root *, unsigned long), int(*_page_blue)(unsigned long, struct dsm_vm_id *), struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long));
 void dereg_dsm_functions(void);
-int dsm_flag_remote(unsigned long, struct dsm_vm_id *);
+int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned long addr);
 
 // dsm_page_request
-int dsm_extract_page(struct mm_struct *, dsm_message *);
+int dsm_extract_page(dsm_message *);
 
 // dsm_page_fault
 int dsm_swap_wrapper(struct mm_struct *, unsigned long, pte_t *, swp_entry_t *, pmd_t *, unsigned int);

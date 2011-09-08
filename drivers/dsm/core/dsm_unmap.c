@@ -53,10 +53,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
     pud_t *pud;
     pmd_t *pmd;
     pte_t pte_entry;
-    struct rb_root *swp_root;
-    struct route_element *route_e;
-    struct swp_element *ele;
     swp_entry_t swp_e;
+    struct route_element *route_e;
 
     down_read(&mm->mmap_sem);
 
@@ -106,7 +104,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
                         BUG();
                     }
                 } else {
-                    chain_fault: printk("[*] mm  faulting because swap\n");
+                    printk("[*] mm  faulting because swap\n");
                     pte_unmap_unlock(pte, ptl);
                     r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
                     if (r & VM_FAULT_ERROR) {
@@ -140,8 +138,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
         goto out_pte_unlock;
     }
 
-    printk("[*] page addresse: %p \n", (unsigned long) page_address_in_vma(page, vma));
-    printk("[*] insert_swp_ele->addr : %p \n", (unsigned long) addr);
+    printk("[*] page addresse: %p \n", (void *) page_address_in_vma(page, vma));
+    printk("[*] insert_swp_ele->addr : %p \n", (void *) addr);
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
 

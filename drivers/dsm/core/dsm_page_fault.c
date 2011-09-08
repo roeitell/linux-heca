@@ -45,14 +45,14 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
 
     route_e = funcs->_find_routing_element(&id);
     BUG_ON(!route_e);
-    spin_lock(&route_e->data->root_swap_lock);
+    write_lock(&route_e->data->dsm_data_lock);
     swp_root = &route_e->data->root_swap;
 
     swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
 
     if (swp_ele) {
         //we already requested the page , we retry
-        spin_unlock(&route_e->data->root_swap_lock);
+        write_unlock(&route_e->data->dsm_data_lock);
 
         return VM_FAULT_RETRY;
     }
@@ -65,7 +65,7 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
     swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
 
     swp_ele->pmd = pmd;
-    spin_unlock(&route_e->data->root_swap_lock);
+    write_unlock(&route_e->data->dsm_data_lock);
 
     //DSM1  : we request teh rdma page HERE!!
     printk("[*] <request_page_insert> hi\n");
@@ -117,7 +117,7 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
 
     route_e = funcs->_find_routing_element(id);
     BUG_ON(!route_e);
-    spin_lock(&route_e->data->root_swap_lock);
+    write_lock(&route_e->data->dsm_data_lock);
     swp_root = &route_e->data->root_swap;
 
     swp_ele = funcs->_search_rb_swap(swp_root, addr_fault);
@@ -164,7 +164,7 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
     unlock_page(recv_page);
     ret = VM_FAULT_MAJOR;
     out: pte_unmap_unlock(pte, ptl);
-    spin_unlock(&route_e->data->root_swap_lock);
+    write_unlock(&route_e->data->dsm_data_lock);
     return ret;
 
 }

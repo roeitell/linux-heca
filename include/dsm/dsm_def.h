@@ -125,9 +125,10 @@ typedef struct dsm_data {
 
     struct rb_root root_swap;
 
-    spinlock_t root_swap_lock;
+    rwlock_t dsm_data_lock;
 
     struct mm_struct *mm;
+
 
     // TEMPORARY
     unsigned long remote_addr;

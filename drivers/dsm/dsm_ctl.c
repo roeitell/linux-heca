@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/fs.h>
+#include <linux/rculist.h>
 #include <asm/uaccess.h>
 #include <asm-generic/memory_model.h>
 #include <linux/socket.h>
@@ -56,8 +57,8 @@ static int open(struct inode *inode, struct file *f) {
     data->root_swap = RB_ROOT;
     rwlock_init(&data->dsm_data_lock);
     data->mm = current->mm;
-    data->id.dsm_id = 0;
     data->remote_addr = 0;
+    INIT_LIST_HEAD(&data->vm_route_element_list);
 
     printk("[open]\n");
 
@@ -69,29 +70,30 @@ static int open(struct inode *inode, struct file *f) {
 
 static int release(struct inode *inode, struct file *f) {
     dsm_data *data = (dsm_data *) f->private_data;
-    int i;
-    struct route_element *rele;
-    struct dsm_vm_id id;
-
-    id.dsm_id = 1; //data->id.dsm_id;
-
-    for (i = 0; i < 5; ++i) {
-        id.vm_id = i;
-
-        // DSM1: FIND AND DESTROY conn_ele?
-        // DSM1: think of some way to search and destroy all routes with same dsm_id.
-        rele = search_rb_route(_rcm, &id);
-
-        if (rele) {
-            erase_rb_route(&_rcm->root_route, rele);
-
-            // DSM1: TEMPORARY
-            break;
-
+    struct route_element *rele = NULL;
+    struct dsm_memory_region *mr = NULL;
+    write_lock(&data->dsm_data_lock);
+    list_for_each_entry_rcu(rele, &data->vm_route_element_list, vm_route_element_list)
+    {
+        printk("\n[release] removing dsm_id : %d - vm_id : %d\n", rele->id.dsm_id, rele->id.vm_id);
+        list_for_each_entry_rcu(mr, &rele->local_memory_regions, dsm_memory_region)
+        {
+            printk("\n[release] removing mr : %p size %ul\n", (void *) mr->start_addr, mr->size);
+            list_del_rcu(&mr->dsm_memory_region);
+            kfree(mr);
         }
+        list_del_rcu(&rele->vm_route_element_list);
+        erase_rb_route(&_rcm->root_route, rele);
 
     }
-
+    mr = NULL;
+    list_for_each_entry_rcu(mr, &data->self_route_e->local_memory_regions, dsm_memory_region)
+    {
+        list_del_rcu(&mr->dsm_memory_region);
+        kfree(mr);
+    }
+    erase_rb_route(&_rcm->root_route, data->self_route_e);
+    write_unlock(&data->dsm_data_lock);
     kfree(data);
 
     printk("\n[release]\n");
@@ -117,7 +119,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
     switch (ioctl) {
     case RDMA_REG_VM: {
         r = -EFAULT;
-
+        printk("[*] version 1 \n");
         if (copy_from_user((void *) &r_data, argp, sizeof r_data))
             goto out;
 
@@ -146,16 +148,22 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
             rele->id.dsm_id = id.dsm_id;
             rele->id.vm_id = id.vm_id;
             rele->data = data;
+            INIT_LIST_HEAD(&rele->local_memory_regions);
+            INIT_LIST_HEAD(&rele->vm_route_element_list);
 
             insert_rb_route(_rcm, rele);
 
-            data->id = id;
+            data->self_route_e = rele;
+            data->offset = r_data.offset;
 
             r = 0;
 
         } else
             r = -1;
 
+        rele = search_rb_route(_rcm, &id);
+
+        printk("[RDMA_REG_VM] Searched rb_route - found = %d\n", !!rele);
         break;
 
     }
@@ -225,33 +233,11 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         r = -EFAULT;
 
         struct dsm_message msg;
-
+        printk("[PAGE_SWAP] swapping of one page \n");
         if (copy_from_user((void *) &msg, argp, sizeof msg))
             goto out;
 
-        struct dsm_vm_id id;
-        id.dsm_id = u32_to_dsm_id(msg.dest);
-        id.vm_id = u32_to_vm_id(msg.dest);
-
-        struct route_element *rele = search_rb_route(_rcm, &id);
-
-        if (!rele) {
-            rele = kmalloc(sizeof(*rele), GFP_KERNEL);
-
-            rele->data = data;
-            rele->ele = 0;
-
-            rele->id.dsm_id = id.dsm_id;
-            rele->id.vm_id = id.vm_id;
-
-            insert_rb_route(_rcm, rele);
-
-        }
-
-        if (data->id.dsm_id == 0)
-            data->id.dsm_id = rele->id.dsm_id;
-
-        r = dsm_extract_page( &msg);
+        r = dsm_extract_page(&msg);
 
         break;
 
@@ -280,8 +266,8 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
         }
 
-        if (((int) data->id.dsm_id) == 0)
-            data->id.dsm_id = rele->id.dsm_id;
+        if (((int) data->self_route_e->id.dsm_id) == 0)
+            data->self_route_e->id.dsm_id = rele->id.dsm_id;
 
         data->remote_addr = udata.addr;
 
@@ -290,6 +276,94 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         break;
 
     }
+    case REGISTER_MR: {
+        struct dsm_memory_region *dsm_memory_region;
+        struct dsm_mr dsm_mr;
+        r = -EFAULT;
+
+        if (copy_from_user((void *) &dsm_mr, argp, sizeof dsm_mr))
+            goto out;
+
+        dsm_memory_region = kmalloc(sizeof(*dsm_memory_region), GFP_KERNEL);
+        printk("[REGISTER_MR] registering a memory region dsm_id : %d - vm_id : %d, local dsm_id : %d - vm_id : %d\n", dsm_mr.id.dsm_id, dsm_mr.id.vm_id, data->self_route_e->id.dsm_id, data->self_route_e->id.vm_id);
+        dsm_memory_region->start_addr = dsm_mr.start_addr;
+        dsm_memory_region->size = dsm_mr.size;
+        printk("\n[release] removing mr : %p size %ul\n", (void *) dsm_memory_region->start_addr, dsm_memory_region->size);
+        INIT_LIST_HEAD(&dsm_memory_region->dsm_memory_region);
+        if (unlikely(dsm_mr.id.dsm_id != data->self_route_e->id.dsm_id)) {
+            printk("[REGISTER_MR] bad mr registration ... \n");
+
+        } else if (dsm_mr.id.vm_id == data->self_route_e->id.vm_id) {
+            printk("[REGISTER_MR] we add to local list\n");
+            write_lock(&data->dsm_data_lock);
+            list_add_rcu(&dsm_memory_region->dsm_memory_region, &data->self_route_e->local_memory_regions);
+            write_unlock(&data->dsm_data_lock);
+
+            r = 0;
+        } else {
+            printk("[REGISTER_MR] we add to remote list\n");
+            struct route_element *rele = search_rb_route(_rcm, &dsm_mr.id);
+
+            if (!rele) {
+                printk("[REG DSM MR] failed couldn't find the dsm id \n");
+
+            } else {
+                printk("[REGISTER_MR] adding region to remote vm \n");
+                write_lock(&data->dsm_data_lock);
+                list_add_rcu(&dsm_memory_region->dsm_memory_region, &rele->local_memory_regions);
+                write_unlock(&data->dsm_data_lock);
+                r = 0;
+
+            }
+        }
+
+        break;
+
+    }
+    case FAKE_RDMA_CONNECT: {
+        r = -EFAULT;
+        printk("[FAKE_RDMA_CONNECT] registering a remote VM \n");
+        if (copy_from_user((void *) &r_data, argp, sizeof r_data))
+            goto out;
+
+        id.dsm_id = r_data.dsm_id;
+        id.vm_id = r_data.vm_id;
+
+        printk("[FAKE_RDMA_CONNECT] dsm_id : %d - vm_id : %d\n", r_data.dsm_id, r_data.vm_id);
+
+        rele = search_rb_route(_rcm, &id);
+
+        printk("[FAKE_RDMA_CONNECT] Searched rb_route - found = %d\n", !!rele);
+
+        if (!rele) {
+            printk("[FAKE_RDMA_CONNECT] About to create route_element\n");
+
+            rele = kmalloc(sizeof(*rele), GFP_KERNEL);
+            if (!rele) {
+                r = -EFAULT;
+                goto out;
+
+            }
+            rele->id.dsm_id = id.dsm_id;
+            rele->id.vm_id = id.vm_id;
+            rele->data = data;
+            INIT_LIST_HEAD(&rele->local_memory_regions);
+            INIT_LIST_HEAD(&rele->vm_route_element_list);
+            //we add the route to the remote note list of the dsm_data
+            write_lock(&data->dsm_data_lock);
+            list_add_rcu(&rele->vm_route_element_list, &data->vm_route_element_list);
+            insert_rb_route(_rcm, rele);
+            write_unlock(&data->dsm_data_lock);
+
+            r = 0;
+
+        } else
+            r = -1;
+
+        break;
+
+    }
+
     default: {
         r = -EFAULT;
 

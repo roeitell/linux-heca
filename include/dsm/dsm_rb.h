@@ -25,7 +25,7 @@ void erase_rb_route(struct rb_root *, struct route_element *);
 /*
  *  page swap RB_TREE
  */
-int insert_rb_swap(struct rb_root *, unsigned long);
+struct swp_element * insert_rb_swap(struct rb_root *, unsigned long);
 struct swp_element* search_rb_swap(struct rb_root *, unsigned long);
 void erase_rb_swap(struct rb_root *, struct swp_element *);
 

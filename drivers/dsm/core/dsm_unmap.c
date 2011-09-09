@@ -23,7 +23,7 @@
 struct dsm_functions *funcs;
 struct page *kpage;
 
-void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm_vm_id *), void(*_erase_rb_swap)(struct rb_root *, struct swp_element *), int(*_insert_rb_swap)(struct rb_root *, unsigned long), int(*_page_blue)(unsigned long, struct dsm_vm_id *), struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long)) {
+void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm_vm_id *), void(*_erase_rb_swap)(struct rb_root *, struct swp_element *), struct swp_element *(*_insert_rb_swap)(struct rb_root *, unsigned long), int(*_page_blue)(unsigned long, struct dsm_vm_id *), struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long)) {
     printk("[register_dsm_functions] plugin func ptrs\n");
 
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);

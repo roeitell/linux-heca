@@ -102,7 +102,6 @@ int dsm_extract_page(dsm_message *msg) {
 
     // DSM1 : temp code test kernel mem swap
     /******************************************/
-    printk("[*] version 1 \n");
     dst_addr = 0;
 
     kpage = alloc_page(GFP_KERNEL);
@@ -120,7 +119,7 @@ int dsm_extract_page(dsm_message *msg) {
 
     }
 
-    printk("[*] dst_addr : %p\n", dst_addr);
+    printk("[*] dst_addr : %p\n", (void *) dst_addr);
 
     memset((void *) dst_addr, 'X', PAGE_SIZE);
 
@@ -131,14 +130,12 @@ int dsm_extract_page(dsm_message *msg) {
 
     id.dsm_id = u32_to_dsm_id(msg->dest);
     id.vm_id = u32_to_vm_id(msg->dest);
-
+    printk("[EXTRACT_PAGE] dsm_id : %d - vm_id : %d\n", id.dsm_id, id.vm_id);
     route_e = funcs->_find_routing_element(&id);
     BUG_ON(!route_e);
-
     mm = route_e->data->mm;
     down_read(&mm->mmap_sem);
     retry: read_lock(&route_e->data->dsm_data_lock);
-
     vma = find_vma(mm, msg->req_addr);
     if (!vma || vma->vm_start > msg->req_addr)
         goto out;
@@ -146,7 +143,7 @@ int dsm_extract_page(dsm_message *msg) {
     page = follow_page(vma, msg->req_addr, FOLL_GET);
     if (!page) {
 
-        printk("\n[*] No page FOUND \n");
+        printk("\n[[EXTRACT_PAGE]] No page FOUND \n");
         pgd = pgd_offset(mm, msg->req_addr);
         if (!pgd_present(*pgd))
             goto out;
@@ -167,7 +164,7 @@ int dsm_extract_page(dsm_message *msg) {
 
         if (!pte_present(pte_entry)) {
             if (pte_none(pte_entry)) {
-                printk("[*] Directly inserting PTE  because no page exist \n");
+                printk("[[EXTRACT_PAGE]] Directly inserting PTE  because no page exist \n");
                 set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
                 //DSM1 note we might do a empty send in order to save bandwidth
                 //send
@@ -183,7 +180,7 @@ int dsm_extract_page(dsm_message *msg) {
                             // we requested the page already .. so lets wait until we have it and then send it .. bad performance... blaaaa
 
                             //DSM1 we should have something like migration  wait
-                            printk("[*] we spin because already requested on dsm entry \n");
+                            printk("[[EXTRACT_PAGE]] we spin because already requested on dsm entry \n");
                             pte_unmap_unlock(pte, ptl);
                             read_unlock(&route_e->data->dsm_data_lock);
                             goto retry;
@@ -193,7 +190,7 @@ int dsm_extract_page(dsm_message *msg) {
                             // forward page red or blue
                             //forward_blue_page(msg, ele);
                             //goto out_pte;
-                            printk("[*] we chain fault on dsm entry \n");
+                            printk("[[EXTRACT_PAGE]] we chain fault on dsm entry \n");
                             goto chain_fault;
                         }
 
@@ -206,7 +203,7 @@ int dsm_extract_page(dsm_message *msg) {
                         BUG();
                     }
                 } else {
-                    chain_fault: printk("[*] mm  faulting because swap\n");
+                    chain_fault: printk("[[EXTRACT_PAGE]] mm  faulting because swap\n");
                     pte_unmap_unlock(pte, ptl);
                     read_unlock(&route_e->data->dsm_data_lock);
                     r = handle_mm_fault(mm, vma, msg->req_addr, FAULT_FLAG_WRITE);
@@ -214,7 +211,7 @@ int dsm_extract_page(dsm_message *msg) {
                         printk("[*] failed at faulting \n");
                         BUG();
                     }
-                    printk("[*] faulting success \n");
+                    printk("[[EXTRACT_PAGE]] faulting success \n");
                     r = 0;
                     goto retry;
 
@@ -223,29 +220,31 @@ int dsm_extract_page(dsm_message *msg) {
             }
 
         } else {
-            printk("[*] bad pte \n");
+            printk("[[EXTRACT_PAGE]] bad pte \n");
             BUG();
         }
 
     }
+    printk("[[EXTRACT_PAGE]] before pte fetch\n");
+
     //we always lock the pte first then the page...
     pte = page_check_address(page, mm, msg->req_addr, &ptl, 0);
     if (!pte) {
         // we can have a double request .. so we just retry
+        printk("[[EXTRACT_PAGE]] double fault pte (cannot lock)\n");
         read_unlock(&route_e->data->dsm_data_lock);
         goto retry;
     }
     if (!trylock_page(page)) {
-
+        printk("[[EXTRACT_PAGE]] cannot lock page\n");
         r = -EFAULT;
         goto out_pte;
     }
 
-    printk("[*] page addresse: %p \n", (void *) page_address_in_vma(page, vma));
-    printk("[*] insert_swp_ele->addr : %p \n", (void *) msg->req_addr);
+    printk("[[EXTRACT_PAGE]] page addresse: %p \n", (void *) page_address_in_vma(page, vma));
+    printk("[[EXTRACT_PAGE]] insert_swp_ele->addr : %p \n", (void *) msg->req_addr);
 
     flush_cache_page(vma, msg->req_addr, pte_pfn(*pte));
-
     ptep_clear_flush_notify(vma, msg->req_addr, pte);
     set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
     page_remove_rmap(page);

@@ -119,9 +119,13 @@ typedef struct dsm_message {
 
 } dsm_message;
 
+typedef struct dsm_memory_region {
+    unsigned long start_addr;
+    unsigned long size;
+    struct list_head dsm_memory_region;
+} dsm_memory_region;
 
 typedef struct dsm_data {
-    struct dsm_vm_id id;
 
     struct rb_root root_swap;
 
@@ -129,6 +133,10 @@ typedef struct dsm_data {
 
     struct mm_struct *mm;
 
+    unsigned long offset;
+    struct route_element *self_route_e;
+
+    struct list_head vm_route_element_list;
 
     // TEMPORARY
     unsigned long remote_addr;
@@ -138,7 +146,8 @@ typedef struct dsm_data {
 struct route_element {
     struct conn_element *ele;
     struct dsm_vm_id id;
-
+    struct list_head local_memory_regions;
+    struct list_head vm_route_element_list;
     dsm_data *data;
 
     struct rb_node rb_node;

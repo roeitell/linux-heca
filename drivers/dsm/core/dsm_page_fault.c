@@ -41,7 +41,7 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
 
     dsm_entry_to_val(*entry, &id.dsm_id, &id.vm_id);
 
-    printk("[*] <request_page_insert> \n");
+    printk("[request_page_insert] <request_page_insert> \n");
 
     route_e = funcs->_find_routing_element(&id);
     BUG_ON(!route_e);
@@ -53,28 +53,27 @@ static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *
     if (swp_ele) {
         //we already requested the page , we retry
         write_unlock(&route_e->data->dsm_data_lock);
-
+        printk("[*] we already requested the page , we retry\n");
         return VM_FAULT_RETRY;
     }
 
-    printk("[*] <request_page_insert> \n");
+    printk("[request_page_insert] insert in the rb tree \n");
 
-    funcs->_insert_rb_swap(swp_root, norm_addr);
+    swp_ele = funcs->_insert_rb_swap(swp_root, norm_addr);
 
-    /* DSM3: Maybe avoid having to do this twice - another insert_rb_swap with pmd as param.*/
-    swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
+    BUG_ON(!swp_ele);
 
     swp_ele->pmd = pmd;
     write_unlock(&route_e->data->dsm_data_lock);
 
     //DSM1  : we request teh rdma page HERE!!
-    printk("[*] <request_page_insert> hi\n");
+    printk("[request_page_insert] request dsm page \n");
 
     msg.req_addr = (uint64_t) norm_addr;
 
     msg.dst_addr = (uint64_t) dst_addr;
 
-    printk("[*] <request_page_insert> before page insert\n");
+    printk("[request_page_insert]  before page insert\n");
 
     return dsm_insert_page(mm, &msg, &id);
 
@@ -159,6 +158,13 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
     kunmap(kpage);
 
     funcs->_erase_rb_swap(swp_root, swp_ele);
+
+    swp_ele = NULL;
+    swp_ele = funcs->_search_rb_swap(swp_root, addr_fault);
+    if (swp_ele) {
+        printk("[*] bug erased swap ele\n");
+        BUG();
+    }
     printk("[*] erased swap ele\n");
 
     unlock_page(recv_page);

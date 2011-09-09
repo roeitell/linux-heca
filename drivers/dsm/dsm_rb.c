@@ -113,7 +113,7 @@ struct route_element* search_rb_route(struct rcm *rcm, struct dsm_vm_id *id) {
     struct rb_node *node = root->rb_node;
     u32 rb_val;
     u32 val = dsm_vm_id_to_u32(id);
-    struct route_element *this = 0;
+    struct route_element *this = NULL;
 
     read_lock(&rcm->route_lock);
 
@@ -128,14 +128,15 @@ struct route_element* search_rb_route(struct rcm *rcm, struct dsm_vm_id *id) {
         } else if (val > rb_val) {
             node = node->rb_right;
 
-        } else
-            break;
+        } else {
+            read_unlock(&rcm->route_lock);
+            return this;
+        }
 
     }
 
     read_unlock(&rcm->route_lock);
-
-    return this;
+    return NULL;
 
 }
 
@@ -179,17 +180,17 @@ static void __insert_rb_swap(struct rb_root *root, struct swp_element *ele) {
 
 }
 
-int insert_rb_swap(struct rb_root *root, unsigned long addr) {
+struct swp_element * insert_rb_swap(struct rb_root *root, unsigned long addr) {
     struct swp_element *ele = kmalloc(sizeof(*ele), GFP_KERNEL);
 
     if (!ele)
-        return -EFAULT;
+        return ele;
 
     ele->addr = addr;
 
     __insert_rb_swap(root, ele);
 
-    return 0;
+    return ele;
 
 }
 

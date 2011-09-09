@@ -23,11 +23,27 @@
 #define PAGE_SWAP			_IOW(RDMAIO, 0xA2, struct dsm_message)
 
 #define UNMAP_PAGE			_IOW(RDMAIO, 0xA3, struct unmap_data)
+#define REGISTER_MR         _IOW(RDMAIO, 0xA4, struct dsm_mr)
+#define FAKE_RDMA_CONNECT   _IOW(RDMAIO, 0xA5, struct r_data)
+
+
+
+
+
+
+
+struct dsm_mr
+{
+    struct dsm_vm_id id;
+    unsigned long start_addr;
+    unsigned long size;
+};
 
 struct r_data
 {
 	int vm_id;
 	int dsm_id;
+	unsigned long offset;
 
 };
 

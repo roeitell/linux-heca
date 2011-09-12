@@ -68,6 +68,16 @@ static int open(struct inode *inode, struct file *f) {
 
 }
 
+static void free_dsm_mr(struct rcu_head *head) {
+    kfree(container_of( head, struct dsm_memory_region, rcu_head));
+}
+
+static void free_route_element(struct rcu_head *head) {
+    struct route_element *route_e;
+    route_e = (struct route_element *) container_of(head, struct route_element, rcu_head);
+    erase_rb_route(&_rcm->root_route, route_e);
+}
+
 static int release(struct inode *inode, struct file *f) {
     dsm_data *data = (dsm_data *) f->private_data;
     struct route_element *rele = NULL;
@@ -80,18 +90,20 @@ static int release(struct inode *inode, struct file *f) {
         {
             printk("\n[release] removing mr : %p size %ul\n", (void *) mr->start_addr, mr->size);
             list_del_rcu(&mr->dsm_memory_region);
-            kfree(mr);
+            call_rcu(&mr->rcu_head, free_dsm_mr);
         }
         list_del_rcu(&rele->vm_route_element_list);
-        erase_rb_route(&_rcm->root_route, rele);
+        call_rcu(&rele->rcu_head, free_route_element);
 
     }
     mr = NULL;
     list_for_each_entry_rcu(mr, &data->self_route_e->local_memory_regions, dsm_memory_region)
     {
+        printk("\n[release] removing mr : %p size %ul\n", (void *) mr->start_addr, mr->size);
         list_del_rcu(&mr->dsm_memory_region);
-        kfree(mr);
+        call_rcu(&mr->rcu_head, free_dsm_mr);
     }
+    printk("\n[release] removing dsm_id : %d - vm_id : %d\n", data->self_route_e->id.dsm_id, data->self_route_e->id.vm_id);
     erase_rb_route(&_rcm->root_route, data->self_route_e);
     write_unlock(&data->dsm_data_lock);
     kfree(data);
@@ -119,7 +131,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
     switch (ioctl) {
     case RDMA_REG_VM: {
         r = -EFAULT;
-        printk("[*] version 1 \n");
+        printk("[*] version 4 rcu \n");
         if (copy_from_user((void *) &r_data, argp, sizeof r_data))
             goto out;
 
@@ -158,12 +170,20 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
             r = 0;
 
-        } else
-            r = -1;
+        } else {
+            printk("[RDMA_REG_VM] we updated the vm  entry\n");
+            rele->data = data;
+            INIT_LIST_HEAD(&rele->local_memory_regions);
+            INIT_LIST_HEAD(&rele->vm_route_element_list);
 
-        rele = search_rb_route(_rcm, &id);
+            insert_rb_route(_rcm, rele);
 
-        printk("[RDMA_REG_VM] Searched rb_route - found = %d\n", !!rele);
+            data->self_route_e = rele;
+            data->offset = r_data.offset;
+
+            r = 0;
+        }
+
         break;
 
     }
@@ -288,7 +308,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         printk("[REGISTER_MR] registering a memory region dsm_id : %d - vm_id : %d, local dsm_id : %d - vm_id : %d\n", dsm_mr.id.dsm_id, dsm_mr.id.vm_id, data->self_route_e->id.dsm_id, data->self_route_e->id.vm_id);
         dsm_memory_region->start_addr = dsm_mr.start_addr;
         dsm_memory_region->size = dsm_mr.size;
-        printk("\n[release] removing mr : %p size %ul\n", (void *) dsm_memory_region->start_addr, dsm_memory_region->size);
+        printk("\n[REGISTER_MR] removing mr : %p size %ul\n", (void *) dsm_memory_region->start_addr, dsm_memory_region->size);
         INIT_LIST_HEAD(&dsm_memory_region->dsm_memory_region);
         if (unlikely(dsm_mr.id.dsm_id != data->self_route_e->id.dsm_id)) {
             printk("[REGISTER_MR] bad mr registration ... \n");
@@ -357,8 +377,13 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
             r = 0;
 
-        } else
-            r = -1;
+        } else {
+            printk("[FAKE_RDMA_CONNECT] element already existing updating \n");
+            write_lock(&data->dsm_data_lock);
+            list_add_rcu(&rele->vm_route_element_list, &data->vm_route_element_list);
+            write_unlock(&data->dsm_data_lock);
+            r = 0;
+        }
 
         break;
 

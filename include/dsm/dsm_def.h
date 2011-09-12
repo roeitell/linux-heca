@@ -123,6 +123,7 @@ typedef struct dsm_memory_region {
     unsigned long start_addr;
     unsigned long size;
     struct list_head dsm_memory_region;
+    struct rcu_head rcu_head;
 } dsm_memory_region;
 
 typedef struct dsm_data {
@@ -149,7 +150,7 @@ struct route_element {
     struct list_head local_memory_regions;
     struct list_head vm_route_element_list;
     dsm_data *data;
-
+    struct rcu_head rcu_head;
     struct rb_node rb_node;
 
 // DSM2: function ptrs may be required here - send / request page etc etc.

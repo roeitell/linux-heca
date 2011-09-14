@@ -19,13 +19,15 @@
 #define DSM_MESSAGE_NUM 1
 #define MSG_WORK_REQUEST_NUM 1
 
-struct dsm_vm_id {
+struct dsm_vm_id
+{
     u16 dsm_id;
     u8 vm_id;
 
 };
 
-static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id) {
+static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id)
+{
     u32 val = id->dsm_id;
 
     val = val << 8;
@@ -36,17 +38,20 @@ static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id) {
 
 }
 
-static inline u16 u32_to_dsm_id(u32 val) {
+static inline u16 u32_to_dsm_id(u32 val)
+{
     return val >> 8;
 
 }
 
-static inline u8 u32_to_vm_id(u32 val) {
+static inline u8 u32_to_vm_id(u32 val)
+{
     return val & 0xFF;
 
 }
 
-struct rcm {
+struct rcm
+{
     int node_ip;
 
     struct rdma_cm_id *cm_id;
@@ -68,7 +73,8 @@ struct rcm {
 
 };
 
-struct conn_element {
+struct conn_element
+{
     struct rcm *rcm;
 
     int remote_node_ip;
@@ -97,7 +103,8 @@ struct conn_element {
 
 };
 
-typedef struct rdma_info {
+typedef struct rdma_info
+{
     u16 node_ip;
     u64 buf_msg_addr;
     u32 rkey_msg;
@@ -107,7 +114,8 @@ typedef struct rdma_info {
 
 } rdma_info;
 
-typedef struct dsm_message {
+typedef struct dsm_message
+{
     u32 msg_type;
     u32 offset;
     u32 dest;
@@ -119,14 +127,24 @@ typedef struct dsm_message {
 
 } dsm_message;
 
-typedef struct dsm_memory_region {
-    unsigned long start_addr;
-    unsigned long size;
-    struct list_head dsm_memory_region;
-    struct rcu_head rcu_head;
-} dsm_memory_region;
+/*
+ * region represents areas of VM memory, coloured blue (local) or red (remote).
+ */
+struct mem_region
+{
+    unsigned long addr;
+    unsigned long sz;
+    struct route_element *rele;
+    // Better name may be required
+    int colour;
 
-typedef struct dsm_data {
+    struct list_head ls;
+    struct rcu_head rcu;
+
+};
+
+typedef struct private_data
+{
 
     struct rb_root root_swap;
 
@@ -137,19 +155,21 @@ typedef struct dsm_data {
     unsigned long offset;
     struct route_element *self_route_e;
 
-    struct list_head vm_route_element_list;
+    struct list_head head;
 
     // TEMPORARY
     unsigned long remote_addr;
 
-} dsm_data;
+} private_data;
 
-struct route_element {
+struct route_element
+{
     struct conn_element *ele;
     struct dsm_vm_id id;
-    struct list_head local_memory_regions;
-    struct list_head vm_route_element_list;
-    dsm_data *data;
+    struct list_head mr_head;
+    struct list_head ls;
+    struct list_head *head;
+    private_data *data;
     struct rcu_head rcu_head;
     struct rb_node rb_node;
 
@@ -157,7 +177,8 @@ struct route_element {
 
 };
 
-typedef struct work_request_ele {
+typedef struct work_request_ele
+{
     struct conn_element *ele;
 
     struct ib_send_wr wr;
@@ -168,18 +189,21 @@ typedef struct work_request_ele {
 
 } work_request_ele;
 
-typedef struct msg_work_request {
+typedef struct msg_work_request
+{
     work_request_ele *wr_ele;
     void *page_buf;
 
 } msg_work_request;
 
-typedef struct recv_work_req_ele {
+typedef struct recv_work_req_ele
+{
     struct ib_recv_wr sq_wr;
     struct ib_recv_wr *bad_wr;
 } recv_work_req_ele;
 
-typedef struct reply_work_request {
+typedef struct reply_work_request
+{
     //The one for sending back a message
     work_request_ele *wr_ele;
 
@@ -194,14 +218,16 @@ typedef struct reply_work_request {
 
 } reply_work_request;
 
-typedef struct tx_buf_ele {
+typedef struct tx_buf_ele
+{
     void *mem;
     dsm_message *dsm_msg;
     msg_work_request *wrk_req;
 
 } tx_buf_ele;
 
-typedef struct rx_buf_ele {
+typedef struct rx_buf_ele
+{
     void *mem;
     dsm_message *dsm_msg;
     reply_work_request *reply_work_req;

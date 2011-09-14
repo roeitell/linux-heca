@@ -24,7 +24,8 @@
 
 unsigned long dst_addr;
 
-static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr) {
+static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr)
+{
     pgd_t *pgd;
     pud_t *pud;
     pmd_t *pmd;
@@ -45,11 +46,14 @@ static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr) {
 
     ptep = pte_offset_map(pmd, addr);
 
-    out: return ptep;
+out:
+
+    return ptep;
 
 }
 
-static void forward_red_page(struct mm_struct *mm, dsm_message *msg) {
+static void forward_red_page(struct mm_struct *mm, dsm_message *msg)
+{
     pte_t *ptep;
     pte_t pte;
     swp_entry_t entry;
@@ -62,12 +66,14 @@ static void forward_red_page(struct mm_struct *mm, dsm_message *msg) {
     printk("[*] z\n");
 
     pte = *ptep;
-    if (!pte_present(pte)) {
+    if (!pte_present(pte))
+    {
         BUG_ON(pte_none(pte));
 
         entry = pte_to_swp_entry(pte);
 
-        if (is_dsm_entry(entry)) {
+        if (is_dsm_entry(entry))
+        {
             dsm_entry_to_val(entry, &id.dsm_id, &id.vm_id);
 
             msg->dest = dsm_vm_id_to_u32(&id);
@@ -78,136 +84,107 @@ static void forward_red_page(struct mm_struct *mm, dsm_message *msg) {
 
 }
 
-static inline void forward_blue_page(dsm_message *msg, struct swp_element *swp_ele) {
+static inline void forward_blue_page(dsm_message *msg, struct swp_element *swp_ele)
+{
     msg->dest = dsm_vm_id_to_u32(&swp_ele->id);
 
 }
 
-int dsm_extract_page(dsm_message *msg) {
+struct page * dsm_extract_page(struct dsm_vm_id id, struct route_element *route_e, unsigned long norm_addr)
+{
 
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
-    struct page *page;
+    struct page *page = NULL;
     struct vm_area_struct *vma;
-    struct dsm_vm_id id;
+    struct swp_element *ele;
     pgd_t *pgd;
     pud_t *pud;
     pmd_t *pmd;
     pte_t pte_entry;
-    struct rb_root *swp_root;
-    struct route_element *route_e;
-    struct swp_element *ele;
     struct mm_struct *mm;
 
-    // DSM1 : temp code test kernel mem swap
-    /******************************************/
-    dst_addr = 0;
-
-    kpage = alloc_page(GFP_KERNEL);
-    if (!kpage)
-        return -1;
-
-    get_page(kpage);
-
-    // DSM1 : temp code
-    dst_addr = (unsigned long) kmap(kpage);
-    if (!dst_addr) {
-        free_page((unsigned long) kpage);
-
-        return -1;
-
-    }
-
-    printk("[*] dst_addr : %p\n", (void *) dst_addr);
-
-    memset((void *) dst_addr, 'X', PAGE_SIZE);
-
-    printk("[*] <extract_page> req_addr : %p\n", (void *) msg->req_addr);
-
-    printk("[*] kpage : %10.10s\n", (char *) dst_addr);
-    /************************************************/
-
-    id.dsm_id = u32_to_dsm_id(msg->dest);
-    id.vm_id = u32_to_vm_id(msg->dest);
-    printk("[EXTRACT_PAGE] dsm_id : %d - vm_id : %d\n", id.dsm_id, id.vm_id);
-    route_e = funcs->_find_routing_element(&id);
-    BUG_ON(!route_e);
+    printk("[[EXTRACT_PAGE]] page addr : %p  \n", norm_addr);
     mm = route_e->data->mm;
     down_read(&mm->mmap_sem);
-    retry: read_lock(&route_e->data->dsm_data_lock);
-    vma = find_vma(mm, msg->req_addr);
-    if (!vma || vma->vm_start > msg->req_addr)
+retry:
+
+    vma = find_vma(mm, norm_addr);
+    if (!vma || vma->vm_start > norm_addr)
         goto out;
 
-    page = follow_page(vma, msg->req_addr, FOLL_GET);
-    if (!page) {
+    page = follow_page(vma, norm_addr, FOLL_GET);
+    if (!page)
+    {
 
         printk("\n[[EXTRACT_PAGE]] No page FOUND \n");
-        pgd = pgd_offset(mm, msg->req_addr);
+        pgd = pgd_offset(mm, norm_addr);
         if (!pgd_present(*pgd))
             goto out;
 
-        pud = pud_offset(pgd, msg->req_addr);
+        pud = pud_offset(pgd, norm_addr);
         if (!pud_present(*pud))
             goto out;
 
-        pmd = pmd_offset(pud, msg->req_addr);
+        pmd = pmd_offset(pud, norm_addr);
         BUG_ON(pmd_trans_huge(*pmd));
         if (!pmd_present(*pmd))
             goto out;
 
         // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
 
-        pte = pte_offset_map_lock(mm, pmd, msg->req_addr, &ptl);
+        pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
         pte_entry = *pte;
 
-        if (!pte_present(pte_entry)) {
-            if (pte_none(pte_entry)) {
+        if (!pte_present(pte_entry))
+        {
+            if (pte_none(pte_entry))
+            {
                 printk("[[EXTRACT_PAGE]] Directly inserting PTE  because no page exist \n");
-                set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
+                set_pte_at(mm, norm_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
                 //DSM1 note we might do a empty send in order to save bandwidth
                 //send
                 goto out_pte;
 
-            } else {
+            }
+            else
+            {
                 swp_entry_t swp_e = pte_to_swp_entry(pte_entry);
-                if (non_swap_entry(swp_e)) {
-                    if (is_dsm_entry(swp_e)) {
-                        swp_root = &route_e->data->root_swap;
-                        ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
-                        if (ele) {
-                            // we requested the page already .. so lets wait until we have it and then send it .. bad performance... blaaaa
+                if (non_swap_entry(swp_e))
+                {
+                    if (is_dsm_entry(swp_e))
+                    {
 
-                            //DSM1 we should have something like migration  wait
-                            printk("[[EXTRACT_PAGE]] we spin because already requested on dsm entry \n");
-                            pte_unmap_unlock(pte, ptl);
-                            read_unlock(&route_e->data->dsm_data_lock);
-                            goto retry;
+                        // we forward the request but here we just chain fault
+                        // forward page red or blue
+                        //forward_blue_page(msg, ele);
+                        //goto out_pte;
+                        printk("[[EXTRACT_PAGE]] we chain fault on dsm entry \n");
+                        goto chain_fault;
 
-                        } else {
-                            // we forward the request but here we just chain fault
-                            // forward page red or blue
-                            //forward_blue_page(msg, ele);
-                            //goto out_pte;
-                            printk("[[EXTRACT_PAGE]] we chain fault on dsm entry \n");
-                            goto chain_fault;
-                        }
-
-                    } else if (is_migration_entry(swp_e)) {
-                        pte_unmap_unlock(pte, ptl);
-                        read_unlock(&route_e->data->dsm_data_lock);
-                        migration_entry_wait(mm, pmd, msg->req_addr);
-                        goto retry;
-                    } else {
-                        BUG();
                     }
-                } else {
+                    else
+                        if (is_migration_entry(swp_e))
+                        {
+                            pte_unmap_unlock(pte, ptl);
+
+                            migration_entry_wait(mm, pmd, norm_addr);
+                            goto retry;
+                        }
+                        else
+                        {
+                            BUG();
+                        }
+                }
+                else
+                {
                     chain_fault: printk("[[EXTRACT_PAGE]] mm  faulting because swap\n");
                     pte_unmap_unlock(pte, ptl);
-                    read_unlock(&route_e->data->dsm_data_lock);
-                    r = handle_mm_fault(mm, vma, msg->req_addr, FAULT_FLAG_WRITE);
-                    if (r & VM_FAULT_ERROR) {
+
+                    r = handle_mm_fault(mm, vma, norm_addr, FAULT_FLAG_WRITE);
+                    if (r & VM_FAULT_ERROR)
+                    {
                         printk("[*] failed at faulting \n");
                         BUG();
                     }
@@ -219,7 +196,9 @@ int dsm_extract_page(dsm_message *msg) {
 
             }
 
-        } else {
+        }
+        else
+        {
             printk("[[EXTRACT_PAGE]] bad pte \n");
             BUG();
         }
@@ -228,49 +207,79 @@ int dsm_extract_page(dsm_message *msg) {
     printk("[[EXTRACT_PAGE]] before pte fetch\n");
 
     //we always lock the pte first then the page...
-    pte = page_check_address(page, mm, msg->req_addr, &ptl, 0);
-    if (!pte) {
+    pte = page_check_address(page, mm, norm_addr, &ptl, 0);
+    if (!pte)
+    {
         // we can have a double request .. so we just retry
         printk("[[EXTRACT_PAGE]] double fault pte (cannot lock)\n");
-        read_unlock(&route_e->data->dsm_data_lock);
         goto retry;
     }
-    if (!trylock_page(page)) {
+    if (!trylock_page(page))
+    {
         printk("[[EXTRACT_PAGE]] cannot lock page\n");
         r = -EFAULT;
         goto out_pte;
     }
 
     printk("[[EXTRACT_PAGE]] page addresse: %p \n", (void *) page_address_in_vma(page, vma));
-    printk("[[EXTRACT_PAGE]] insert_swp_ele->addr : %p \n", (void *) msg->req_addr);
+    printk("[[EXTRACT_PAGE]] insert_swp_ele->addr : %p \n", (void *) norm_addr);
 
-    flush_cache_page(vma, msg->req_addr, pte_pfn(*pte));
-    ptep_clear_flush_notify(vma, msg->req_addr, pte);
-    set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
+    flush_cache_page(vma, norm_addr, pte_pfn(*pte));
+    ptep_clear_flush_notify(vma, norm_addr, pte);
+    set_pte_at(mm, norm_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
-
-    //we send the page over here
-
-    //DSM1: note the page might not be freed if it is on a write invalidate method
-
-    /************* temp code the page should be freed post send ***********/
-    if (!page_mapped(page))
-        try_to_free_swap(page);
-    put_page(page);
-    /********************************************/
+    //DSM1 do we need a put_page???/
     unlock_page(page);
-    out_pte: pte_unmap_unlock(pte, ptl);
-    out: read_unlock(&route_e->data->dsm_data_lock);
-    up_read(&mm->mmap_sem);
+out_pte:
 
-    return r;
+    pte_unmap_unlock(pte, ptl);
+    up_read(&mm->mmap_sem);
+out:
+
+
+    return page;
 
 }
 EXPORT_SYMBOL(dsm_extract_page);
 
-int dsm_update_pte_entry(dsm_message *msg) {
+struct page *dsm_extract_page_from_remote(dsm_message *msg)
+{
+    struct dsm_vm_id id;
+    struct route_element *route_e;
+    struct page *page = NULL;
+    unsigned long norm_addr;
+    id.dsm_id = u32_to_dsm_id(msg->dest);
+    id.vm_id = u32_to_vm_id(msg->dest);
+    printk("[EXTRACT_PAGE] dsm_id : %d - vm_id : %d\n", id.dsm_id, id.vm_id);
+    //we need to read lock here
+    route_e = funcs->_find_routing_element(&id);
+    norm_addr = msg->req_addr + route_e->data->offset;
+    BUG_ON(!route_e);
+    page = dsm_extract_page(id, route_e, norm_addr);
+    // we need to unlock here
+    return page;
+
+}
+EXPORT_SYMBOL(dsm_extract_page_from_remote);
+
+/*
+ * Local node A sends a blue page to node B, the dsm_swp_entry on node A points to B.  Node C requests the page from Node A,
+ * Node A forwards the request to Node B, which sends the page to Node C and sets the dsm_swp_entry to Node C.
+ *
+ * When Node D requests the page from Node A, the request needs to be passed along the whole chain until hitting Node C, which can
+ * process the request and send the page.
+ *
+ * However - this function will allow the updating of PTE values along the chain.  Node C will send the update command to
+ * Node A, it will update the dsm_swap_entry to point to Node C, then forward the command to each Node along the chain.
+ *
+ * Node D then requests the page from Node A, the request is now passed straight to Node C.  It is asynchronous, if Node A is not
+ * updated on time, the next Node can still pass the request along fine - either to the next node or directly to the final.
+ *
+ */
+int dsm_update_pte_entry(dsm_message *msg)  // DSM1 - update all code
+{
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
@@ -294,14 +303,16 @@ int dsm_update_pte_entry(dsm_message *msg) {
     BUG_ON(!route_e);
     mm = route_e->data->mm;
     down_read(&mm->mmap_sem);
-    retry: read_lock(&route_e->data->dsm_data_lock);
+retry:
+
 
     vma = find_vma(mm, msg->req_addr);
     if (!vma || vma->vm_start > msg->req_addr)
         goto out;
 
     page = follow_page(vma, msg->req_addr, FOLL_GET);
-    if (!page) {
+    if (!page)
+    {
 
         printk("\n[*] No page FOUND \n");
         pgd = pgd_offset(mm, msg->req_addr);
@@ -320,24 +331,33 @@ int dsm_update_pte_entry(dsm_message *msg) {
         pte = pte_offset_map_lock(mm, pmd, msg->req_addr, &ptl);
         pte_entry = *pte;
 
-        if (!pte_present(pte_entry)) {
-            if (pte_none(pte_entry)) {
+        if (!pte_present(pte_entry))
+        {
+            if (pte_none(pte_entry))
+            {
                 printk("[*] Directly inserting PTE  because no page exist \n");
                 set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
 
-            } else {
+            }
+            else
+            {
                 swp_e = pte_to_swp_entry(pte_entry);
-                if (non_swap_entry(swp_e)) {
-                    if (is_dsm_entry(swp_e)) {
+                if (non_swap_entry(swp_e))
+                {
+                    if (is_dsm_entry(swp_e))
+                    {
                         swp_root = &route_e->data->root_swap;
                         ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
-                        if (ele) {
+                        if (ele)
+                        {
                             // we requested the page already .. so lets wait until we have it and then send it .. bad performance... blaaaa
 
                             //DSM1 we should have something like migration  wait
                             printk("[*]no need to spin as we are requesting the page \n");
 
-                        } else {
+                        }
+                        else
+                        {
                             printk("[*] we forward the update before update\n");
                             //DSM1 forward update
                             printk("[*] we update the entry\n");
@@ -345,29 +365,40 @@ int dsm_update_pte_entry(dsm_message *msg) {
 
                         }
 
-                    } else if (is_migration_entry(swp_e)) {
-                        pte_unmap_unlock(pte, ptl);
-                        read_unlock(&route_e->data->dsm_data_lock);
-                        migration_entry_wait(mm, pmd, msg->req_addr);
-                        goto retry;
-                    } else {
-                        BUG();
                     }
-                } else {
+                    else
+                        if (is_migration_entry(swp_e))
+                        {
+                            pte_unmap_unlock(pte, ptl);
+
+                            migration_entry_wait(mm, pmd, msg->req_addr);
+                            goto retry;
+                        }
+                        else
+                        {
+                            BUG();
+                        }
+                }
+                else
+                {
                     printk("[*] in swap no need to update\n");
 
                 }
 
             }
 
-        } else {
+        }
+        else
+        {
             printk("[*] bad pte \n");
             BUG();
         }
         pte_unmap_unlock(pte, ptl);
     }
 
-    out: read_unlock(&route_e->data->dsm_data_lock);
+out:
+
+
     up_read(&mm->mmap_sem);
 
     return r;

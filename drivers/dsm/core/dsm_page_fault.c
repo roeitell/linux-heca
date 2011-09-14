@@ -30,63 +30,110 @@
  * 	Red Page:
  * 		Red pages are unmapped on VM start.
  */
-static int request_page_insert(struct mm_struct *mm, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags) {
-    struct rb_root *swp_root;
-    struct swp_element *swp_ele;
+static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
+{
     dsm_message msg;
     struct dsm_vm_id id;
     struct route_element *route_e;
+    struct route_element *fault_route_e;
     //we need to use the page addr and not the fault address in order to have a unique reference
     unsigned long norm_addr = addr & PAGE_MASK;
+    spinlock_t *ptl;
+    int ret = VM_FAULT_ERROR;
+    struct page *page = NULL;
+    printk("[request_page_insert] before pte lock \n");
+    pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
+    BUG_ON(!pte);
+
+    printk("[request_page_insert]before page check \n");
+
+    printk("[request_page_insert] a \n");
+    if (pte_present(*pte))
+    {
+        printk("[request_page_insert] double fault , and page resolved we just return\n");
+        ret = VM_FAULT_MAJOR;
+        goto out;
+    }
+
+    printk("[request_page_insert] b \n");
+
+    //DSM1 we need to test if its a swap or other if yes we do vm faul retry
+    if (!is_dsm_entry(*entry))
+    {
+        return VM_FAULT_RETRY;
+
+    }
 
     dsm_entry_to_val(*entry, &id.dsm_id, &id.vm_id);
+
+    printk("[request_page_insert] c \n");
 
     printk("[request_page_insert] <request_page_insert> \n");
 
     route_e = funcs->_find_routing_element(&id);
     BUG_ON(!route_e);
-    write_lock(&route_e->data->dsm_data_lock);
-    swp_root = &route_e->data->root_swap;
 
-    swp_ele = funcs->_search_rb_swap(swp_root, norm_addr);
+    printk("[request_page_insert] d \n");
 
-    if (swp_ele) {
-        //we already requested the page , we retry
-        write_unlock(&route_e->data->dsm_data_lock);
-        printk("[*] we already requested the page , we retry\n");
-        return VM_FAULT_RETRY;
+    fault_route_e = funcs->_find_local_routing_element(route_e, mm);
+    BUG_ON(!fault_route_e);
+
+    printk("[request_page_insert] e \n");
+
+    if (route_e->data)
+    {
+        // we just call  dsm_extract -page
+        printk("[request_page_insert] page local to host we just grab it \n");
+        printk("[request_page_insert]  Normalised page addr : %p \n", norm_addr);
+        printk("[request_page_insert] page marshal : %p \n", norm_addr - fault_route_e->data->offset);
+        printk("[request_page_insert] remote page addr: %p \n", norm_addr + route_e->data->offset - fault_route_e->data->offset);
+
+        page = dsm_extract_page(id, route_e, norm_addr + route_e->data->offset - fault_route_e->data->offset);
+
+    }
+    else
+    {
+        //DSM1  : we request the rdma page HERE!!
+        //page  remote so we send message
+        printk("[request_page_insert] request dsm page \n");
+
+        msg.req_addr = (uint64_t) norm_addr - fault_route_e->data->offset;
+
+        msg.dst_addr = (uint64_t) dst_addr;
+
+        printk("[request_page_insert]  before page insert\n");
     }
 
-    printk("[request_page_insert] insert in the rb tree \n");
+    printk("[request_page_insert] f \n");
 
-    swp_ele = funcs->_insert_rb_swap(swp_root, norm_addr);
+    if (page)
+    {
+        printk("[request_page_insert] g \n");
+        ret = dsm_insert_page(mm, vma, pte, norm_addr, page, &id, fault_route_e);
+    }
+    else
+    {
+        printk("[request_page_insert] h \n");
+        ret = VM_FAULT_ERROR;
+    }
+    printk("[request_page_insert] i \n");
+    pte_unmap_unlock(pte, ptl);
 
-    BUG_ON(!swp_ele);
+out:
 
-    swp_ele->pmd = pmd;
-    write_unlock(&route_e->data->dsm_data_lock);
-
-    //DSM1  : we request teh rdma page HERE!!
-    printk("[request_page_insert] request dsm page \n");
-
-    msg.req_addr = (uint64_t) norm_addr;
-
-    msg.dst_addr = (uint64_t) dst_addr;
-
-    printk("[request_page_insert]  before page insert\n");
-
-    return dsm_insert_page(mm, &msg, &id);
+    return ret;
 
 }
 
 #ifdef CONFIG_DSM_CORE
-int dsm_swap_wrapper(struct mm_struct *mm, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
+int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
 {
-    return request_page_insert(mm, addr, pte, entry, pmd, flags);
+    return request_page_insert(mm, vma ,addr, pte, entry, pmd, flags);
 
 }
 #else
-int dsm_swap_wrapper(struct mm_struct *mm, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags) {
+int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
+{
     return 0;
 
 }
@@ -101,48 +148,15 @@ int dsm_swap_wrapper(struct mm_struct *mm, unsigned long addr, pte_t *pte, swp_e
  * Blue pages will be removed from the swp_tree.  Red pages will remain with the flags set to
  * received.
  */
-int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id) {
-    struct page *recv_page;
-    pte_t *pte;
-    struct swp_element *swp_ele;
-    struct rb_root *swp_root;
-    unsigned long addr_fault = msg->req_addr;
-    struct vm_area_struct *vma;
-    spinlock_t *ptl;
-    struct route_element *route_e;
+int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma, pte_t *pte, unsigned long addr_fault, struct page * recv_page, struct dsm_vm_id *id, struct route_element *route_e)
+{
     int ret = VM_FAULT_ERROR;
 
-    printk("[*] a \n");
-
-    route_e = funcs->_find_routing_element(id);
-    BUG_ON(!route_e);
-    write_lock(&route_e->data->dsm_data_lock);
-    swp_root = &route_e->data->root_swap;
-
-    swp_ele = funcs->_search_rb_swap(swp_root, addr_fault);
-    BUG_ON(!swp_ele);
-
-    printk("[*] b \n");
-
-    pte = pte_offset_map_lock(mm, swp_ele->pmd, addr_fault, &ptl);
-    BUG_ON(!pte);
-
-    printk("[*] c \n");
-
-    vma = find_vma_intersection(mm, addr_fault, addr_fault + PAGE_SIZE);
-    if (!vma)
-        goto out;
-
-    printk("[*] d \n");
-
-    recv_page = kpage;
     if (!recv_page)
         goto out;
 
     if (!trylock_page(recv_page))
         goto out;
-
-    get_page(recv_page);
 
     // Address of page fault - points to received page.
     set_pte_at_notify(mm, addr_fault, pte, mk_pte(recv_page, vma->vm_page_prot));
@@ -153,24 +167,10 @@ int dsm_insert_page(struct mm_struct *mm, dsm_message *msg, struct dsm_vm_id *id
 
     update_mmu_cache(vma, addr_fault, pte);
 
-    put_page(kpage);
-
-    kunmap(kpage);
-
-    funcs->_erase_rb_swap(swp_root, swp_ele);
-
-    swp_ele = NULL;
-    swp_ele = funcs->_search_rb_swap(swp_root, addr_fault);
-    if (swp_ele) {
-        printk("[*] bug erased swap ele\n");
-        BUG();
-    }
-    printk("[*] erased swap ele\n");
-
     unlock_page(recv_page);
     ret = VM_FAULT_MAJOR;
-    out: pte_unmap_unlock(pte, ptl);
-    write_unlock(&route_e->data->dsm_data_lock);
+out:
+
     return ret;
 
 }

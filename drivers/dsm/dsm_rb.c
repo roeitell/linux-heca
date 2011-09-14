@@ -15,8 +15,6 @@ void insert_rb_conn(struct rcm *rcm, struct conn_element *ele) {
     struct rb_node *parent = NULL;
     struct conn_element *this;
 
-    write_lock(&rcm->conn_lock);
-
     while (*new) {
         this = rb_entry(*new, struct conn_element, rb_node);
 
@@ -32,8 +30,6 @@ void insert_rb_conn(struct rcm *rcm, struct conn_element *ele) {
     rb_link_node(&ele->rb_node, parent, new);
     rb_insert_color(&ele->rb_node, root);
 
-    write_unlock(&rcm->conn_lock);
-
 }
 
 // Return NULL if no element contained within tree.
@@ -41,8 +37,6 @@ struct conn_element* search_rb_conn(struct rcm *rcm, int node_ip) {
     struct rb_root *root = &rcm->root_conn;
     struct rb_node *node = root->rb_node;
     struct conn_element *this = 0;
-
-    read_lock(&rcm->conn_lock);
 
     while (node) {
         this = rb_entry(node, struct conn_element, rb_node);
@@ -57,8 +51,6 @@ struct conn_element* search_rb_conn(struct rcm *rcm, int node_ip) {
             break;
 
     }
-
-    read_unlock(&rcm->conn_lock);
 
     return this;
 
@@ -81,8 +73,6 @@ void insert_rb_route(struct rcm *rcm, struct route_element *rele) {
     u32 rb_val;
     u32 val = dsm_vm_id_to_u32(&rele->id);
 
-    write_lock(&rcm->route_lock);
-
     while (*new) {
         this = rb_entry(*new, struct route_element, rb_node);
 
@@ -103,8 +93,6 @@ void insert_rb_route(struct rcm *rcm, struct route_element *rele) {
     rb_link_node(&rele->rb_node, parent, new);
     rb_insert_color(&rele->rb_node, root);
 
-    write_unlock(&rcm->route_lock);
-
 }
 
 // Return NULL if no element contained within tree.
@@ -114,8 +102,6 @@ struct route_element* search_rb_route(struct rcm *rcm, struct dsm_vm_id *id) {
     u32 rb_val;
     u32 val = dsm_vm_id_to_u32(id);
     struct route_element *this = NULL;
-
-    read_lock(&rcm->route_lock);
 
     while (node) {
         this = rb_entry(node, struct route_element, rb_node);
@@ -129,13 +115,11 @@ struct route_element* search_rb_route(struct rcm *rcm, struct dsm_vm_id *id) {
             node = node->rb_right;
 
         } else {
-            read_unlock(&rcm->route_lock);
             return this;
         }
 
     }
 
-    read_unlock(&rcm->route_lock);
     return NULL;
 
 }
@@ -145,7 +129,6 @@ void erase_rb_route(struct rb_root *root, struct route_element *rele) {
     BUG_ON(!rele);
 
     rb_erase(&rele->rb_node, root);
-
     kfree(rele);
 
 }

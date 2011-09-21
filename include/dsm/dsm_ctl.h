@@ -17,33 +17,22 @@
 #define htonll(x) cpu_to_be64(x)
 
 #define RDMAIO 0xFF
-#define RDMA_REG_VM			_IOW(RDMAIO, 0xA0, struct r_data)
+#define DSM_IO 0xFF
+#define DSM_SVM				_IOW(DSM_IO, 0xA6, struct svm_data)
+#define DSM_CONNECT			_IOW(DSM_IO, 0xA7, struct svm_data)
 #define RDMA_CONNECT		_IOW(RDMAIO, 0xA1, struct connect_data)
-
 #define PAGE_SWAP			_IOW(RDMAIO, 0xA2, struct dsm_message)
-
 #define UNMAP_PAGE			_IOW(RDMAIO, 0xA3, struct unmap_data)
-#define REGISTER_MR         _IOW(RDMAIO, 0xA4, struct dsm_mr)
-#define FAKE_RDMA_CONNECT   _IOW(RDMAIO, 0xA5, struct r_data)
 
 
-
-
-
-
-
-struct dsm_mr
+struct svm_data
 {
-    struct dsm_vm_id id;
+	int dsm_id;
+	int vm_id;
+	unsigned long offset;
+
     unsigned long start_addr;
     unsigned long size;
-};
-
-struct r_data
-{
-	int vm_id;
-	int dsm_id;
-	unsigned long offset;
 
 };
 

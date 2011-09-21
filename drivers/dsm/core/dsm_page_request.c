@@ -106,7 +106,7 @@ struct page * dsm_extract_page(struct dsm_vm_id id, struct route_element *route_
     struct mm_struct *mm;
 
     printk("[[EXTRACT_PAGE]] page addr : %p  \n", norm_addr);
-    mm = route_e->data->mm;
+    mm = route_e->priv->mm;
     down_read(&mm->mmap_sem);
 retry:
 
@@ -255,7 +255,7 @@ struct page *dsm_extract_page_from_remote(dsm_message *msg)
     printk("[EXTRACT_PAGE] dsm_id : %d - vm_id : %d\n", id.dsm_id, id.vm_id);
     //we need to read lock here
     route_e = funcs->_find_routing_element(&id);
-    norm_addr = msg->req_addr + route_e->data->offset;
+    norm_addr = msg->req_addr + route_e->priv->offset;
     BUG_ON(!route_e);
     page = dsm_extract_page(id, route_e, norm_addr);
     // we need to unlock here
@@ -301,7 +301,7 @@ int dsm_update_pte_entry(dsm_message *msg)  // DSM1 - update all code
 
     route_e = funcs->_find_routing_element(&id);
     BUG_ON(!route_e);
-    mm = route_e->data->mm;
+    mm = route_e->priv->mm;
     down_read(&mm->mmap_sem);
 retry:
 
@@ -346,7 +346,7 @@ retry:
                 {
                     if (is_dsm_entry(swp_e))
                     {
-                        swp_root = &route_e->data->root_swap;
+                        swp_root = &route_e->priv->root_swap;
                         ele = funcs->_search_rb_swap(swp_root, msg->req_addr);
                         if (ele)
                         {

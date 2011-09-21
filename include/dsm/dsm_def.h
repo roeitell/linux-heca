@@ -50,6 +50,14 @@ static inline u8 u32_to_vm_id(u32 val)
 
 }
 
+struct dsm
+{
+	u16 dsm_id;
+
+	struct list_head svm_ls;
+	struct list_head ls;
+};
+
 struct rcm
 {
     int node_ip;
@@ -63,6 +71,8 @@ struct rcm
 
     rwlock_t conn_lock;
     rwlock_t route_lock;
+
+    struct list_head dsm_ls;
 
     struct rb_root root_conn;
     struct rb_root root_route;
@@ -127,6 +137,12 @@ typedef struct dsm_message
 
 } dsm_message;
 
+enum colour
+{
+	blue,
+	red
+};
+
 /*
  * region represents areas of VM memory, coloured blue (local) or red (remote).
  */
@@ -134,9 +150,9 @@ struct mem_region
 {
     unsigned long addr;
     unsigned long sz;
-    struct route_element *rele;
+    struct route_element *svm;
     // Better name may be required
-    int colour;
+    enum colour tint;
 
     struct list_head ls;
     struct rcu_head rcu;
@@ -166,10 +182,13 @@ struct route_element
 {
     struct conn_element *ele;
     struct dsm_vm_id id;
-    struct list_head mr_head;
+    struct list_head mr_ls;
     struct list_head ls;
+
+    // KILL!
     struct list_head *head;
-    private_data *data;
+
+    private_data *priv;
     struct rcu_head rcu_head;
     struct rb_node rb_node;
 

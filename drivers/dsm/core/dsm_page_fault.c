@@ -76,19 +76,20 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     printk("[request_page_insert] d \n");
 
     fault_route_e = funcs->_find_local_routing_element(route_e, mm);
+
     BUG_ON(!fault_route_e);
 
     printk("[request_page_insert] e \n");
 
-    if (route_e->data)
+    if (route_e->priv)
     {
         // we just call  dsm_extract -page
         printk("[request_page_insert] page local to host we just grab it \n");
-        printk("[request_page_insert]  Normalised page addr : %p \n", norm_addr);
-        printk("[request_page_insert] page marshal : %p \n", norm_addr - fault_route_e->data->offset);
-        printk("[request_page_insert] remote page addr: %p \n", norm_addr + route_e->data->offset - fault_route_e->data->offset);
+        printk("[request_page_insert]  Normalised page addr : %p \n", (void *) norm_addr);
+        printk("[request_page_insert] page marshal : %p \n", (void *) norm_addr - fault_route_e->priv->offset);
+        printk("[request_page_insert] remote page addr: %p \n", (void *) norm_addr + route_e->priv->offset - fault_route_e->priv->offset);
 
-        page = dsm_extract_page(id, route_e, norm_addr + route_e->data->offset - fault_route_e->data->offset);
+        page = dsm_extract_page(id, route_e, norm_addr + route_e->priv->offset - fault_route_e->priv->offset);
 
     }
     else
@@ -97,7 +98,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         //page  remote so we send message
         printk("[request_page_insert] request dsm page \n");
 
-        msg.req_addr = (uint64_t) norm_addr - fault_route_e->data->offset;
+        msg.req_addr = (uint64_t) norm_addr - fault_route_e->priv->offset;
 
         msg.dst_addr = (uint64_t) dst_addr;
 

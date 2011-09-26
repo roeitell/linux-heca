@@ -65,16 +65,16 @@ void erase_rb_conn(struct rb_root *root, struct conn_element *ele) {
     kfree(ele);
 }
 
-void insert_rb_route(struct rcm *rcm, struct route_element *rele) {
+void insert_rb_route(struct rcm *rcm, struct subvirtual_machine *rele) {
     struct rb_root *root = &rcm->root_route;
     struct rb_node **new = &root->rb_node;
     struct rb_node *parent = NULL;
-    struct route_element *this;
+    struct subvirtual_machine *this;
     u32 rb_val;
     u32 val = dsm_vm_id_to_u32(&rele->id);
 
     while (*new) {
-        this = rb_entry(*new, struct route_element, rb_node);
+        this = rb_entry(*new, struct subvirtual_machine, rb_node);
 
         rb_val = dsm_vm_id_to_u32(&this->id);
 
@@ -96,15 +96,15 @@ void insert_rb_route(struct rcm *rcm, struct route_element *rele) {
 }
 
 // Return NULL if no element contained within tree.
-struct route_element* search_rb_route(struct rcm *rcm, struct dsm_vm_id *id) {
+struct subvirtual_machine* search_rb_route(struct rcm *rcm, struct dsm_vm_id *id) {
     struct rb_root *root = &rcm->root_route;
     struct rb_node *node = root->rb_node;
     u32 rb_val;
     u32 val = dsm_vm_id_to_u32(id);
-    struct route_element *this = NULL;
+    struct subvirtual_machine *this = NULL;
 
     while (node) {
-        this = rb_entry(node, struct route_element, rb_node);
+        this = rb_entry(node, struct subvirtual_machine, rb_node);
 
         rb_val = dsm_vm_id_to_u32(&this->id);
 
@@ -125,7 +125,7 @@ struct route_element* search_rb_route(struct rcm *rcm, struct dsm_vm_id *id) {
 }
 
 // Function will free the element
-void erase_rb_route(struct rb_root *root, struct route_element *rele) {
+void erase_rb_route(struct rb_root *root, struct subvirtual_machine *rele) {
     BUG_ON(!rele);
 
     rb_erase(&rele->rb_node, root);

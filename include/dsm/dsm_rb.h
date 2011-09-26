@@ -18,9 +18,9 @@ struct conn_element* search_rb_conn(struct rcm *, int);
 void erase_rb_conn(struct rb_root *, struct conn_element*);
 
 // route element - rb tree
-void insert_rb_route(struct rcm *, struct route_element *);
-struct route_element* search_rb_route(struct rcm *, struct dsm_vm_id *);
-void erase_rb_route(struct rb_root *, struct route_element *);
+void insert_rb_route(struct rcm *, struct subvirtual_machine *);
+struct subvirtual_machine* search_rb_route(struct rcm *, struct dsm_vm_id *);
+void erase_rb_route(struct rb_root *, struct subvirtual_machine *);
 
 /*
  *  page swap RB_TREE

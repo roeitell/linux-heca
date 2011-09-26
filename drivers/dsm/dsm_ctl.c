@@ -27,33 +27,45 @@ static struct rcm *_rcm;
 static char *ip = 0;
 static int port = 0;
 
-struct route_element *find_routing_element(struct dsm_vm_id *id)
+struct subvirtual_machine *find_svm(struct dsm_vm_id *id)
 {
-	return search_rb_route(_rcm, id);
+	//return search_rb_route(_rcm, id);
+	struct dsm *_dsm;
+	struct subvirtual_machine *svm;
+
+	list_for_each_entry_rcu(_dsm, &_rcm->dsm_ls, ls)
+	{
+		if (_dsm->dsm_id == id->dsm_id)
+			list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
+			{
+				if (svm->id.svm_id == id->svm_id)
+					return svm;
+
+			}
+	}
+
+	return NULL;
 
 }
 
 /*
  * Find and return SVM with pointer to process file desc private_data. *
  */
-struct route_element *find_local_routing_element(struct route_element * route_e,
+struct subvirtual_machine *find_local_svm(u16 dsm_id,
 		struct mm_struct * mm)
 {
-	struct route_element *svm;
+	struct subvirtual_machine *local_svm;
 	struct dsm *_dsm;
-	u16 dsm_id = route_e->id.dsm_id;
 
 	list_for_each_entry_rcu(_dsm, &_rcm->dsm_ls, ls)
 	{
-		printk("[?] _dsm->dsm_id %u\n[?] dsm_id %u\n", (unsigned int) _dsm->dsm_id, (unsigned int) dsm_id);
-
 		if (_dsm->dsm_id == dsm_id)
 		{
-			list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
+			list_for_each_entry_rcu(local_svm, &_dsm->svm_ls, ls)
 			{
-				if (svm->priv)
-					if (svm->priv->mm == mm)
-						return svm;
+				if (local_svm->priv)
+					if (local_svm->priv->mm == mm)
+						return local_svm;
 
 			}
 
@@ -64,19 +76,46 @@ struct route_element *find_local_routing_element(struct route_element * route_e,
 	return NULL;
 }
 
-/*
+/*  DSM1 - function not used
  *  Blue pages are local to this machine.
  */
 int page_blue(unsigned long addr, struct dsm_vm_id *id)
 {
-	struct route_element *rele = search_rb_route(_rcm, id);
-	struct private_data *data = rele->priv;
+	//struct subvirtual_machine *rele = search_rb_route(_rcm, id);
+	//struct private_data *data = rele->priv;
 	int r = 0;
 
-	if (data->remote_addr != addr)
-		r = 1;
+	printk("[!] PAGE_BLUE\n");
 
 	return r;
+
+}
+
+// DSM2 - when is find_mr likely to be used?
+struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id)
+{
+	struct dsm *_dsm;
+	struct subvirtual_machine *svm;
+	struct mem_region *mr;
+
+	list_for_each_entry_rcu(_dsm, &_rcm->dsm_ls, ls)
+	{
+		if (_dsm->dsm_id == id->dsm_id)
+			list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
+			{
+				if (svm->id.svm_id == id->svm_id)
+					list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
+					{
+						if (addr >= mr->addr && addr <= (mr->addr + mr->sz))
+							return mr;
+
+					}
+
+			}
+
+	}
+
+	return NULL;
 
 }
 
@@ -93,7 +132,6 @@ static int open(struct inode *inode, struct file *f)
 	data->root_swap = RB_ROOT;
 	rwlock_init(&data->dsm_data_lock);
 	data->mm = current->mm;
-	data->remote_addr = 0;
 	INIT_LIST_HEAD(&data->head);
 
 	f->private_data = (void *) data;
@@ -104,13 +142,9 @@ static int open(struct inode *inode, struct file *f)
 
 }
 
-static void free_route_element(struct rcu_head *head)
+static void free_svm(struct rcu_head *head)
 {
-	struct route_element *route_e;
-
-	route_e = (struct route_element *) container_of(head, struct route_element, rcu_head);
-
-	erase_rb_route(&_rcm->root_route, route_e);
+	kfree(container_of(head, struct subvirtual_machine, rcu_head));
 
 }
 
@@ -132,17 +166,17 @@ static void free_mem_region(struct rcu_head *head)
 static int release(struct inode *inode, struct file *f)
 {
 	private_data *data = (private_data *) f->private_data;
-	struct route_element *svm = NULL;
+	struct subvirtual_machine *svm = NULL;
 	struct mem_region *mr = NULL;
 	struct dsm *_dsm = NULL;
 	u16 dsm_id;
 
-	if (!data->self_route_e)
+	if (!data->svm)
 		return 1;
 
 	write_lock(&_rcm->conn_lock);
 
-	dsm_id = data->self_route_e->id.dsm_id;
+	dsm_id = data->svm->id.dsm_id;
 
 	list_for_each_entry_rcu(_dsm, &_rcm->dsm_ls, ls)
 	{
@@ -150,9 +184,9 @@ static int release(struct inode *inode, struct file *f)
 		{
 			list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
 			{
-				if (svm == data->self_route_e)
+				if (svm == data->svm)
 				{
-					printk("[release] RELE: dsm_id=%u ... vm_id=%u\n", svm->id.dsm_id, svm->id.vm_id);
+					printk("[release] SVM: dsm_id=%u ... vm_id=%u\n", svm->id.dsm_id, svm->id.svm_id);
 
 					list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
 					{
@@ -161,9 +195,9 @@ static int release(struct inode *inode, struct file *f)
 
 					}
 
-					data->self_route_e->priv = NULL;
+					data->svm->priv = NULL;
 					list_del_rcu(&svm->ls);
-					call_rcu(&svm->rcu_head, free_route_element);
+					call_rcu(&svm->rcu_head, free_svm);
 
 				}
 
@@ -187,10 +221,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 	int r = -1;
 
 	struct connect_data c_data;
-	struct r_data r_data;
-
-	struct route_element *rele;
-
+	struct subvirtual_machine *rele;
 	struct conn_element *cele;
 	int ip_addr;
 	struct dsm_message msg;
@@ -198,12 +229,12 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
 	struct unmap_data udata;
 
-	printk("[IOCTL]\n");
+
 
 	private_data *priv_data = (private_data *) f->private_data;
 	void __user *argp = (void __user *) arg;
 	struct svm_data svm_info;
-	struct route_element *svm = NULL;
+	struct subvirtual_machine *svm = NULL;
 	struct mem_region *mr = NULL;
 	struct dsm *_dsm = NULL;
 	struct dsm_vm_id id;
@@ -213,6 +244,8 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 	{
 		case DSM_SVM:
 		{
+			//printk("[DSM_SVM]\n");
+
 			r = -EFAULT;
 
 			if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
@@ -221,10 +254,11 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 			write_lock(&_rcm->route_lock);
 
 			id.dsm_id = svm_info.dsm_id;
-			id.vm_id = svm_info.vm_id;
+			id.svm_id = svm_info.vm_id;
 
-			// DSM1: To be changed to search_rcu.
-			svm = search_rb_route(_rcm, &id);
+			svm = find_svm(&id);
+
+			printk("[DSM_SVM]\n\tfound svm : %d\n\tdsm_id : %u\n\tsvm_id : %u\n", !!svm, svm_info.dsm_id, svm_info.vm_id);
 
 			if (!svm)
 			{
@@ -232,19 +266,16 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 				if (!svm)
 					goto fail1;
 
-				priv_data->self_route_e = svm;
+				priv_data->svm = svm;
 				priv_data->offset = svm_info.offset;
 
 				svm->id.dsm_id = svm_info.dsm_id;
-				svm->id.vm_id = svm_info.vm_id;
+				svm->id.svm_id = svm_info.vm_id;
 				svm->priv = priv_data;
 
 				_dsm = list_first_entry(&_rcm->dsm_ls, struct dsm, ls);
 
 				list_add_rcu(&svm->ls, &_dsm->svm_ls);
-
-				// DSM1: to be removed
-				insert_rb_route(_rcm, svm);
 
 				INIT_LIST_HEAD(&svm->mr_ls);
 
@@ -262,7 +293,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 			}
 			else
 			{
-				priv_data->self_route_e = svm;
+				priv_data->svm = svm;
 				priv_data->offset = svm_info.offset;
 
 				svm->priv = priv_data;
@@ -299,6 +330,8 @@ fail1:
 		}
 		case DSM_CONNECT:
 		{
+			//printk("[DSM_CONNECT]\n");
+
 			r = -EFAULT;
 
 			if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
@@ -307,9 +340,11 @@ fail1:
 			write_lock(&_rcm->route_lock);
 
 			id.dsm_id = svm_info.dsm_id;
-			id.vm_id = svm_info.vm_id;
+			id.svm_id = svm_info.vm_id;
 
-			svm = search_rb_route(_rcm, &id);
+			svm = find_svm(&id);
+
+			printk("[DSM_CONNECT]\n\tfound svm : %d\n\tdsm_id : %u\n\tsvm_id : %u\n", !!svm, svm_info.dsm_id, svm_info.vm_id);
 
 			if (!svm)
 			{
@@ -318,15 +353,12 @@ fail1:
 					goto fail2;
 
 				svm->id.dsm_id = svm_info.dsm_id;
-				svm->id.vm_id = svm_info.vm_id;
+				svm->id.svm_id = svm_info.vm_id;
 				svm->priv = NULL;
 
 				_dsm = list_first_entry(&_rcm->dsm_ls, struct dsm, ls);
 
 				list_add_rcu(&svm->ls, &_dsm->svm_ls);
-
-				// DSM1: to be removed
-				insert_rb_route(_rcm, svm);
 
 				INIT_LIST_HEAD(&svm->mr_ls);
 
@@ -351,6 +383,49 @@ fail2:
 			break;
 
 		}
+		case DSM_UNMAP_RANGE:
+		{
+			//printk("[DSM_UNMAP_RANGE]\n");
+
+			r = -EFAULT;
+
+			if (copy_from_user((void *) &udata, argp, sizeof udata))
+				goto out;
+
+			// DSM2: why are locks outside of function?
+			read_lock(&_rcm->conn_lock);
+			svm = find_svm(&udata.id);
+			read_unlock(&_rcm->conn_lock);
+
+			r = -1;
+
+			printk("[DSM_UNMAP_RANGE]\n\tsvm : %d\n\tdsm_id : %d\n\tsvm_id : %d\n", !!svm, svm->id.dsm_id, svm->id.svm_id);
+
+			if (!svm)
+				goto out;
+
+			if (priv_data->svm->id.dsm_id != svm->id.dsm_id)
+				goto out;
+
+			unsigned long i = udata.addr;
+			unsigned long end = i + udata.sz;
+
+			while (i < end)
+			{
+				r = dsm_flag_page_remote(current->mm, udata.id, i);
+
+				if (r)
+					break;
+
+				i += PAGE_SIZE;
+
+			}
+
+			r = 0;
+
+			break;
+
+		}
 		case RDMA_CONNECT:
 		{
 			r = -EFAULT;
@@ -363,7 +438,7 @@ fail2:
 			if (_rcm)
 			{
 				id.dsm_id = c_data.dsm_id;
-				id.vm_id = c_data.vm_id;
+				id.svm_id = c_data.vm_id;
 
 				ip_addr = inet_addr(c_data.ip);
 
@@ -402,7 +477,7 @@ fail2:
 
 					rele->ele = search_rb_conn(_rcm, ip_addr);
 					rele->id.dsm_id = id.dsm_id;
-					rele->id.vm_id = id.vm_id;
+					rele->id.svm_id = id.svm_id;
 					rele->priv = 0;
 
 					insert_rb_route(_rcm, rele);
@@ -446,28 +521,26 @@ fail2:
 			}
 
 			read_lock(&_rcm->conn_lock);
-			rele = search_rb_route(_rcm, &udata.id);
+			svm = find_svm(&udata.id);
 			read_unlock(&_rcm->conn_lock);
-			if (!rele)
+			if (!svm)
 			{
 				printk("[UNMAP_PAGE] could not find the route element \n");
 				r = -1;
 				printk("[unmap page 1] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
-						udata.id.vm_id);
+						udata.id.svm_id);
 				goto out;
 
 			}
 
 			printk("[unmap page 2] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
-					udata.id.vm_id);
+					udata.id.svm_id);
 
-			if (priv_data->self_route_e->id.dsm_id != rele->id.dsm_id)
+			if (priv_data->svm->id.dsm_id != svm->id.dsm_id)
 			{
 				printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
 				r = -1;
 			}
-
-			priv_data->remote_addr = udata.addr;
 
 			r = dsm_flag_page_remote(current->mm, udata.id, udata.addr);
 
@@ -512,7 +585,7 @@ MODULE_PARM_DESC(
 
 static int dsm_init(void)
 {
-	reg_dsm_functions(&find_routing_element, &find_local_routing_element,
+	reg_dsm_functions(&find_svm, &find_local_svm,
 			&erase_rb_swap, &insert_rb_swap, &page_blue, &search_rb_swap);
 
 	printk("[dsm_init] ip : %s\n", ip);

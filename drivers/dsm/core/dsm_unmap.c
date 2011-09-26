@@ -20,17 +20,21 @@
 
 #include <dsm/dsm_core.h>
 
+
 struct dsm_functions *funcs;
 struct page *kpage;
 
-void reg_dsm_functions(struct route_element *(*_find_routing_element)(struct dsm_vm_id *), struct route_element *(*_find_local_routing_element)(struct route_element *, struct mm_struct *), void(*_erase_rb_swap)(struct rb_root *, struct swp_element *), struct swp_element *(*_insert_rb_swap)(struct rb_root *, unsigned long), int(*_page_blue)(unsigned long, struct dsm_vm_id *), struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long))
+void reg_dsm_functions(struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
+						struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *),
+						void(*_erase_rb_swap)(struct rb_root *, struct swp_element *),
+						struct swp_element *(*_insert_rb_swap)(struct rb_root *, unsigned long),
+						int(*_page_blue)(unsigned long, struct dsm_vm_id *),
+						struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long))
 {
-    printk("[register_dsm_functions] plugin func ptrs\n");
-
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
 
-    funcs->_find_routing_element = _find_routing_element;
-    funcs->_find_local_routing_element = _find_local_routing_element;
+    funcs->_find_svm = _find_svm;
+    funcs->_find_local_svm = _find_local_svm;
     funcs->_erase_rb_swap = _erase_rb_swap;
     funcs->_insert_rb_swap = _insert_rb_swap;
     funcs->_page_blue = _page_blue;
@@ -58,7 +62,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
     pmd_t *pmd;
     pte_t pte_entry;
     swp_entry_t swp_e;
-    struct route_element *route_e;
+    struct subvirtual_machine *svm;
     unsigned long addr = request_addr & PAGE_MASK;
 
     down_read(&mm->mmap_sem);
@@ -72,8 +76,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
     page = follow_page(vma, addr, FOLL_GET);
     if (!page)
     {
-
-        printk("\n[*] No page FOUND \n");
         pgd = pgd_offset(mm, addr);
         if (!pgd_present(*pgd))
             goto out;
@@ -88,8 +90,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
             goto out;
 
         // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
-        route_e = funcs->_find_routing_element(&id);
-        BUG_ON(!route_e);
+        svm = funcs->_find_svm(&id);
+        BUG_ON(!svm);
 
         pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
         pte_entry = *pte;
@@ -98,8 +100,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
         {
             if (pte_none(pte_entry))
             {
-                printk("[*] Directly inserting PTE  because no page exist \n");
-                set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
+                set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
                 goto out_pte_unlock;
             }
             else
@@ -129,7 +130,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
                         printk("[*] failed at faulting \n");
                         BUG();
                     }
-                    printk("[*] faulting success \n");
+
                     r = 0;
 
                     goto retry;
@@ -155,18 +156,14 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
     }
     if (!trylock_page(page))
     {
-
         r = -EFAULT;
         goto out_pte_unlock;
     }
 
-    printk("[dsm_flag_page_remote] page addresse: %p \n", (void *) page_address_in_vma(page, vma));
-    printk("[dsm_flag_page_remote] insert_swp_ele->addr : %p \n", (void *) addr);
-
     flush_cache_page(vma, addr, pte_pfn(*pte));
 
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.vm_id)));
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
@@ -184,8 +181,6 @@ out_pte_unlock:
 out:
 
     up_read(&mm->mmap_sem);
-
-    printk("[dsm_flag_page_remote] returning1\n");
 
     return r;
 

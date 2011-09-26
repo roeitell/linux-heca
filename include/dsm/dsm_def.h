@@ -22,7 +22,7 @@
 struct dsm_vm_id
 {
     u16 dsm_id;
-    u8 vm_id;
+    u8 svm_id;
 
 };
 
@@ -32,7 +32,7 @@ static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id)
 
     val = val << 8;
 
-    val |= id->vm_id;
+    val |= id->svm_id;
 
     return val;
 
@@ -150,7 +150,7 @@ struct mem_region
 {
     unsigned long addr;
     unsigned long sz;
-    struct route_element *svm;
+    struct subvirtual_machine *svm;
     // Better name may be required
     enum colour tint;
 
@@ -169,16 +169,13 @@ typedef struct private_data
     struct mm_struct *mm;
 
     unsigned long offset;
-    struct route_element *self_route_e;
+    struct subvirtual_machine *svm;
 
     struct list_head head;
 
-    // TEMPORARY
-    unsigned long remote_addr;
-
 } private_data;
 
-struct route_element
+struct subvirtual_machine
 {
     struct conn_element *ele;
     struct dsm_vm_id id;

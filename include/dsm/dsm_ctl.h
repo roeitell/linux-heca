@@ -20,6 +20,7 @@
 #define DSM_IO 0xFF
 #define DSM_SVM				_IOW(DSM_IO, 0xA6, struct svm_data)
 #define DSM_CONNECT			_IOW(DSM_IO, 0xA7, struct svm_data)
+#define DSM_UNMAP_RANGE		_IOW(DSM_IO, 0xA8, struct unmap_data)
 #define RDMA_CONNECT		_IOW(RDMAIO, 0xA1, struct connect_data)
 #define PAGE_SWAP			_IOW(RDMAIO, 0xA2, struct dsm_message)
 #define UNMAP_PAGE			_IOW(RDMAIO, 0xA3, struct unmap_data)
@@ -48,11 +49,13 @@ struct connect_data
 struct unmap_data
 {
 	unsigned long addr;
+	size_t sz;
 	struct dsm_vm_id id;
 };
 
-struct route_element *find_routing_element(struct dsm_vm_id *);
-int page_blue(unsigned long, struct dsm_vm_id *);
+struct subvirtual_machine *find_svm(struct dsm_vm_id *);
+//int page_blue(unsigned long, struct dsm_vm_id *);
+struct mem_region *find_mr(unsigned long, struct dsm_vm_id *);
 
 
 #endif /* RDMA_H_ */

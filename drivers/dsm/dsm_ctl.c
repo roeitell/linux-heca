@@ -76,21 +76,6 @@ struct subvirtual_machine *find_local_svm(u16 dsm_id,
 	return NULL;
 }
 
-/*  DSM1 - function not used
- *  Blue pages are local to this machine.
- */
-int page_blue(unsigned long addr, struct dsm_vm_id *id)
-{
-	//struct subvirtual_machine *rele = search_rb_route(_rcm, id);
-	//struct private_data *data = rele->priv;
-	int r = 0;
-
-	printk("[!] PAGE_BLUE\n");
-
-	return r;
-
-}
-
 // DSM2 - when is find_mr likely to be used?
 struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id)
 {
@@ -285,7 +270,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
 				mr->addr = svm_info.start_addr;
 				mr->sz = svm_info.size;
-				mr->tint = blue;
 				mr->svm = svm;
 
 				list_add_rcu(&mr->ls, &svm->mr_ls);
@@ -314,7 +298,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
 				mr->addr = svm_info.start_addr;
 				mr->sz = svm_info.size;
-				mr->tint = blue;
 				mr->svm = svm;
 
 				list_add_rcu(&mr->ls, &svm->mr_ls);
@@ -368,7 +351,6 @@ fail1:
 
 				mr->addr = svm_info.start_addr;
 				mr->sz = svm_info.size;
-				mr->tint = red;
 				mr->svm = svm;
 
 				list_add_rcu(&mr->ls, &svm->mr_ls);
@@ -586,7 +568,7 @@ MODULE_PARM_DESC(
 static int dsm_init(void)
 {
 	reg_dsm_functions(&find_svm, &find_local_svm,
-			&erase_rb_swap, &insert_rb_swap, &page_blue, &search_rb_swap);
+			&erase_rb_swap, &insert_rb_swap, &search_rb_swap);
 
 	printk("[dsm_init] ip : %s\n", ip);
 	printk("[dsm_init] port : %d\n", port);

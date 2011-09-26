@@ -54,7 +54,6 @@ struct unmap_data
 };
 
 struct subvirtual_machine *find_svm(struct dsm_vm_id *);
-//int page_blue(unsigned long, struct dsm_vm_id *);
 struct mem_region *find_mr(unsigned long, struct dsm_vm_id *);
 
 

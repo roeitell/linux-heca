@@ -32,7 +32,11 @@ struct dsm_functions {
 };
 
 // dsm_unmap
-void reg_dsm_functions(struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *), void(*_erase_rb_swap)(struct rb_root *, struct swp_element *), struct swp_element * (*_insert_rb_swap)(struct rb_root *, unsigned long), int(*_page_blue)(unsigned long, struct dsm_vm_id *), struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long));
+void reg_dsm_functions(struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
+					struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *),
+					void(*_erase_rb_swap)(struct rb_root *, struct swp_element *),
+					struct swp_element * (*_insert_rb_swap)(struct rb_root *, unsigned long),
+					struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long));
 void dereg_dsm_functions(void);
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned long addr);
 

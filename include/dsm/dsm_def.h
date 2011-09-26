@@ -151,8 +151,6 @@ struct mem_region
     unsigned long addr;
     unsigned long sz;
     struct subvirtual_machine *svm;
-    // Better name may be required
-    enum colour tint;
 
     struct list_head ls;
     struct rcu_head rcu;
@@ -182,14 +180,9 @@ struct subvirtual_machine
     struct list_head mr_ls;
     struct list_head ls;
 
-    // KILL!
-    struct list_head *head;
-
     private_data *priv;
     struct rcu_head rcu_head;
     struct rb_node rb_node;
-
-// DSM2: function ptrs may be required here - send / request page etc etc.
 
 };
 

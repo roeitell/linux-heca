@@ -28,7 +28,6 @@ void reg_dsm_functions(struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id 
 						struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *),
 						void(*_erase_rb_swap)(struct rb_root *, struct swp_element *),
 						struct swp_element *(*_insert_rb_swap)(struct rb_root *, unsigned long),
-						int(*_page_blue)(unsigned long, struct dsm_vm_id *),
 						struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long))
 {
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
@@ -37,7 +36,6 @@ void reg_dsm_functions(struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id 
     funcs->_find_local_svm = _find_local_svm;
     funcs->_erase_rb_swap = _erase_rb_swap;
     funcs->_insert_rb_swap = _insert_rb_swap;
-    funcs->_page_blue = _page_blue;
     funcs->_search_rb_swap = _search_rb_swap;
 
 }
@@ -67,93 +65,84 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
 
     down_read(&mm->mmap_sem);
 
-    retry:
+retry:
 
     vma = find_vma(mm, addr);
     if (!vma || vma->vm_start > addr)
         goto out;
 
-    page = follow_page(vma, addr, FOLL_GET);
-    if (!page)
-    {
-        pgd = pgd_offset(mm, addr);
-        if (!pgd_present(*pgd))
-            goto out;
 
-        pud = pud_offset(pgd, addr);
-        if (!pud_present(*pud))
-            goto out;
+	pgd = pgd_offset(mm, addr);
+	if (!pgd_present(*pgd))
+		goto out;
 
-        pmd = pmd_offset(pud, addr);
-        BUG_ON(pmd_trans_huge(*pmd));
-        if (!pmd_present(*pmd))
-            goto out;
+	pud = pud_offset(pgd, addr);
+	if (!pud_present(*pud))
+		goto out;
 
-        // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
-        svm = funcs->_find_svm(&id);
-        BUG_ON(!svm);
+	pmd = pmd_offset(pud, addr);
+	BUG_ON(pmd_trans_huge(*pmd));
+	if (!pmd_present(*pmd))
+		goto out;
 
-        pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
-        pte_entry = *pte;
+	// we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
+	svm = funcs->_find_svm(&id);
+	BUG_ON(!svm);
 
-        if (!pte_present(pte_entry))
-        {
-            if (pte_none(pte_entry))
-            {
-                set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
-                goto out_pte_unlock;
-            }
-            else
-            {
-                swp_e = pte_to_swp_entry(pte_entry);
-                if (non_swap_entry(swp_e))
-                {
-                    if (is_migration_entry(swp_e))
-                    {
-                        pte_unmap_unlock(pte, ptl);
-                        migration_entry_wait(mm, pmd, addr);
-                        goto retry;
-                    }
-                    else
-                    {
-                        r = -EFAULT;
-                        goto out_pte_unlock;
-                    }
-                }
-                else
-                {
+	pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
+	pte_entry = *pte;
 
-                    pte_unmap_unlock(pte, ptl);
-                    r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
-                    if (r & VM_FAULT_ERROR)
-                    {
-                        printk("[*] failed at faulting \n");
-                        BUG();
-                    }
+	if (!pte_present(pte_entry))
+	{
+		if (pte_none(pte_entry))
+		{
+			set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
+			goto out_pte_unlock;
+		}
+		else
+		{
+			swp_e = pte_to_swp_entry(pte_entry);
+			if (non_swap_entry(swp_e))
+			{
+				if (is_migration_entry(swp_e))
+				{
+					pte_unmap_unlock(pte, ptl);
+					migration_entry_wait(mm, pmd, addr);
+					goto retry;
+				}
+				else
+				{
+					r = -EFAULT;
+					goto out_pte_unlock;
+				}
+			}
+			else
+			{
 
-                    r = 0;
+				pte_unmap_unlock(pte, ptl);
+				r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
+				if (r & VM_FAULT_ERROR)
+				{
+					printk("[*] failed at faulting \n");
+					BUG();
+				}
 
-                    goto retry;
+				r = 0;
 
-                }
+				goto retry;
 
-            }
+			}
 
-        }
-        else
-        {
-            printk("[*] bad pte \n");
-            BUG();
-        }
+		}
 
-    }
+	}
+	else
+	{
+		page = vm_normal_page(vma, request_addr, *pte);
+		if (!page)
+			BUG();
+	}
 
-    pte = page_check_address(page, mm, addr, &ptl, 0);
-    if (!pte)
-    {
-        // we can have a double request .. so we just retry
-        goto retry;
-    }
     if (!trylock_page(page))
     {
         r = -EFAULT;

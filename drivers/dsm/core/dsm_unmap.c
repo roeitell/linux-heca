@@ -139,8 +139,10 @@ retry:
 	else
 	{
 		page = vm_normal_page(vma, request_addr, *pte);
-		if (!page)
-			BUG();
+		if (unlikely(!page)) {
+			//DSM1 we need to test if the pte is not null
+			page = pte_page(*pte);
+		}
 	}
 
     if (!trylock_page(page))

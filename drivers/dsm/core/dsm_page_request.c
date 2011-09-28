@@ -24,6 +24,13 @@
 
 unsigned long dst_addr;
 
+//#ifndef is_zero_pfn
+//static inline int is_zero_pfn(unsigned long pfn)
+//{
+//    return pfn == zero_pfn;
+//}
+//#endif
+
 static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr)
 {
     pgd_t *pgd;
@@ -46,7 +53,7 @@ static pte_t *dsm_page_walker(struct mm_struct *mm, unsigned long addr)
 
     ptep = pte_offset_map(pmd, addr);
 
-out:
+    out:
 
     return ptep;
 
@@ -108,9 +115,9 @@ struct page * dsm_extract_page(struct dsm_vm_id id, struct subvirtual_machine *s
     down_read(&mm->mmap_sem);
 
     printk("[dsm_extract_page] new DSM_SWP_ENTRY set to - dsm_id : %d, svm_id : %d", id.dsm_id, id.svm_id);
-retry:
+    retry:
 
-	printk("[dsm_extract_page] a\n");
+    printk("[dsm_extract_page] a\n");
 
     vma = find_vma(mm, norm_addr);
     if (!vma || vma->vm_start > norm_addr)
@@ -118,106 +125,110 @@ retry:
 
     printk("[dsm_extract_page] b\n");
 
-	printk("[dsm_extract_page] c\n");
-	pgd = pgd_offset(mm, norm_addr);
-	if (!pgd_present(*pgd))
-		goto out;
-	printk("[dsm_extract_page] d\n");
+    printk("[dsm_extract_page] c\n");
+    pgd = pgd_offset(mm, norm_addr);
+    if (!pgd_present(*pgd))
+        goto out;
+    printk("[dsm_extract_page] d\n");
 
-	pud = pud_offset(pgd, norm_addr);
-	if (!pud_present(*pud))
-		goto out;
-	printk("[dsm_extract_page] e\n");
+    pud = pud_offset(pgd, norm_addr);
+    if (!pud_present(*pud))
+        goto out;
+    printk("[dsm_extract_page] e\n");
 
-	pmd = pmd_offset(pud, norm_addr);
-	BUG_ON(pmd_trans_huge(*pmd));
-	if (!pmd_present(*pmd))
-		goto out;
-	printk("[dsm_extract_page] f\n");
+    pmd = pmd_offset(pud, norm_addr);
+    BUG_ON(pmd_trans_huge(*pmd));
+    if (!pmd_present(*pmd))
+        goto out;
+    printk("[dsm_extract_page] f\n");
 
-	// we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
+    // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
 
-	pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
-	pte_entry = *pte;
+    pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
+    pte_entry = *pte;
 
-	printk("[dsm_extract_page] g\n");
+    printk("[dsm_extract_page] g\n");
 
-	if (!pte_present(pte_entry))
-	{
-		printk("[dsm_extract_page] h\n");
-		if (pte_none(pte_entry))
-		{
-			printk("[dsm_extract_page] i\n");
-			set_pte_at(mm, norm_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
-			//DSM1 note we might do a empty send in order to save bandwidth
-			//send
-			goto out_pte;
+    if (!pte_present(pte_entry))
+    {
+        printk("[dsm_extract_page] h\n");
+        if (pte_none(pte_entry))
+        {
+            printk("[dsm_extract_page] i\n");
+            set_pte_at(mm, norm_addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
+            //DSM1 note we might do a empty send in order to save bandwidth
+            //send
+            goto out_pte;
 
-		}
-		else
-		{
-			printk("[dsm_extract_page] j\n");
-			swp_entry_t swp_e = pte_to_swp_entry(pte_entry);
-			if (non_swap_entry(swp_e))
-			{
-				printk("[dsm_extract_page] k\n");
-				if (is_dsm_entry(swp_e))
-				{
-					printk("[dsm_extract_page] l\n");
+        }
+        else
+        {
+            printk("[dsm_extract_page] j\n");
+            swp_entry_t swp_e = pte_to_swp_entry(pte_entry);
+            if (non_swap_entry(swp_e))
+            {
+                printk("[dsm_extract_page] k\n");
+                if (is_dsm_entry(swp_e))
+                {
+                    printk("[dsm_extract_page] l\n");
 
-					// we forward the request but here we just chain fault
-					// forward page red or blue
-					//forward_blue_page(msg, ele);
-					//goto out_pte;
-					printk("[[EXTRACT_PAGE]] we chain fault on dsm entry \n");
-					goto chain_fault;
+                    // we forward the request but here we just chain fault
+                    // forward page red or blue
+                    //forward_blue_page(msg, ele);
+                    //goto out_pte;
+                    printk("[[EXTRACT_PAGE]] we chain fault on dsm entry \n");
+                    goto chain_fault;
 
-				}
-				else
-					if (is_migration_entry(swp_e))
-					{
-						pte_unmap_unlock(pte, ptl);
+                }
+                else
+                    if (is_migration_entry(swp_e))
+                    {
+                        pte_unmap_unlock(pte, ptl);
 
-						migration_entry_wait(mm, pmd, norm_addr);
-						goto retry;
-					}
-					else
-					{
-						BUG();
-					}
-			}
-			else
-			{
-				chain_fault: printk("[[EXTRACT_PAGE]] mm  faulting because swap\n");
-				pte_unmap_unlock(pte, ptl);
+                        migration_entry_wait(mm, pmd, norm_addr);
+                        goto retry;
+                    }
+                    else
+                    {
+                        BUG();
+                    }
+            }
+            else
+            {
+                chain_fault: printk("[[EXTRACT_PAGE]] mm  faulting because swap\n");
+                pte_unmap_unlock(pte, ptl);
 
-				r = handle_mm_fault(mm, vma, norm_addr, FAULT_FLAG_WRITE);
-				if (r & VM_FAULT_ERROR)
-				{
-					printk("[*] failed at faulting \n");
-					BUG();
-				}
-				printk("[EXTRACT_PAGE] faulting success \n");
-				r = 0;
-				goto retry;
+                r = handle_mm_fault(mm, vma, norm_addr, FAULT_FLAG_WRITE);
+                if (r & VM_FAULT_ERROR)
+                {
+                    printk("[*] failed at faulting \n");
+                    BUG();
+                }
+                printk("[EXTRACT_PAGE] faulting success \n");
+                r = 0;
+                goto retry;
 
-			}
+            }
 
-		}
+        }
 
-	}
-	else
-	{
-		printk("[extract_page] vm_normal_page\n");
-		page = vm_normal_page(vma, norm_addr, *pte);
-		if (!page)
-			BUG();
+    }
+    else
+    {
+        printk("[extract_page] vm_normal_page\n");
+        page = vm_normal_page(vma, norm_addr, *pte);
+        if (!page)
+        {
+            //DSM1 we need to test if the pte is not null
+            // if(!is_zero_pfn(pte_pfn(*pte));
+            page = pte_page(*pte);
+        }
 
-	}
+    }
 
     printk("[dsm_extract_page] m\n");
 
-	printk("[extract_page] try_lock page\n");
+    printk("[extract_page] try_lock page\n");
     if (!trylock_page(page))
     {
         printk("[[EXTRACT_PAGE]] cannot lock page\n");
@@ -235,13 +246,13 @@ retry:
     dec_mm_counter(mm, MM_ANONPAGES);
     //DSM1 do we need a put_page???/
     unlock_page(page);
-out_pte:
+    out_pte:
 
     pte_unmap_unlock(pte, ptl);
     up_read(&mm->mmap_sem);
-out:
+    out:
 
-	printk("[dsm_extract_page] o\n");
+    printk("[dsm_extract_page] o\n");
 
     return page;
 
@@ -282,7 +293,7 @@ EXPORT_SYMBOL(dsm_extract_page_from_remote);
  * updated on time, the next Node can still pass the request along fine - either to the next node or directly to the final.
  *
  */
-int dsm_update_pte_entry(dsm_message *msg)  // DSM1 - update all code
+int dsm_update_pte_entry(dsm_message *msg) // DSM1 - update all code
 {
     spinlock_t *ptl;
     pte_t *pte;
@@ -307,33 +318,37 @@ int dsm_update_pte_entry(dsm_message *msg)  // DSM1 - update all code
     BUG_ON(!svm);
     mm = svm->priv->mm;
     down_read(&mm->mmap_sem);
-retry:
-
+    retry:
 
     vma = find_vma(mm, msg->req_addr);
     if (!vma || vma->vm_start > msg->req_addr)
         goto out;
 
-    page = follow_page(vma, msg->req_addr, FOLL_GET);
+    printk("\n[*] No page FOUND \n");
+    pgd = pgd_offset(mm, msg->req_addr);
+    if (!pgd_present(*pgd))
+        goto out;
+
+    pud = pud_offset(pgd, msg->req_addr);
+    if (!pud_present(*pud))
+        goto out;
+
+    pmd = pmd_offset(pud, msg->req_addr);
+    BUG_ON(pmd_trans_huge(*pmd));
+    if (!pmd_present(*pmd))
+        goto out;
+
+    pte = pte_offset_map_lock(mm, pmd, msg->req_addr, &ptl);
+    pte_entry = *pte;
+
+    page = vm_normal_page(vma, msg->req_addr, *pte);
     if (!page)
     {
-
-        printk("\n[*] No page FOUND \n");
-        pgd = pgd_offset(mm, msg->req_addr);
-        if (!pgd_present(*pgd))
-            goto out;
-
-        pud = pud_offset(pgd, msg->req_addr);
-        if (!pud_present(*pud))
-            goto out;
-
-        pmd = pmd_offset(pud, msg->req_addr);
-        BUG_ON(pmd_trans_huge(*pmd));
-        if (!pmd_present(*pmd))
-            goto out;
-
-        pte = pte_offset_map_lock(mm, pmd, msg->req_addr, &ptl);
-        pte_entry = *pte;
+        //DSM1 we need to test if the pte is not null
+        page = pte_page(*pte);
+    }
+    if (!page)
+    {
 
         if (!pte_present(pte_entry))
         {
@@ -395,11 +410,10 @@ retry:
             printk("[*] bad pte \n");
             BUG();
         }
-        pte_unmap_unlock(pte, ptl);
     }
+    pte_unmap_unlock(pte, ptl);
 
-out:
-
+    out:
 
     up_read(&mm->mmap_sem);
 

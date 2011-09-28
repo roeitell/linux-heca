@@ -395,7 +395,6 @@ fail2:
 			while (i < end)
 			{
 				r = dsm_flag_page_remote(current->mm, udata.id, i);
-
 				if (r)
 					break;
 

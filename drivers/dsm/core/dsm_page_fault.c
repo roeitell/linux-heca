@@ -53,7 +53,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
 
     dsm_entry_to_val(*entry, &id.dsm_id, &id.svm_id);
 
-    printk("[request_page_insert] dsm_id : %d .. svm_id : %d\n", id.dsm_id, id.svm_id);
+    errk("[request_page_insert] dsm_id : %d .. svm_id : %d\n", id.dsm_id, id.svm_id);
 
     svm = funcs->_find_svm(&id);
     BUG_ON(!svm);
@@ -80,7 +80,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
 
     if (page)
     {
-        ret = dsm_insert_page(mm, vma, pte, norm_addr, page, &id, fault_svm);
+        ret = dsm_insert_page(mm, vma, pte, norm_addr, page);
     }
     else
     {
@@ -115,12 +115,9 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma, unsigned 
  * the PTE will be nullified and the PTE of the faulting page (which initiated the request)
  * will be set to the received page.
  *
- * Blue pages will be removed from the swp_tree.  Red pages will remain with the flags set to
- * received.
  */
 int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma, pte_t *pte,
-					unsigned long addr_fault, struct page * recv_page,
-					struct dsm_vm_id *id, struct subvirtual_machine *svm)
+					unsigned long addr_fault, struct page * recv_page)
 {
     int ret = VM_FAULT_ERROR;
 

@@ -19,10 +19,24 @@
 #define DSM_MESSAGE_NUM 1
 #define MSG_WORK_REQUEST_NUM 1
 
+#define debug_dsm
+#ifdef debug_dsm
+#define errk printk
+#endif
+
 struct dsm_vm_id
 {
     u16 dsm_id;
     u8 svm_id;
+
+};
+
+struct swp_element
+{
+    unsigned long addr;
+    struct dsm_vm_id id;
+
+    struct rb_node rb;
 
 };
 
@@ -75,7 +89,6 @@ struct rcm
     struct list_head dsm_ls;
 
     struct rb_root root_conn;
-    struct rb_root root_route;
 
     struct sockaddr_in sin;
 
@@ -137,14 +150,8 @@ typedef struct dsm_message
 
 } dsm_message;
 
-enum colour
-{
-	blue,
-	red
-};
-
 /*
- * region represents areas of VM memory, coloured blue (local) or red (remote).
+ * region represents local area of VM memory.
  */
 struct mem_region
 {

@@ -25,18 +25,12 @@ struct dsm_functions *funcs;
 struct page *kpage;
 
 void reg_dsm_functions(struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
-						struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *),
-						void(*_erase_rb_swap)(struct rb_root *, struct swp_element *),
-						struct swp_element *(*_insert_rb_swap)(struct rb_root *, unsigned long),
-						struct swp_element* (*_search_rb_swap)(struct rb_root *, unsigned long))
+						struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *))
 {
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
 
     funcs->_find_svm = _find_svm;
     funcs->_find_local_svm = _find_local_svm;
-    funcs->_erase_rb_swap = _erase_rb_swap;
-    funcs->_insert_rb_swap = _insert_rb_swap;
-    funcs->_search_rb_swap = _search_rb_swap;
 
 }
 EXPORT_SYMBOL(reg_dsm_functions);
@@ -123,7 +117,7 @@ retry:
 				r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
 				if (r & VM_FAULT_ERROR)
 				{
-					printk("[*] failed at faulting \n");
+					errk("[*] failed at faulting \n");
 					BUG();
 				}
 

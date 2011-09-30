@@ -21,6 +21,7 @@
 #define DSM_SVM				_IOW(DSM_IO, 0xA6, struct svm_data)
 #define DSM_CONNECT			_IOW(DSM_IO, 0xA7, struct svm_data)
 #define DSM_UNMAP_RANGE		_IOW(DSM_IO, 0xA8, struct unmap_data)
+#define DSM_MR              _IOW(DSM_IO, 0xA9, struct mr_data)
 #define RDMA_CONNECT		_IOW(RDMAIO, 0xA1, struct connect_data)
 #define PAGE_SWAP			_IOW(RDMAIO, 0xA2, struct dsm_message)
 #define UNMAP_PAGE			_IOW(RDMAIO, 0xA3, struct unmap_data)
@@ -29,9 +30,15 @@
 struct svm_data
 {
 	int dsm_id;
-	int vm_id;
+	int svm_id;
 	unsigned long offset;
 
+};
+
+struct mr_data
+{
+    int dsm_id;
+    int svm_id;
     unsigned long start_addr;
     unsigned long size;
 

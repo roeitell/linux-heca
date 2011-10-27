@@ -76,6 +76,27 @@ struct subvirtual_machine *find_local_svm(u16 dsm_id,
 	return NULL;
 }
 
+int page_local(unsigned long addr, struct dsm_vm_id *id, struct mm_struct *mm)
+{
+    struct subvirtual_machine *svm = NULL;
+    struct mem_region *mr = NULL;
+
+    svm = find_local_svm(id->dsm_id, mm);
+
+    if (svm)
+    {
+        list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
+        {
+            if (addr > mr->addr && addr <= (mr->addr + mr->sz))
+            {
+                return 1;
+            }
+        }
+    }
+
+    return 0;
+}
+
 struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id)
 {
 	struct dsm *_dsm;
@@ -103,10 +124,12 @@ struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id)
 
 }
 
-/*
- * - Search for local svm - which contains this processes mm_struct.
- * - Subtract process memory offset from
- */
+struct rb_root *rcm_red_page_root(void)
+{
+    return &_rcm->red_page_root;
+
+}
+
 struct mem_region *find_mr_source(unsigned long addr)
 {
     struct mm_struct *mm = current->mm;
@@ -251,6 +274,10 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 	struct dsm_vm_id id;
 	struct unmap_data udata;
 	struct mr_data mr_info;
+
+	unsigned long i = 0;
+	unsigned long end = 0;
+	int counter = 0;
 
 
 	switch (ioctl)
@@ -399,7 +426,7 @@ fail2:
 		}
 		case DSM_UNMAP_RANGE:
 		{
-			//errk("[DSM_UNMAP_RANGE]\n");
+			errk("[DSM_UNMAP_RANGE]\n");
 
 			r = -EFAULT;
 
@@ -413,17 +440,15 @@ fail2:
 
 			r = -1;
 
-			errk("[DSM_UNMAP_RANGE]\n\tsvm : %d\n\tdsm_id : %d\n\tsvm_id : %d\n", !!svm, svm->id.dsm_id, svm->id.svm_id);
-
 			if (!svm)
 				goto out;
 
 			if (priv_data->svm->id.dsm_id != svm->id.dsm_id)
 				goto out;
 
-			unsigned long i = udata.addr;
-			unsigned long end = i + udata.sz;
-
+			i = udata.addr;
+			end = i + udata.sz;
+			counter = 0;
 			while (i < end)
 			{
 				r = dsm_flag_page_remote(current->mm, udata.id, i);
@@ -431,9 +456,10 @@ fail2:
 					break;
 
 				i += PAGE_SIZE;
+				counter++;
 
 			}
-
+			errk("[?] unmapped #pages : %d\n", counter);
 			r = 0;
 
 			break;
@@ -520,7 +546,10 @@ fail2:
 
 			page = dsm_extract_page_from_remote(&msg);
 
-			r = !!page;
+			if (page == (void *) -EFAULT)
+			    r = -EFAULT;
+			else
+			    r = !!page;
 
 			break;
 
@@ -600,7 +629,10 @@ MODULE_PARM_DESC(
 
 static int dsm_init(void)
 {
-	reg_dsm_functions(&find_svm, &find_local_svm);
+    struct dsm *_dsm;
+
+	reg_dsm_functions(&find_svm, &find_local_svm, &rcm_red_page_root, &page_local,
+	                    &red_page_insert, &red_page_search, &red_page_erase);
 
 	errk("[dsm_init] ip : %s\n", ip);
 	errk("[dsm_init] port : %d\n", port);
@@ -610,7 +642,7 @@ static int dsm_init(void)
 
 	INIT_LIST_HEAD(&_rcm->dsm_ls);
 
-	struct dsm *_dsm = kmalloc(sizeof(*_dsm), GFP_KERNEL);
+	_dsm = kmalloc(sizeof(*_dsm), GFP_KERNEL);
 
 	_dsm->dsm_id = 1;
 

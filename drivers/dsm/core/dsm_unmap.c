@@ -20,25 +20,36 @@
 
 #include <dsm/dsm_core.h>
 
+#include <linux/ksm.h>
+#include <asm-generic/mman-common.h>
+
 
 struct dsm_functions *funcs;
 struct page *kpage;
 
 void reg_dsm_functions(struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
-						struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *))
+						struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *),
+						struct rb_root *(*_rcm_red_page_root)(void),
+						int (*_page_local)(unsigned long, struct dsm_vm_id *, struct mm_struct *),
+						void (*_red_page_insert)(u64, struct dsm_vm_id *, unsigned long),
+						struct red_page *(*_red_page_search)(u64),
+						void (*_red_page_erase)(struct red_page *))
 {
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
 
     funcs->_find_svm = _find_svm;
     funcs->_find_local_svm = _find_local_svm;
-
+    funcs->_rcm_red_page_root = _rcm_red_page_root;
+    funcs->_page_local = _page_local;
+    funcs->_red_page_insert = _red_page_insert;
+    funcs->_red_page_search = _red_page_search;
+    funcs->_red_page_erase = _red_page_erase;
 }
 EXPORT_SYMBOL(reg_dsm_functions);
 
 void dereg_dsm_functions(void)
 {
     kfree(funcs);
-
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 
@@ -47,7 +58,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
-    struct page *page;
+    struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
     pud_t *pud;
@@ -56,6 +67,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id, unsigned lon
     swp_entry_t swp_e;
     struct subvirtual_machine *svm;
     unsigned long addr = request_addr & PAGE_MASK;
+    unsigned long ksm_flag;
 
     down_read(&mm->mmap_sem);
 
@@ -64,6 +76,8 @@ retry:
     vma = find_vma(mm, addr);
     if (!vma || vma->vm_start > addr)
         goto out;
+
+    ksm_flag = vma->vm_flags & VM_MERGEABLE;
 
 
 	pgd = pgd_offset(mm, addr);
@@ -90,6 +104,7 @@ retry:
 	{
 		if (pte_none(pte_entry))
 		{
+
 			set_pte_at(mm, addr, pte, swp_entry_to_pte(make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
 			goto out_pte_unlock;
 		}
@@ -139,6 +154,24 @@ retry:
 		}
 	}
 
+    if(PageKsm(page))
+    {
+        errk("[dsm_flag_page_remote] KSM page\n");
+
+        r = ksm_madvise(vma, request_addr, request_addr, MADV_UNMERGEABLE, &ksm_flag);
+
+        if (r)
+        {
+          printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
+
+          // DSM1 : better ksm error handling required.
+          return -EFAULT;
+
+        }
+
+    }
+
+
     if (!trylock_page(page))
     {
         r = -EFAULT;
@@ -156,7 +189,8 @@ retry:
     if (!page_mapped(page))
         try_to_free_swap(page);
 
-    put_page(page);
+    // DSM1 - should we put_page in flag remote?
+    //put_page(page);
     unlock_page(page);
 
 out_pte_unlock:
@@ -172,3 +206,37 @@ out:
 }
 EXPORT_SYMBOL(dsm_flag_page_remote);
 
+int try_to_unmap_dsm(struct page *page)
+{
+    struct red_page *rp = NULL;
+    struct subvirtual_machine *svm = NULL;
+    struct vm_area_struct *vma = NULL;
+    struct mm_struct *mm;
+    int ret = SWAP_FAIL;
+
+    printk("[try_to_unmap_dsm] !!!\n");
+
+    rp = funcs->_red_page_search(page_to_pfn(page));
+
+    printk("[try_to_unmap_dsm] red_page : %d\n", !!rp);
+
+    if (rp)
+    {
+        svm = funcs->_find_svm(&rp->id);
+
+        printk("[try_to_unmap_dsm] svm : %d\n", !!svm);
+
+        if (svm && svm->priv)
+        {
+            mm = svm->priv->mm;
+            vma = find_vma(mm, rp->addr);
+            if (vma || vma->vm_start < rp->addr)
+                ret = handle_mm_fault(mm, vma, rp->addr, FAULT_FLAG_WRITE);
+
+            printk("[try_to_unmap_dsm] handle_mm_fault : %d\n", ret);
+
+        }
+    }
+
+    return ret;
+}

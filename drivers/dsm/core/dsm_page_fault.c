@@ -35,6 +35,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     int ret = VM_FAULT_ERROR;
     struct page *page = NULL;
 
+    errk("[?] fault\n");
+
     pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
     BUG_ON(!pte);
 
@@ -48,7 +50,6 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     if (!is_dsm_entry(*entry))
     {
         return VM_FAULT_RETRY;
-
     }
 
     dsm_entry_to_val(*entry, &id.dsm_id, &id.svm_id);
@@ -66,6 +67,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     {
         page = dsm_extract_page(fault_svm->id, svm, norm_addr + svm->priv->offset - fault_svm->priv->offset);
 
+        if (page == (void *) -EFAULT)
+            return VM_FAULT_ERROR;
     }
     else
     {
@@ -75,12 +78,11 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         msg.req_addr = (uint64_t) norm_addr - fault_svm->priv->offset;
 
         msg.dst_addr = (uint64_t) dst_addr;
-
     }
 
     if (page)
     {
-        ret = dsm_insert_page(mm, vma, pte, norm_addr, page);
+        ret = dsm_insert_page(mm, vma, pte, norm_addr, page, &id);
     }
     else
     {
@@ -92,22 +94,18 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
 out:
 
     return ret;
-
 }
 
 #ifdef CONFIG_DSM_CORE
 int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
 {
     return request_page_insert(mm, vma ,addr, pte, entry, pmd, flags);
-
 }
 #else
 int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long addr, pte_t *pte, swp_entry_t *entry, pmd_t *pmd, unsigned int flags)
 {
     return 0;
-
 }
-
 #endif /* CONFIG_DSM */
 
 /*
@@ -117,9 +115,13 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma, unsigned 
  *
  */
 int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma, pte_t *pte,
-					unsigned long addr_fault, struct page * recv_page)
+					unsigned long addr_fault, struct page * recv_page, struct dsm_vm_id *id)
 {
     int ret = VM_FAULT_ERROR;
+    struct mem_cgroup *mem_cg;
+
+    // DSM3: this may be totally unnecessary.
+    int charge_swap = 0;
 
     if (!recv_page)
         goto out;
@@ -127,20 +129,50 @@ int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma, pte_t *pte
     if (!trylock_page(recv_page))
         goto out;
 
+//    if (!(page_mapped(recv_page) || (recv_page->mapping && !PageAnon(recv_page))))
+//    {
+//        errk("[!] mem_cgroup_newpage_charge\n");
+//        mem_cgroup_newpage_charge(recv_page, mm, GFP_KERNEL);
+//    }
+//    else
+//    {   // I think this will always be called - though just to be sure...
+//        if (mem_cgroup_try_charge_swapin(mm, recv_page, GFP_KERNEL, &mem_cg))
+//        {
+//            ret = VM_FAULT_OOM;
+//            goto out;
+//        }
+//
+//        charge_swap = 1;
+//    }
+
     // Address of page fault - points to received page.
     set_pte_at_notify(mm, addr_fault, pte, mk_pte(recv_page, vma->vm_page_prot));
 
     page_add_anon_rmap(recv_page, vma, addr_fault);
 
+    //if (charge_swap)
+    //    mem_cgroup_commit_charge_swapin(recv_page, mem_cg);
+
     inc_mm_counter(mm, MM_ANONPAGES);
 
+
     update_mmu_cache(vma, addr_fault, pte);
+
+    if (funcs->_page_local(addr_fault, id, mm))
+    {
+        printk("[dsm_insert_page] page_local\n");
+        // Set recv_page flags
+        //recv_page->mapping = (void *) PAGE_MAPPING_DSM;
+
+        funcs->_red_page_insert(page_to_pfn(recv_page), id, addr_fault);
+
+        printk("[dsm_insert_page] page inserted into tree\n");
+    }
 
     unlock_page(recv_page);
     ret = VM_FAULT_MAJOR;
 out:
 
     return ret;
-
 }
 EXPORT_SYMBOL(dsm_insert_page);

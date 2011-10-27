@@ -40,6 +40,15 @@ struct swp_element
 
 };
 
+struct red_page
+{
+    u64 pfn;
+    struct dsm_vm_id id;
+    unsigned long addr;
+
+    struct rb_node rb;
+};
+
 static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id)
 {
     u32 val = id->dsm_id;
@@ -89,6 +98,7 @@ struct rcm
     struct list_head dsm_ls;
 
     struct rb_root root_conn;
+    struct rb_root red_page_root;
 
     struct sockaddr_in sin;
 

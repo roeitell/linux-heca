@@ -20,6 +20,7 @@ int create_rcm(struct rcm **rcm, char *ip, int port)
 	(*rcm)->node_ip = inet_addr(ip);
 
 	(*rcm)->root_conn = RB_ROOT;
+	(*rcm)->red_page_root = RB_ROOT;
 
 	rwlock_init(&(*rcm)->conn_lock);
 	rwlock_init(&(*rcm)->route_lock);

@@ -12,35 +12,90 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_handlers.h>
 #include <dsm/dsm_rb.h>
-
-void create_tx_buffer(struct rcm *);
-void destroy_tx_buffer(struct rcm *);
+#include <dsm/dsm_fop.h>
 
 unsigned int inet_addr(char *);
 
-int create_connection(struct rcm *, struct connect_data *);
-void destroy_connection(struct conn_element **);
+int create_rcm(rcm **, char *, int);
 
-void accept_connection(struct conn_element *);
+//void create_message(conn_element *, int);
+void create_message(conn_element *, struct tx_buf_ele *, int, int);
+int create_dummy_page(conn_element *, int);
+void create_page_request(conn_element *, struct tx_buf_ele *, struct dsm_vm_id,
+                struct dsm_vm_id, uint64_t);
 
-int create_rcm(struct rcm **,  char *, int);
-void destroy_rcm(struct rcm **);
+void add_to_process_queue(conn_element *, tx_buf_ele *);
+tx_buf_ele * try_get_next_empty_tx_ele(conn_element *);
+tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *);
+tx_buf_ele * get_next_empty_tx_ele(conn_element *);
+int init_tx_lists(conn_element *);
+void init_synchronisation(conn_element *);
 
-int create_rx_buffer(struct conn_element *);
-void destroy_rx_buffer(struct conn_element *);
+/*
+ * CONNECTION FUNCTION
+ */
+int create_connection(rcm *, struct svm_data *);
+int setup_connection(conn_element *, int);
+int connect_client(struct rdma_cm_id *);
+int create_qp(conn_element *);
+int setup_qp(conn_element *);
 
-int create_qp(struct conn_element *);
+/*
+ * PAGE MANAGEMENT FUNCTION
+ */
+struct page_pool_ele * create_new_page_pool_element_from_page(conn_element *,
+                struct page *);
+int create_page_pool(conn_element *);
+int create_new_page_pool_element(conn_element *);
+page_pool_ele * get_page_ele(conn_element *);
+void free_page_ele(conn_element *, page_pool_ele *);
+void release_replace_page(conn_element *, struct tx_buf_ele *);
+void release_replace_page_work(struct work_struct *);
 
-int start_listener(struct rcm *, struct connect_data *);
+/*
+ * TX BUFFER FUNCTION
+ */
+int create_tx_buffer(conn_element *);
+void init_tx_ele(tx_buf_ele *, conn_element *, int);
+void init_tx_wr(tx_buf_ele *, u32, int);
+void init_page_wr(reply_work_request *, u32, int);
+void init_reply_wr(reply_work_request *, u64, u32, int);
+void release_tx_element(conn_element *, tx_buf_ele *);
+void release_tx_element_reply(conn_element *, tx_buf_ele *);
 
-void exchange_info_serverside(struct conn_element *);
-void exchange_info_clientside(struct conn_element *);
+/*
+ * RX BUFFER FUNCTION
+ */
+int create_rx_buffer(conn_element *);
+void init_rx_ele(rx_buf_ele *, conn_element *);
+void init_recv_wr(rx_buf_ele *, conn_element *);
+int setup_recv_wr(conn_element *);
+int refill_recv_wr(conn_element *, rx_buf_ele *);
 
-int dsm_recv_msg(struct conn_element *, int);
-int dsm_send_msg(struct conn_element *, int);
-int dsm_send_info(struct conn_element *);
-int dsm_recv_info(struct conn_element *);
+/*
+ * RDMA INFO FUNCTION
+ */
+void reg_rem_info(conn_element *);
+int create_rdma_info(conn_element *);
+void format_rdma_info(conn_element *);
 
-void destroy_connections(struct rcm *);
+/*
+ * STATS
+ */
+void reset_stat(struct con_element_stats *);
+int create_stat_data(struct con_element_stats *);
+void calc_stat_request_reply(struct con_element_stats *, struct tx_stats *);
+void calc_stat_reply(struct con_element_stats *, struct tx_stats *);
+void print_stat(struct con_element_stats *);
+
+void stats_get_time_request(struct timespec *);
+void stats_set_time_request(struct tx_stats *, struct timespec);
+void stats_update_time_send(struct tx_stats *);
+void stats_update_time_send_completion(struct tx_stats *);
+void stats_update_time_recv_completion(struct tx_stats *);
+void stats_message_recv_completion(struct con_element_stats *);
+void stats_message_recv_rdma_completion(struct con_element_stats *);
+void stats_message_send_completion(struct con_element_stats *);
+void stats_message_send_rdma_completion(struct con_element_stats *);
 
 #endif /* DSM_OP_H_ */

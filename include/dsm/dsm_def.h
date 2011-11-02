@@ -13,251 +13,390 @@
 #include <linux/spinlock.h>
 #include <linux/semaphore.h>
 #include <linux/rwlock_types.h>
+#include <linux/types.h>
+#include <linux/time.h>
+#include <linux/gfp.h>
+#include <linux/spinlock.h>
+#include <linux/list.h>
+#include <linux/workqueue.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
+#include <linux/interrupt.h>
+#include <asm/atomic.h>
 
-#define TX_BUF_ELEMENTS_NUM 1
-#define RX_BUF_ELEMENTS_NUM 1
-#define DSM_MESSAGE_NUM 1
-#define MSG_WORK_REQUEST_NUM 1
+#define DSM_STATS_ENABLED
+
+#define RDMA_PAGE_SIZE PAGE_SIZE
+
+#define MAX_CAP_SCQ 256
+#define MAX_CAP_RCQ 1024
+
+#define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ
+#define RX_BUF_ELEMENTS_NUM MAX_CAP_RCQ
+
+#define PAGE_POOL_SIZE (MAX_CAP_SCQ + MAX_CAP_RCQ)*2
+#define PAGE_POOL_LOW_THRESHOLD (MAX_CAP_SCQ + MAX_CAP_RCQ)
+
+/**
+ * RDMA_INFO
+ */
+#define RDMA_INFO_CL 4
+#define RDMA_INFO_SV 3
+#define RDMA_INFO_READY_CL 2
+#define RDMA_INFO_READY_SV 1
+#define RDMA_INFO_NULL 0
+
+/**
+ * DSM_MESSAGE
+ */
+#define READY                           0x00 // the slot is free
+#define UTIL                            0x10 // Reserve this element for using
+#define REQ                             0x01 // kernel posted a request
+#define REQ_SCHED                       0x11 // the message is scheduled to be processed later
+#define REQ_PROC                        0x02 // we are processing the request
+#define REQ_RCV                         0x02 // we received a request from remote node
+#define REQ_RCV_SCHED           0x12 // the message is scheduled to be processed later
+#define REQ_RCV_PROC            0x04 // we are processing the request from remote node
+#define REQ_REPLY                       0x04 // we received a reply to our request
+#define REQ_REPLY_PROC          0x08 // we are processing the reply to our request
+#define SLEEP                           0x0f
 
 #define debug_dsm
 #ifdef debug_dsm
 #define errk printk
 #endif
 
-struct dsm_vm_id
-{
-    u16 dsm_id;
-    u8 svm_id;
+struct dsm_vm_id {
+        u16 dsm_id;
+        u8 svm_id;
 
 };
 
-struct swp_element
-{
-    unsigned long addr;
-    struct dsm_vm_id id;
+struct swp_element {
+        unsigned long addr;
+        struct dsm_vm_id id;
 
-    struct rb_node rb;
+        struct rb_node rb;
 
 };
 
-struct red_page
-{
-    u64 pfn;
-    struct dsm_vm_id id;
-    unsigned long addr;
+struct red_page {
+        u64 pfn;
+        struct dsm_vm_id id;
+        unsigned long addr;
 
-    struct rb_node rb;
+        struct rb_node rb;
 };
 
-static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id)
-{
-    u32 val = id->dsm_id;
+static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id) {
+        u32 val = id->dsm_id;
 
-    val = val << 8;
+        val = val << 8;
 
-    val |= id->svm_id;
+        val |= id->svm_id;
 
-    return val;
+        return val;
 
 }
 
-static inline u16 u32_to_dsm_id(u32 val)
-{
-    return val >> 8;
+static inline u16 u32_to_dsm_id(u32 val) {
+        return val >> 8;
 
 }
 
-static inline u8 u32_to_vm_id(u32 val)
-{
-    return val & 0xFF;
+static inline u8 u32_to_vm_id(u32 val) {
+        return val & 0xFF;
 
 }
 
-struct dsm
-{
-	u16 dsm_id;
+struct dsm {
+        u16 dsm_id;
 
-	struct list_head svm_ls;
-	struct list_head ls;
+        struct list_head svm_ls;
+        struct list_head ls;
 };
 
-struct rcm
-{
-    int node_ip;
+typedef struct rcm {
+        int node_ip;
 
-    struct rdma_cm_id *cm_id;
-    struct ib_device *dev;
-    struct ib_pd *pd;
-    struct ib_mr *mr;
+        struct rdma_cm_id *cm_id;
+        struct ib_device *dev;
+        struct ib_pd *pd;
+        struct ib_mr *mr;
 
-    struct ib_cq *listen_cq;
+        struct ib_cq *listen_cq;
 
-    rwlock_t conn_lock;
-    rwlock_t route_lock;
+        rwlock_t conn_lock;
+        rwlock_t route_lock;
 
-    struct list_head dsm_ls;
+        struct rb_root root_conn;
+        struct rb_root root_route;
 
-    struct rb_root root_conn;
-    struct rb_root red_page_root;
+        struct sockaddr_in sin;
 
-    struct sockaddr_in sin;
+        struct list_head dsm_ls;
+        struct rb_root red_page_root;
 
-    struct tx_buf_ele *tx_buf;
+} rcm;
+struct rdma_info_data {
 
+        void *send_mem;
+        void *recv_mem;
+
+        struct rdma_info *send_info;
+        struct rdma_info *recv_info;
+        struct rdma_info *remote_info;
+
+        struct ib_sge recv_sge;
+        struct ib_recv_wr recv_wr;
+        struct ib_recv_wr *recv_bad_wr;
+
+        struct ib_sge send_sge;
+        struct ib_send_wr send_wr;
+        struct ib_send_wr *send_bad_wr;
+        int exchanged;
 };
 
-struct conn_element
-{
-    struct rcm *rcm;
+typedef struct page_pool_ele {
 
-    int remote_node_ip;
+        void * page_buf;
+        struct page * mem_page;
+        struct list_head page_ptr;
 
-    struct ib_mr *mr;
-    struct ib_pd *pd;
+} page_pool_ele;
 
-    void *send_mem;
-    void *recv_mem;
+typedef struct page_pool {
 
-    struct rdma_info *send_info;
-    struct rdma_info *recv_info;
+        struct list_head page_pool_list;
+        struct list_head page_release_list;
 
-    struct ib_qp *qp;
-    struct ib_cq *send_cq;
-    struct ib_cq *recv_cq;
-    struct rdma_cm_id *cm_id;
+        spinlock_t page_pool_list_lock;
+        spinlock_t page_release_lock;
 
-    struct rx_buf_ele *rx_buf;
+        struct work_struct page_release_work;
 
-    struct rb_node rb_node;
+} page_pool;
 
-    struct semaphore sem;
+typedef struct rx_buffer {
+        struct rx_buf_ele * rx_buf;
+        spinlock_t recv_lock;
+} rx_buffer;
 
-    int phase;
+typedef struct tx_buffer {
+        struct tx_buf_ele * tx_buf;
+
+        struct list_head tx_free_elements_list;
+        struct list_head tx_free_elements_list_reply;
+
+        spinlock_t tx_free_elements_list_lock;
+        spinlock_t tx_free_elements_list_reply_lock;
+
+        struct completion completion_free_tx_element;
+
+} tx_buffer;
+
+struct con_element_stats {
+        atomic64_t out;
+        atomic64_t out_rdma;
+        atomic64_t in;
+        atomic64_t in_rdma;
+
+        s64 total_wait_to_wait_completion;
+        s64 wait_to_wait_completion_min;
+        s64 wait_to_wait_completion_max;
+        s64 total_send_to_send_completion;
+        s64 send_to_send_completion_min;
+        s64 send_to_send_completion_max;
+        s64 total_send_completion_to_reply_completion;
+        s64 send_completion_to_reply_completion_min;
+        s64 send_completion_to_reply_completion_max;
+        s64 total_send_to_reply_completion;
+        s64 send_to_reply_completion_min;
+        s64 send_to_reply_completion_max;
+        s64 total_entry_to_reply;
+        s64 entry_to_reply_min;
+        s64 entry_to_reply_max;
+        u64 nb_total_processed;
+
+        s64 total_send_reply_to_send_reply_completion;
+        s64 send_reply_to_send_reply_completion_min;
+        s64 send_reply_to_send_reply_completion_max;
+        u64 nb_total_processed_send_reply;
+        spinlock_t lock;
+
+        struct timespec t_start_bench;
+        struct timespec t_end_bench;
 
 };
+typedef struct conn_element {
+        rcm *rcm;
 
-typedef struct rdma_info
-{
-    u16 node_ip;
-    u64 buf_msg_addr;
-    u32 rkey_msg;
-    u64 buf_rx_addr;
-    u32 rkey_rx;
-    u32 rx_buf_size;
+        int remote_node_ip;
+        struct rdma_info_data rid;
+
+        struct ib_mr *mr;
+        struct ib_pd *pd;
+        struct rdma_cm_id *cm_id;
+        struct ib_cq *send_cq;
+        struct ib_cq *recv_cq;
+
+        struct tasklet_struct send_work;
+        struct tasklet_struct recv_work;
+
+        struct rx_buffer rx_buffer;
+        struct tx_buffer tx_buffer;
+
+        struct page_pool page_pool;
+        struct rb_node rb_node;
+
+        struct con_element_stats stats;
+
+} conn_element;
+
+typedef struct rdma_info {
+
+        u8 flag;
+        u32 node_ip;
+        u64 buf_msg_addr;
+        u32 rkey_msg;
+        u64 buf_rx_addr;
+        u32 rkey_rx;
+        u32 rx_buf_size;
 
 } rdma_info;
 
-typedef struct dsm_message
-{
-    u32 msg_type;
-    u32 offset;
-    u32 dest;
-    u32 src;
-    u64 req_addr;
-    u64 dst_addr;
-    u32 rkey;
-    u8 status;
+typedef struct dsm_message {
+
+        u32 msg_num;
+        u32 offset;
+        u32 dest;
+        u32 src;
+        u64 req_addr;
+        u64 dst_addr;
+        u32 rkey;
+        u16 status;
 
 } dsm_message;
 
 /*
  * region represents local area of VM memory.
  */
-struct mem_region
-{
-    unsigned long addr;
-    unsigned long sz;
-    struct subvirtual_machine *svm;
+struct mem_region {
+        unsigned long addr;
+        unsigned long sz;
+        struct subvirtual_machine *svm;
 
-    struct list_head ls;
-    struct rcu_head rcu;
+        struct list_head ls;
+        struct rcu_head rcu;
 
 };
 
-typedef struct private_data
-{
+typedef struct private_data {
 
-    struct rb_root root_swap;
+        struct rb_root root_swap;
 
-    rwlock_t dsm_data_lock;
+        rwlock_t dsm_data_lock;
 
-    struct mm_struct *mm;
+        struct mm_struct *mm;
 
-    unsigned long offset;
-    struct subvirtual_machine *svm;
+        unsigned long offset;
+        struct subvirtual_machine *svm;
 
-    struct list_head head;
+        struct list_head head;
 
 } private_data;
 
-struct subvirtual_machine
-{
-    struct conn_element *ele;
-    struct dsm_vm_id id;
-    struct list_head mr_ls;
-    struct list_head ls;
+struct subvirtual_machine {
+        struct conn_element *ele;
+        struct dsm_vm_id id;
+        struct list_head mr_ls;
+        struct list_head ls;
 
-    private_data *priv;
-    struct rcu_head rcu_head;
-    struct rb_node rb_node;
+        private_data *priv;
+        struct rcu_head rcu_head;
+        struct rb_node rb_node;
 
 };
 
-typedef struct work_request_ele
-{
-    struct conn_element *ele;
+typedef struct work_request_ele {
+        conn_element *ele;
 
-    struct ib_send_wr wr;
-    struct ib_sge sg;
-    struct ib_send_wr *bad_wr;
+        struct ib_send_wr wr;
+        struct ib_sge sg;
+        struct ib_send_wr *bad_wr;
 
-    dsm_message *dsm_msg;
+        dsm_message *dsm_msg;
 
 } work_request_ele;
 
-typedef struct msg_work_request
-{
-    work_request_ele *wr_ele;
-    void *page_buf;
+typedef struct msg_work_request {
+        work_request_ele *wr_ele;
+        page_pool_ele * dst_addr;
 
 } msg_work_request;
 
-typedef struct recv_work_req_ele
-{
-    struct ib_recv_wr sq_wr;
-    struct ib_recv_wr *bad_wr;
+typedef struct recv_work_req_ele {
+        conn_element * ele;
+
+        struct ib_recv_wr sq_wr;
+        struct ib_recv_wr *bad_wr;
+        struct ib_sge recv_sgl;
+
 } recv_work_req_ele;
 
-typedef struct reply_work_request
-{
-    //The one for sending back a message
-    work_request_ele *wr_ele;
+typedef struct reply_work_request {
+        //The one for sending back a message
+        work_request_ele *wr_ele;
 
-    //The one for sending the page
-    struct ib_send_wr wr;
-    struct ib_send_wr *bad_wr;
-    void *page_buf;
-    struct ib_sge page_sgl;
-
-    //The one for catching the request in the first place
-    recv_work_req_ele *recv_wrk_rq_ele;
+        //The one for sending the page
+        struct ib_send_wr wr;
+        struct ib_send_wr *bad_wr;
+        struct page * mem_page;
+        void *page_buf;
+        struct ib_sge page_sgl;
 
 } reply_work_request;
 
-typedef struct tx_buf_ele
-{
-    void *mem;
-    dsm_message *dsm_msg;
-    msg_work_request *wrk_req;
+struct tx_stats {
+        struct timespec t_entry;
+        struct timespec t_send;
+        struct timespec t_send_completion;
+        struct timespec t_reply;
+};
+
+struct tx_callback {
+        unsigned long data;
+        void (*func)(struct tx_buf_ele *, unsigned long);
+};
+
+typedef struct tx_buf_ele {
+        int id;
+
+        void *mem;
+        dsm_message *dsm_msg;
+        msg_work_request *wrk_req;
+        reply_work_request *reply_work_req;
+        struct list_head tx_buf_ele_ptr;
+
+        struct tx_callback callback;
+
+        struct tx_stats stats;
 
 } tx_buf_ele;
 
-typedef struct rx_buf_ele
-{
-    void *mem;
-    dsm_message *dsm_msg;
-    reply_work_request *reply_work_req;
+typedef struct rx_buf_ele {
+        int id;
+
+        void *mem;
+        dsm_message *dsm_msg;
+        //The one for catching the request in the first place
+        recv_work_req_ele *recv_wrk_rq_ele;
 
 } rx_buf_ele;
+
+struct page_request_completion {
+        struct completion comp;
+        struct page *page;
+};
 
 #endif /* DSM_DEF_H_ */

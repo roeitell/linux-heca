@@ -23,4 +23,5 @@ void red_page_erase(struct red_page *);
 
 
 
+
 #endif /* DSM_RB_H_ */

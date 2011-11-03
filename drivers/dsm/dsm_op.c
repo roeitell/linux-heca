@@ -16,6 +16,7 @@ int create_rcm(rcm **rcm, char *ip, int port) {
         *rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
         memset(*rcm, 0, sizeof(rcm));
 
+        (*rcm)->dsm_wq = create_workqueue("dsm_wq");
         (*rcm)->node_ip = inet_addr(ip);
 
         (*rcm)->root_conn = RB_ROOT;
@@ -933,8 +934,8 @@ int create_qp(conn_element *ele) {
 int setup_qp(conn_element *ele) {
         int ret = 0;
 
-        tasklet_init(&ele->recv_work, recv_cq_handle_work, &ele->recv_work);
         tasklet_init(&ele->send_work, send_cq_handle_work, &ele->send_work);
+        INIT_WORK(&ele->recv_work, recv_cq_handle_work);
 
         ele->send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle,
                         dsm_cq_event_handler, (void *) ele, MAX_CAP_SCQ, 0);

@@ -137,6 +137,8 @@ typedef struct rcm {
         struct list_head dsm_ls;
         struct rb_root red_page_root;
 
+        struct workqueue_struct * dsm_wq;
+
 } rcm;
 struct rdma_info_data {
 
@@ -241,7 +243,7 @@ typedef struct conn_element {
         struct ib_cq *recv_cq;
 
         struct tasklet_struct send_work;
-        struct tasklet_struct recv_work;
+        struct work_struct recv_work;
 
         struct rx_buffer rx_buffer;
         struct tx_buffer tx_buffer;

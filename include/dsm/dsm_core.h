@@ -14,12 +14,6 @@
 struct dsm_functions {
         struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *); //_find_svm;
         struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *); //_find_local_svm;
-        struct rb_root *(*_rcm_red_page_root)(void); //_rcm_red_page_root;
-        int (*_page_local)(unsigned long, struct dsm_vm_id *,
-                        struct mm_struct *); //_page_local;
-        void (*_red_page_insert)( u64, struct dsm_vm_id *, unsigned long); //_red_page_insert;
-        struct red_page *(*_red_page_search)( u64); //_red_page_search;
-        void (*_red_page_erase)(struct red_page *);
         int (*request_dsm_page)(conn_element *, struct dsm_vm_id,
                         struct dsm_vm_id, uint64_t,
                         void(*)(struct tx_buf_ele *, unsigned long),
@@ -31,12 +25,6 @@ void reg_dsm_functions(
                 struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
                 struct subvirtual_machine *(*_find_local_svm)(u16,
                                 struct mm_struct *),
-                struct rb_root *(*_rcm_red_page_root)(void),
-                int(*_page_local)(unsigned long, struct dsm_vm_id *,
-                                struct mm_struct *),
-                void(*_red_page_insert)( u64, struct dsm_vm_id *, unsigned long),
-                struct red_page *(*_red_page_search)( u64),
-                void(*_red_page_erase)(struct red_page *),
                 int(*request_dsm_page)(conn_element *, struct dsm_vm_id,
                                 struct dsm_vm_id, uint64_t,
                                 void(*)(struct tx_buf_ele *, unsigned long),

@@ -167,10 +167,10 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                                                         (uint8_t) id.svm_id)));
 
         // Remove page from red_page_tree if contained
-        rp = funcs->_red_page_search(page_to_pfn(page));
-
-        if (rp)
-                funcs->_red_page_erase(rp);
+//FUNCS
+//        rp = funcs->_red_page_search(page_to_pfn(page));
+//        if (rp)
+//                funcs->_red_page_erase(rp);
 
         page_remove_rmap(page);
 

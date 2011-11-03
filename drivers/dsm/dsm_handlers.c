@@ -284,7 +284,7 @@ void send_cq_handle_work(struct tasklet_struct *work) {
         ele= container_of(work, struct conn_element ,send_work );
         _send_cq_handle(ele->send_cq, NULL);
 }
-void recv_cq_handle_work(struct tasklet_struct *work) {
+void recv_cq_handle_work(struct work_struct *work) {
         conn_element *ele;
         ele= container_of(work, struct conn_element ,recv_work );
         _recv_cq_handle(ele->recv_cq, NULL);
@@ -296,7 +296,7 @@ void send_cq_handle(struct ib_cq *cq, void *cq_context) {
 }
 void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
         conn_element *ele = (conn_element *) cq->cq_context;
-        tasklet_schedule(&ele->recv_work);
+        queue_work(ele->rcm->dsm_wq, &ele->recv_work);
 }
 /*
  * This one is specific to the client part

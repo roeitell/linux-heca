@@ -599,9 +599,7 @@ MODULE_PARM_DESC(
 static int dsm_init(void) {
         struct dsm *_dsm;
 
-        reg_dsm_functions(&find_svm, &find_local_svm, &rcm_red_page_root,
-                        &page_local, &red_page_insert, &red_page_search,
-                        &red_page_erase, &request_dsm_page);
+        reg_dsm_functions(&find_svm, &find_local_svm, &request_dsm_page);
 
         errk("[dsm_init] ip : %s\n", ip);
         errk("[dsm_init] port : %d\n", port);

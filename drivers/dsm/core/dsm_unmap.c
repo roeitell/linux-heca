@@ -30,25 +30,15 @@ void reg_dsm_functions(
                 struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
                 struct subvirtual_machine *(*_find_local_svm)(u16,
                                 struct mm_struct *),
-                struct rb_root *(*_rcm_red_page_root)(void),
-                int(*_page_local)(unsigned long, struct dsm_vm_id *,
-                                struct mm_struct *),
-                void(*_red_page_insert)( u64, struct dsm_vm_id *, unsigned long),
-                struct red_page *(*_red_page_search)( u64),
-                void(*_red_page_erase)(struct red_page *),
                 int(*request_dsm_page)(conn_element *, struct dsm_vm_id,
                                 struct dsm_vm_id, uint64_t,
                                 void(*func)(struct tx_buf_ele *, unsigned long),
                                 unsigned long data)) {
+
         funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
 
         funcs->_find_svm = _find_svm;
         funcs->_find_local_svm = _find_local_svm;
-        funcs->_rcm_red_page_root = _rcm_red_page_root;
-        funcs->_page_local = _page_local;
-        funcs->_red_page_insert = _red_page_insert;
-        funcs->_red_page_search = _red_page_search;
-        funcs->_red_page_erase = _red_page_erase;
         funcs->request_dsm_page = request_dsm_page;
 }
 EXPORT_SYMBOL(reg_dsm_functions);
@@ -220,28 +210,28 @@ int try_to_unmap_dsm(struct page *page) {
         int ret = SWAP_FAIL;
 
         printk("[try_to_unmap_dsm] !!!\n");
-
-        rp = funcs->_red_page_search(page_to_pfn(page));
-
-        printk("[try_to_unmap_dsm] red_page : %d\n", !!rp);
-
-        if (rp) {
-                svm = funcs->_find_svm(&rp->id);
-
-                printk("[try_to_unmap_dsm] svm : %d\n", !!svm);
-
-                if (svm && svm->priv) {
-                        mm = svm->priv->mm;
-                        vma = find_vma(mm, rp->addr);
-                        if (vma || vma->vm_start < rp->addr)
-                                ret = handle_mm_fault(mm, vma, rp->addr,
-                                                FAULT_FLAG_WRITE);
-
-                        printk("[try_to_unmap_dsm] handle_mm_fault : %d\n",
-                                        ret);
-
-                }
-        }
+//FUNCS
+//        rp = funcs->_red_page_search(page_to_pfn(page));
+//
+//        printk("[try_to_unmap_dsm] red_page : %d\n", !!rp);
+//
+//        if (rp) {
+//                svm = funcs->_find_svm(&rp->id);
+//
+//                printk("[try_to_unmap_dsm] svm : %d\n", !!svm);
+//
+//                if (svm && svm->priv) {
+//                        mm = svm->priv->mm;
+//                        vma = find_vma(mm, rp->addr);
+//                        if (vma || vma->vm_start < rp->addr)
+//                                ret = handle_mm_fault(mm, vma, rp->addr,
+//                                                FAULT_FLAG_WRITE);
+//
+//                        printk("[try_to_unmap_dsm] handle_mm_fault : %d\n",
+//                                        ret);
+//
+//                }
+//        }
 
         return ret;
 }

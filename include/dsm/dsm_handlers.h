@@ -19,6 +19,6 @@ void send_cq_handle(struct ib_cq *, void *);
 void dsm_cq_event_handler(struct ib_event *, void *);
 
 void send_cq_handle_work(struct tasklet_struct *);
-void recv_cq_handle_work(struct tasklet_struct *);
+void recv_cq_handle_work(struct work_struct *);
 
 #endif /* DSM_HANDLERS_H_ */

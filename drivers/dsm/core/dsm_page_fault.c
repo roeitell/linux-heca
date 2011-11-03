@@ -180,16 +180,16 @@ int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma,
         inc_mm_counter(mm, MM_ANONPAGES);
 
         update_mmu_cache(vma, addr_fault, pte);
-
-        if (funcs->_page_local(addr_fault, id, mm)) {
-                printk("[dsm_insert_page] page_local\n");
-                // Set recv_page flags
-                //recv_page->mapping = (void *) PAGE_MAPPING_DSM;
-
-                funcs->_red_page_insert(page_to_pfn(recv_page), id, addr_fault);
-
-                printk("[dsm_insert_page] page inserted into tree\n");
-        }
+//FUNCS
+//        if (funcs->_page_local(addr_fault, id, mm)) {
+//                printk("[dsm_insert_page] page_local\n");
+//                // Set recv_page flags
+//                //recv_page->mapping = (void *) PAGE_MAPPING_DSM;
+//
+//                funcs->_red_page_insert(page_to_pfn(recv_page), id, addr_fault);
+//
+//                printk("[dsm_insert_page] page inserted into tree\n");
+//        }
 
         unlock_page(recv_page);
         ret = VM_FAULT_MAJOR;

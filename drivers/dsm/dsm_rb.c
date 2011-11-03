@@ -17,9 +17,7 @@ void insert_rb_conn(struct rcm *rcm, struct conn_element *ele) {
 
         while (*new) {
                 this = rb_entry(*new, struct conn_element, rb_node);
-
                 parent = *new;
-
                 if (ele->remote_node_ip < this->remote_node_ip) {
                         new = &((*new)->rb_left);
                 } else if (ele->remote_node_ip > this->remote_node_ip) {

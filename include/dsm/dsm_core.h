@@ -44,9 +44,6 @@ int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *, unsigned long,
 int dsm_insert_page(struct mm_struct *, struct vm_area_struct *, pte_t *,
                 unsigned long, struct page *, struct dsm_vm_id *);
 
-int try_to_unmap_dsm(struct page *);
-struct rb_root *rcm_red_page_root(void);
-
 extern struct dsm_functions *funcs;
 extern unsigned long dst_addr;
 extern struct page *kpage;

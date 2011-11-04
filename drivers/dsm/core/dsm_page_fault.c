@@ -30,8 +30,6 @@ void signal_completion_page_request(struct tx_buf_ele * tx_e,
         page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
         pr_comp->page = ppe->mem_page;
         ppe->mem_page = NULL;
-        errk("[signal_completion_page_request] Received page at %p \n",
-                        pr_comp->page);
         complete(&pr_comp->comp);
 
 }
@@ -49,25 +47,20 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         int ret = VM_FAULT_ERROR;
         struct page *page = NULL;
 
-        errk("[?] fault\n");
-
         pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
         BUG_ON(!pte);
 
-        if (pte_present(*pte)) {
+        if (unlikely(pte_present(*pte))) {
                 ret = VM_FAULT_MAJOR;
                 goto out;
         }
 
         //DSM1 we need to test if its a swap or other if yes we do vm faul retry
-        if (!is_dsm_entry(*entry)) {
+        if (unlikely(!is_dsm_entry(*entry))) {
                 return VM_FAULT_RETRY;
         }
 
         dsm_entry_to_val(*entry, &id.dsm_id, &id.svm_id);
-
-        errk("[request_page_insert] dsm_id : %d .. svm_id : %d\n", id.dsm_id,
-                        id.svm_id);
 
         svm = funcs->_find_svm(&id);
         BUG_ON(!svm);
@@ -91,11 +84,6 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                 //page remote so we send message
                 struct page_request_completion pr_comp;
                 init_completion(&pr_comp.comp);
-                errk(
-                                "[request_page_insert] request page addr %p , norm addr %p from [dsm %d /svm %d]\n",
-                                norm_addr,
-                                (uint64_t)(norm_addr - fault_svm->priv->offset),
-                                fault_svm->id.dsm_id, fault_svm->id.svm_id);
                 funcs->request_dsm_page(svm->ele, fault_svm->id, svm->id,
                                 (uint64_t)(norm_addr - fault_svm->priv->offset),
                                 signal_completion_page_request,
@@ -180,16 +168,6 @@ int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma,
         inc_mm_counter(mm, MM_ANONPAGES);
 
         update_mmu_cache(vma, addr_fault, pte);
-//FUNCS
-//        if (funcs->_page_local(addr_fault, id, mm)) {
-//                printk("[dsm_insert_page] page_local\n");
-//                // Set recv_page flags
-//                //recv_page->mapping = (void *) PAGE_MAPPING_DSM;
-//
-//                funcs->_red_page_insert(page_to_pfn(recv_page), id, addr_fault);
-//
-//                printk("[dsm_insert_page] page inserted into tree\n");
-//        }
 
         unlock_page(recv_page);
         ret = VM_FAULT_MAJOR;

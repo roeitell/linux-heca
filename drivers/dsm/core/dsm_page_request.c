@@ -26,7 +26,7 @@
 #include <asm-generic/mman-common.h>
 
 struct page *dsm_extract_page(struct dsm_vm_id id,
-                struct subvirtual_machine *svm, unsigned long norm_addr) {
+                struct subvirtual_machine *svm, unsigned long addr) {
         spinlock_t *ptl;
         pte_t *pte;
         int r = 0;
@@ -45,40 +45,60 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
         // if local
         down_read(&mm->mmap_sem);
 
-        errk(
-                        "[dsm_extract_page] new DSM_SWP_ENTRY set to - dsm_id : %d, svm_id : %d",
-                        id.dsm_id, id.svm_id);
         retry:
 
-        vma = find_vma(mm, norm_addr);
-        if (!vma || vma->vm_start > norm_addr)
+        vma = find_vma(mm, addr);
+        if (unlikely(!vma || vma->vm_start > addr)) {
+                errk("[dsm_extract_page] no VMA or bad VMA \n");
                 goto out;
+        }
 
         ksm_flag = vma->vm_flags & VM_MERGEABLE;
 
-        pgd = pgd_offset(mm, norm_addr);
-        if (!pgd_present(*pgd))
+        pgd = pgd_offset(mm, addr);
+        if (unlikely(!pgd_present(*pgd))) {
+                errk("[dsm_extract_page] no pgd \n");
                 goto out;
+        }
 
-        pud = pud_offset(pgd, norm_addr);
-        if (!pud_present(*pud))
+        pud = pud_offset(pgd, addr);
+        if (unlikely(!pud_present(*pud))) {
+                errk("[dsm_extract_page] no pud \n");
                 goto out;
+        }
 
-        pmd = pmd_offset(pud, norm_addr);
-        BUG_ON(pmd_trans_huge(*pmd));
-        if (!pmd_present(*pmd))
+        pmd = pmd_offset(pud, addr);
+
+        if (unlikely(pmd_none(*pmd))) {
+                errk("[dsm_extract_page] no pmd error \n");
                 goto out;
+        } else if (unlikely(pmd_bad(*pmd))) {
+                pmd_clear_bad(pmd);
+                errk("[dsm_extract_page] bad pmd \n");
+                goto out;
+        } else if (unlikely(pmd_trans_huge(*pmd))) {
+                errk("[dsm_extract_page] we have a huge pmd \n");
+                spin_lock(&mm->page_table_lock);
+                if (unlikely(pmd_trans_splitting(*pmd))) {
+                        spin_unlock(&mm->page_table_lock);
+                        wait_split_huge_page(vma->anon_vma, pmd);
+                } else {
+                        spin_unlock(&mm->page_table_lock);
+                        split_huge_page_pmd(mm, pmd);
+                }
+
+        }
 
         // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
 
-        pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
+        pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
         pte_entry = *pte;
 
-        if (!pte_present(pte_entry)) {
+        if (unlikely(!pte_present(pte_entry))) {
                 if (pte_none(pte_entry)) {
                         set_pte_at(
                                         mm,
-                                        norm_addr,
+                                        addr,
                                         pte,
                                         swp_entry_to_pte(
                                                         make_dsm_entry(
@@ -102,31 +122,27 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                                 } else if (is_migration_entry(swp_e)) {
                                         pte_unmap_unlock(pte, ptl);
 
-                                        migration_entry_wait(mm, pmd,
-                                                        norm_addr);
+                                        migration_entry_wait(mm, pmd, addr);
                                         goto retry;
                                 } else {
                                         BUG();
                                 }
                         } else {
-                                chain_fault:
-                                errk(
-                                                "[[EXTRACT_PAGE]] mm  faulting because swap\n");
-                                pte_unmap_unlock(pte, ptl);
+                                chain_fault: pte_unmap_unlock(pte, ptl);
 
-                                r = handle_mm_fault(mm, vma, norm_addr,
+                                r = handle_mm_fault(mm, vma, addr,
                                                 FAULT_FLAG_WRITE);
                                 if (r & VM_FAULT_ERROR) {
                                         errk("[*] failed at faulting \n");
                                         BUG();
                                 }
-                                errk("[EXTRACT_PAGE] faulting success \n");
+
                                 r = 0;
                                 goto retry;
                         }
                 }
         } else {
-                page = vm_normal_page(vma, norm_addr, *pte);
+                page = vm_normal_page(vma, addr, *pte);
                 if (!page) {
                         // DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
                         if (pte_pfn(*pte) == (void *) ZERO_PAGE(0))
@@ -135,12 +151,21 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                         page = pte_page(*pte);
                 }
         }
+        if (unlikely(PageTransHuge(page))) {
+                errk("[dsm_extract_page] we have a huge page \n");
+                if (!PageHuge(page) && PageAnon(page)) {
+                        if (unlikely(split_huge_page(page))) {
+                                errk(
+                                                "[dsm_extract_page] failed at splitting page \n");
+                                goto out;
+                        }
 
-        if (PageKsm(page)) {
+                }
+        }
+        if (unlikely(PageKsm(page))) {
                 errk("[dsm_extract_page] KSM page\n");
 
-                r = ksm_madvise(vma, norm_addr, norm_addr, MADV_UNMERGEABLE,
-                                &ksm_flag);
+                r = ksm_madvise(vma, addr, addr, MADV_UNMERGEABLE, &ksm_flag);
 
                 if (r) {
                         printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
@@ -150,33 +175,27 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                 }
         }
 
-        if (!trylock_page(page)) {
+        if (unlikely(!trylock_page(page))) {
                 errk("[[EXTRACT_PAGE]] cannot lock page\n");
                 r = -EFAULT;
                 goto out_pte;
         }
 
-        flush_cache_page(vma, norm_addr, pte_pfn(*pte));
-        ptep_clear_flush_notify(vma, norm_addr, pte);
+        flush_cache_page(vma, addr, pte_pfn(*pte));
+        ptep_clear_flush_notify(vma, addr, pte);
         set_pte_at(
                         mm,
-                        norm_addr,
+                        addr,
                         pte,
                         swp_entry_to_pte(
                                         make_dsm_entry((uint16_t) id.dsm_id,
                                                         (uint8_t) id.svm_id)));
 
-        // Remove page from red_page_tree if contained
-//FUNCS
-//        rp = funcs->_red_page_search(page_to_pfn(page));
-//        if (rp)
-//                funcs->_red_page_erase(rp);
-
         page_remove_rmap(page);
 
         dec_mm_counter(mm, MM_ANONPAGES);
         // this is a page flagging without data exchange so we can free the page
-        if (!page_mapped(page))
+        if (likely(!page_mapped(page)))
                 try_to_free_swap(page);
         //DSM1 do we need a put_page???/
         unlock_page(page);
@@ -223,13 +242,6 @@ struct page *dsm_extract_page_from_remote(dsm_message *msg) {
         }
 
         norm_addr = msg->req_addr + local_svm->priv->offset;
-
-        errk(
-                        "[dsm_extract_page_from_remote] local  [dsm %d / svm %d] , remote [dsm %d / svm %d] , address %p , norm address %p   \n",
-                        local_id.dsm_id, local_id.svm_id, remote_id.dsm_id,
-                        remote_id.svm_id, msg->req_addr, norm_addr);
-        errk("[dsm_extract_page_from_remote] offset %p , mm %p \n",
-                        local_svm->priv->offset, local_svm->priv->mm);
 
         page = dsm_extract_page(remote_id, local_svm, norm_addr);
 
@@ -279,7 +291,6 @@ int dsm_update_pte_entry(dsm_message *msg) // DSM1 - update all code
         if (!vma || vma->vm_start > msg->req_addr)
                 goto out;
 
-        errk("\n[*] No page FOUND \n");
         pgd = pgd_offset(mm, msg->req_addr);
         if (!pgd_present(*pgd))
                 goto out;

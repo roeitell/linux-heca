@@ -1607,9 +1607,7 @@ int try_to_unmap(struct page *page, enum ttu_flags flags)
 	BUG_ON(!PageLocked(page));
 	VM_BUG_ON(!PageHuge(page) && PageTransHuge(page));
 
-	if (unlikely(PageDsm(page)))
-	    ret = try_to_unmap_dsm(page);
-	else if (unlikely(PageKsm(page)))
+	if (unlikely(PageKsm(page)))
 		ret = try_to_unmap_ksm(page, flags);
 	else if (PageAnon(page))
 		ret = try_to_unmap_anon(page, flags);

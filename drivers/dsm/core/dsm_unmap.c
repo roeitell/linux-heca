@@ -69,23 +69,44 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
         retry:
 
         vma = find_vma(mm, addr);
-        if (!vma || vma->vm_start > addr)
+        if (unlikely(!vma || vma->vm_start > addr)) {
+                errk("[dsm_flag_page_remote] no VMA or bad VMA \n");
                 goto out;
+        }
 
         ksm_flag = vma->vm_flags & VM_MERGEABLE;
 
         pgd = pgd_offset(mm, addr);
-        if (!pgd_present(*pgd))
+        if (unlikely(!pgd_present(*pgd))) {
+                errk("[dsm_flag_page_remote] no pgd \n");
                 goto out;
+        }
 
         pud = pud_offset(pgd, addr);
-        if (!pud_present(*pud))
+        if (unlikely(!pud_present(*pud))) {
+                errk("[dsm_flag_page_remote] no pud \n");
                 goto out;
+        }
 
         pmd = pmd_offset(pud, addr);
-        BUG_ON(pmd_trans_huge(*pmd));
-        if (!pmd_present(*pmd))
+        if (unlikely(pmd_none(*pmd))) {
+                __pte_alloc(mm, vma, pmd, addr);
+                goto retry;
+        } else if (unlikely(pmd_bad(*pmd))) {
+                pmd_clear_bad(pmd);
+                errk("[dsm_flag_page_remote] bad pmd \n");
                 goto out;
+        } else if (unlikely(pmd_trans_huge(*pmd))) {
+                spin_lock(&mm->page_table_lock);
+                if (unlikely(pmd_trans_splitting(*pmd))) {
+                        spin_unlock(&mm->page_table_lock);
+                        wait_split_huge_page(vma->anon_vma, pmd);
+                } else {
+                        spin_unlock(&mm->page_table_lock);
+                        split_huge_page_pmd(mm, pmd);
+                }
+
+        }
 
         // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
         svm = funcs->_find_svm(&id);
@@ -142,7 +163,16 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
                         page = pte_page(*pte);
                 }
         }
+        if (PageTransHuge(page)) {
+                errk("[*] we have a huge page \n");
+                if (!PageHuge(page) && PageAnon(page)) {
+                        if (unlikely(split_huge_page(page))) {
+                                errk("[*] failed at splitting page \n");
+                                goto out;
+                        }
 
+                }
+        }
         if (PageKsm(page)) {
                 errk("[dsm_flag_page_remote] KSM page\n");
 
@@ -160,6 +190,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
         }
 
         if (!trylock_page(page)) {
+                errk("[dsm_flag_page_remote] coudln't lock page \n");
                 r = -EFAULT;
                 goto out_pte_unlock;
         }
@@ -178,7 +209,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
         dec_mm_counter(mm, MM_ANONPAGES);
         // this is a page flagging without data exchange so we can free the page
-        if (!page_mapped(page))
+        if (likely(!page_mapped(page)))
                 try_to_free_swap(page);
 
         // DSM1 - should we put_page in flag remote?
@@ -201,37 +232,3 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
 }
 EXPORT_SYMBOL(dsm_flag_page_remote);
-
-int try_to_unmap_dsm(struct page *page) {
-        struct red_page *rp = NULL;
-        struct subvirtual_machine *svm = NULL;
-        struct vm_area_struct *vma = NULL;
-        struct mm_struct *mm;
-        int ret = SWAP_FAIL;
-
-        printk("[try_to_unmap_dsm] !!!\n");
-//FUNCS
-//        rp = funcs->_red_page_search(page_to_pfn(page));
-//
-//        printk("[try_to_unmap_dsm] red_page : %d\n", !!rp);
-//
-//        if (rp) {
-//                svm = funcs->_find_svm(&rp->id);
-//
-//                printk("[try_to_unmap_dsm] svm : %d\n", !!svm);
-//
-//                if (svm && svm->priv) {
-//                        mm = svm->priv->mm;
-//                        vma = find_vma(mm, rp->addr);
-//                        if (vma || vma->vm_start < rp->addr)
-//                                ret = handle_mm_fault(mm, vma, rp->addr,
-//                                                FAULT_FLAG_WRITE);
-//
-//                        printk("[try_to_unmap_dsm] handle_mm_fault : %d\n",
-//                                        ret);
-//
-//                }
-//        }
-
-        return ret;
-}

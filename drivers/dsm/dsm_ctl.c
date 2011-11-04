@@ -119,12 +119,6 @@ struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id) {
 
 }
 
-struct rb_root *rcm_red_page_root(void) {
-        struct rcm * rcm = get_rcm();
-        return &rcm->red_page_root;
-
-}
-
 struct mem_region *find_mr_source(unsigned long addr) {
         struct mm_struct *mm = current->mm;
         struct subvirtual_machine *svm;

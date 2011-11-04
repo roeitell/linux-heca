@@ -27,7 +27,6 @@ int process_response(conn_element *ele, struct tx_buf_ele * tx_buf_e) {
 
 int rx_tx_message_transfer(conn_element * ele, struct rx_buf_ele * rx_buf_e) {
         page_pool_ele * ppe;
-        void * page_buf;
         tx_buf_ele *tx_e = NULL;
         struct page * page;
         int ret = 0;

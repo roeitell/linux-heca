@@ -39,7 +39,6 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
         struct mm_struct *mm;
         swp_entry_t swp_e;
         unsigned long ksm_flag;
-        struct red_page *rp = NULL;
 
         mm = svm->priv->mm;
         // if local
@@ -145,7 +144,8 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                 page = vm_normal_page(vma, addr, *pte);
                 if (!page) {
                         // DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
-                        if (pte_pfn(*pte) == (void *) ZERO_PAGE(0))
+                        if (pte_pfn(*pte)
+                                        == (unsigned long) (void *) ZERO_PAGE(0))
                                 goto bad_page;
 
                         page = pte_page(*pte);

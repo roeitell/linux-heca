@@ -68,10 +68,10 @@
 
 static struct rcm *_rcm;
 
-static inline struct rcm * get_rcm() {
+static inline struct rcm * get_rcm(void) {
         return _rcm;
 }
-static inline struct rcm ** get_pointer_rcm() {
+static inline struct rcm ** get_pointer_rcm(void) {
         return &_rcm;
 }
 

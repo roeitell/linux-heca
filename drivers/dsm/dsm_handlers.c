@@ -272,7 +272,7 @@ void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
         ret = ib_req_notify_cq(cq,
                         IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
         if (ret > 0)
-                tasklet_schedule(&ele->recv_work);
+                queue_work(ele->rcm->dsm_wq, &ele->recv_work);
         else if (ret < 0)
                 printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
 

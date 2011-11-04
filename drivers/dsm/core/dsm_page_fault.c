@@ -80,8 +80,6 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                 )
                         return VM_FAULT_ERROR;
         } else {
-                //DSM1  : we request the rdma page HERE!!
-                //page remote so we send message
                 struct page_request_completion pr_comp;
                 init_completion(&pr_comp.comp);
                 funcs->request_dsm_page(svm->ele, fault_svm->id, svm->id,
@@ -129,10 +127,10 @@ int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma,
                 pte_t *pte, unsigned long addr_fault, struct page * recv_page,
                 struct dsm_vm_id *id) {
         int ret = VM_FAULT_ERROR;
-        struct mem_cgroup *mem_cg;
-
-        // DSM3: this may be totally unnecessary.
-        int charge_swap = 0;
+//        struct mem_cgroup *mem_cg;
+//
+//        // DSM3: this may be totally unnecessary.
+//        int charge_swap = 0;
 
         if (!recv_page)
                 goto out;
@@ -156,7 +154,7 @@ int dsm_insert_page(struct mm_struct *mm, struct vm_area_struct *vma,
 //        charge_swap = 1;
 //    }
 
-        // Address of page fault - points to received page.
+// Address of page fault - points to received page.
         set_pte_at_notify(mm, addr_fault, pte,
                         mk_pte(recv_page, vma->vm_page_prot));
 

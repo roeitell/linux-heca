@@ -244,8 +244,11 @@ static int release(struct inode *inode, struct file *f) {
 
 static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         int r = -1;
+        unsigned long i = 0;
+        unsigned long end = 0;
+        int counter = 0;
+        int ret = 0;
 
-        struct subvirtual_machine *rele;
         struct conn_element *cele;
         int ip_addr;
         struct dsm_message msg;
@@ -261,10 +264,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         struct unmap_data udata;
         struct mr_data mr_info;
 
-        unsigned long i = 0;
-        unsigned long end = 0;
-        int counter = 0;
-        int ret = 0;
         struct rcm * rcm = get_rcm();
 
         switch (ioctl) {

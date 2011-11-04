@@ -269,7 +269,6 @@ int create_new_page_pool_element(conn_element * ele) {
 struct page_pool_ele * create_new_page_pool_element_from_page(
                 conn_element * ele, struct page *page) {
 
-        int ret = 0;
         struct page_pool_ele *ppe;
 
         ppe = kmalloc(sizeof(page_pool_ele), GFP_ATOMIC);
@@ -934,7 +933,8 @@ int create_qp(conn_element *ele) {
 int setup_qp(conn_element *ele) {
         int ret = 0;
 
-        tasklet_init(&ele->send_work, send_cq_handle_work, &ele->send_work);
+        tasklet_init(&ele->send_work, send_cq_handle_work,
+                        (unsigned long) &ele->send_work);
         INIT_WORK(&ele->recv_work, recv_cq_handle_work);
 
         ele->send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle,

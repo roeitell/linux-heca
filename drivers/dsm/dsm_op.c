@@ -171,11 +171,6 @@ void create_page_request(conn_element *ele, struct tx_buf_ele * tx_e,
         struct dsm_message *msg = tx_e->dsm_msg;
         page_pool_ele * ppe = get_page_ele(ele);
 
-        if (unlikely(!ppe)) {
-                printk(">[create_message] - Cannot grab a page\n");
-                return;
-        }
-
         //in order to find the element on the reception of the page, and free it
         tx_e->wrk_req->dst_addr = ppe;
 
@@ -222,7 +217,31 @@ page_pool_ele * get_page_ele(conn_element * ele) {
 
         ppe = list_first_entry(&pp->page_pool_list, page_pool_ele, page_ptr);
         list_del(&ppe->page_ptr);
+        pp->nb_full_element--;
         spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+
+        return ppe;
+
+}
+
+page_pool_ele * get_empty_page_ele(conn_element * ele) {
+        page_pool_ele * ppe;
+        unsigned long flags;
+        struct page_pool * pp = &ele->page_pool;
+
+        loop:
+        spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+        if (list_empty(&pp->page_empty_pool_list)) {
+                spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+                printk("[get_empty_page_ele] forcing a page refill\n");
+                release_replace_page_work(&ele->page_pool.page_release_work);
+                goto loop;
+        }
+
+        ppe =
+                        list_first_entry(&pp->page_empty_pool_list , page_pool_ele, page_ptr);
+        list_del(&ppe->page_ptr);
+        spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
 
         return ppe;
 
@@ -256,6 +275,7 @@ int create_new_page_pool_element(conn_element * ele) {
         spin_lock_irqsave(&pp->page_pool_list_lock, flags);
 
         list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
+        pp->nb_full_element++;
         spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
 
         return ret;
@@ -266,14 +286,29 @@ int create_new_page_pool_element(conn_element * ele) {
         return ret;
 }
 
-struct page_pool_ele * create_new_page_pool_element_from_page(
-                conn_element * ele, struct page *page) {
+int create_new_empty_page_pool_element(conn_element * ele) {
+        struct page_pool * pp = &ele->page_pool;
 
         struct page_pool_ele *ppe;
+        unsigned long flags;
 
         ppe = kmalloc(sizeof(page_pool_ele), GFP_ATOMIC);
+        if (!ppe)
+                return -1;
         memset(ppe, 0, sizeof(page_pool_ele));
 
+        spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+        list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
+        spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+        return 0;
+
+}
+
+struct page_pool_ele * create_new_page_pool_element_from_page(
+                conn_element * ele, struct page *page) {
+        struct page_pool_ele *ppe;
+
+        ppe = get_empty_page_ele(ele);
         ppe->mem_page = page;
         if (unlikely(!ppe->mem_page))
                 return NULL;
@@ -292,14 +327,25 @@ int create_page_pool(conn_element * ele) {
         int ret = 0;
         int i;
         struct page_pool * pp = &ele->page_pool;
-
+        pp->nb_full_element = 0;
         spin_lock_init(&pp->page_pool_list_lock);
         spin_lock_init(&pp->page_release_lock);
+        spin_lock_init(&pp->page_pool_empty_list_lock);
+        spin_lock_init(&pp->page_recycle_lock);
+
         INIT_WORK(&pp->page_release_work, release_replace_page_work);
         INIT_LIST_HEAD(&pp->page_pool_list);
+        INIT_LIST_HEAD(&pp->page_empty_pool_list);
+        INIT_LIST_HEAD(&pp->page_recycle_list);
         INIT_LIST_HEAD(&pp->page_release_list);
         for (i = 0; i < PAGE_POOL_SIZE; i++) {
                 ret = create_new_page_pool_element(ele);
+                if (ret)
+                        break;
+        }
+
+        for (i = 0; i < PAGE_POOL_SIZE; i++) {
+                ret = create_new_empty_page_pool_element(ele);
                 if (ret)
                         break;
         }
@@ -737,6 +783,69 @@ void release_tx_element_reply(conn_element * ele, tx_buf_ele * tx_e) {
 
 }
 
+void try_recycle_page_pool_element(conn_element *ele, page_pool_ele * ppe) {
+
+        unsigned long flags;
+        struct page_pool * pp = &ele->page_pool;
+        spin_lock_irqsave(&pp->page_pool_list_lock, flags);
+        if (pp->nb_full_element < PAGE_POOL_SIZE) {
+
+                list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
+                pp->nb_full_element++;
+                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+
+        } else {
+
+                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+
+                ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
+                                PAGE_SIZE, DMA_BIDIRECTIONAL);
+                __free_page(ppe->mem_page);
+                spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+                list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
+                spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+
+        }
+
+}
+
+void try_regenerate_empty_page_pool_element(conn_element *ele,
+                page_pool_ele * ppe) {
+        unsigned long flags;
+        struct page_pool * pp = &ele->page_pool;
+
+        ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf, PAGE_SIZE,
+                        DMA_BIDIRECTIONAL);
+
+        spin_lock_irqsave(&pp->page_pool_list_lock, flags);
+        if (pp->nb_full_element < PAGE_POOL_SIZE) {
+
+                ppe->mem_page = alloc_page( GFP_ATOMIC);
+                BUG_ON(!ppe->mem_page);
+
+                ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device,
+                                ppe->mem_page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
+                if (ib_dma_mapping_error(ele->cm_id->device,
+                                (u64) (unsigned long) ppe->page_buf))
+                        errk(
+                                        "[try_regenerate_empty_page_pool_element] couldn't map page \n");
+
+                memset(ppe->page_buf, 0, RDMA_PAGE_SIZE);
+
+                list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
+                pp->nb_full_element++;
+                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+
+        } else {
+
+                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+                spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+                list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
+                spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+
+        }
+}
+
 void release_replace_page_work(struct work_struct *work) {
         page_pool_ele * ppe = NULL;
         unsigned long flags;
@@ -744,18 +853,33 @@ void release_replace_page_work(struct work_struct *work) {
         struct page_pool * pp;
         pp= container_of(work, struct page_pool ,page_release_work );
         ele= container_of(pp, struct conn_element ,page_pool );
-        retry:
-        spin_lock_irqsave(&pp->page_release_lock, flags);
-        if (list_empty(&pp->page_release_list)) {
+
+        do {
+                spin_lock_irqsave(&pp->page_recycle_lock, flags);
+                if (list_empty(&pp->page_recycle_list)) {
+                        spin_unlock_irqrestore(&pp->page_recycle_lock, flags);
+                        break;
+                }
+                ppe =
+                                list_first_entry(&pp->page_recycle_list, page_pool_ele, page_ptr);
+                list_del(&ppe->page_ptr);
+                spin_unlock_irqrestore(&pp->page_recycle_lock, flags);
+                try_recycle_page_pool_element(ele, ppe);
+        } while (1);
+
+        do {
+                spin_lock_irqsave(&pp->page_release_lock, flags);
+                if (list_empty(&pp->page_release_list)) {
+                        spin_unlock_irqrestore(&pp->page_release_lock, flags);
+                        break;
+                }
+                ppe =
+                                list_first_entry(&pp->page_release_list, page_pool_ele, page_ptr);
+                list_del(&ppe->page_ptr);
                 spin_unlock_irqrestore(&pp->page_release_lock, flags);
-                return;
-        }
-        ppe = list_first_entry(&pp->page_release_list, page_pool_ele, page_ptr);
-        list_del(&ppe->page_ptr);
-        spin_unlock_irqrestore(&pp->page_release_lock, flags);
-        create_new_page_pool_element(ele);
-        free_page_ele(ele, ppe);
-        goto retry;
+                try_regenerate_empty_page_pool_element(ele, ppe);
+        } while (1);
+
 }
 
 void release_replace_page(conn_element * ele, struct tx_buf_ele * tx_e) {
@@ -763,9 +887,15 @@ void release_replace_page(conn_element * ele, struct tx_buf_ele * tx_e) {
         struct page_pool * pp = &ele->page_pool;
         page_pool_ele * ppe = (page_pool_ele *) tx_e->wrk_req->dst_addr;
         tx_e->wrk_req->dst_addr = NULL;
-        spin_lock_irqsave(&pp->page_release_lock, flags);
-        list_add_tail(&ppe->page_ptr, &pp->page_release_list);
-        spin_unlock_irqrestore(&pp->page_release_lock, flags);
+        if (ppe->mem_page) {
+                spin_lock_irqsave(&pp->page_recycle_lock, flags);
+                list_add_tail(&ppe->page_ptr, &pp->page_recycle_list);
+                spin_unlock_irqrestore(&pp->page_recycle_lock, flags);
+        } else {
+                spin_lock_irqsave(&pp->page_release_lock, flags);
+                list_add_tail(&ppe->page_ptr, &pp->page_release_list);
+                spin_unlock_irqrestore(&pp->page_release_lock, flags);
+        }
         schedule_work(&pp->page_release_work);
 
 }

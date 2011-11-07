@@ -35,7 +35,6 @@
 #define RX_BUF_ELEMENTS_NUM MAX_CAP_RCQ
 
 #define PAGE_POOL_SIZE (MAX_CAP_SCQ + MAX_CAP_RCQ)*2
-#define PAGE_POOL_LOW_THRESHOLD (MAX_CAP_SCQ + MAX_CAP_RCQ)
 
 /**
  * RDMA_INFO
@@ -178,11 +177,17 @@ typedef struct page_pool_ele {
 
 typedef struct page_pool {
 
+        int nb_full_element;
+
         struct list_head page_pool_list;
+        struct list_head page_empty_pool_list;
         struct list_head page_release_list;
+        struct list_head page_recycle_list;
 
         spinlock_t page_pool_list_lock;
+        spinlock_t page_pool_empty_list_lock;
         spinlock_t page_release_lock;
+        spinlock_t page_recycle_lock;
 
         struct work_struct page_release_work;
 

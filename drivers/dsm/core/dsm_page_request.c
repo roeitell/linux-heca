@@ -251,9 +251,8 @@ struct page *dsm_extract_page_from_remote(dsm_message *msg) {
         local_id.svm_id = u32_to_vm_id(msg->src);
         local_svm = funcs->_find_svm(&local_id);
         if (unlikely(!local_svm)) {
-                errk(
-                                "[dsm_extract_page_from_remote] coudln't find local_svm id:  [dsm %d / svm %d]  \n",
-                                local_id.dsm_id, local_id.svm_id);
+                errk("[dsm_extract_page_from_remote] coudln't find local_svm id:  [dsm %d / svm %d]  \n",
+                        local_id.dsm_id, local_id.svm_id);
                 return NULL;
         }
 

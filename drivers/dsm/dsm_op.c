@@ -17,6 +17,9 @@ int create_rcm(rcm **rcm, char *ip, int port) {
         *rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
         memset(*rcm, 0, sizeof(rcm));
 
+        (*rcm)->pf_stat = kmalloc(sizeof(struct pf_stat), GFP_KERNEL);
+        memset((*rcm)->pf_stat, 0, sizeof(struct pf_stat));
+
         (*rcm)->dsm_wq = create_workqueue("dsm_wq");
         (*rcm)->node_ip = inet_addr(ip);
 

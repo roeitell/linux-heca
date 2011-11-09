@@ -76,6 +76,10 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         fault_svm = funcs->_find_local_svm(svm->id.dsm_id, mm);
 
         BUG_ON(!fault_svm);
+
+        // Increment prefetch stat
+        get_rcm()->pf_stat->num_faults++;
+
         // do we need the notify / clear and maybe just use set_pte at notify or just set pte at
         //we set the pte as dsm empty on order to handle double page fault
         ptep_clear_flush_notify(vma, norm_addr, pte);

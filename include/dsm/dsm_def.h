@@ -8,6 +8,8 @@
 #ifndef DSM_DEF_H_
 #define DSM_DEF_H_
 
+#include <dsm/dsm_stats.h>
+
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_verbs.h>
 #include <linux/spinlock.h>
@@ -23,8 +25,6 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <asm/atomic.h>
-
-#define DSM_STATS_ENABLED
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
@@ -48,18 +48,11 @@
 /**
  * DSM_MESSAGE
  */
-#define READY                           0x00 // the slot is free
-#define UTIL                            0x10 // Reserve this element for using
-#define REQ                             0x01 // kernel posted a request
-#define REQ_SCHED                       0x11 // the message is scheduled to be processed later
-#define REQ_PROC                        0x02 // we are processing the request
-#define REQ_RCV                         0x02 // we received a request from remote node
-#define REQ_RCV_SCHED           0x12 // the message is scheduled to be processed later
-#define REQ_RCV_PROC            0x04 // we are processing the request from remote node
-#define REQ_REPLY                       0x04 // we received a reply to our request
-#define REQ_REPLY_PROC          0x08 // we are processing the reply to our request
-#define SLEEP                           0x0f
 
+#define REQ_PROC                        0x01 // we are processing the request
+#define REQ_RCV                         0x01 // we received a request from remote node
+#define REQ_RCV_PROC                    0x02 // we are processing the request from remote node
+#define REQ_REPLY                       0x02 // we received a reply to our request
 #define debug_dsm
 #ifdef debug_dsm
 #define errk printk
@@ -134,8 +127,9 @@ typedef struct rcm {
 
         struct ib_cq *listen_cq;
 
-        rwlock_t conn_lock;
-        rwlock_t route_lock;
+        spinlock_t rcm_lock;
+
+        spinlock_t route_lock;
 
         struct rb_root root_conn;
         struct rb_root root_route;
@@ -211,39 +205,6 @@ typedef struct tx_buffer {
 
 } tx_buffer;
 
-struct con_element_stats {
-        atomic64_t out;
-        atomic64_t out_rdma;
-        atomic64_t in;
-        atomic64_t in_rdma;
-
-        s64 total_wait_to_wait_completion;
-        s64 wait_to_wait_completion_min;
-        s64 wait_to_wait_completion_max;
-        s64 total_send_to_send_completion;
-        s64 send_to_send_completion_min;
-        s64 send_to_send_completion_max;
-        s64 total_send_completion_to_reply_completion;
-        s64 send_completion_to_reply_completion_min;
-        s64 send_completion_to_reply_completion_max;
-        s64 total_send_to_reply_completion;
-        s64 send_to_reply_completion_min;
-        s64 send_to_reply_completion_max;
-        s64 total_entry_to_reply;
-        s64 entry_to_reply_min;
-        s64 entry_to_reply_max;
-        u64 nb_total_processed;
-
-        s64 total_send_reply_to_send_reply_completion;
-        s64 send_reply_to_send_reply_completion_min;
-        s64 send_reply_to_send_reply_completion_max;
-        u64 nb_total_processed_send_reply;
-        spinlock_t lock;
-
-        struct timespec t_start_bench;
-        struct timespec t_end_bench;
-
-};
 typedef struct conn_element {
         rcm *rcm;
 
@@ -311,8 +272,6 @@ typedef struct private_data {
 
         struct rb_root root_swap;
 
-        rwlock_t dsm_data_lock;
-
         struct mm_struct *mm;
 
         unsigned long offset;
@@ -373,13 +332,6 @@ typedef struct reply_work_request {
 
 } reply_work_request;
 
-struct tx_stats {
-        struct timespec t_entry;
-        struct timespec t_send;
-        struct timespec t_send_completion;
-        struct timespec t_reply;
-};
-
 struct tx_callback {
         unsigned long data;
         void (*func)(struct tx_buf_ele *, unsigned long);
@@ -396,7 +348,7 @@ typedef struct tx_buf_ele {
 
         struct tx_callback callback;
 
-        struct tx_stats stats;
+        struct tx_dsm_stats stats;
 
 } tx_buf_ele;
 

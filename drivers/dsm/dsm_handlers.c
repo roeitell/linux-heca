@@ -17,6 +17,67 @@ void print_work_completion(struct ib_wc *wc, char * error_context) {
                         wc->opcode, wc->byte_len);
 }
 
+int dsm_recv_message_handler(struct conn_element *ele, rx_buf_ele *rx_e) {
+        tx_buf_ele *tx_e = NULL;
+        switch (rx_e->dsm_msg->status) {
+                case REQ_REPLY: {
+                        tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
+                        dsm_stats_message_recv_rdma_completion(&ele->stats);
+                        dsm_stats_update_time_recv_completion(&tx_e->stats);
+                        calc_dsm_stats_request_reply(&ele->stats, &tx_e->stats);
+                        process_response(ele, tx_e); // client got its response
+
+                        break;
+                }
+
+                case REQ_RCV: {
+
+                        rx_tx_message_transfer(ele, rx_e); // server got a request
+                        break;
+                }
+                default: {
+                        printk(
+                                        "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d , msg_nb %d\n",
+                                        rx_e, rx_e->dsm_msg->status, rx_e->id,
+                                        rx_e->dsm_msg->msg_num);
+                        goto err;
+
+                }
+        }
+
+        refill_recv_wr(ele, rx_e);
+        return 0;
+        err: return 1;
+
+}
+
+int dsm_send_message_handler(struct conn_element *ele, tx_buf_ele *tx_buf_e) {
+
+        dsm_stats_update_time_send_completion(&tx_buf_e->stats);
+        switch (tx_buf_e->dsm_msg->status) {
+                case REQ_RCV_PROC: {
+                        calc_dsm_stats_reply(&ele->stats, &tx_buf_e->stats);
+                        release_replace_page(ele, tx_buf_e);
+                        release_tx_element_reply(ele, tx_buf_e);
+
+                        break;
+                }
+                case REQ_PROC: {
+
+                        break;
+                }
+                default: {
+                        printk(
+                                        "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d , msg_nb %d\n",
+                                        tx_buf_e, tx_buf_e->dsm_msg->status,
+                                        tx_buf_e->id,
+                                        tx_buf_e->dsm_msg->msg_num);
+                        return 1;
+                }
+        }
+        return 0;
+}
+
 void dsm_cq_event_handler(struct ib_event *event, void *data) {
         printk("event %u  data %p\n", event->event, data);
         return;
@@ -58,7 +119,7 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context) {
 void dsm_send_poll(struct ib_cq *cq) {
         struct ib_wc wc;
         conn_element *ele = (conn_element *) cq->cq_context;
-        struct tx_buf_ele * tx_buf_e = NULL;
+
         while (ib_poll_cq(cq, 1, &wc) > 0) {
                 if (likely(wc.status == IB_WC_SUCCESS)) {
                         switch (wc.opcode) {
@@ -69,49 +130,21 @@ void dsm_send_poll(struct ib_cq *cq) {
                                                                 ">[dsm_send_poll] - ack rdma info exchange wr_id %llu \n",
                                                                 wc.wr_id);
                                         } else {
-
-                                                tx_buf_e =
-                                                                &ele->tx_buffer.tx_buf[wc.wr_id];
-                                                stats_message_send_completion(
+                                                dsm_stats_message_send_completion(
                                                                 &ele->stats);
-                                                stats_update_time_send_completion(
-                                                                &tx_buf_e->stats);
-                                                switch (tx_buf_e->dsm_msg->status) {
-                                                        case REQ_RCV_PROC: {
-                                                                calc_stat_reply(
-                                                                                &ele->stats,
-                                                                                &tx_buf_e->stats);
-                                                                release_replace_page(
-                                                                                ele,
-                                                                                tx_buf_e);
-                                                                release_tx_element_reply(
-                                                                                ele,
-                                                                                tx_buf_e);
 
-                                                                break;
-                                                        }
-                                                        case REQ_PROC: {
-
-                                                                break;
-                                                        }
-                                                        default: {
-                                                                printk(
-                                                                                "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d , msg_nb %d\n",
-                                                                                tx_buf_e,
-                                                                                tx_buf_e->dsm_msg->status,
-                                                                                tx_buf_e->id,
-                                                                                tx_buf_e->dsm_msg->msg_num);
-                                                                print_work_completion(
-                                                                                &wc,
-                                                                                "[dsm_send_poll] unhandled message stats , wc info - ");
-                                                        }
-                                                }
+                                                if (dsm_send_message_handler(
+                                                                ele,
+                                                                &ele->tx_buffer.tx_buf[wc.wr_id]))
+                                                        print_work_completion(
+                                                                        &wc,
+                                                                        "[dsm_send_poll] unhandled message stats , wc info - ");
 
                                         }
                                         break;
                                 }
                                 case IB_WC_RDMA_WRITE: {
-                                        stats_message_send_rdma_completion(
+                                        dsm_stats_message_send_rdma_completion(
                                                         &ele->stats);
                                         break;
                                 }
@@ -134,8 +167,6 @@ void dsm_send_poll(struct ib_cq *cq) {
 void dsm_recv_poll(struct ib_cq *cq) {
         struct ib_wc wc;
         conn_element *ele = (conn_element *) cq->cq_context;
-        struct rx_buf_ele * rx_e = NULL;
-        struct tx_buf_ele * tx_e = NULL;
 
         while (ib_poll_cq(cq, 1, &wc) > 0) {
                 switch (wc.status) {
@@ -173,57 +204,24 @@ void dsm_recv_poll(struct ib_cq *cq) {
 
                                                 exchange_info(ele, wc.wr_id);
                                         } else {
-                                                if (wc.byte_len
-                                                                != sizeof(dsm_message)) {
+                                                if (unlikely(
+                                                                wc.byte_len
+                                                                                != sizeof(dsm_message))) {
                                                         print_work_completion(
                                                                         &wc,
                                                                         "[dsm_recv_poll] -Received bogus data, size -");
                                                         goto err;
                                                 }
-                                                rx_e =
-                                                                &ele->rx_buffer.rx_buf[wc.wr_id];
-                                                stats_message_recv_completion(
+
+                                                dsm_stats_message_recv_completion(
                                                                 &ele->stats);
-                                                switch (rx_e->dsm_msg->status) {
-                                                        case REQ_REPLY: {
-                                                                tx_e =
-                                                                                &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-                                                                stats_message_recv_rdma_completion(
-                                                                                &ele->stats);
-                                                                stats_update_time_recv_completion(
-                                                                                &tx_e->stats);
-                                                                calc_stat_request_reply(
-                                                                                &ele->stats,
-                                                                                &tx_e->stats);
-                                                                process_response(
-                                                                                ele,
-                                                                                tx_e); // client got its response
+                                                if (dsm_recv_message_handler(
+                                                                ele,
+                                                                &ele->rx_buffer.rx_buf[wc.wr_id]))
+                                                        print_work_completion(
+                                                                        &wc,
+                                                                        "[dsm_recv_poll] - unknown message status ");
 
-                                                                break;
-                                                        }
-
-                                                        case REQ_RCV: {
-
-                                                                rx_tx_message_transfer(
-                                                                                ele,
-                                                                                rx_e); // server got a request
-                                                                break;
-                                                        }
-                                                        default: {
-                                                                printk(
-                                                                                "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d , msg_nb %d\n",
-                                                                                rx_e,
-                                                                                rx_e->dsm_msg->status,
-                                                                                rx_e->id,
-                                                                                rx_e->dsm_msg->msg_num);
-                                                                print_work_completion(
-                                                                                &wc,
-                                                                                "[dsm_recv_poll] - unknown message status ");
-                                                                break;
-                                                        }
-                                                }
-
-                                                refill_recv_wr(ele, rx_e);
                                         }
                                 } else
                                         printk(
@@ -473,3 +471,4 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
 
         return ret;
 }
+

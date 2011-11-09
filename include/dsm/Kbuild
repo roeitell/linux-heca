@@ -5,3 +5,4 @@ header-y += dsm_def.h
 header-y += dsm_rb.h
 header-y += dsm_sr.h
 header-y += dsm_core.h
+header-y += dsm_stats.h

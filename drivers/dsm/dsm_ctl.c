@@ -21,6 +21,7 @@
 #include <dsm/dsm_rb.h>
 #include <dsm/dsm_sr.h>
 #include <dsm/dsm_core.h>
+#include <dsm/dsm_stats.h>
 
 #include <linux/stat.h>
 
@@ -29,14 +30,14 @@ static int port = 0;
 
 struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
         //return search_rb_route(_rcm, id);
-        struct dsm *_dsm;
+        struct dsm *dsm;
         struct subvirtual_machine *svm;
         struct rcm * rcm = get_rcm();
 
-        list_for_each_entry_rcu(_dsm, &rcm->dsm_ls, ls)
+        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
         {
-                if (_dsm->dsm_id == id->dsm_id)
-                list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
+                if (dsm->dsm_id == id->dsm_id)
+                list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
                 {
                         if (svm->id.svm_id == id->svm_id)
                                 return svm;
@@ -53,13 +54,13 @@ struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
  */
 struct subvirtual_machine *find_local_svm(u16 dsm_id, struct mm_struct *mm) {
         struct subvirtual_machine *local_svm;
-        struct dsm *_dsm;
+        struct dsm *dsm;
         struct rcm * rcm = get_rcm();
 
-        list_for_each_entry_rcu(_dsm, &rcm->dsm_ls, ls)
+        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
         {
-                if (_dsm->dsm_id == dsm_id) {
-                        list_for_each_entry_rcu(local_svm, &_dsm->svm_ls, ls)
+                if (dsm->dsm_id == dsm_id) {
+                        list_for_each_entry_rcu(local_svm, &dsm->svm_ls, ls)
                         {
                                 if (local_svm->priv)
                                         if (local_svm->priv->mm == mm)
@@ -93,14 +94,14 @@ int page_local(unsigned long addr, struct dsm_vm_id *id, struct mm_struct *mm) {
 }
 
 struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id) {
-        struct dsm *_dsm;
+        struct dsm *dsm;
         struct subvirtual_machine *svm;
         struct mem_region *mr;
         struct rcm * rcm = get_rcm();
-        list_for_each_entry_rcu(_dsm, &rcm->dsm_ls, ls)
+        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
         {
-                if (_dsm->dsm_id == id->dsm_id)
-                list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
+                if (dsm->dsm_id == id->dsm_id)
+                list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
                 {
                         if (svm->id.svm_id == id->svm_id)
                         list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
@@ -122,11 +123,11 @@ struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id) {
 struct mem_region *find_mr_source(unsigned long addr) {
         struct mm_struct *mm = current->mm;
         struct subvirtual_machine *svm;
-        struct dsm *_dsm;
+        struct dsm *dsm;
         struct rcm * rcm = get_rcm();
-        list_for_each_entry_rcu(_dsm, &rcm->dsm_ls, ls)
+        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
         {
-                list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
+                list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
                 {
                         if (svm->priv)
                                 if (svm->priv->mm == mm) {
@@ -148,19 +149,16 @@ static int open(struct inode *inode, struct file *f) {
         private_data *data;
         struct rcm * rcm = get_rcm();
         data = kmalloc(sizeof(*data), GFP_KERNEL);
+
         if (!data)
                 return -EFAULT;
 
-        write_lock(&rcm->conn_lock);
-
+        spin_lock(&rcm->rcm_lock);
         data->root_swap = RB_ROOT;
-        rwlock_init(&data->dsm_data_lock);
         data->mm = current->mm;
         INIT_LIST_HEAD(&data->head);
-
         f->private_data = (void *) data;
-
-        write_unlock(&rcm->conn_lock);
+        spin_unlock(&rcm->rcm_lock);
 
         return 0;
 
@@ -196,10 +194,8 @@ static int release(struct inode *inode, struct file *f) {
         if (!data->svm)
                 return 1;
 
-        write_lock(&rcm->conn_lock);
-
         dsm_id = data->svm->id.dsm_id;
-
+        spin_lock(&rcm->rcm_lock);
         list_for_each_entry_rcu(_dsm, &rcm->dsm_ls, ls)
         {
                 if (_dsm->dsm_id == dsm_id) {
@@ -232,12 +228,9 @@ static int release(struct inode *inode, struct file *f) {
                 }
 
         }
-
+        spin_unlock(&rcm->rcm_lock);
         synchronize_rcu();
-
         kfree(data);
-
-        write_unlock(&rcm->conn_lock);
 
         return 0;
 }
@@ -275,8 +268,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                         sizeof svm_info))
                                 goto out;
 
-                        write_lock(&rcm->route_lock);
-
                         id.dsm_id = svm_info.dsm_id;
                         id.svm_id = svm_info.svm_id;
 
@@ -286,6 +277,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                         "[DSM_SVM]\n\tfound svm : %d\n\tdsm_id : %u\n\tsvm_id : %u\n",
                                         !!svm, svm_info.dsm_id,
                                         svm_info.svm_id);
+                        spin_lock(&rcm->route_lock);
 
                         if (!svm) {
                                 svm = kmalloc(sizeof(*svm), GFP_KERNEL);
@@ -326,8 +318,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                         }
 
                         r = 0;
-                        fail1:
-                        write_unlock(&rcm->route_lock);
+                        fail1: spin_unlock(&rcm->route_lock);
 
                         break;
 
@@ -374,8 +365,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                         sizeof svm_info))
                                 goto out;
 
-                        write_lock(&rcm->route_lock);
-
                         id.dsm_id = svm_info.dsm_id;
                         id.svm_id = svm_info.svm_id;
 
@@ -386,6 +375,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                         !!svm, svm_info.dsm_id,
                                         svm_info.svm_id);
 
+                        spin_lock(&rcm->route_lock);
                         if (!svm) {
                                 svm = kmalloc(sizeof(*svm), GFP_KERNEL);
                                 if (!svm)
@@ -422,8 +412,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         r = 0;
 
-                        fail2:
-                        write_unlock(&rcm->route_lock);
+                        fail2: spin_unlock(&rcm->route_lock);
 
                         break;
 
@@ -437,9 +426,8 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 goto out;
 
                         // DSM2: why are locks outside of function?
-                        read_lock(&rcm->conn_lock);
+
                         svm = find_svm(&udata.id);
-                        read_unlock(&rcm->conn_lock);
 
                         r = -1;
 
@@ -495,9 +483,8 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 goto out;
                         }
 
-                        read_lock(&rcm->conn_lock);
                         svm = find_svm(&udata.id);
-                        read_unlock(&rcm->conn_lock);
+
                         if (!svm) {
                                 errk(
                                                 "[UNMAP_PAGE] could not find the route element \n");
@@ -535,7 +522,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         if (likely(cele)) {
 
-                                reset_stat(&cele->stats);
+                                reset_dsm_stats(&cele->stats);
 
                         }
 
@@ -551,7 +538,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         if (likely(cele)) {
 
-                                print_stat(&cele->stats);
+                                print_dsm_stats(&cele->stats);
 
                         }
 
@@ -610,9 +597,9 @@ static int dsm_init(void) {
         _dsm->dsm_id = 1;
 
         INIT_LIST_HEAD(&_dsm->svm_ls);
-
+        spin_lock(&rcm->rcm_lock);
         list_add_rcu(&_dsm->ls, &rcm->dsm_ls);
-
+        spin_unlock(&rcm->rcm_lock);
         rdma_listen(rcm->cm_id, 2);
 //DSM2: really need better cleanup here - incase of failure
         err: return misc_register(&rdma_misc);

@@ -199,8 +199,26 @@ static inline void dsm_entry_to_val(swp_entry_t entry, uint16_t *dsm_id, uint8_t
 
 }
 
+static inline int  is_empty_dsm_entry(swp_entry_t entry)
+{
+        uint16_t dsm_id;
+        uint8_t vm_id;
+        unsigned long val = swp_offset(entry);
+
+        dsm_id = val >> 8;
+        vm_id =  val & ((1ul << 9) - 1);
+        if( dsm_id ==0 && vm_id==0 )
+                return 1;
+        return 0;
+
+}
+
 #else
 // SWP_DSM dummy
+static inline int  is_empty_dsm_entry(swp_entry_t entry)
+{
+        return 0;
+}
 static inline swp_entry_t make_dsm_entry(uint16_t dsm_id, uint8_t vm_id)
 {
 	return swp_entry(0, 0);

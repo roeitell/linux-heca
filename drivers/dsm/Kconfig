@@ -12,3 +12,10 @@ config DSM_CORE
 	default y
 	help
 		DSM_CORE provides an interface to necessary kernel memory operations required from the operation of DSM.
+		
+config DSM_STATS
+	bool "DSM_STATS"
+	depends on DSM_CORE
+	default y
+	help
+		DSM_STATS provides stats about the dsm operation via procfs

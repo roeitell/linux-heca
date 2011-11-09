@@ -29,7 +29,6 @@ tx_buf_ele * try_get_next_empty_tx_ele(conn_element *);
 tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *);
 tx_buf_ele * get_next_empty_tx_ele(conn_element *);
 int init_tx_lists(conn_element *);
-void init_synchronisation(conn_element *);
 
 /*
  * CONNECTION FUNCTION
@@ -78,24 +77,5 @@ int refill_recv_wr(conn_element *, rx_buf_ele *);
 void reg_rem_info(conn_element *);
 int create_rdma_info(conn_element *);
 void format_rdma_info(conn_element *);
-
-/*
- * STATS
- */
-void reset_stat(struct con_element_stats *);
-int create_stat_data(struct con_element_stats *);
-void calc_stat_request_reply(struct con_element_stats *, struct tx_stats *);
-void calc_stat_reply(struct con_element_stats *, struct tx_stats *);
-void print_stat(struct con_element_stats *);
-
-void stats_get_time_request(struct timespec *);
-void stats_set_time_request(struct tx_stats *, struct timespec);
-void stats_update_time_send(struct tx_stats *);
-void stats_update_time_send_completion(struct tx_stats *);
-void stats_update_time_recv_completion(struct tx_stats *);
-void stats_message_recv_completion(struct con_element_stats *);
-void stats_message_recv_rdma_completion(struct con_element_stats *);
-void stats_message_send_completion(struct con_element_stats *);
-void stats_message_send_rdma_completion(struct con_element_stats *);
 
 #endif /* DSM_OP_H_ */

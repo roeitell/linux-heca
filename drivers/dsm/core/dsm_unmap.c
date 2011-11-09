@@ -24,7 +24,6 @@
 #include <asm-generic/mman-common.h>
 
 struct dsm_functions *funcs;
-struct page *kpage;
 
 void reg_dsm_functions(
                 struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
@@ -74,7 +73,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
                 goto out;
         }
 
-        ksm_flag = vma->vm_flags & VM_MERGEABLE;
+        // ksm_flag = vma->vm_flags & VM_MERGEABLE;
 
         pgd = pgd_offset(mm, addr);
         if (unlikely(!pgd_present(*pgd))) {
@@ -176,8 +175,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
         if (PageKsm(page)) {
                 errk("[dsm_flag_page_remote] KSM page\n");
 
-                r = ksm_madvise(vma, request_addr, request_addr,
-                                MADV_UNMERGEABLE, &ksm_flag);
+                r = ksm_madvise(vma, request_addr, request_addr + PAGE_SIZE,
+                MADV_UNMERGEABLE, &vma->vm_flags);
 
                 if (r) {
                         printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);

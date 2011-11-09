@@ -23,10 +23,11 @@
 #include <linux/mmu_notifier.h>
 
 #include <linux/ksm.h>
+#include <linux/mmu_context.h>
 #include <asm-generic/mman-common.h>
 
-struct page *dsm_extract_page(struct dsm_vm_id id,
-                struct subvirtual_machine *svm, unsigned long addr) {
+struct page *dsm_extract_page_protected(struct dsm_vm_id id,
+                struct mm_struct *mm, unsigned long addr) {
         spinlock_t *ptl;
         pte_t *pte;
         int r = 0;
@@ -36,14 +37,8 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
         pud_t *pud;
         pmd_t *pmd;
         pte_t pte_entry;
-        struct mm_struct *mm;
         swp_entry_t swp_e;
-        unsigned long ksm_flag;
-
-        mm = svm->priv->mm;
-        // if local
-        down_read(&mm->mmap_sem);
-
+        errk("[request_page_insert] faulting for page %p  \n ", addr);
         retry:
 
         vma = find_vma(mm, addr);
@@ -51,8 +46,6 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                 errk("[dsm_extract_page] no VMA or bad VMA \n");
                 goto out;
         }
-
-        ksm_flag = vma->vm_flags & VM_MERGEABLE;
 
         pgd = pgd_offset(mm, addr);
         if (unlikely(!pgd_present(*pgd))) {
@@ -85,7 +78,7 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                         spin_unlock(&mm->page_table_lock);
                         split_huge_page_pmd(mm, pmd);
                 }
-
+                goto retry;
         }
 
         // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
@@ -157,7 +150,7 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
                         if (unlikely(split_huge_page(page))) {
                                 errk(
                                                 "[dsm_extract_page] failed at splitting page \n");
-                                goto out;
+                                goto bad_page;
                         }
 
                 }
@@ -165,20 +158,20 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
         if (unlikely(PageKsm(page))) {
                 errk("[dsm_extract_page] KSM page\n");
 
-                r = ksm_madvise(vma, addr, addr, MADV_UNMERGEABLE, &ksm_flag);
+                r = ksm_madvise(vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE
+                                , &vma->vm_flags);
 
                 if (r) {
                         printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
 
                         // DSM1 : better ksm error handling required.
-                        return (void *) -EFAULT;
+                        goto bad_page;
                 }
         }
 
         if (unlikely(!trylock_page(page))) {
                 errk("[[EXTRACT_PAGE]] cannot lock page\n");
-                r = -EFAULT;
-                goto out_pte;
+                goto bad_page;
         }
 
         flush_cache_page(vma, addr, pte_pfn(*pte));
@@ -207,13 +200,36 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
 
         pte_unmap_unlock(pte, ptl);
         // if local
-        up_read(&mm->mmap_sem);
-        out:
 
+        out:
+        errk("[request_page_insert] got page %p  \n ", page);
         return page;
 
-        bad_page: pte_unmap_unlock(pte, ptl);
-        return (void *) -EFAULT;
+        bad_page:
+
+        pte_unmap_unlock(pte, ptl);
+
+        // if local
+
+        return NULL;
+
+}
+
+struct page *dsm_extract_page(struct dsm_vm_id id,
+                struct subvirtual_machine *svm, unsigned long addr) {
+
+        struct mm_struct *mm;
+        struct page * page;
+        mm = svm->priv->mm;
+        // if local
+        use_mm(mm);
+        down_read(&mm->mmap_sem);
+
+        page = dsm_extract_page_protected(id, mm, addr);
+        up_read(&mm->mmap_sem);
+        unuse_mm(mm);
+
+        return page;
 
 }
 EXPORT_SYMBOL(dsm_extract_page);

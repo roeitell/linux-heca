@@ -9,6 +9,7 @@
 #include <rdma/ib_cm.h>
 #include <rdma/ib_verbs.h>
 #include <dsm/dsm_sr.h>
+#include <dsm/dsm_stats.h>
 
 int create_rcm(rcm **rcm, char *ip, int port) {
         int ret = 0;
@@ -22,8 +23,8 @@ int create_rcm(rcm **rcm, char *ip, int port) {
         (*rcm)->root_conn = RB_ROOT;
         (*rcm)->root_route = RB_ROOT;
 
-        rwlock_init(&(*rcm)->conn_lock);
-        rwlock_init(&(*rcm)->route_lock);
+        spin_lock_init(&(*rcm)->rcm_lock);
+        spin_lock_init(&(*rcm)->route_lock);
 
         (*rcm)->sin.sin_family = AF_INET;
         (*rcm)->sin.sin_addr.s_addr = (__u32) (*rcm)->node_ip;
@@ -435,7 +436,7 @@ int setup_connection(conn_element *ele, int type) {
         if (!ele->mr)
                 goto err2;
 
-        if (create_stat_data(&ele->stats))
+        if (create_dsm_stats_data(&ele->stats))
                 goto err3;
 
         if (setup_qp(ele))
@@ -520,7 +521,7 @@ tx_buf_ele * get_next_empty_tx_ele(conn_element *ele) {
         if (!tx) {
                 printk(">[get_next_empty_tx_ele] - no connection element\n");
         }
-        stats_get_time_request(&time);
+        dsm_stats_get_time_request(&time);
         wait_for_completion_interruptible(&tx->completion_free_tx_element);
         spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
         BUG_ON(list_empty(&tx->tx_free_elements_list));
@@ -528,7 +529,7 @@ tx_buf_ele * get_next_empty_tx_ele(conn_element *ele) {
         tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
         spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
-        stats_set_time_request(&tx_e->stats, time);
+        dsm_stats_set_time_request(&tx_e->stats, time);
         return tx_e;
 
 }
@@ -1137,341 +1138,4 @@ unsigned int inet_addr(char *addr) {
         arr[3] = d;
         return *(unsigned int*) arr;
 }
-#ifdef DSM_STATS_ENABLED
-
-void stats_get_time_request(struct timespec *time) {
-        getnstimeofday(time);
-}
-
-void stats_set_time_request(struct tx_stats *stats, struct timespec time) {
-        stats->t_entry = time;
-}
-
-void stats_update_time_send(struct tx_stats *stats) {
-        getnstimeofday(&stats->t_send);
-}
-
-void stats_update_time_send_completion(struct tx_stats *stats) {
-        getnstimeofday(&stats->t_send_completion);
-}
-
-void stats_update_time_recv_completion(struct tx_stats *stats) {
-        getnstimeofday(&stats->t_reply);
-}
-
-void stats_message_send_completion(struct con_element_stats * stats) {
-        atomic64_inc(&stats->out);
-}
-
-void stats_message_send_rdma_completion(struct con_element_stats * stats) {
-        atomic64_inc(&stats->out_rdma);
-}
-void stats_message_recv_completion(struct con_element_stats * stats) {
-        atomic64_inc(&stats->in);
-}
-
-void stats_message_recv_rdma_completion(struct con_element_stats * stats) {
-        atomic64_inc(&stats->in_rdma);
-}
-
-void calc_stat_request_reply_full(struct con_element_stats *e_stats,
-                struct tx_stats *tx_stats) {
-        s64 ns;
-        struct timespec time;
-
-        time = timespec_sub(tx_stats->t_send, tx_stats->t_entry);
-        ns = timespec_to_ns(&time);
-        if (e_stats->wait_to_wait_completion_max < ns) {
-                e_stats->wait_to_wait_completion_max = ns;
-        } else if (e_stats->wait_to_wait_completion_min > ns) {
-                e_stats->wait_to_wait_completion_min = ns;
-        }
-        e_stats->total_wait_to_wait_completion += ns;
-
-        time = timespec_sub(tx_stats->t_send_completion, tx_stats->t_send);
-        ns = timespec_to_ns(&time);
-        if (e_stats->send_to_send_completion_max < ns) {
-                e_stats->send_to_send_completion_max = ns;
-        } else if (e_stats->send_to_send_completion_min > ns) {
-                e_stats->send_to_send_completion_min = ns;
-
-        }
-        e_stats->total_send_to_send_completion += ns;
-
-        time = timespec_sub(tx_stats->t_reply, tx_stats->t_send_completion);
-        ns = timespec_to_ns(&time);
-        if (e_stats->send_completion_to_reply_completion_max < ns) {
-                e_stats->send_completion_to_reply_completion_max = ns;
-        } else if (e_stats->send_completion_to_reply_completion_min > ns) {
-                e_stats->send_completion_to_reply_completion_min = ns;
-        }
-        e_stats->total_send_completion_to_reply_completion += ns;
-
-        time = timespec_sub(tx_stats->t_reply, tx_stats->t_send);
-        ns = timespec_to_ns(&time);
-        if (e_stats->send_to_reply_completion_max < ns) {
-                e_stats->send_to_reply_completion_max = ns;
-        } else if (e_stats->send_to_reply_completion_min > ns) {
-                e_stats->send_to_reply_completion_min = ns;
-        }
-        e_stats->total_send_to_reply_completion += ns;
-
-}
-
-void calc_stat_request_reply(struct con_element_stats *e_stats,
-                struct tx_stats *tx_stats) {
-        s64 ns;
-        unsigned long flags;
-        struct timespec time;
-
-        spin_lock_irqsave(&e_stats->lock, flags);
-        getnstimeofday(&e_stats->t_end_bench);
-        e_stats->nb_total_processed++;
-        calc_stat_request_reply_full(e_stats, tx_stats);
-        time = timespec_sub(tx_stats->t_reply, tx_stats->t_entry);
-        ns = timespec_to_ns(&time);
-        if (e_stats->entry_to_reply_max < ns) {
-                e_stats->entry_to_reply_max = ns;
-        } else if (e_stats->entry_to_reply_min > ns) {
-                e_stats->entry_to_reply_min = ns;
-        }
-        e_stats->total_entry_to_reply += ns;
-
-        spin_unlock_irqrestore(&e_stats->lock, flags);
-
-        return;
-}
-
-void calc_stat_reply(struct con_element_stats *e_stats,
-                struct tx_stats *tx_stats) {
-        s64 ns;
-        unsigned long flags;
-        struct timespec time;
-
-        spin_lock_irqsave(&e_stats->lock, flags);
-        e_stats->nb_total_processed_send_reply++;
-        time = timespec_sub(tx_stats->t_send_completion, tx_stats->t_send);
-        ns = timespec_to_ns(&time);
-        if (e_stats->send_reply_to_send_reply_completion_max < ns) {
-                e_stats->send_reply_to_send_reply_completion_max = ns;
-        } else if (e_stats->send_reply_to_send_reply_completion_min > ns) {
-                e_stats->send_reply_to_send_reply_completion_min = ns;
-        }
-        e_stats->total_send_reply_to_send_reply_completion += ns;
-
-        spin_unlock_irqrestore(&e_stats->lock, flags);
-
-        return;
-}
-
-void print_stats_message_count(struct con_element_stats * stats) {
-        u64 in = atomic64_read(&stats->in);
-        u64 out = atomic64_read(&stats->out);
-        u64 out_rdma = atomic64_read(&stats->out_rdma);
-        u64 in_rdma = atomic64_read(&stats->in_rdma);
-        u64 fly = out - in;
-        printk(
-                        "***************************************************************************************\n");
-        printk(
-                        "Messages        *OUT            *OUTRDMA        *IN             *INRDMA         *FLIGHT\n");
-        printk(
-                        "Messages        *%llu           *%llu           *%llu           *%llu           *%llu\n",
-                        out, out_rdma, in, in_rdma, fly);
-        printk(
-                        "***************************************************************************************\n");
-
-}
-void print_stat_time_detailed(struct con_element_stats * stats) {
-        s64 avg;
-        printk("************\n");
-        avg = stats->total_wait_to_wait_completion / stats->nb_total_processed;
-        printk("Wait to send Time (ns)\n");
-        printk("TOTAL %lld |AVG %lld | MIN %lld | MAX %lld \n",
-                        stats->total_wait_to_wait_completion, avg,
-                        stats->wait_to_wait_completion_min,
-                        stats->wait_to_wait_completion_max);
-
-        printk("***********\n");
-        avg = stats->total_send_to_send_completion / stats->nb_total_processed;
-        printk("Send to Send completion Time (ns)\n");
-        printk("TOTAL %lld | AVG %lld | MIN %lld | MAX %lld \n",
-                        stats->total_send_to_send_completion, avg,
-                        stats->send_to_send_completion_min,
-                        stats->send_to_send_completion_max);
-
-        printk("**********\n");
-        avg = stats->total_send_completion_to_reply_completion
-                        / stats->nb_total_processed;
-        printk("send completion to reply completion (ns)\n");
-        printk("TOTAL %lld | AVG %lld | MIN %lld | MAX %lld \n",
-                        stats->total_send_completion_to_reply_completion, avg,
-                        stats->send_completion_to_reply_completion_min,
-                        stats->send_completion_to_reply_completion_max);
-
-        printk("**********\n");
-        avg = stats->total_send_to_reply_completion / stats->nb_total_processed;
-        printk("send  to reply completion (ns)\n");
-        printk("TOTAL %lld | AVG %lld | MIN %lld | MAX %lld \n",
-                        stats->total_send_to_reply_completion, avg,
-                        stats->send_to_reply_completion_min,
-                        stats->send_to_reply_completion_max);
-
-}
-
-void print_stats_time(struct con_element_stats * stats) {
-        s64 avg;
-        s64 nb_req_sec;
-        s64 mb_sec_out;
-        s64 mb_sec_in;
-        s64 perceived_request_proc;
-        unsigned long flags;
-        struct timespec time;
-
-        spin_lock_irqsave(&stats->lock, flags);
-        if (stats->nb_total_processed_send_reply) {
-                avg = stats->total_send_reply_to_send_reply_completion
-                                / stats->nb_total_processed_send_reply;
-                printk("nb Send Reply processed: %llu\n",
-                                stats->nb_total_processed_send_reply);
-                printk(
-                                "Send Reply Time (ns)  AVG %lld | MIN %lld | MAX %lld \n",
-                                avg,
-                                stats->send_reply_to_send_reply_completion_min,
-                                stats->send_reply_to_send_reply_completion_max);
-                printk(
-                                "*******************************************************************************\n");
-        }
-        if (stats->nb_total_processed) {
-
-                printk("nb request processed: %llu\n",
-                                stats->nb_total_processed);
-                print_stat_time_detailed(stats);
-                printk("**********\n");
-                avg = stats->total_entry_to_reply / stats->nb_total_processed;
-                printk("Total time from Request to reply (ns)\n");
-                printk("  AVG %lld | MIN %lld | MAX %lld \n", avg,
-                                stats->entry_to_reply_min,
-                                stats->entry_to_reply_max);
-                printk("**********\n");
-
-                time = timespec_sub(stats->t_end_bench, stats->t_start_bench);
-                avg = timespec_to_ns(&time);
-                perceived_request_proc = avg / stats->nb_total_processed;
-                nb_req_sec = (1000000000 * stats->nb_total_processed) / avg;
-                mb_sec_out = (nb_req_sec * (sizeof(dsm_message) * 8))
-                                / (1024 * 1024);
-                mb_sec_in = (nb_req_sec * ((sizeof(dsm_message)) + PAGE_SIZE)
-                                * 8) / (1024 * 1024);
-                printk(
-                                "Start benchmark %lld \n End Benchmark %lld \n total time %lld \n",
-                                timespec_to_ns(&stats->t_start_bench),
-                                timespec_to_ns(&stats->t_end_bench), avg);
-                printk("Estimated GLOBAL bandwith (Request/s): %lld \n",
-                                nb_req_sec);
-                printk("Perceived Request churn : one request every %lld ns \n",
-                                perceived_request_proc);
-                printk(
-                                "Estimated GLOBAL bandwith : a->b %lld (Mb/s) , b->a %lld (Mb/s)\n",
-                                mb_sec_out, mb_sec_in);
-        }
-        spin_unlock_irqrestore(&stats->lock, flags);
-}
-
-int create_stat_data(struct con_element_stats *stats) {
-
-        spin_lock_init(&stats->lock);
-        atomic64_set(&stats->in, 0);
-        atomic64_set(&stats->out, 0);
-        atomic64_set(&stats->out_rdma, 0);
-        atomic64_set(&stats->in_rdma, 0);
-        stats->nb_total_processed = 0;
-        stats->nb_total_processed_send_reply = 0;
-        stats->total_entry_to_reply = 0;
-        stats->total_send_completion_to_reply_completion = 0;
-        stats->total_send_reply_to_send_reply_completion = 0;
-        stats->total_send_to_send_completion = 0;
-        stats->total_wait_to_wait_completion = 0;
-        stats->entry_to_reply_max = 0;
-        stats->entry_to_reply_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_completion_to_reply_completion_max = 0;
-        stats->send_completion_to_reply_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_reply_to_send_reply_completion_max = 0;
-        stats->send_reply_to_send_reply_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_to_send_completion_max = 0;
-        stats->send_to_send_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->wait_to_wait_completion_max = 0;
-        stats->wait_to_wait_completion_min = 0x7FFFFFFFFFFFFFFF;
-        return 0;
-}
-
-void reset_stat(struct con_element_stats * stats) {
-        unsigned long flags;
-        spin_lock_irqsave(&stats->lock, flags);
-        atomic64_set(&stats->in, 0);
-        atomic64_set(&stats->out, 0);
-        atomic64_set(&stats->out_rdma, 0);
-        atomic64_set(&stats->in_rdma, 0);
-        stats->nb_total_processed = 0;
-        stats->nb_total_processed_send_reply = 0;
-        stats->total_entry_to_reply = 0;
-        stats->total_send_completion_to_reply_completion = 0;
-        stats->total_send_reply_to_send_reply_completion = 0;
-        stats->total_send_to_send_completion = 0;
-        stats->total_wait_to_wait_completion = 0;
-        stats->entry_to_reply_max = 0;
-        stats->entry_to_reply_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_completion_to_reply_completion_max = 0;
-        stats->send_completion_to_reply_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_reply_to_send_reply_completion_max = 0;
-        stats->send_reply_to_send_reply_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_to_send_completion_max = 0;
-        stats->send_to_send_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->wait_to_wait_completion_max = 0;
-        stats->wait_to_wait_completion_min = 0x7FFFFFFFFFFFFFFF;
-        getnstimeofday(&stats->t_start_bench);
-        spin_unlock_irqrestore(&stats->lock, flags);
-}
-
-void print_stat(struct con_element_stats * stats) {
-        print_stats_message_count(stats);
-        print_stats_time(stats);
-}
-#else
-int create_stat_data(struct con_element_stats *stats) {
-        return 0;
-}
-void reset_stat(struct con_element_stats * stats) {
-}
-void print_stat(struct con_element_stats * stats) {
-}
-void calc_stat(struct con_element_stats *e_stats, struct tx_stats *tx_stats) {
-}
-void print_stat_time_detailed(struct con_element_stats * stats) {
-}
-void calc_stat_request_reply_full(struct con_element_stats *e_stats, struct tx_stats *tx_stats) {
-}
-void stats_update_time_send(struct tx_stats *stats) {
-}
-void stats_update_time_send_completion(struct tx_stats *stats) {
-}
-void stats_get_time_request(struct timespec *time) {
-}
-void stats_set_time_request(struct tx_stats *stats, struct timespec time) {
-}
-void stats_update_time_recv_completion(struct tx_stats *stats) {
-}
-
-void print_stats_time(struct con_element_stats * stats) {
-}
-void print_stats_message_count(struct con_element_stats * stats) {
-}
-void stats_message_recv_completion(struct con_element_stats * stats) {
-}
-void stats_message_recv_rdma_completion(struct con_element_stats * stats) {
-}
-void stats_message_send_completion(struct con_element_stats * stats) {
-}
-void stats_message_send_rdma_completion(struct con_element_stats * stats) {
-}
-#endif
 

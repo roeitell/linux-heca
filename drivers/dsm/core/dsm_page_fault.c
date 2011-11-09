@@ -47,6 +47,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         int ret = VM_FAULT_ERROR;
         struct page *page = NULL;
 
+        errk("[request_page_insert] faulting for page %p , norm %p \n ", addr,
+                        norm_addr);
         pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
         BUG_ON(!pte);
 
@@ -57,7 +59,13 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
 
         //DSM1 we need to test if its a swap or other if yes we do vm faul retry
         if (unlikely(!is_dsm_entry(*entry))) {
-                return VM_FAULT_RETRY;
+                ret = VM_FAULT_RETRY;
+                goto out;
+        } else if (unlikely(is_empty_dsm_entry(*entry))) {
+                errk(
+                                "[request_page_insert] double faulting , we throw back in loop \n");
+                ret VM_FAULT_RETRY;
+                goto out;
         }
 
         dsm_entry_to_val(*entry, &id.dsm_id, &id.svm_id);
@@ -68,17 +76,18 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         fault_svm = funcs->_find_local_svm(svm->id.dsm_id, mm);
 
         BUG_ON(!fault_svm);
-
+        // do we need the notify / clear and maybe just use set_pte at notify or just set pte at
+        //we set the pte as dsm empty on order to handle double page fault
+        ptep_clear_flush_notify(vma, norm_addr, pte);
+        set_pte_at(mm, norm_addr, pte, swp_entry_to_pte(make_dsm_entry(0, 0)));
+        pte_unmap_unlock(pte, ptl);
         if (svm->priv) {
-                page = dsm_extract_page(
+                page = dsm_extract_page_protected(
                                 fault_svm->id,
-                                svm,
+                                svm->priv->mm,
                                 norm_addr + svm->priv->offset
                                                 - fault_svm->priv->offset);
 
-                if (page == (void *) -EFAULT
-                )
-                        return VM_FAULT_ERROR;
         } else {
                 struct page_request_completion pr_comp;
                 init_completion(&pr_comp.comp);
@@ -86,20 +95,20 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                                 (uint64_t)(norm_addr - fault_svm->priv->offset),
                                 signal_completion_page_request,
                                 (unsigned long) &pr_comp);
+
                 wait_for_completion_interruptible(&pr_comp.comp);
                 page = pr_comp.page;
 
         }
-
-        if (page) {
+        pte = pte_offset_map_lock(mm, pmd, norm_addr, &ptl);
+        BUG_ON(!pte);
+        if (likely(page)) {
                 ret = dsm_insert_page(mm, vma, pte, norm_addr, page, &id);
         } else {
                 ret = VM_FAULT_ERROR;
         }
 
-        pte_unmap_unlock(pte, ptl);
-
-        out:
+        out: pte_unmap_unlock(pte, ptl);
 
         return ret;
 }

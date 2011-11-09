@@ -7,6 +7,7 @@
 
 #include <dsm/dsm_sr.h>
 #include <dsm/dsm_core.h>
+#include <dsm/dsm_stats.h>
 
 /**
  * Read the message received in the wc, to get the offset and then find where the page has been written
@@ -127,7 +128,7 @@ int send_dsm_message(conn_element *ele, int nb,
 
 int tx_dsm_send(conn_element * ele, struct tx_buf_ele *tx_e) {
         int ret = 0;
-        stats_update_time_send(&tx_e->stats);
+        dsm_stats_update_time_send(&tx_e->stats);
         switch (tx_e->dsm_msg->status) {
                 case REQ_PROC: {
 

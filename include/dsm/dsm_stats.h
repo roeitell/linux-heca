@@ -2,8 +2,8 @@
  * dsm_stats
  */
 
-#ifndef DSM_dsm_statsS_H
-#define DSM_dsm_statsS_H
+#ifndef DSM_STATS_H
+#define DSM_STATS_H
 
 #include <linux/spinlock.h>
 #include <linux/types.h>
@@ -11,6 +11,23 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <asm/atomic.h>
+
+//static dsm_stats dsm_stats;
+//
+//static inline struct dsm_stats *get_dsm_stats(void) {
+//        return &dsm_stats;
+//}
+//
+//struct dsm_stats {
+//        struct proc_dir_entry *dsm_dir;
+//        struct list_head dsm_connection_stats_list;
+//};
+//
+//struct dsm_connection_stats_element {
+//        struct proc_dir_entry *dir;
+//        struct con_element_stats *stats;
+//        struct list_head ptr;
+//};
 
 struct con_element_stats {
         atomic64_t out;

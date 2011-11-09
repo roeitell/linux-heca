@@ -328,3 +328,38 @@ void print_dsm_stats(struct con_element_stats * stats) {
 }
 EXPORT_SYMBOL( print_dsm_stats);
 
+//int register_dsm_stats() {
+//        struct proc_dir_entry * dir;
+//        struct dsm_stats * stats = get_dsm_stats();
+//        INIT_LIST_HEAD(&stats->dsm_connection_stats_list);
+//
+//        dir = proc_mkdir("dsm", NULL);
+//
+//        if (dir == NULL) {
+//                errk("[register_dsm_stats] couldn' create dsm dir\n");
+//                return -1;
+//        }
+//        dir->owner = THIS_MODULE;
+//        stats->dsm_dir = dir;
+//
+//}
+//
+//int deregister_dsm_stats() {
+//        struct dsm_connection_stats_element *stats_e;
+//        struct dsm_stats * stats = get_dsm_stats();
+//        remove_proc_entry(stats->dsm_dir->name, NULL);
+//        list_for_each_entry(stats_e, &stats->dsm_connection_stats_list, ptr)
+//        {
+//                remove_proc_entry(stats_e->dir->name, NULL);
+//        }
+//
+//}
+//
+//void register_dsm_stats_connection() {
+//
+//}
+//
+//void deregister_dsm_stats_connection() {
+//
+//}
+//

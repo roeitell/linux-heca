@@ -117,10 +117,7 @@ struct dsm {
         struct list_head ls;
 };
 
-struct prefetch_stat
-{
-    unsigned long num_faults;
-};
+
 
 typedef struct rcm {
         int node_ip;
@@ -146,7 +143,7 @@ typedef struct rcm {
 
         struct workqueue_struct * dsm_wq;
 
-        struct prefetch_stat *pf_stat;
+
 
 } rcm;
 struct rdma_info_data {

@@ -91,11 +91,13 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
         if (unlikely(pmd_none(*pmd))) {
                 __pte_alloc(mm, vma, pmd, addr);
                 goto retry;
-        } else if (unlikely(pmd_bad(*pmd))) {
+        }
+        if (unlikely(pmd_bad(*pmd))) {
                 pmd_clear_bad(pmd);
                 errk("[dsm_flag_page_remote] bad pmd \n");
                 goto out;
-        } else if (unlikely(pmd_trans_huge(*pmd))) {
+        }
+        if (unlikely(pmd_trans_huge(*pmd))) {
                 spin_lock(&mm->page_table_lock);
                 if (unlikely(pmd_trans_splitting(*pmd))) {
                         spin_unlock(&mm->page_table_lock);

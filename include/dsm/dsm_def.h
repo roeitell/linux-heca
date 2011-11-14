@@ -117,8 +117,6 @@ struct dsm {
         struct list_head ls;
 };
 
-
-
 typedef struct rcm {
         int node_ip;
 
@@ -142,8 +140,6 @@ typedef struct rcm {
         struct rb_root red_page_root;
 
         struct workqueue_struct * dsm_wq;
-
-
 
 } rcm;
 struct rdma_info_data {

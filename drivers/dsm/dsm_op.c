@@ -17,8 +17,6 @@ int create_rcm(rcm **rcm, char *ip, int port) {
         *rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
         memset(*rcm, 0, sizeof(rcm));
 
-
-
         (*rcm)->dsm_wq = create_workqueue("dsm_wq");
         (*rcm)->node_ip = inet_addr(ip);
 
@@ -260,10 +258,10 @@ int create_new_page_pool_element(conn_element * ele) {
         struct page_pool_ele *ppe;
         unsigned long flags;
 
-        ppe = kmalloc(sizeof(page_pool_ele), GFP_ATOMIC);
+        ppe = kmalloc(sizeof(page_pool_ele), GFP_USER);
         memset(ppe, 0, sizeof(page_pool_ele));
 
-        ppe->mem_page = alloc_page( GFP_ATOMIC);
+        ppe->mem_page = alloc_page( GFP_USER | __GFP_ZERO);
         if (unlikely(!ppe->mem_page))
                 goto err1;
 
@@ -273,10 +271,7 @@ int create_new_page_pool_element(conn_element * ele) {
                         (u64) (unsigned long) ppe->page_buf))
                 goto err2;
 
-        memset(ppe->page_buf, 0, RDMA_PAGE_SIZE);
-
         spin_lock_irqsave(&pp->page_pool_list_lock, flags);
-
         list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
         pp->nb_full_element++;
         spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
@@ -792,24 +787,22 @@ void try_recycle_page_pool_element(conn_element *ele, page_pool_ele * ppe) {
         struct page_pool * pp = &ele->page_pool;
         spin_lock_irqsave(&pp->page_pool_list_lock, flags);
         if (pp->nb_full_element < PAGE_POOL_SIZE) {
-
+                memset(ppe->page_buf, 0, RDMA_PAGE_SIZE);
                 list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
                 pp->nb_full_element++;
-                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
 
         } else {
-
-                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+                spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
 
                 ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
                                 PAGE_SIZE, DMA_BIDIRECTIONAL);
                 __free_page(ppe->mem_page);
-                spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+
                 list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
                 spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
 
         }
-
+        spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
 }
 
 void try_regenerate_empty_page_pool_element(conn_element *ele,
@@ -823,7 +816,7 @@ void try_regenerate_empty_page_pool_element(conn_element *ele,
         spin_lock_irqsave(&pp->page_pool_list_lock, flags);
         if (pp->nb_full_element < PAGE_POOL_SIZE) {
 
-                ppe->mem_page = alloc_page( GFP_ATOMIC);
+                ppe->mem_page = alloc_page( GFP_ATOMIC | __GFP_ZERO);
                 BUG_ON(!ppe->mem_page);
 
                 ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device,
@@ -833,20 +826,17 @@ void try_regenerate_empty_page_pool_element(conn_element *ele,
                         errk(
                                         "[try_regenerate_empty_page_pool_element] couldn't map page \n");
 
-                memset(ppe->page_buf, 0, RDMA_PAGE_SIZE);
-
                 list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
                 pp->nb_full_element++;
-                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
 
         } else {
-
-                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
                 spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+
                 list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
                 spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
 
         }
+        spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
 }
 
 void release_replace_page_work(struct work_struct *work) {

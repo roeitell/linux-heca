@@ -63,12 +63,15 @@ struct page *dsm_extract_page_protected(struct dsm_vm_id id,
 
         if (unlikely(pmd_none(*pmd))) {
                 errk("[dsm_extract_page] no pmd error \n");
-                goto out;
-        } else if (unlikely(pmd_bad(*pmd))) {
+                __pte_alloc(mm, vma, pmd, addr);
+                goto retry;
+        }
+        if (unlikely(pmd_bad(*pmd))) {
                 pmd_clear_bad(pmd);
                 errk("[dsm_extract_page] bad pmd \n");
                 goto out;
-        } else if (unlikely(pmd_trans_huge(*pmd))) {
+        }
+        if (unlikely(pmd_trans_huge(*pmd))) {
                 errk("[dsm_extract_page] we have a huge pmd \n");
                 spin_lock(&mm->page_table_lock);
                 if (unlikely(pmd_trans_splitting(*pmd))) {
@@ -251,8 +254,9 @@ struct page *dsm_extract_page_from_remote(dsm_message *msg) {
         local_id.svm_id = u32_to_vm_id(msg->src);
         local_svm = funcs->_find_svm(&local_id);
         if (unlikely(!local_svm)) {
-                errk("[dsm_extract_page_from_remote] coudln't find local_svm id:  [dsm %d / svm %d]  \n",
-                        local_id.dsm_id, local_id.svm_id);
+                errk(
+                                "[dsm_extract_page_from_remote] coudln't find local_svm id:  [dsm %d / svm %d]  \n",
+                                local_id.dsm_id, local_id.svm_id);
                 return NULL;
         }
 

@@ -91,17 +91,8 @@ struct page *dsm_extract_page_protected(struct dsm_vm_id id,
 
         if (unlikely(!pte_present(pte_entry))) {
                 if (pte_none(pte_entry)) {
-                        set_pte_at(
-                                        mm,
-                                        addr,
-                                        pte,
-                                        swp_entry_to_pte(
-                                                        make_dsm_entry(
-                                                                        (uint16_t) id.dsm_id,
-                                                                        (uint8_t) id.svm_id)));
-                        //DSM1 note we might do a empty send in order to save bandwidth
-                        //send
-                        goto out_pte;
+                        __pte_alloc(mm, vma, pmd, addr);
+                        goto retry;
 
                 } else {
                         swp_e = pte_to_swp_entry(pte_entry);

@@ -197,13 +197,23 @@ typedef struct tx_buffer {
 
         struct list_head tx_free_elements_list;
         struct list_head tx_free_elements_list_reply;
+        struct list_head tx_requests_list;
 
         spinlock_t tx_free_elements_list_lock;
         spinlock_t tx_free_elements_list_reply_lock;
 
-        struct completion completion_free_tx_element;
+// struct completion completion_free_tx_element;
 
 } tx_buffer;
+
+struct dsm_request {
+        struct dsm_vm_id local_id;
+        struct dsm_vm_id remote_id;
+        uint64_t addr;
+        struct page *page;
+        void(*func)(struct tx_buf_ele *);
+        struct list_head request_queue;
+};
 
 typedef struct conn_element {
         rcm *rcm;
@@ -333,8 +343,8 @@ typedef struct reply_work_request {
 } reply_work_request;
 
 struct tx_callback {
-        unsigned long data;
-        void (*func)(struct tx_buf_ele *, unsigned long);
+
+        void (*func)(struct tx_buf_ele *);
 };
 
 typedef struct tx_buf_ele {

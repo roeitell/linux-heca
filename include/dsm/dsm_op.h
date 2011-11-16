@@ -21,8 +21,8 @@ int create_rcm(rcm **, char *, int);
 //void create_message(conn_element *, int);
 void create_message(conn_element *, struct tx_buf_ele *, int, int);
 int create_dummy_page(conn_element *, int);
-void create_page_request(conn_element *, struct tx_buf_ele *, struct dsm_vm_id,
-                struct dsm_vm_id, uint64_t);
+int create_page_request(conn_element *, struct tx_buf_ele *, struct dsm_vm_id,
+                struct dsm_vm_id, uint64_t, struct page*);
 
 void add_to_process_queue(conn_element *, tx_buf_ele *);
 tx_buf_ele * try_get_next_empty_tx_ele(conn_element *);

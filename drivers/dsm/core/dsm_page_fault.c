@@ -46,7 +46,6 @@ EXPORT_SYMBOL(signal_completion_page_request);
 
 void __delete_from_dsm_cache(struct page *page) {
         VM_BUG_ON(!PageLocked(page));
-        VM_BUG_ON(!PageSwapCache(page));
         VM_BUG_ON(PageWriteback(page));
         errk("[__delete_from_dsm_cache] deleting \n ");
         radix_tree_delete(&dsm_page_tree, page_private(page));
@@ -96,8 +95,6 @@ static int add_to_dsm_page_cache(struct page *page, unsigned long address) {
         int error;
 
         VM_BUG_ON(!PageLocked(page));
-        VM_BUG_ON(PageSwapCache(page));
-        VM_BUG_ON(!PageSwapBacked(page));
 
         page_cache_get(page);
         set_page_private(page, address);
@@ -221,9 +218,6 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         pte_t pte;
         int exclusive = 0;
 
-        errk("[request_page_insert] faulting for page %p , norm %p \n ",
-                        address, norm_addr);
-
         dsm_entry_to_val(entry, &id.dsm_id, &id.svm_id);
 
         svm = funcs->_find_svm(&id);
@@ -232,8 +226,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         fault_svm = funcs->_find_local_svm(svm->id.dsm_id, mm);
 
         BUG_ON(!fault_svm);
-
-        delayacct_set_flag(DELAYACCT_PF_BLKIO);
+        errk("[request_page_insert]before request page %p \n", page);
+        delayacct_set_flag(DELAYACCT_PF_SWAPIN);
         if (svm->priv) {
 
                 page = get_local_dsm_page();
@@ -249,34 +243,35 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                                 vma, norm_addr);
 
         }
-
+        errk("[request_page_insert] faulting for addr %p , norm %p  page %p\n ",
+                        address, norm_addr, page);
         if (!page) {
 
                 page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
                 if (likely(pte_same(*page_table, orig_pte)))
                         ret = VM_FAULT_OOM;
-                delayacct_clear_flag(DELAYACCT_PF_BLKIO);
+                delayacct_clear_flag(DELAYACCT_PF_SWAPIN);
                 goto unlock;
         }
-
+        errk("[request_page_insert] page ok page %p \n", page);
         ret = VM_FAULT_MAJOR;
         count_vm_event(PGMAJFAULT);
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
-
+        errk("[request_page_insert]accounting page %p \n", page);
         locked = lock_page_or_retry(page, mm, flags);
-        delayacct_clear_flag(DELAYACCT_PF_BLKIO);
+        delayacct_clear_flag(DELAYACCT_PF_SWAPIN);
         if (!locked) {
                 ret |= VM_FAULT_RETRY;
                 goto out_release;
         }
-
+        errk("[request_page_insert]lock ok  page %p \n", page);
         if (ksm_might_need_to_copy(page, vma, address)) {
                 swapcache = page;
                 page = ksm_does_need_to_copy(page, vma, address);
 
                 if (unlikely(!page)) {
                         BUG_ON(!page);
-                        errk("requested by ksm  \n ");
+                        errk("requested by ksm  page %p \n", page);
                         ret = VM_FAULT_OOM;
                         page = swapcache;
                         swapcache = NULL;
@@ -285,19 +280,19 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                         goto out_page;
                 }
         }
-
+        errk("[request_page_insert]ksm ok page %p \n", page);
         /*
          * Back out if somebody else already faulted in this pte.
          */
         page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
         if (unlikely(!pte_same(*page_table, orig_pte)))
                 goto out_nomap;
-
+        errk("[request_page_insert]pte lock ok page %p \n", page);
         if (unlikely(!PageUptodate(page))) {
                 ret = VM_FAULT_SIGBUS;
                 goto out_nomap;
         }
-
+        errk("[request_page_insert]not up to date ok page %p \n", page);
         //inc_mm_counter_fast(mm, MM_ANONPAGES);
         //dec_mm_counter_fast(mm, MM_SWAPENTS);
         pte = mk_pte(page, vma->vm_page_prot);
@@ -307,11 +302,11 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                 ret |= VM_FAULT_WRITE;
                 exclusive = 1;
         }
-
+        errk("[request_page_insert]maybe write ok page %p \n", page);
         flush_icache_page(vma, page);
         set_pte_at(mm, address, page_table, pte);
         do_page_add_anon_rmap(page, vma, address, exclusive);
-
+        errk("[request_page_insert]set pte + rmap ok page %p \n", page);
 // we remove the page from the cache here !
         if (find_get_dsm_page(norm_addr)) {
                 delete_from_dsm_cache(page);
@@ -321,12 +316,13 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                 unlock_page(swapcache);
                 page_cache_release(swapcache);
         }
-
+        errk("[request_page_insert]unlock page + free dsm cache ok page %p \n",
+                        page);
         /* No need to invalidate - it was non-present before */
         update_mmu_cache(vma, address, page_table);
-
+        errk("[request_page_insert]mmu update  page %p \n", page);
         unlock: pte_unmap_unlock(pte, ptl);
-
+        errk("[request_page_insert]unlock  page %p \n", page);
         out: return ret;
 
         out_nomap:

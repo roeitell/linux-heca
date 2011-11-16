@@ -509,48 +509,48 @@ int setup_connection(conn_element *ele, int type) {
 }
 
 tx_buf_ele * try_get_next_empty_tx_ele(conn_element *ele) {
-        unsigned long flags;
+
         tx_buf_ele *tx_e;
         struct tx_buffer * tx = &ele->tx_buffer;
 
-        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_lock);
 
         if (list_empty(&tx->tx_free_elements_list)) {
 
-                spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+                spin_unlock(&tx->tx_free_elements_list_lock);
 
                 return NULL;
         }
 
         tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_lock);
 
         return tx_e;
 
 }
 
 tx_buf_ele * get_next_empty_tx_ele(conn_element *ele) {
-        unsigned long flags;
+
         tx_buf_ele *tx_e;
         struct timespec time;
         struct tx_buffer * tx = &ele->tx_buffer;
 
         dsm_stats_get_time_request(&time);
         //  wait_for_completion_interruptible(&tx->completion_free_tx_element);
-        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_lock);
         BUG_ON(list_empty(&tx->tx_free_elements_list));
 
         tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_lock);
         dsm_stats_set_time_request(&tx_e->stats, time);
         return tx_e;
 
 }
 
 tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *ele) {
-        unsigned long flags;
+
         tx_buf_ele *tx_e;
         struct tx_buffer * tx = &ele->tx_buffer;
 
@@ -559,19 +559,18 @@ tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *ele) {
                                 ">[try_get_next_empty_tx_ele] - no connection element\n");
         }
 
-        spin_lock_irqsave(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_reply_lock);
 
         if (list_empty(&tx->tx_free_elements_list_reply)) {
 
-                spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock,
-                                flags);
+                spin_unlock(&tx->tx_free_elements_list_reply_lock);
 
                 return NULL;
         }
 
         tx_e= list_first_entry(&tx->tx_free_elements_list_reply, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_reply_lock);
 
         return tx_e;
 
@@ -783,10 +782,10 @@ int refill_recv_wr(conn_element *ele, rx_buf_ele * rx_e) {
 }
 
 void release_tx_element(conn_element * ele, tx_buf_ele * tx_e) {
-        unsigned long flags;
+
         struct tx_buffer * tx = &ele->tx_buffer;
         struct dsm_request *req = NULL;
-        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_lock);
         if (list_empty(&tx->tx_requests_list))
 
                 list_add_tail(&tx_e->tx_buf_ele_ptr,
@@ -813,16 +812,16 @@ void release_tx_element(conn_element * ele, tx_buf_ele * tx_e) {
                 kfree(req);
 
         }
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_lock);
         // complete(&tx->completion_free_tx_element);
 
 }
 void release_tx_element_reply(conn_element * ele, tx_buf_ele * tx_e) {
-        unsigned long flags;
+
         struct tx_buffer * tx = &ele->tx_buffer;
-        spin_lock_irqsave(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_reply_lock);
         list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_reply_lock);
 
 }
 

@@ -75,12 +75,12 @@ tx_buf_ele * try_get_next_empty_tx_ele_or_queue_request(conn_element *ele,
                 struct dsm_vm_id local_id, struct dsm_vm_id remote_id,
                 uint64_t addr, struct page *page,
                 void(*func)(struct tx_buf_ele *)) {
-        unsigned long flags;
+
         tx_buf_ele *tx_e;
         struct tx_buffer * tx = &ele->tx_buffer;
         struct dsm_request *req = NULL;
 
-        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_lock);
 
         if (list_empty(&tx->tx_free_elements_list)) {
                 //we queue the request
@@ -93,7 +93,7 @@ tx_buf_ele * try_get_next_empty_tx_ele_or_queue_request(conn_element *ele,
                 req->remote_id = remote_id;
                 list_add_tail(&req->request_queue, &tx->tx_requests_list);
 
-                spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+                spin_unlock(&tx->tx_free_elements_list_lock);
 
                 return NULL;
         }
@@ -106,7 +106,7 @@ tx_buf_ele * try_get_next_empty_tx_ele_or_queue_request(conn_element *ele,
         } else {
                 tx_e->callback.func = NULL;
         }
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_lock);
 
         return tx_e;
 

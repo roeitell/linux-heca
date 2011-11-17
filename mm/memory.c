@@ -2854,7 +2854,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		} else if (is_hwpoison_entry(entry)) {
 			ret = VM_FAULT_HWPOISON;
         } else if (is_dsm_entry(entry)) {
-            ret = dsm_swap_wrapper(mm, vma, address,page_table, pmd,flags, orig_pte,entry);
+            ret = dsm_swap_wrapper(mm, vma, address, page_table, pmd, flags,  orig_pte, entry);
         	goto out;
         } else {
 			print_bad_pte(vma, address, orig_pte, NULL);

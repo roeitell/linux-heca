@@ -30,10 +30,11 @@ int dsm_recv_info(conn_element *);
  * Step 1 : ask to send a message
  */
 
-int send_dsm_message(conn_element *, int, void(*)(struct tx_buf_ele *),
-                unsigned long);
-int request_dsm_page(conn_element *, struct dsm_vm_id, struct dsm_vm_id,
-                uint64_t, struct page *, void(*)(struct tx_buf_ele *));
+int send_dsm_message(conn_element *, int,
+                void(*)(struct tx_buf_ele *, unsigned long), unsigned long);
+int request_dsm_page(struct page *, struct subvirtual_machine *,
+                struct subvirtual_machine *, uint64_t,
+                void(*func)(struct tx_buf_ele *));
 /*
  * Step 2 : sending message
  */

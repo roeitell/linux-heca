@@ -6,7 +6,6 @@
  */
 
 #include <dsm/dsm_op.h>
-#include <dsm/dsm_core.h>
 #include <rdma/ib_cm.h>
 #include <rdma/ib_verbs.h>
 #include <dsm/dsm_sr.h>
@@ -167,16 +166,11 @@ void create_message(conn_element *ele, struct tx_buf_ele * tx_e,
         return;
 }
 
-int create_page_request(conn_element *ele, struct tx_buf_ele * tx_e,
+void create_page_request(conn_element *ele, struct tx_buf_ele * tx_e,
                 struct dsm_vm_id local_id, struct dsm_vm_id remote_id,
-                uint64_t addr, struct page * page) {
+                uint64_t addr, struct page *page) {
         struct dsm_message *msg = tx_e->dsm_msg;
         page_pool_ele * ppe = create_new_page_pool_element_from_page(ele, page);
-        if (unlikely(!ppe)) {
-                printk(
-                                "[rx_tx_message_transfer][FATAL_ERROR] - couldn't create page pool element\n");
-                return -1;
-        }
 
         //in order to find the element on the reception of the page, and free it
         tx_e->wrk_req->dst_addr = ppe;
@@ -189,28 +183,8 @@ int create_page_request(conn_element *ele, struct tx_buf_ele * tx_e,
         msg->src = dsm_vm_id_to_u32(&remote_id);
         msg->status = REQ_PROC;
 
-        return 0;
+        return;
 }
-
-//void create_page_request(conn_element *ele, struct tx_buf_ele * tx_e,
-//                struct dsm_vm_id local_id, struct dsm_vm_id remote_id,
-//                uint64_t addr) {
-//        struct dsm_message *msg = tx_e->dsm_msg;
-//        page_pool_ele * ppe = get_page_ele(ele);
-//
-//        //in order to find the element on the reception of the page, and free it
-//        tx_e->wrk_req->dst_addr = ppe;
-//
-//        msg->dest = dsm_vm_id_to_u32(&local_id);
-//        msg->dst_addr = (u64) ppe->page_buf;
-//        msg->msg_num = 0;
-//        msg->req_addr = addr;
-//        msg->rkey = ele->mr->rkey;
-//        msg->src = dsm_vm_id_to_u32(&remote_id);
-//        msg->status = REQ_PROC;
-//
-//        return;
-//}
 
 void free_page_ele(conn_element *ele, page_pool_ele * ppe) {
         if (likely(ppe)) {
@@ -509,48 +483,7 @@ int setup_connection(conn_element *ele, int type) {
 }
 
 tx_buf_ele * try_get_next_empty_tx_ele(conn_element *ele) {
-
-        tx_buf_ele *tx_e;
-        struct tx_buffer * tx = &ele->tx_buffer;
-
-        spin_lock(&tx->tx_free_elements_list_lock);
-
-        if (list_empty(&tx->tx_free_elements_list)) {
-
-                spin_unlock(&tx->tx_free_elements_list_lock);
-
-                return NULL;
-        }
-
-        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
-        list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock(&tx->tx_free_elements_list_lock);
-
-        return tx_e;
-
-}
-
-tx_buf_ele * get_next_empty_tx_ele(conn_element *ele) {
-
-        tx_buf_ele *tx_e;
-        struct timespec time;
-        struct tx_buffer * tx = &ele->tx_buffer;
-
-        dsm_stats_get_time_request(&time);
-        //  wait_for_completion_interruptible(&tx->completion_free_tx_element);
-        spin_lock(&tx->tx_free_elements_list_lock);
-        BUG_ON(list_empty(&tx->tx_free_elements_list));
-
-        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
-        list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock(&tx->tx_free_elements_list_lock);
-        dsm_stats_set_time_request(&tx_e->stats, time);
-        return tx_e;
-
-}
-
-tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *ele) {
-
+        unsigned long flags;
         tx_buf_ele *tx_e;
         struct tx_buffer * tx = &ele->tx_buffer;
 
@@ -559,18 +492,68 @@ tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *ele) {
                                 ">[try_get_next_empty_tx_ele] - no connection element\n");
         }
 
-        spin_lock(&tx->tx_free_elements_list_reply_lock);
+        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+
+        if (list_empty(&tx->tx_free_elements_list)) {
+
+                spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+
+                return NULL;
+        }
+
+        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
+        list_del(&tx_e->tx_buf_ele_ptr);
+        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+
+        return tx_e;
+
+}
+
+tx_buf_ele * get_next_empty_tx_ele(conn_element *ele) {
+        unsigned long flags;
+        tx_buf_ele *tx_e;
+        struct timespec time;
+        struct tx_buffer * tx = &ele->tx_buffer;
+
+        if (!tx) {
+                printk(">[get_next_empty_tx_ele] - no connection element\n");
+        }
+        dsm_stats_get_time_request(&time);
+        wait_for_completion_interruptible(&tx->completion_free_tx_element);
+        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        BUG_ON(list_empty(&tx->tx_free_elements_list));
+
+        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
+        list_del(&tx_e->tx_buf_ele_ptr);
+        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        dsm_stats_set_time_request(&tx_e->stats, time);
+        return tx_e;
+
+}
+
+tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *ele) {
+        unsigned long flags;
+        tx_buf_ele *tx_e;
+        struct tx_buffer * tx = &ele->tx_buffer;
+
+        if (!tx) {
+                printk(
+                                ">[try_get_next_empty_tx_ele] - no connection element\n");
+        }
+
+        spin_lock_irqsave(&tx->tx_free_elements_list_reply_lock, flags);
 
         if (list_empty(&tx->tx_free_elements_list_reply)) {
 
-                spin_unlock(&tx->tx_free_elements_list_reply_lock);
+                spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock,
+                                flags);
 
                 return NULL;
         }
 
         tx_e= list_first_entry(&tx->tx_free_elements_list_reply, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock(&tx->tx_free_elements_list_reply_lock);
+        spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock, flags);
 
         return tx_e;
 
@@ -582,13 +565,12 @@ int init_tx_lists(conn_element *ele) {
         int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
         int max_tx_reply = TX_BUF_ELEMENTS_NUM;
 
-        INIT_LIST_HEAD(&tx->tx_requests_list);
         INIT_LIST_HEAD(&tx->tx_free_elements_list);
         INIT_LIST_HEAD(&tx->tx_free_elements_list_reply);
         spin_lock_init(&tx->tx_free_elements_list_lock);
         spin_lock_init(&tx->tx_free_elements_list_reply_lock);
 
-        //  init_completion(&tx->completion_free_tx_element);
+        init_completion(&tx->completion_free_tx_element);
 
         for (i = 0; i < max_tx_send; ++i) {
                 release_tx_element(ele, &tx->tx_buf[i]);
@@ -782,46 +764,20 @@ int refill_recv_wr(conn_element *ele, rx_buf_ele * rx_e) {
 }
 
 void release_tx_element(conn_element * ele, tx_buf_ele * tx_e) {
-
+        unsigned long flags;
         struct tx_buffer * tx = &ele->tx_buffer;
-        struct dsm_request *req = NULL;
-        spin_lock(&tx->tx_free_elements_list_lock);
-        if (list_empty(&tx->tx_requests_list))
-
-                list_add_tail(&tx_e->tx_buf_ele_ptr,
-                                &tx->tx_free_elements_list);
-        else {
-                req = list_first_entry(&tx->tx_requests_list, struct dsm_request, request_queue);
-                list_del(&req->request_queue);
-
-                //populate it with a new message
-                create_page_request(ele, tx_e, req->local_id, req->remote_id,
-                                req->addr, req->page);
-                if (req->func) {
-                        tx_e->callback.func = req->func;
-                } else {
-                        tx_e->callback.func = NULL;
-                }
-
-                if (!ele->cm_id->qp)
-                        printk(">[release_tx_element] - no more qp\n");
-
-                if (tx_dsm_send(ele, tx_e)) {
-                        printk(">[release_tx_element] -send failed\n");
-                }
-                kfree(req);
-
-        }
-        spin_unlock(&tx->tx_free_elements_list_lock);
-        // complete(&tx->completion_free_tx_element);
+        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
+        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        complete(&tx->completion_free_tx_element);
 
 }
 void release_tx_element_reply(conn_element * ele, tx_buf_ele * tx_e) {
-
+        unsigned long flags;
         struct tx_buffer * tx = &ele->tx_buffer;
-        spin_lock(&tx->tx_free_elements_list_reply_lock);
+        spin_lock_irqsave(&tx->tx_free_elements_list_reply_lock, flags);
         list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
-        spin_unlock(&tx->tx_free_elements_list_reply_lock);
+        spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock, flags);
 
 }
 

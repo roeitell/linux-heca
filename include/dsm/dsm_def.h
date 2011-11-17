@@ -189,7 +189,6 @@ typedef struct page_pool {
 
 typedef struct rx_buffer {
         struct rx_buf_ele * rx_buf;
-        spinlock_t recv_lock;
 } rx_buffer;
 
 typedef struct tx_buffer {
@@ -197,23 +196,13 @@ typedef struct tx_buffer {
 
         struct list_head tx_free_elements_list;
         struct list_head tx_free_elements_list_reply;
-        struct list_head tx_requests_list;
 
         spinlock_t tx_free_elements_list_lock;
         spinlock_t tx_free_elements_list_reply_lock;
 
-// struct completion completion_free_tx_element;
+        struct completion completion_free_tx_element;
 
 } tx_buffer;
-
-struct dsm_request {
-        struct dsm_vm_id local_id;
-        struct dsm_vm_id remote_id;
-        uint64_t addr;
-        struct page *page;
-        void(*func)(struct tx_buf_ele *);
-        struct list_head request_queue;
-};
 
 typedef struct conn_element {
         rcm *rcm;

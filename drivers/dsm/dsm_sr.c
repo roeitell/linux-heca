@@ -71,71 +71,37 @@ int rx_tx_message_transfer(conn_element * ele, struct rx_buf_ele * rx_buf_e) {
         return ret;
 }
 
-tx_buf_ele * try_get_next_empty_tx_ele_or_queue_request(conn_element *ele,
-                struct dsm_vm_id local_id, struct dsm_vm_id remote_id,
-                uint64_t addr, struct page *page,
+int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
+                struct subvirtual_machine *fault_svm, uint64_t addr,
                 void(*func)(struct tx_buf_ele *)) {
 
-        tx_buf_ele *tx_e;
-        struct tx_buffer * tx = &ele->tx_buffer;
-        struct dsm_request *req = NULL;
-
-        spin_lock(&tx->tx_free_elements_list_lock);
-
-        if (list_empty(&tx->tx_free_elements_list)) {
-                //we queue the request
-                req = kmalloc(sizeof(struct dsm_request), GFP_KERNEL);
-                BUG_ON(!req);
-                req->addr = addr;
-                req->func = func;
-                req->local_id = local_id;
-                req->page = page;
-                req->remote_id = remote_id;
-                list_add_tail(&req->request_queue, &tx->tx_requests_list);
-
-                spin_unlock(&tx->tx_free_elements_list_lock);
-
-                return NULL;
-        }
-
-        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
-        list_del(&tx_e->tx_buf_ele_ptr);
-
-        if (func) {
-                tx_e->callback.func = func;
-        } else {
-                tx_e->callback.func = NULL;
-        }
-        spin_unlock(&tx->tx_free_elements_list_lock);
-
-        return tx_e;
-
-}
-
-int request_dsm_page(conn_element *ele, struct dsm_vm_id local_id,
-                struct dsm_vm_id remote_id, uint64_t addr, struct page *page,
-                void(*func)(struct tx_buf_ele *)) {
         struct tx_buf_ele *tx_e;
         int ret = 0;
 
         //find free slot
 
-        tx_e = try_get_next_empty_tx_ele_or_queue_request(ele, local_id,
-                        remote_id, addr, page, func);
+        tx_e = get_next_empty_tx_ele(svm->ele);
 
         //populate it with a new message
-        create_page_request(ele, tx_e, local_id, remote_id, addr, page);
+        create_page_request(svm->ele, tx_e, fault_svm->id, svm->id, addr, page);
 
-        if (!ele->cm_id->qp)
-                printk(">[request_dsm_message] - no more qp\n");
+        if (func) {
+                tx_e->callback.func = func;
 
-        ret = tx_dsm_send(ele, tx_e);
+        } else {
+                tx_e->callback.func = NULL;
+        }
+        if (!svm->ele->cm_id->qp)
+                printk(">[send_dsm_message] - no more qp\n");
+
+        ret = tx_dsm_send(svm->ele, tx_e);
         return ret;
 
 }
 
 int send_dsm_message(conn_element *ele, int nb,
-                void(*func)(struct tx_buf_ele *), unsigned long data) {
+                void(*func)(struct tx_buf_ele *, unsigned long),
+                unsigned long data) {
         struct tx_buf_ele *tx_e;
         int ret = 0;
 

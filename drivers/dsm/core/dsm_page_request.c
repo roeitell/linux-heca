@@ -91,8 +91,7 @@ struct page *dsm_extract_page_protected(struct dsm_vm_id id,
 
         if (unlikely(!pte_present(pte_entry))) {
                 if (pte_none(pte_entry)) {
-                        __pte_alloc(mm, vma, pmd, addr);
-                        goto retry;
+                        goto chain_fault;
 
                 } else {
                         swp_e = pte_to_swp_entry(pte_entry);
@@ -115,15 +114,16 @@ struct page *dsm_extract_page_protected(struct dsm_vm_id id,
                                 }
                         } else {
                                 chain_fault: pte_unmap_unlock(pte, ptl);
-
-                                r = handle_mm_fault(mm, vma, addr,
-                                                FAULT_FLAG_WRITE);
-                                if (r & VM_FAULT_ERROR) {
-                                        errk("[*] failed at faulting \n");
-                                        BUG();
-                                }
-
-                                r = 0;
+                                get_user_pages(current, mm, addr, 1, 1, 0,
+                                                &page, NULL);
+//                                r = handle_mm_fault(mm, vma, addr,
+//                                                FAULT_FLAG_WRITE);
+//                                if (r & VM_FAULT_ERROR) {
+//                                        errk("[*] failed at faulting \n");
+//                                        BUG();
+//                                }
+//
+//                                r = 0;
                                 goto retry;
                         }
                 }

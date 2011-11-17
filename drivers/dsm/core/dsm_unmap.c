@@ -29,8 +29,9 @@ void reg_dsm_functions(
                 struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
                 struct subvirtual_machine *(*_find_local_svm)(u16,
                                 struct mm_struct *),
-                int(*request_dsm_page)(conn_element *, struct dsm_vm_id,
-                                struct dsm_vm_id, uint64_t, struct page *,
+                int(*request_dsm_page)(struct page *,
+                                struct subvirtual_machine *,
+                                struct subvirtual_machine *, uint64_t,
                                 void(*func)(struct tx_buf_ele *))) {
 
         funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
@@ -38,7 +39,6 @@ void reg_dsm_functions(
         funcs->_find_svm = _find_svm;
         funcs->_find_local_svm = _find_local_svm;
         funcs->request_dsm_page = request_dsm_page;
-
 }
 EXPORT_SYMBOL(reg_dsm_functions);
 

@@ -26,8 +26,8 @@
 #include <linux/mmu_context.h>
 #include <asm-generic/mman-common.h>
 
-struct page *dsm_extract_page_protected(struct dsm_vm_id id,
-                struct mm_struct *mm, unsigned long addr) {
+static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
+                unsigned long addr) {
         spinlock_t *ptl;
         pte_t *pte;
         int r = 0;
@@ -209,7 +209,7 @@ struct page *dsm_extract_page_protected(struct dsm_vm_id id,
 
 }
 
-struct page *dsm_extract_page(struct dsm_vm_id id,
+static struct page *dsm_extract_page(struct dsm_vm_id id,
                 struct subvirtual_machine *svm, unsigned long addr) {
 
         struct mm_struct *mm;
@@ -219,14 +219,13 @@ struct page *dsm_extract_page(struct dsm_vm_id id,
         use_mm(mm);
         down_read(&mm->mmap_sem);
 
-        page = dsm_extract_page_protected(id, mm, addr);
+        page = _dsm_extract_page(id, mm, addr);
         up_read(&mm->mmap_sem);
         unuse_mm(mm);
 
         return page;
 
 }
-EXPORT_SYMBOL(dsm_extract_page);
 
 struct page *dsm_extract_page_from_remote(dsm_message *msg) {
         struct dsm_vm_id remote_id;

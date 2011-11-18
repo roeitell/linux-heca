@@ -34,10 +34,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
 // dsm_page_request
 struct page * dsm_extract_page_from_remote(dsm_message *);
-struct page * dsm_extract_page(struct dsm_vm_id, struct subvirtual_machine *,
-                unsigned long);
-struct page *dsm_extract_page_protected(struct dsm_vm_id, struct mm_struct *,
-                unsigned long);
 
 // dsm_page_fault
 int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *, unsigned long,

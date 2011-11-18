@@ -99,33 +99,6 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 
 }
 
-int send_dsm_message(conn_element *ele, int nb,
-                void(*func)(struct tx_buf_ele *, unsigned long),
-                unsigned long data) {
-        struct tx_buf_ele *tx_e;
-        int ret = 0;
-
-        //find free slot
-
-        tx_e = get_next_empty_tx_ele(ele);
-
-        //populate it with a new message
-        create_message(ele, tx_e, nb, REQ_PROC);
-
-        if (func) {
-                tx_e->callback.func = func;
-
-        } else {
-                tx_e->callback.func = NULL;
-        }
-        if (!ele->cm_id->qp)
-                printk(">[send_dsm_message] - no more qp\n");
-
-        ret = tx_dsm_send(ele, tx_e);
-        return ret;
-
-}
-
 int tx_dsm_send(conn_element * ele, struct tx_buf_ele *tx_e) {
         int ret = 0;
         dsm_stats_update_time_send(&tx_e->stats);

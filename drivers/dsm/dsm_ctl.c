@@ -406,8 +406,24 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 INIT_LIST_HEAD(&svm->mr_ls);
 
                         } else if (!svm->ele) {
-                                errk(
-                                                "[DSM_CONNECT] No connection element present!\n");
+                                svm->id.dsm_id = svm_info.dsm_id;
+                                svm->id.svm_id = svm_info.svm_id;
+                                svm->priv = NULL;
+
+                                ip_addr = inet_addr(svm_info.ip);
+
+                                // Check for connection
+
+                                cele = search_rb_conn(rcm, ip_addr);
+
+                                if (!cele) {
+                                        ret = create_connection(rcm, &svm_info);
+                                        if (ret)
+                                                goto fail2;
+
+                                }
+                                svm->ele = cele;
+
                         }
 
                         r = 0;

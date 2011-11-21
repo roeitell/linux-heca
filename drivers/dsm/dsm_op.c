@@ -204,13 +204,12 @@ void free_page_ele(conn_element *ele, page_pool_ele * ppe) {
 
 page_pool_ele * get_page_ele(conn_element * ele) {
         page_pool_ele * ppe;
-        unsigned long flags;
+
         struct page_pool * pp = &ele->page_pool;
 
-        loop:
-        spin_lock_irqsave(&pp->page_pool_list_lock, flags);
+        loop: spin_lock(&pp->page_pool_list_lock);
         if (list_empty(&pp->page_pool_list)) {
-                spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+                spin_unlock(&pp->page_pool_list_lock);
                 printk("[get_page_ele] forcing a page refill\n");
                 release_replace_page_work(&ele->page_pool.page_release_work);
                 goto loop;
@@ -219,7 +218,7 @@ page_pool_ele * get_page_ele(conn_element * ele) {
         ppe = list_first_entry(&pp->page_pool_list, page_pool_ele, page_ptr);
         list_del(&ppe->page_ptr);
         pp->nb_full_element--;
-        spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+        spin_unlock(&pp->page_pool_list_lock);
 
         return ppe;
 
@@ -227,13 +226,12 @@ page_pool_ele * get_page_ele(conn_element * ele) {
 
 page_pool_ele * get_empty_page_ele(conn_element * ele) {
         page_pool_ele * ppe;
-        unsigned long flags;
+
         struct page_pool * pp = &ele->page_pool;
 
-        loop:
-        spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+        loop: spin_lock(&pp->page_pool_empty_list_lock);
         if (list_empty(&pp->page_empty_pool_list)) {
-                spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+                spin_unlock(&pp->page_pool_empty_list_lock);
                 printk("[get_empty_page_ele] forcing a page refill\n");
                 release_replace_page_work(&ele->page_pool.page_release_work);
                 goto loop;
@@ -242,7 +240,7 @@ page_pool_ele * get_empty_page_ele(conn_element * ele) {
         ppe =
                         list_first_entry(&pp->page_empty_pool_list , page_pool_ele, page_ptr);
         list_del(&ppe->page_ptr);
-        spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+        spin_unlock(&pp->page_pool_empty_list_lock);
 
         return ppe;
 
@@ -256,7 +254,6 @@ int create_new_page_pool_element(conn_element * ele) {
         struct page_pool * pp = &ele->page_pool;
         int ret = 0;
         struct page_pool_ele *ppe;
-        unsigned long flags;
 
         ppe = kmalloc(sizeof(page_pool_ele), GFP_USER);
         memset(ppe, 0, sizeof(page_pool_ele));
@@ -271,10 +268,10 @@ int create_new_page_pool_element(conn_element * ele) {
                         (u64) (unsigned long) ppe->page_buf))
                 goto err2;
 
-        spin_lock_irqsave(&pp->page_pool_list_lock, flags);
+        spin_lock(&pp->page_pool_list_lock);
         list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
         pp->nb_full_element++;
-        spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+        spin_unlock(&pp->page_pool_list_lock);
 
         return ret;
 
@@ -288,16 +285,15 @@ int create_new_empty_page_pool_element(conn_element * ele) {
         struct page_pool * pp = &ele->page_pool;
 
         struct page_pool_ele *ppe;
-        unsigned long flags;
 
         ppe = kmalloc(sizeof(page_pool_ele), GFP_ATOMIC);
         if (!ppe)
                 return -1;
         memset(ppe, 0, sizeof(page_pool_ele));
 
-        spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+        spin_lock(&pp->page_pool_empty_list_lock);
         list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
-        spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+        spin_unlock(&pp->page_pool_empty_list_lock);
         return 0;
 
 }
@@ -483,7 +479,7 @@ int setup_connection(conn_element *ele, int type) {
 }
 
 tx_buf_ele * try_get_next_empty_tx_ele(conn_element *ele) {
-        unsigned long flags;
+
         tx_buf_ele *tx_e;
         struct tx_buffer * tx = &ele->tx_buffer;
 
@@ -492,68 +488,59 @@ tx_buf_ele * try_get_next_empty_tx_ele(conn_element *ele) {
                                 ">[try_get_next_empty_tx_ele] - no connection element\n");
         }
 
-        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_lock);
 
         if (list_empty(&tx->tx_free_elements_list)) {
 
-                spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+                spin_unlock(&tx->tx_free_elements_list_lock);
 
                 return NULL;
         }
 
         tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_lock);
 
         return tx_e;
 
 }
 
 tx_buf_ele * get_next_empty_tx_ele(conn_element *ele) {
-        unsigned long flags;
+
         tx_buf_ele *tx_e;
         struct timespec time;
         struct tx_buffer * tx = &ele->tx_buffer;
 
-        if (!tx) {
-                printk(">[get_next_empty_tx_ele] - no connection element\n");
-        }
         dsm_stats_get_time_request(&time);
         wait_for_completion_interruptible(&tx->completion_free_tx_element);
-        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_lock);
         BUG_ON(list_empty(&tx->tx_free_elements_list));
 
         tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_lock);
         dsm_stats_set_time_request(&tx_e->stats, time);
         return tx_e;
 
 }
 
 tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *ele) {
-        unsigned long flags;
+
         tx_buf_ele *tx_e;
         struct tx_buffer * tx = &ele->tx_buffer;
 
-        if (!tx) {
-                printk(
-                                ">[try_get_next_empty_tx_ele] - no connection element\n");
-        }
-
-        spin_lock_irqsave(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_reply_lock);
 
         if (list_empty(&tx->tx_free_elements_list_reply)) {
 
-                spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock,
-                                flags);
+                spin_unlock(&tx->tx_free_elements_list_reply_lock);
 
                 return NULL;
         }
 
         tx_e= list_first_entry(&tx->tx_free_elements_list_reply, struct tx_buf_ele, tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_reply_lock);
 
         return tx_e;
 
@@ -764,56 +751,55 @@ int refill_recv_wr(conn_element *ele, rx_buf_ele * rx_e) {
 }
 
 void release_tx_element(conn_element * ele, tx_buf_ele * tx_e) {
-        unsigned long flags;
+
         struct tx_buffer * tx = &ele->tx_buffer;
-        spin_lock_irqsave(&tx->tx_free_elements_list_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_lock);
         list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_lock);
         complete(&tx->completion_free_tx_element);
 
 }
 void release_tx_element_reply(conn_element * ele, tx_buf_ele * tx_e) {
-        unsigned long flags;
+
         struct tx_buffer * tx = &ele->tx_buffer;
-        spin_lock_irqsave(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_lock(&tx->tx_free_elements_list_reply_lock);
         list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
-        spin_unlock_irqrestore(&tx->tx_free_elements_list_reply_lock, flags);
+        spin_unlock(&tx->tx_free_elements_list_reply_lock);
 
 }
 
 void try_recycle_page_pool_element(conn_element *ele, page_pool_ele * ppe) {
 
-        unsigned long flags;
         struct page_pool * pp = &ele->page_pool;
-        spin_lock_irqsave(&pp->page_pool_list_lock, flags);
+        spin_lock(&pp->page_pool_list_lock);
         if (pp->nb_full_element < PAGE_POOL_SIZE) {
                 memset(ppe->page_buf, 0, RDMA_PAGE_SIZE);
                 list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
                 pp->nb_full_element++;
 
         } else {
-                spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+                spin_lock(&pp->page_pool_empty_list_lock);
 
                 ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
                                 PAGE_SIZE, DMA_BIDIRECTIONAL);
                 __free_page(ppe->mem_page);
 
                 list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
-                spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+                spin_unlock(&pp->page_pool_empty_list_lock);
 
         }
-        spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+        spin_unlock(&pp->page_pool_list_lock);
 }
 
 void try_regenerate_empty_page_pool_element(conn_element *ele,
                 page_pool_ele * ppe) {
-        unsigned long flags;
+
         struct page_pool * pp = &ele->page_pool;
 
         ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf, PAGE_SIZE,
                         DMA_BIDIRECTIONAL);
 
-        spin_lock_irqsave(&pp->page_pool_list_lock, flags);
+        spin_lock(&pp->page_pool_list_lock);
         if (pp->nb_full_element < PAGE_POOL_SIZE) {
 
                 ppe->mem_page = alloc_page( GFP_ATOMIC | __GFP_ZERO);
@@ -830,64 +816,64 @@ void try_regenerate_empty_page_pool_element(conn_element *ele,
                 pp->nb_full_element++;
 
         } else {
-                spin_lock_irqsave(&pp->page_pool_empty_list_lock, flags);
+                spin_lock(&pp->page_pool_empty_list_lock);
 
                 list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
-                spin_unlock_irqrestore(&pp->page_pool_empty_list_lock, flags);
+                spin_unlock(&pp->page_pool_empty_list_lock);
 
         }
-        spin_unlock_irqrestore(&pp->page_pool_list_lock, flags);
+        spin_unlock(&pp->page_pool_list_lock);
 }
 
 void release_replace_page_work(struct work_struct *work) {
         page_pool_ele * ppe = NULL;
-        unsigned long flags;
+
         conn_element * ele;
         struct page_pool * pp;
         pp= container_of(work, struct page_pool ,page_release_work );
         ele= container_of(pp, struct conn_element ,page_pool );
 
         do {
-                spin_lock_irqsave(&pp->page_recycle_lock, flags);
+                spin_lock(&pp->page_recycle_lock);
                 if (list_empty(&pp->page_recycle_list)) {
-                        spin_unlock_irqrestore(&pp->page_recycle_lock, flags);
+                        spin_unlock(&pp->page_recycle_lock);
                         break;
                 }
                 ppe =
                                 list_first_entry(&pp->page_recycle_list, page_pool_ele, page_ptr);
                 list_del(&ppe->page_ptr);
-                spin_unlock_irqrestore(&pp->page_recycle_lock, flags);
+                spin_unlock(&pp->page_recycle_lock);
                 try_recycle_page_pool_element(ele, ppe);
         } while (1);
 
         do {
-                spin_lock_irqsave(&pp->page_release_lock, flags);
+                spin_lock(&pp->page_release_lock);
                 if (list_empty(&pp->page_release_list)) {
-                        spin_unlock_irqrestore(&pp->page_release_lock, flags);
+                        spin_unlock(&pp->page_release_lock);
                         break;
                 }
                 ppe =
                                 list_first_entry(&pp->page_release_list, page_pool_ele, page_ptr);
                 list_del(&ppe->page_ptr);
-                spin_unlock_irqrestore(&pp->page_release_lock, flags);
+                spin_unlock(&pp->page_release_lock);
                 try_regenerate_empty_page_pool_element(ele, ppe);
         } while (1);
 
 }
 
 void release_replace_page(conn_element * ele, struct tx_buf_ele * tx_e) {
-        unsigned long flags;
+
         struct page_pool * pp = &ele->page_pool;
         page_pool_ele * ppe = (page_pool_ele *) tx_e->wrk_req->dst_addr;
         tx_e->wrk_req->dst_addr = NULL;
         if (ppe->mem_page) {
-                spin_lock_irqsave(&pp->page_recycle_lock, flags);
+                spin_lock(&pp->page_recycle_lock);
                 list_add_tail(&ppe->page_ptr, &pp->page_recycle_list);
-                spin_unlock_irqrestore(&pp->page_recycle_lock, flags);
+                spin_unlock(&pp->page_recycle_lock);
         } else {
-                spin_lock_irqsave(&pp->page_release_lock, flags);
+                spin_lock(&pp->page_release_lock);
                 list_add_tail(&ppe->page_ptr, &pp->page_release_list);
-                spin_unlock_irqrestore(&pp->page_release_lock, flags);
+                spin_unlock(&pp->page_release_lock);
         }
         schedule_work(&pp->page_release_work);
 
@@ -1056,8 +1042,7 @@ int create_qp(conn_element *ele) {
 int setup_qp(conn_element *ele) {
         int ret = 0;
 
-        tasklet_init(&ele->send_work, send_cq_handle_work,
-                        (unsigned long) &ele->send_work);
+        INIT_WORK(&ele->send_work, send_cq_handle_work);
         INIT_WORK(&ele->recv_work, recv_cq_handle_work);
 
         ele->send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle,

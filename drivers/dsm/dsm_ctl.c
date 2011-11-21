@@ -303,7 +303,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 priv_data->offset = svm_info.offset;
 
                                 svm->priv = priv_data;
-                                svm->ele = NULL;
+                                //svm->ele = NULL;
 
                                 // Free all MR and add new one
                                 list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
@@ -406,9 +406,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 INIT_LIST_HEAD(&svm->mr_ls);
 
                         } else if (!svm->ele) {
-                                svm->id.dsm_id = svm_info.dsm_id;
-                                svm->id.svm_id = svm_info.svm_id;
-                                svm->priv = NULL;
 
                                 ip_addr = inet_addr(svm_info.ip);
 

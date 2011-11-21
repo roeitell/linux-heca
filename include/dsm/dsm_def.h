@@ -216,7 +216,7 @@ typedef struct conn_element {
         struct ib_cq *send_cq;
         struct ib_cq *recv_cq;
 
-        struct tasklet_struct send_work;
+        struct work_struct send_work;
         struct work_struct recv_work;
 
         struct rx_buffer rx_buffer;
@@ -360,10 +360,5 @@ typedef struct rx_buf_ele {
         recv_work_req_ele *recv_wrk_rq_ele;
 
 } rx_buf_ele;
-
-struct page_request_completion {
-        struct completion comp;
-        struct page *page;
-};
 
 #endif /* DSM_DEF_H_ */

@@ -254,7 +254,7 @@ void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
         ret = ib_req_notify_cq(cq,
                         IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
         if (ret > 0)
-                tasklet_schedule(&ele->send_work);
+                queue_work(ele->rcm->dsm_wq, &ele->send_work);
         else if (ret < 0)
                 printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
 
@@ -276,7 +276,7 @@ void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
 
 }
 
-void send_cq_handle_work(struct tasklet_struct *work) {
+void send_cq_handle_work(struct work_struct *work) {
 
         conn_element *ele;
         ele= container_of(work, struct conn_element ,send_work );
@@ -290,7 +290,7 @@ void recv_cq_handle_work(struct work_struct *work) {
 
 void send_cq_handle(struct ib_cq *cq, void *cq_context) {
         conn_element *ele = (conn_element *) cq->cq_context;
-        tasklet_schedule(&ele->send_work);
+        queue_work(ele->rcm->dsm_wq, &ele->send_work);
 }
 void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
         conn_element *ele = (conn_element *) cq->cq_context;

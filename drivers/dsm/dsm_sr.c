@@ -186,11 +186,16 @@ int exchange_info(conn_element *ele, int id) {
 
                         // We find that a connection is already open with that node - delete this connection request.
                         if (ele_found) {
-                                printk(
-                                                ">[exchange_info] - destroy_connection duplicate : %d\n former : %d\n",
-                                                ele->remote_node_ip,
-                                                ele_found->remote_node_ip);
-                                rdma_disconnect(ele->cm_id);
+                                if (ele->remote_node_ip != get_rcm()->node_ip) {
+                                        printk(
+                                                        ">[exchange_info] - destroy_connection duplicate : %d\n former : %d\n",
+                                                        ele->remote_node_ip,
+                                                        ele_found->remote_node_ip);
+                                        rdma_disconnect(ele->cm_id);
+                                } else {
+                                        printk(
+                                                        "loopback, lets hope for the best\n");
+                                }
                         }
                         //ok, inserting this connection to the tree
                         else {

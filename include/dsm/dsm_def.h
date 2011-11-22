@@ -196,7 +196,8 @@ typedef struct tx_buffer {
 
         struct list_head tx_free_elements_list;
         struct list_head tx_free_elements_list_reply;
-
+        struct list_head request_queue;
+        spinlock_t request_queue_lock;
         spinlock_t tx_free_elements_list_lock;
         spinlock_t tx_free_elements_list_reply_lock;
 
@@ -360,5 +361,15 @@ typedef struct rx_buf_ele {
         recv_work_req_ele *recv_wrk_rq_ele;
 
 } rx_buf_ele;
+
+struct dsm_request {
+        struct page * page;
+        struct subvirtual_machine *svm;
+        struct subvirtual_machine *fault_svm;
+        uint64_t addr;
+        void(*func)(struct tx_buf_ele *);
+        struct timespec time;
+        struct list_head queue;
+};
 
 #endif /* DSM_DEF_H_ */

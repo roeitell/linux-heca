@@ -9,6 +9,27 @@
 #include <dsm/dsm_core.h>
 #include <dsm/dsm_stats.h>
 
+static struct kmem_cache *kmem_request_cache;
+
+void init_kmem_request_cache(void) {
+        kmem_request_cache = kmem_cache_create("dsm_request",
+                        sizeof(struct dsm_request), 0,
+                        SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, NULL);
+}
+
+void destroy_kmem_request_cache(void) {
+        kmem_cache_destroy(kmem_request_cache);
+}
+
+static struct dsm_request * get_dsm_request(void) {
+        struct dsm_request * req = NULL;
+        req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
+        BUG_ON(!req);
+        return req;
+}
+static void release_dsm_request(struct dsm_request *req) {
+        kmem_cache_free(kmem_request_cache, req);
+}
 /**
  * Read the message received in the wc, to get the offset and then find where the page has been written
  *
@@ -75,26 +96,44 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
                 struct subvirtual_machine *fault_svm, uint64_t addr,
                 void(*func)(struct tx_buf_ele *)) {
 
+        struct conn_element * ele = svm->ele;
+        struct tx_buffer *tx = &ele->tx_buffer;
         struct tx_buf_ele *tx_e;
         int ret = 0;
+        struct timespec time;
+        struct dsm_request *req;
 
-        //find free slot
+        dsm_stats_get_time_request(&time);
+        spin_lock(&tx->request_queue_lock);
+        if (list_empty(&tx->request_queue)) {
+                spin_unlock(&tx->request_queue_lock);
+                tx_e = try_get_next_empty_tx_ele(ele);
+                if (tx_e) {
 
-        tx_e = get_next_empty_tx_ele(svm->ele);
+                        dsm_stats_set_time_request(&tx_e->stats, time);
+                        create_page_request(ele, tx_e, fault_svm->id, svm->id,
+                                        addr, page);
 
-        //populate it with a new message
-        create_page_request(svm->ele, tx_e, fault_svm->id, svm->id, addr, page);
+                        tx_e->callback.func = func;
 
-        if (func) {
-                tx_e->callback.func = func;
-
+                        ret = tx_dsm_send(ele, tx_e);
+                        return ret;
+                }
         } else {
-                tx_e->callback.func = NULL;
+                spin_unlock(&tx->request_queue_lock);
         }
-        if (!svm->ele->cm_id->qp)
-                printk(">[send_dsm_message] - no more qp\n");
 
-        ret = tx_dsm_send(svm->ele, tx_e);
+        req = get_dsm_request();
+        req->time = time;
+        req->addr = addr;
+        req->fault_svm = fault_svm;
+        req->func = func;
+        req->page = page;
+        req->svm = svm;
+        spin_lock(&tx->request_queue_lock);
+        list_add_tail(&req->queue, &tx->request_queue);
+        spin_unlock(&tx->request_queue_lock);
+        queue_work(ele->rcm->dsm_wq, &ele->recv_work);
         return ret;
 
 }

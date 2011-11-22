@@ -27,7 +27,7 @@ void create_page_request(conn_element *, struct tx_buf_ele *, struct dsm_vm_id,
 void add_to_process_queue(conn_element *, tx_buf_ele *);
 tx_buf_ele * try_get_next_empty_tx_ele(conn_element *);
 tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *);
-tx_buf_ele * get_next_empty_tx_ele(conn_element *);
+
 int init_tx_lists(conn_element *);
 
 /*

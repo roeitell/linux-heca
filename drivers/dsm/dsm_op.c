@@ -480,46 +480,18 @@ int setup_connection(conn_element *ele, int type) {
 
 tx_buf_ele * try_get_next_empty_tx_ele(conn_element *ele) {
 
-        tx_buf_ele *tx_e;
+        tx_buf_ele *tx_e = NULL;
         struct tx_buffer * tx = &ele->tx_buffer;
 
-        if (!tx) {
-                printk(
-                                ">[try_get_next_empty_tx_ele] - no connection element\n");
-        }
-
         spin_lock(&tx->tx_free_elements_list_lock);
+        if (!list_empty(&tx->tx_free_elements_list)) {
 
-        if (list_empty(&tx->tx_free_elements_list)) {
+                tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
+                list_del(&tx_e->tx_buf_ele_ptr);
 
-                spin_unlock(&tx->tx_free_elements_list_lock);
-
-                return NULL;
         }
-
-        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
-        list_del(&tx_e->tx_buf_ele_ptr);
         spin_unlock(&tx->tx_free_elements_list_lock);
 
-        return tx_e;
-
-}
-
-tx_buf_ele * get_next_empty_tx_ele(conn_element *ele) {
-
-        tx_buf_ele *tx_e;
-        struct timespec time;
-        struct tx_buffer * tx = &ele->tx_buffer;
-
-        dsm_stats_get_time_request(&time);
-        wait_for_completion_interruptible(&tx->completion_free_tx_element);
-        spin_lock(&tx->tx_free_elements_list_lock);
-        BUG_ON(list_empty(&tx->tx_free_elements_list));
-
-        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
-        list_del(&tx_e->tx_buf_ele_ptr);
-        spin_unlock(&tx->tx_free_elements_list_lock);
-        dsm_stats_set_time_request(&tx_e->stats, time);
         return tx_e;
 
 }
@@ -551,13 +523,12 @@ int init_tx_lists(conn_element *ele) {
         struct tx_buffer * tx = &ele->tx_buffer;
         int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
         int max_tx_reply = TX_BUF_ELEMENTS_NUM;
-
+        INIT_LIST_HEAD(&tx->request_queue);
         INIT_LIST_HEAD(&tx->tx_free_elements_list);
         INIT_LIST_HEAD(&tx->tx_free_elements_list_reply);
         spin_lock_init(&tx->tx_free_elements_list_lock);
         spin_lock_init(&tx->tx_free_elements_list_reply_lock);
-
-        init_completion(&tx->completion_free_tx_element);
+        spin_lock_init(&tx->request_queue_lock);
 
         for (i = 0; i < max_tx_send; ++i) {
                 release_tx_element(ele, &tx->tx_buf[i]);
@@ -756,7 +727,6 @@ void release_tx_element(conn_element * ele, tx_buf_ele * tx_e) {
         spin_lock(&tx->tx_free_elements_list_lock);
         list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
         spin_unlock(&tx->tx_free_elements_list_lock);
-        complete(&tx->completion_free_tx_element);
 
 }
 void release_tx_element_reply(conn_element * ele, tx_buf_ele * tx_e) {

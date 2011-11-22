@@ -17,6 +17,37 @@ void print_work_completion(struct ib_wc *wc, char * error_context) {
                         wc->opcode, wc->byte_len);
 }
 
+int flush_dsm_request(conn_element *ele) {
+        struct tx_buffer *tx = &ele->tx_buffer;
+        struct tx_buf_ele *tx_e;
+        struct dsm_request *req;
+
+        loop:
+
+        spin_lock(&tx->request_queue_lock);
+        while (!list_empty(&tx->request_queue)) {
+                tx_e = try_get_next_empty_tx_ele(ele);
+                if (!tx_e)
+
+                        break;
+
+                req= list_first_entry(&tx->request_queue, struct dsm_request, queue);
+                list_del(&req->queue);
+                dsm_stats_set_time_request(&tx_e->stats, req->time);
+                //populate it with a new message
+                create_page_request(ele, tx_e, req->fault_svm->id, req->svm->id,
+                                req->addr, req->page);
+
+                tx_e->callback.func = req->func;
+
+                tx_dsm_send(ele, tx_e);
+
+        }
+
+        spin_unlock(&tx->request_queue_lock);
+        return;
+}
+
 int dsm_recv_message_handler(struct conn_element *ele, rx_buf_ele *rx_e) {
         tx_buf_ele *tx_e = NULL;
         switch (rx_e->dsm_msg->status) {
@@ -253,6 +284,7 @@ void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
         dsm_send_poll(cq);
         ret = ib_req_notify_cq(cq,
                         IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
+        dsm_send_poll(cq);
         if (ret > 0)
                 queue_work(ele->rcm->dsm_wq, &ele->send_work);
         else if (ret < 0)
@@ -269,6 +301,8 @@ void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
         dsm_recv_poll(cq);
         ret = ib_req_notify_cq(cq,
                         IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
+        dsm_recv_poll(cq);
+        flush_dsm_request(ele);
         if (ret > 0)
                 queue_work(ele->rcm->dsm_wq, &ele->recv_work);
         else if (ret < 0)

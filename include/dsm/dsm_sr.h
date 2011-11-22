@@ -13,6 +13,9 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_op.h>
 
+void init_kmem_request_cache(void);
+
+void destroy_kmem_request_cache(void);
 /*
  * processing message in recv handler
  */

@@ -438,8 +438,8 @@ static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
         return ret;
 }
 
-static void prefault_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
-                unsigned long addr, struct subvirtual_machine *fault_svm) {
+static void prefault_dsm_page(struct mm_struct *mm, unsigned long addr,
+                struct subvirtual_machine *fault_svm) {
         spinlock_t *ptl;
         pte_t *pte;
         pgd_t *pgd;
@@ -447,46 +447,48 @@ static void prefault_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
         pmd_t *pmd;
         pte_t pte_entry;
         swp_entry_t swp_e;
+        struct vm_area_struct *vma;
+        unsigned long norm_addr = addr & PAGE_MASK;
         struct subvirtual_machine *svm;
         struct dsm_vm_id id;
 
-        if (!find_get_dsm_page(addr & PAGE_MASK)) {
+        if (!find_get_dsm_page(norm_addr)) {
+
                 vma = find_vma(mm, addr);
                 if (unlikely(!vma || vma->vm_start > addr)) {
-                        errk("[dsm_extract_page] no VMA or bad VMA \n");
+
                         goto out;
                 }
 
                 pgd = pgd_offset(mm, addr);
                 if (unlikely(!pgd_present(*pgd))) {
-                        errk("[dsm_extract_page] no pgd \n");
+
                         goto out;
                 }
 
                 pud = pud_offset(pgd, addr);
                 if (unlikely(!pud_present(*pud))) {
-                        errk("[dsm_extract_page] no pud \n");
+
                         goto out;
                 }
 
                 pmd = pmd_offset(pud, addr);
 
                 if (unlikely(pmd_none(*pmd))) {
-                        errk("[dsm_extract_page] no pmd error \n");
 
                         goto out;
                 }
                 if (unlikely(pmd_bad(*pmd))) {
                         pmd_clear_bad(pmd);
-                        errk("[dsm_extract_page] bad pmd \n");
+
                         goto out;
                 }
                 if (unlikely(pmd_trans_huge(*pmd))) {
-                        errk("[dsm_extract_page] we have a huge pmd \n");
+
                         goto out;
                 }
 
-                // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
+                pte = pte_offset_map(pmd, addr);
 
                 pte_entry = *pte;
 
@@ -496,7 +498,10 @@ static void prefault_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
                                 swp_e = pte_to_swp_entry(pte_entry);
                                 if (non_swap_entry(swp_e)) {
                                         if (is_dsm_entry(swp_e)) {
-
+                                                errk(
+                                                                "[prefault_dsm_page] prefaulting at addr: %p  , norm %p \n",
+                                                                addr,
+                                                                norm_addr);
                                                 dsm_entry_to_val(swp_e,
                                                                 &id.dsm_id,
                                                                 &id.svm_id);
@@ -506,10 +511,8 @@ static void prefault_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
 
                                                 get_remote_dsm_page(
                                                                 GFP_HIGHUSER_MOVABLE,
-                                                                vma,
-                                                                addr & PAGE_MASK
-                                                                , svm,
-                                                                fault_svm);
+                                                                vma, norm_addr,
+                                                                svm, fault_svm);
 
                                         }
                                 }
@@ -534,7 +537,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         int ret = 0;
         struct page *page, *swapcache = NULL;
         int exclusive = 0;
-
+        int i;
         pte_t pte;
         int locked;
 
@@ -568,7 +571,12 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                         goto unlock;
                 }
                 ret = VM_FAULT_MAJOR;
+                for (i = 1; i < 40; i++)
+                        prefault_dsm_page(mm, address + i * PAGE_SIZE
+                        , fault_svm);
+
         }
+
         locked = lock_page_or_retry(page, mm, flags);
         if (!locked) {
                 ret |= VM_FAULT_RETRY;

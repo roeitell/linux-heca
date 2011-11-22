@@ -6,6 +6,7 @@
  */
 
 #include <dsm/dsm_fop.h>
+#include <dsm/dsm_sr.h>
 
 int destroy_rcm(rcm **rcm) {
         int ret = 0;
@@ -43,7 +44,7 @@ int destroy_rcm(rcm **rcm) {
                 *rcm = 0;
         } else
                 printk(">[destroy_rcm] - no rcm\n");
-
+        destroy_kmem_request_cache();
         return ret;
 
 }

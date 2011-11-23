@@ -16,17 +16,15 @@ int create_rcm(rcm **rcm, char *ip, int port) {
 
         *rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
         memset(*rcm, 0, sizeof(rcm));
-       init_kmem_request_cache();
-
+        init_kmem_request_cache();
+        spin_lock_init(&(*rcm)->rcm_lock);
+        spin_lock_init(&(*rcm)->route_lock);
 
         (*rcm)->dsm_wq = create_workqueue("dsm_wq");
         (*rcm)->node_ip = inet_addr(ip);
 
         (*rcm)->root_conn = RB_ROOT;
         (*rcm)->root_route = RB_ROOT;
-
-        spin_lock_init(&(*rcm)->rcm_lock);
-        spin_lock_init(&(*rcm)->route_lock);
 
         (*rcm)->sin.sin_family = AF_INET;
         (*rcm)->sin.sin_addr.s_addr = (__u32) (*rcm)->node_ip;

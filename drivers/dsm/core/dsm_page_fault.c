@@ -544,7 +544,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         errk("[request_page_insert] faulting for page %p , norm %p \n ",
                         address, norm_addr);
         if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte)) {
-                errk("[request_page_insert] not same pte !!!! \n ");
+
                 goto out;
         }
 

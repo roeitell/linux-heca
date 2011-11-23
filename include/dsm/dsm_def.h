@@ -58,14 +58,7 @@
 #define errk printk
 #endif
 
-static struct rcm *_rcm;
 
-static inline struct rcm * get_rcm(void) {
-        return _rcm;
-}
-static inline struct rcm ** get_pointer_rcm(void) {
-        return &_rcm;
-}
 
 struct dsm_vm_id {
         u16 dsm_id;

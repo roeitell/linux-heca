@@ -292,7 +292,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 svm->priv = priv_data;
                                 svm->ele = NULL;
 
-                                _dsm = list_first_entry(&_rcm->dsm_ls, struct dsm, ls);
+                                _dsm = list_first_entry(&rcm->dsm_ls, struct dsm, ls);
 
                                 list_add_rcu(&svm->ls, &_dsm->svm_ls);
 
@@ -399,7 +399,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 }
                                 svm->ele = cele;
 
-                                _dsm = list_first_entry(&_rcm->dsm_ls, struct dsm, ls);
+                                _dsm = list_first_entry(&rcm->dsm_ls, struct dsm, ls);
 
                                 list_add_rcu(&svm->ls, &_dsm->svm_ls);
 

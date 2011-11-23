@@ -122,7 +122,6 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         } else {
                 spin_unlock(&tx->request_queue_lock);
         }
-        errk("[request_dsm_page] queuing request\n");
         req = get_dsm_request();
         req->time = time;
         req->addr = addr;

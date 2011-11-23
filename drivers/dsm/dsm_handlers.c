@@ -30,7 +30,7 @@ int flush_dsm_request(conn_element *ele) {
                 if (!tx_e)
 
                         break;
-                errk("[flush_dsm_request] dequeuing request\n");
+
                 req= list_first_entry(&tx->request_queue, struct dsm_request, queue);
                 list_del(&req->queue);
                 dsm_stats_set_time_request(&tx_e->stats, req->time);

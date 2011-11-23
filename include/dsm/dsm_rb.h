@@ -17,11 +17,7 @@ void insert_rb_conn(struct rcm *, struct conn_element *);
 struct conn_element* search_rb_conn(struct rcm *, int);
 void erase_rb_conn(struct rb_root *, struct conn_element*);
 
-void red_page_insert(u64, struct dsm_vm_id *, unsigned long);
-struct red_page *red_page_search(u64);
-void red_page_erase(struct red_page *);
-
-
-
+struct rcm * get_rcm(void);
+struct rcm ** get_pointer_rcm(void);
 
 #endif /* DSM_RB_H_ */

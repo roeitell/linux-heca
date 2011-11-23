@@ -9,6 +9,17 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
+static struct rcm *_rcm;
+
+struct rcm * get_rcm(void) {
+        return _rcm;
+}
+EXPORT_SYMBOL(get_rcm);
+struct rcm ** get_pointer_rcm(void) {
+        return &_rcm;
+}
+EXPORT_SYMBOL(get_pointer_rcm);
+
 void insert_rb_conn(struct rcm *rcm, struct conn_element *ele) {
         struct rb_root *root = &rcm->root_conn;
         struct rb_node **new = &root->rb_node;
@@ -65,67 +76,4 @@ void erase_rb_conn(struct rb_root *root, struct conn_element *ele) {
         kfree(ele);
 }
 EXPORT_SYMBOL(erase_rb_conn);
-
-void red_page_insert(u64 pfn, struct dsm_vm_id *id, unsigned long addr) {
-        struct rb_root *root = &get_rcm()->red_page_root;
-        struct rb_node **new = &root->rb_node;
-        struct rb_node *parent = NULL;
-        struct red_page *this;
-        struct red_page *rp = kmalloc(sizeof(*rp), GFP_KERNEL);
-
-        rp->pfn = pfn;
-        rp->id.dsm_id = id->dsm_id;
-        rp->id.svm_id = id->svm_id;
-        rp->addr = addr;
-
-        while (*new) {
-                this = rb_entry(*new, struct red_page, rb);
-
-                parent = *new;
-
-                if (rp->pfn < this->pfn) {
-                        new = &((*new)->rb_left);
-
-                } else if (rp->pfn > this->pfn) {
-                        new = &((*new)->rb_right);
-
-                }
-
-                // DSM1  - need tests to ensure there no double entries!
-
-        }
-
-        rb_link_node(&rp->rb, parent, new);
-        rb_insert_color(&rp->rb, root);
-
-}
-
-void red_page_erase(struct red_page *rp) {
-        struct rb_root *root = &get_rcm()->red_page_root;
-
-        rb_erase(&rp->rb, root);
-
-        kfree(rp);
-}
-
-struct red_page *red_page_search(u64 pfn) {
-        struct rb_root *root = &get_rcm()->red_page_root;
-        struct rb_node *node = root->rb_node;
-        struct red_page *this;
-
-        while (node) {
-                this = rb_entry(node, struct red_page, rb);
-
-                if (pfn < this->pfn)
-                        node = node->rb_left;
-                else if (pfn > this->pfn)
-                        node = node->rb_right;
-                else
-                        return this;
-
-        }
-
-        return NULL;
-
-}
 

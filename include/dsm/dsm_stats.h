@@ -56,7 +56,7 @@ struct con_element_stats {
         s64 send_reply_to_send_reply_completion_min;
         s64 send_reply_to_send_reply_completion_max;
         u64 nb_total_processed_send_reply;
-        spinlock_t lock;
+        spinlock_t lock ;
 
         struct timespec t_start_bench;
         struct timespec t_end_bench;

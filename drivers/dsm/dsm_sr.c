@@ -219,8 +219,7 @@ int exchange_info(conn_element *ele, int id) {
 
                         ele->remote_node_ip =
                                         (int) ele->rid.remote_info->node_ip;
-                        ele_found = search_rb_conn(ele->rcm,
-                                        ele->remote_node_ip);
+                        ele_found = search_rb_conn(ele->remote_node_ip);
 
                         // We find that a connection is already open with that node - delete this connection request.
                         if (ele_found) {
@@ -237,7 +236,7 @@ int exchange_info(conn_element *ele, int id) {
                         }
                         //ok, inserting this connection to the tree
                         else {
-                                insert_rb_conn(ele->rcm, ele);
+                                insert_rb_conn(ele);
                                 printk(
                                                 ">[exchange_info] inserted conn_element to rb_tree :  %d\n",
                                                 ele->remote_node_ip);

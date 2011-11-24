@@ -106,10 +106,10 @@ void calc_dsm_stats_request_reply_full(struct con_element_stats *e_dsm_stats,
 void calc_dsm_stats_request_reply(struct con_element_stats *e_dsm_stats,
                 struct tx_dsm_stats *tx_dsm_stats) {
         s64 ns;
-        unsigned long flags;
+
         struct timespec time;
 
-        spin_lock_irqsave(&e_dsm_stats->lock, flags);
+        spin_lock(&e_dsm_stats->lock);
         getnstimeofday(&e_dsm_stats->t_end_bench);
         e_dsm_stats->nb_total_processed++;
         calc_dsm_stats_request_reply_full(e_dsm_stats, tx_dsm_stats);
@@ -122,7 +122,7 @@ void calc_dsm_stats_request_reply(struct con_element_stats *e_dsm_stats,
         }
         e_dsm_stats->total_entry_to_reply += ns;
 
-        spin_unlock_irqrestore(&e_dsm_stats->lock, flags);
+        spin_unlock(&e_dsm_stats->lock);
 
         return;
 }
@@ -131,10 +131,10 @@ EXPORT_SYMBOL( calc_dsm_stats_request_reply);
 void calc_dsm_stats_reply(struct con_element_stats *e_dsm_stats,
                 struct tx_dsm_stats *tx_dsm_stats) {
         s64 ns;
-        unsigned long flags;
+
         struct timespec time;
 
-        spin_lock_irqsave(&e_dsm_stats->lock, flags);
+        spin_lock(&e_dsm_stats->lock);
         e_dsm_stats->nb_total_processed_send_reply++;
         time = timespec_sub(tx_dsm_stats->t_send_completion,
                         tx_dsm_stats->t_send);
@@ -146,13 +146,13 @@ void calc_dsm_stats_reply(struct con_element_stats *e_dsm_stats,
         }
         e_dsm_stats->total_send_reply_to_send_reply_completion += ns;
 
-        spin_unlock_irqrestore(&e_dsm_stats->lock, flags);
+        spin_unlock(&e_dsm_stats->lock);
 
         return;
 }
 EXPORT_SYMBOL( calc_dsm_stats_reply);
 
-void print_dsm_stats_message_count(struct con_element_stats * stats) {
+static void print_dsm_stats_message_count(struct con_element_stats * stats) {
         u64 in = atomic64_read(&stats->in);
         u64 out = atomic64_read(&stats->out);
         u64 out_rdma = atomic64_read(&stats->out_rdma);
@@ -169,7 +169,7 @@ void print_dsm_stats_message_count(struct con_element_stats * stats) {
                         "***************************************************************************************\n");
 
 }
-void print_dsm_stats_time_detailed(struct con_element_stats * stats) {
+static void print_dsm_stats_time_detailed(struct con_element_stats * stats) {
         s64 avg;
         printk("************\n");
         avg = stats->total_wait_to_wait_completion / stats->nb_total_processed;
@@ -206,16 +206,16 @@ void print_dsm_stats_time_detailed(struct con_element_stats * stats) {
 
 }
 
-void print_dsm_stats_time(struct con_element_stats * stats) {
+static void print_dsm_stats_time(struct con_element_stats * stats) {
         s64 avg;
         s64 nb_req_sec;
         s64 mb_sec_out;
         s64 mb_sec_in;
         s64 perceived_request_proc;
-        unsigned long flags;
+
         struct timespec time;
 
-        spin_lock_irqsave(&stats->lock, flags);
+        spin_lock(&stats->lock);
         if (stats->nb_total_processed_send_reply) {
                 avg = stats->total_send_reply_to_send_reply_completion
                                 / stats->nb_total_processed_send_reply;
@@ -262,40 +262,12 @@ void print_dsm_stats_time(struct con_element_stats * stats) {
                                 "Estimated GLOBAL bandwith : a->b %lld (Mb/s) , b->a %lld (Mb/s)\n",
                                 mb_sec_out, mb_sec_in);
         }
-        spin_unlock_irqrestore(&stats->lock, flags);
+        spin_unlock(&stats->lock);
 }
-
-int create_dsm_stats_data(struct con_element_stats *stats) {
-
-        spin_lock_init(&stats->lock);
-        atomic64_set(&stats->in, 0);
-        atomic64_set(&stats->out, 0);
-        atomic64_set(&stats->out_rdma, 0);
-        atomic64_set(&stats->in_rdma, 0);
-        stats->nb_total_processed = 0;
-        stats->nb_total_processed_send_reply = 0;
-        stats->total_entry_to_reply = 0;
-        stats->total_send_completion_to_reply_completion = 0;
-        stats->total_send_reply_to_send_reply_completion = 0;
-        stats->total_send_to_send_completion = 0;
-        stats->total_wait_to_wait_completion = 0;
-        stats->entry_to_reply_max = 0;
-        stats->entry_to_reply_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_completion_to_reply_completion_max = 0;
-        stats->send_completion_to_reply_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_reply_to_send_reply_completion_max = 0;
-        stats->send_reply_to_send_reply_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->send_to_send_completion_max = 0;
-        stats->send_to_send_completion_min = 0x7FFFFFFFFFFFFFFF;
-        stats->wait_to_wait_completion_max = 0;
-        stats->wait_to_wait_completion_min = 0x7FFFFFFFFFFFFFFF;
-        return 0;
-}
-EXPORT_SYMBOL( create_dsm_stats_data);
 
 void reset_dsm_stats(struct con_element_stats * stats) {
-        unsigned long flags;
-        spin_lock_irqsave(&stats->lock, flags);
+
+        spin_lock(&stats->lock);
         atomic64_set(&stats->in, 0);
         atomic64_set(&stats->out, 0);
         atomic64_set(&stats->out_rdma, 0);
@@ -318,9 +290,17 @@ void reset_dsm_stats(struct con_element_stats * stats) {
         stats->wait_to_wait_completion_max = 0;
         stats->wait_to_wait_completion_min = 0x7FFFFFFFFFFFFFFF;
         getnstimeofday(&stats->t_start_bench);
-        spin_unlock_irqrestore(&stats->lock, flags);
+        spin_unlock(&stats->lock);
 }
 EXPORT_SYMBOL( reset_dsm_stats);
+
+int create_dsm_stats_data(struct con_element_stats *stats) {
+
+        spin_lock_init(&stats->lock);
+        reset_dsm_stats(stats);
+        return 0;
+}
+EXPORT_SYMBOL( create_dsm_stats_data);
 
 void print_dsm_stats(struct con_element_stats * stats) {
         print_dsm_stats_message_count(stats);

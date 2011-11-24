@@ -10,14 +10,14 @@
 #include <dsm/dsm_handlers.h>
 #include <dsm/dsm_sr.h>
 
-void print_work_completion(struct ib_wc *wc, char * error_context) {
+static void print_work_completion(struct ib_wc *wc, char * error_context) {
         printk(
                         "%s status = %d , wrid= %llu vend_err %x , opcode=%d  msg lenght %d\n",
                         error_context, wc->status, wc->wr_id, wc->vendor_err,
                         wc->opcode, wc->byte_len);
 }
 
-int flush_dsm_request(conn_element *ele) {
+static int flush_dsm_request(conn_element *ele) {
         struct tx_buffer *tx = &ele->tx_buffer;
         struct tx_buf_ele *tx_e;
         struct dsm_request *req;
@@ -48,7 +48,7 @@ int flush_dsm_request(conn_element *ele) {
         return;
 }
 
-int dsm_recv_message_handler(struct conn_element *ele, rx_buf_ele *rx_e) {
+static int dsm_recv_message_handler(struct conn_element *ele, rx_buf_ele *rx_e) {
         tx_buf_ele *tx_e = NULL;
         switch (rx_e->dsm_msg->status) {
                 case REQ_REPLY: {
@@ -82,7 +82,8 @@ int dsm_recv_message_handler(struct conn_element *ele, rx_buf_ele *rx_e) {
 
 }
 
-int dsm_send_message_handler(struct conn_element *ele, tx_buf_ele *tx_buf_e) {
+static int dsm_send_message_handler(struct conn_element *ele,
+                tx_buf_ele *tx_buf_e) {
 
         dsm_stats_update_time_send_completion(&tx_buf_e->stats);
         switch (tx_buf_e->dsm_msg->status) {
@@ -147,7 +148,7 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context) {
         }
 }
 
-void dsm_send_poll(struct ib_cq *cq) {
+static void dsm_send_poll(struct ib_cq *cq) {
         struct ib_wc wc;
         conn_element *ele = (conn_element *) cq->cq_context;
 
@@ -195,7 +196,7 @@ void dsm_send_poll(struct ib_cq *cq) {
         }
 }
 
-void dsm_recv_poll(struct ib_cq *cq) {
+static void dsm_recv_poll(struct ib_cq *cq) {
         struct ib_wc wc;
         conn_element *ele = (conn_element *) cq->cq_context;
 
@@ -278,7 +279,7 @@ void dsm_recv_poll(struct ib_cq *cq) {
 /*
  * This one notifies that the sending as been correctly done
  */
-void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
+static void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
         int ret = 0;
         conn_element *ele = (conn_element *) cq->cq_context;
         dsm_send_poll(cq);
@@ -295,7 +296,7 @@ void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
 /*
  * This one handles the reception of messages for both client or server purposes
  */
-void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
+static void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
         int ret = 0;
         conn_element *ele = (conn_element *) cq->cq_context;
         dsm_recv_poll(cq);
@@ -446,11 +447,12 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                         ele = vmalloc(sizeof(conn_element));
                         if (!ele)
                                 goto out;
-
+                        create_dsm_stats_data(&ele->stats);
                         rcm = id->context;
 
                         ele->rcm = rcm;
                         ele->cm_id = id;
+
                         id->context = ele;
 
                         ret = setup_connection(ele, 1);

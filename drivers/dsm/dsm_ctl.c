@@ -28,123 +28,6 @@
 static char *ip = 0;
 static int port = 0;
 
-struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
-        //return search_rb_route(_rcm, id);
-        struct dsm *dsm;
-        struct subvirtual_machine *svm;
-        struct rcm * rcm = get_rcm();
-
-        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-        {
-                if (dsm->dsm_id == id->dsm_id)
-                list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
-                {
-                        if (svm->id.svm_id == id->svm_id)
-                                return svm;
-
-                }
-        }
-
-        return NULL;
-
-}
-
-/*
- * Find and return SVM with pointer to process file desc private_data. *
- */
-struct subvirtual_machine *find_local_svm(u16 dsm_id, struct mm_struct *mm) {
-        struct subvirtual_machine *local_svm;
-        struct dsm *dsm;
-        struct rcm * rcm = get_rcm();
-
-        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-        {
-                if (dsm->dsm_id == dsm_id) {
-                        list_for_each_entry_rcu(local_svm, &dsm->svm_ls, ls)
-                        {
-                                if (local_svm->priv)
-                                        if (local_svm->priv->mm == mm)
-                                                return local_svm;
-
-                        }
-
-                }
-
-        }
-
-        return NULL;
-}
-
-int page_local(unsigned long addr, struct dsm_vm_id *id, struct mm_struct *mm) {
-        struct subvirtual_machine *svm = NULL;
-        struct mem_region *mr = NULL;
-
-        svm = find_local_svm(id->dsm_id, mm);
-
-        if (svm) {
-                list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
-                {
-                        if (addr > mr->addr && addr <= (mr->addr + mr->sz)) {
-                                return 1;
-                        }
-                }
-        }
-
-        return 0;
-}
-
-struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id) {
-        struct dsm *dsm;
-        struct subvirtual_machine *svm;
-        struct mem_region *mr;
-        struct rcm * rcm = get_rcm();
-        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-        {
-                if (dsm->dsm_id == id->dsm_id)
-                list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
-                {
-                        if (svm->id.svm_id == id->svm_id)
-                        list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
-                        {
-                                if (addr >= mr->addr
-                                                && addr <= (mr->addr + mr->sz))
-                                        return mr;
-
-                        }
-
-                }
-
-        }
-
-        return NULL;
-
-}
-
-struct mem_region *find_mr_source(unsigned long addr) {
-        struct mm_struct *mm = current->mm;
-        struct subvirtual_machine *svm;
-        struct dsm *dsm;
-        struct rcm * rcm = get_rcm();
-        list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-        {
-                list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
-                {
-                        if (svm->priv)
-                                if (svm->priv->mm == mm) {
-                                        // This isn't the optimised solution.  Refinding ptr to dsm.
-                                        return find_mr(addr - svm->priv->offset,
-                                                        &svm->id);
-
-                                }
-
-                }
-
-        }
-
-        return NULL;
-
-}
-
 static int open(struct inode *inode, struct file *f) {
         private_data *data;
         struct rcm * rcm = get_rcm();
@@ -277,7 +160,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                         "[DSM_SVM]\n\tfound svm : %d\n\tdsm_id : %u\n\tsvm_id : %u\n",
                                         !!svm, svm_info.dsm_id,
                                         svm_info.svm_id);
-                        spin_lock(&rcm->route_lock);
 
                         if (!svm) {
                                 svm = kmalloc(sizeof(*svm), GFP_KERNEL);
@@ -291,20 +173,20 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 svm->id.svm_id = svm_info.svm_id;
                                 svm->priv = priv_data;
                                 svm->ele = NULL;
-
+                                spin_lock(&rcm->route_lock);
                                 _dsm = list_first_entry(&rcm->dsm_ls, struct dsm, ls);
 
                                 list_add_rcu(&svm->ls, &_dsm->svm_ls);
 
                                 INIT_LIST_HEAD(&svm->mr_ls);
-
+                                spin_unlock(&rcm->route_lock);
                         } else {
                                 priv_data->svm = svm;
                                 priv_data->offset = svm_info.offset;
 
                                 svm->priv = priv_data;
                                 //svm->ele = NULL;
-
+                                spin_lock(&rcm->route_lock);
                                 // Free all MR and add new one
                                 list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
                                 {
@@ -314,11 +196,11 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 }
 
                                 synchronize_rcu();
-
+                                spin_unlock(&rcm->route_lock);
                         }
 
                         r = 0;
-                        fail1: spin_unlock(&rcm->route_lock);
+                        fail1:
 
                         break;
 
@@ -348,9 +230,9 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                         mr->addr = mr_info.start_addr;
                         mr->sz = mr_info.size;
                         mr->svm = find_svm(&id);
-
+                        spin_lock(&rcm->route_lock);
                         list_add_rcu(&mr->ls, &mr->svm->mr_ls);
-
+                        spin_unlock(&rcm->route_lock);
                         r = 0;
 
                         break;
@@ -375,7 +257,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                         !!svm, svm_info.dsm_id,
                                         svm_info.svm_id);
 
-                        spin_lock(&rcm->route_lock);
                         if (!svm) {
                                 svm = kmalloc(sizeof(*svm), GFP_KERNEL);
                                 if (!svm)
@@ -389,7 +270,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                                 // Check for connection
 
-                                cele = search_rb_conn(rcm, ip_addr);
+                                cele = search_rb_conn(ip_addr);
 
                                 if (!cele) {
                                         ret = create_connection(rcm, &svm_info);
@@ -400,10 +281,11 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 svm->ele = cele;
 
                                 _dsm = list_first_entry(&rcm->dsm_ls, struct dsm, ls);
-
+                                spin_lock(&rcm->route_lock);
                                 list_add_rcu(&svm->ls, &_dsm->svm_ls);
 
                                 INIT_LIST_HEAD(&svm->mr_ls);
+                                spin_unlock(&rcm->route_lock);
 
                         } else if (!svm->ele) {
 
@@ -411,7 +293,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                                 // Check for connection
 
-                                cele = search_rb_conn(rcm, ip_addr);
+                                cele = search_rb_conn(ip_addr);
 
                                 if (!cele) {
                                         ret = create_connection(rcm, &svm_info);
@@ -425,7 +307,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         r = 0;
 
-                        fail2: spin_unlock(&rcm->route_lock);
+                        fail2:
 
                         break;
 
@@ -531,7 +413,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 goto out;
 
                         ip_addr = inet_addr(svm_info.ip);
-                        cele = search_rb_conn(rcm, ip_addr);
+                        cele = search_rb_conn(ip_addr);
 
                         if (likely(cele)) {
 
@@ -547,7 +429,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 goto out;
 
                         ip_addr = inet_addr(svm_info.ip);
-                        cele = search_rb_conn(rcm, ip_addr);
+                        cele = search_rb_conn(ip_addr);
 
                         if (likely(cele)) {
 
@@ -566,9 +448,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
         }
 
-        out:
-
-        return r;
+        out: return r;
 
 }
 

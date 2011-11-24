@@ -54,7 +54,7 @@ int destroy_connections(rcm *rcm) {
         int i = 0;
 
         // DSM3: Temporarily using i - this doesn't make sense - what if nodes = 1, 3, 4?  We only free first!
-        while ((ele = search_rb_conn(rcm, i))) {
+        while ((ele = search_rb_conn(i))) {
 
                 if (destroy_connection(&ele, rcm))
                         goto err;

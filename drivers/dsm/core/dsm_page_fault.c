@@ -111,6 +111,7 @@ static struct page *find_get_dsm_page(unsigned long addr) {
         repeat: page = NULL;
         pagep = radix_tree_lookup_slot(&dsm_tree, addr);
         if (pagep) {
+                //NEED TO BE UPDATED TO 3.1
                 page = radix_tree_deref_slot(pagep);
                 if (unlikely(!page))
                         goto out;

@@ -677,7 +677,7 @@ int create_rcm(char *ip, int port) {
         spin_lock_init(&(*rcm)->route_lock);
 
         (*rcm)->dsm_wq =
-                        alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_CPU_INTENSIVE| WQ_MEM_RECLAIM,0);
+                        alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
         (*rcm)->node_ip = inet_addr(ip);
 
         (*rcm)->root_conn = RB_ROOT;

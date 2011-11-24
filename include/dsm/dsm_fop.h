@@ -10,15 +10,8 @@
 
 #include <dsm/dsm_op.h>
 
-int destroy_rcm(rcm **);
-int destroy_connections(rcm *);
-int destroy_connection(conn_element **, rcm *);
+int destroy_rcm(void);
 
-void destroy_tx_buffer(conn_element *);
-void destroy_rx_buffer(conn_element *);
-
-void free_stat_data(conn_element *);
-void free_rdma_info(conn_element *);
-void free_dummy_page(conn_element *, int);
+int destroy_connection(struct conn_element **, struct rcm *);
 
 #endif /* DSM_FOP_H_ */

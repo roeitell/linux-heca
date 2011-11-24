@@ -246,9 +246,9 @@ static void print_dsm_stats_time(struct con_element_stats * stats) {
                 avg = timespec_to_ns(&time);
                 perceived_request_proc = avg / stats->nb_total_processed;
                 nb_req_sec = (1000000000 * stats->nb_total_processed) / avg;
-                mb_sec_out = (nb_req_sec * (sizeof(dsm_message) * 8))
+                mb_sec_out = (nb_req_sec * (sizeof(struct dsm_message) * 8))
                                 / (1024 * 1024);
-                mb_sec_in = (nb_req_sec * ((sizeof(dsm_message)) + PAGE_SIZE)
+                mb_sec_in = (nb_req_sec * ((sizeof(struct dsm_message)) + PAGE_SIZE)
                                 * 8) / (1024 * 1024);
                 printk(
                                 "Start benchmark %lld \n End Benchmark %lld \n total time %lld \n",

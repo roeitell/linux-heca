@@ -227,7 +227,7 @@ static struct page *dsm_extract_page(struct dsm_vm_id id,
 
 }
 
-struct page *dsm_extract_page_from_remote(dsm_message *msg) {
+struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
         struct dsm_vm_id remote_id;
         struct dsm_vm_id local_id;
         struct subvirtual_machine *local_svm;
@@ -272,7 +272,7 @@ EXPORT_SYMBOL(dsm_extract_page_from_remote);
  * updated on time, the next Node can still pass the request along fine - either to the next node or directly to the final.
  *
  */
-int dsm_update_pte_entry(dsm_message *msg) // DSM1 - update all code
+int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
 {
         spinlock_t *ptl;
         pte_t *pte;

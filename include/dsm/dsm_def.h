@@ -58,28 +58,10 @@
 #define errk printk
 #endif
 
-
-
 struct dsm_vm_id {
         u16 dsm_id;
         u8 svm_id;
 
-};
-
-struct swp_element {
-        unsigned long addr;
-        struct dsm_vm_id id;
-
-        struct rb_node rb;
-
-};
-
-struct red_page {
-        u64 pfn;
-        struct dsm_vm_id id;
-        unsigned long addr;
-
-        struct rb_node rb;
 };
 
 static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id) {
@@ -110,7 +92,7 @@ struct dsm {
         struct list_head ls;
 };
 
-typedef struct rcm {
+struct rcm {
         int node_ip;
 
         struct rdma_cm_id *cm_id;
@@ -134,7 +116,7 @@ typedef struct rcm {
 
         struct workqueue_struct * dsm_wq;
 
-} rcm;
+};
 struct rdma_info_data {
 
         void *send_mem;
@@ -154,15 +136,15 @@ struct rdma_info_data {
         int exchanged;
 };
 
-typedef struct page_pool_ele {
+struct page_pool_ele {
 
         void * page_buf;
         struct page * mem_page;
         struct list_head page_ptr;
 
-} page_pool_ele;
+};
 
-typedef struct page_pool {
+struct page_pool {
 
         int nb_full_element;
 
@@ -178,13 +160,13 @@ typedef struct page_pool {
 
         struct work_struct page_release_work;
 
-} page_pool;
+};
 
-typedef struct rx_buffer {
+struct rx_buffer {
         struct rx_buf_ele * rx_buf;
-} rx_buffer;
+};
 
-typedef struct tx_buffer {
+struct tx_buffer {
         struct tx_buf_ele * tx_buf;
 
         struct list_head tx_free_elements_list;
@@ -196,10 +178,10 @@ typedef struct tx_buffer {
 
         struct completion completion_free_tx_element;
 
-} tx_buffer;
+};
 
-typedef struct conn_element {
-        rcm *rcm;
+struct conn_element {
+        struct rcm *rcm;
 
         int remote_node_ip;
         struct rdma_info_data rid;
@@ -221,9 +203,9 @@ typedef struct conn_element {
 
         struct con_element_stats stats;
 
-} conn_element;
+};
 
-typedef struct rdma_info {
+struct rdma_info {
 
         u8 flag;
         u32 node_ip;
@@ -233,9 +215,9 @@ typedef struct rdma_info {
         u32 rkey_rx;
         u32 rx_buf_size;
 
-} rdma_info;
+};
 
-typedef struct dsm_message {
+struct dsm_message {
 
         u32 msg_num;
         u32 offset;
@@ -246,7 +228,7 @@ typedef struct dsm_message {
         u32 rkey;
         u16 status;
 
-} dsm_message;
+};
 
 /*
  * region represents local area of VM memory.
@@ -261,7 +243,7 @@ struct mem_region {
 
 };
 
-typedef struct private_data {
+struct private_data {
 
         struct rb_root root_swap;
 
@@ -272,7 +254,7 @@ typedef struct private_data {
 
         struct list_head head;
 
-} private_data;
+};
 
 struct subvirtual_machine {
         struct conn_element *ele;
@@ -280,41 +262,41 @@ struct subvirtual_machine {
         struct list_head mr_ls;
         struct list_head ls;
 
-        private_data *priv;
+        struct private_data *priv;
         struct rcu_head rcu_head;
         struct rb_node rb_node;
 
 };
 
 typedef struct work_request_ele {
-        conn_element *ele;
+        struct conn_element *ele;
 
         struct ib_send_wr wr;
         struct ib_sge sg;
         struct ib_send_wr *bad_wr;
 
-        dsm_message *dsm_msg;
+        struct dsm_message *dsm_msg;
 
-} work_request_ele;
+};
 
-typedef struct msg_work_request {
-        work_request_ele *wr_ele;
-        page_pool_ele * dst_addr;
+struct msg_work_request {
+        struct work_request_ele *wr_ele;
+        struct page_pool_ele * dst_addr;
 
-} msg_work_request;
+};
 
-typedef struct recv_work_req_ele {
-        conn_element * ele;
+struct recv_work_req_ele {
+        struct conn_element * ele;
 
         struct ib_recv_wr sq_wr;
         struct ib_recv_wr *bad_wr;
         struct ib_sge recv_sgl;
 
-} recv_work_req_ele;
+};
 
-typedef struct reply_work_request {
+struct reply_work_request {
         //The one for sending back a message
-        work_request_ele *wr_ele;
+        struct work_request_ele *wr_ele;
 
         //The one for sending the page
         struct ib_send_wr wr;
@@ -323,37 +305,37 @@ typedef struct reply_work_request {
         void *page_buf;
         struct ib_sge page_sgl;
 
-} reply_work_request;
+};
 
 struct tx_callback {
 
         void (*func)(struct tx_buf_ele *);
 };
 
-typedef struct tx_buf_ele {
+struct tx_buf_ele {
         int id;
 
         void *mem;
-        dsm_message *dsm_msg;
-        msg_work_request *wrk_req;
-        reply_work_request *reply_work_req;
+        struct dsm_message *dsm_msg;
+        struct msg_work_request *wrk_req;
+        struct reply_work_request *reply_work_req;
         struct list_head tx_buf_ele_ptr;
 
         struct tx_callback callback;
 
         struct tx_dsm_stats stats;
 
-} tx_buf_ele;
+};
 
-typedef struct rx_buf_ele {
+struct rx_buf_ele {
         int id;
 
         void *mem;
-        dsm_message *dsm_msg;
+        struct dsm_message *dsm_msg;
         //The one for catching the request in the first place
-        recv_work_req_ele *recv_wrk_rq_ele;
+        struct recv_work_req_ele *recv_wrk_rq_ele;
 
-} rx_buf_ele;
+};
 
 struct dsm_request {
         struct page * page;

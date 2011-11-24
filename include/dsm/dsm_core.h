@@ -33,7 +33,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
                 unsigned long addr);
 
 // dsm_page_request
-struct page * dsm_extract_page_from_remote(dsm_message *);
+struct page * dsm_extract_page_from_remote(struct dsm_message *);
 
 // dsm_page_fault
 int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *, unsigned long,

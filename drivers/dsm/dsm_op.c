@@ -11,8 +11,8 @@
 #include <dsm/dsm_sr.h>
 #include <dsm/dsm_stats.h>
 
-static void try_recycle_page_pool_element(conn_element *ele,
-                page_pool_ele * ppe) {
+static void try_recycle_page_pool_element(struct conn_element *ele,
+                struct page_pool_ele * ppe) {
 
         struct page_pool * pp = &ele->page_pool;
         spin_lock(&pp->page_pool_list_lock);
@@ -35,8 +35,8 @@ static void try_recycle_page_pool_element(conn_element *ele,
         spin_unlock(&pp->page_pool_list_lock);
 }
 
-static void try_regenerate_empty_page_pool_element(conn_element *ele,
-                page_pool_ele * ppe) {
+static void try_regenerate_empty_page_pool_element(struct conn_element *ele,
+                struct page_pool_ele * ppe) {
 
         struct page_pool * pp = &ele->page_pool;
 
@@ -69,12 +69,12 @@ static void try_regenerate_empty_page_pool_element(conn_element *ele,
         spin_unlock(&pp->page_pool_list_lock);
 }
 
-static void init_recv_wr(rx_buf_ele *rx_ele, conn_element * ele) {
+static void init_recv_wr(struct rx_buf_ele *rx_ele, struct conn_element * ele) {
         struct recv_work_req_ele * rwr = rx_ele->recv_wrk_rq_ele;
         struct ib_sge * recv_sge = &rwr->recv_sgl;
 
         recv_sge->addr = (u64) rx_ele->dsm_msg;
-        recv_sge->length = sizeof(dsm_message);
+        recv_sge->length = sizeof(struct dsm_message);
         recv_sge->lkey = ele->mr->lkey;
 
         rwr->sq_wr.next = NULL;
@@ -83,7 +83,7 @@ static void init_recv_wr(rx_buf_ele *rx_ele, conn_element * ele) {
         rwr->sq_wr.wr_id = rx_ele->id;
 }
 
-static void init_rx_ele(rx_buf_ele *rx_ele, conn_element *ele) {
+static void init_rx_ele(struct rx_buf_ele *rx_ele, struct conn_element *ele) {
         init_recv_wr(rx_ele, ele);
 }
 
@@ -102,35 +102,39 @@ static void init_rx_ele(rx_buf_ele *rx_ele, conn_element *ele) {
  * RETURN 0 if success,
  *               -1 if failure.
  */
-static int create_rx_buffer(conn_element *ele) {
+static int create_rx_buffer(struct conn_element *ele) {
         int i;
         int undo = 0;
-        struct rx_buf_ele * rx = kmalloc(
-                        (sizeof(rx_buf_ele) * RX_BUF_ELEMENTS_NUM), GFP_KERNEL);
+        struct rx_buf_ele * rx =
+                        kmalloc(
+                                        (sizeof(struct rx_buf_ele)
+                                                        * RX_BUF_ELEMENTS_NUM), GFP_KERNEL)
+                                        ;
 
         if (!rx)
                 goto err_buf;
 
         ele->rx_buffer.rx_buf = rx;
-        memset(rx, 0, (sizeof(rx_buf_ele) * RX_BUF_ELEMENTS_NUM));
+        memset(rx, 0, (sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM));
 
         for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
-                rx[i].mem = vmalloc(sizeof(dsm_message));
+                rx[i].mem = vmalloc(sizeof(struct dsm_message));
                 if (!rx[i].mem)
                         goto err1;
-                memset(rx[i].mem, 0, sizeof(dsm_message));
+                memset(rx[i].mem, 0, sizeof(struct dsm_message));
 
-                rx[i].dsm_msg = (dsm_message *) ib_dma_map_single(
+                rx[i].dsm_msg = (struct dsm_message *) ib_dma_map_single(
                                 ele->cm_id->device, rx[i].mem,
-                                sizeof(dsm_message), DMA_BIDIRECTIONAL);
+                                sizeof(struct dsm_message), DMA_BIDIRECTIONAL);
                 if (!rx[i].dsm_msg)
                         goto err2;
 
-                rx[i].recv_wrk_rq_ele = kmalloc(sizeof(recv_work_req_ele),
-                                GFP_KERNEL);
+                rx[i].recv_wrk_rq_ele = kmalloc(
+                                sizeof(struct recv_work_req_ele), GFP_KERNEL);
                 if (!rx[i].recv_wrk_rq_ele)
                         goto err3;
-                memset(rx[i].recv_wrk_rq_ele, 0, sizeof(recv_work_req_ele));
+                memset(rx[i].recv_wrk_rq_ele, 0,
+                                sizeof(struct recv_work_req_ele));
 
                 rx[i].id = i;
 
@@ -141,18 +145,18 @@ static int create_rx_buffer(conn_element *ele) {
 
         err3: ib_dma_unmap_single(ele->cm_id->device,
                         (u64) (unsigned long) rx[i].dsm_msg,
-                        sizeof(dsm_message), DMA_FROM_DEVICE);
+                        sizeof(struct dsm_message), DMA_FROM_DEVICE);
         err2: vfree(rx[i].mem);
 
         err1: for (undo = 0; undo < i; ++undo) {
                 ib_dma_unmap_single(ele->cm_id->device,
                                 (u64) (unsigned long) rx[undo].dsm_msg,
-                                sizeof(dsm_message), DMA_FROM_DEVICE);
+                                sizeof(struct dsm_message), DMA_FROM_DEVICE);
                 vfree(rx[undo].mem);
                 kfree(rx[undo].recv_wrk_rq_ele);
         }
 
-        memset(rx, 0, sizeof(rx_buf_ele) * RX_BUF_ELEMENTS_NUM);
+        memset(rx, 0, sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM);
         kfree(rx);
         ele->rx_buffer.rx_buf = 0;
 
@@ -166,7 +170,7 @@ static int create_rx_buffer(conn_element *ele) {
  * RETURN 0 if success,
  *               -1 if failure.
  */
-static int create_qp(conn_element *ele) {
+static int create_qp(struct conn_element *ele) {
         int ret = 0;
         struct ib_qp_init_attr attr;
 
@@ -203,7 +207,7 @@ static int create_qp(conn_element *ele) {
  *               -1 if failure.
  */
 
-static int setup_qp(conn_element *ele) {
+static int setup_qp(struct conn_element *ele) {
         int ret = 0;
 
         INIT_WORK(&ele->send_work, send_cq_handle_work);
@@ -252,7 +256,7 @@ static int setup_qp(conn_element *ele) {
         return ret;
 }
 
-static void format_rdma_info(conn_element *ele) {
+static void format_rdma_info(struct conn_element *ele) {
 
         ele->rid.send_info->node_ip = htonl(ele->rcm->node_ip);
         ele->rid.send_info->buf_rx_addr = htonll((u64) ele->rx_buffer.rx_buf);
@@ -262,8 +266,9 @@ static void format_rdma_info(conn_element *ele) {
         ele->rid.send_info->rkey_rx = htonl(ele->mr->rkey);
         ele->rid.send_info->flag = RDMA_INFO_CL;
 }
-static page_pool_ele * get_page_ele(conn_element * ele) {
-        page_pool_ele * ppe;
+
+static struct page_pool_ele * get_page_ele(struct conn_element * ele) {
+        struct page_pool_ele * ppe;
 
         struct page_pool * pp = &ele->page_pool;
 
@@ -275,7 +280,7 @@ static page_pool_ele * get_page_ele(conn_element * ele) {
                 goto loop;
         }
 
-        ppe = list_first_entry(&pp->page_pool_list, page_pool_ele, page_ptr);
+        ppe = list_first_entry(&pp->page_pool_list, struct page_pool_ele, page_ptr);
         list_del(&ppe->page_ptr);
         pp->nb_full_element--;
         spin_unlock(&pp->page_pool_list_lock);
@@ -288,13 +293,13 @@ static page_pool_ele * get_page_ele(conn_element * ele) {
  * Allocates a new page, register it, warp it in a page pool element stucture and and this ppe to the list
  * Registered as DMA_BIDIRECTIONNAL as it could be use as a send or receiving buffer.
  */
-static int create_new_page_pool_element(conn_element * ele) {
+static int create_new_page_pool_element(struct conn_element * ele) {
         struct page_pool * pp = &ele->page_pool;
         int ret = 0;
         struct page_pool_ele *ppe;
 
-        ppe = kmalloc(sizeof(page_pool_ele), GFP_USER);
-        memset(ppe, 0, sizeof(page_pool_ele));
+        ppe = kmalloc(sizeof(struct page_pool_ele), GFP_USER);
+        memset(ppe, 0, sizeof(struct page_pool_ele));
 
         ppe->mem_page = alloc_page( GFP_USER | __GFP_ZERO);
         if (unlikely(!ppe->mem_page))
@@ -319,15 +324,15 @@ static int create_new_page_pool_element(conn_element * ele) {
         return ret;
 }
 
-static int create_new_empty_page_pool_element(conn_element * ele) {
+static int create_new_empty_page_pool_element(struct conn_element * ele) {
         struct page_pool * pp = &ele->page_pool;
 
         struct page_pool_ele *ppe;
 
-        ppe = kmalloc(sizeof(page_pool_ele), GFP_ATOMIC);
+        ppe = kmalloc(sizeof(struct page_pool_ele), GFP_ATOMIC);
         if (!ppe)
                 return -1;
-        memset(ppe, 0, sizeof(page_pool_ele));
+        memset(ppe, 0, sizeof(struct page_pool_ele));
 
         spin_lock(&pp->page_pool_empty_list_lock);
         list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
@@ -336,7 +341,7 @@ static int create_new_empty_page_pool_element(conn_element * ele) {
 
 }
 
-static int create_page_pool(conn_element * ele) {
+static int create_page_pool(struct conn_element * ele) {
         int ret = 0;
         int i;
         struct page_pool * pp = &ele->page_pool;
@@ -371,16 +376,16 @@ static int create_page_pool(conn_element * ele) {
  *               -1 in case of failure.
  */
 
-static int create_rdma_info(conn_element *ele) {
-        int size = sizeof(rdma_info);
+static int create_rdma_info(struct conn_element *ele) {
+        int size = sizeof(struct rdma_info);
         struct rdma_info_data * rid = &ele->rid;
 
         rid->send_mem = vmalloc(size);
         if (unlikely(!rid->send_mem))
                 goto send_mem_err;
 
-        rid->send_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device,
-                        rid->send_mem, size, DMA_TO_DEVICE);
+        rid->send_info = (struct rdma_info *) ib_dma_map_single(
+                        ele->cm_id->device, rid->send_mem, size, DMA_TO_DEVICE);
         if (unlikely(!rid->send_info))
                 goto send_info_err;
 
@@ -388,8 +393,9 @@ static int create_rdma_info(conn_element *ele) {
         if (unlikely(!rid->send_mem))
                 goto recv_mem_err;
 
-        rid->recv_info = (rdma_info *) ib_dma_map_single(ele->cm_id->device,
-                        rid->recv_mem, size, DMA_FROM_DEVICE);
+        rid->recv_info = (struct rdma_info *) ib_dma_map_single(
+                        ele->cm_id->device, rid->recv_mem, size,
+                        DMA_FROM_DEVICE);
         if (unlikely(!rid->send_info))
                 goto recv_info_err;
 
@@ -411,8 +417,8 @@ static int create_rdma_info(conn_element *ele) {
         remote_info_buffer_err: printk(
                         ">[create_rdma_info] - ERROR : NO REMOTE INFO BUFFER\n");
         ib_dma_unmap_single(ele->cm_id->device,
-                        (u64) (unsigned long) rid->recv_info, sizeof(rdma_info),
-                        DMA_FROM_DEVICE);
+                        (u64) (unsigned long) rid->recv_info,
+                        sizeof(struct rdma_info), DMA_FROM_DEVICE);
 
         recv_info_err: printk(
                         ">[create_rdma_info] - ERROR : NO RECV INFO BUFFER\n");
@@ -421,8 +427,8 @@ static int create_rdma_info(conn_element *ele) {
         recv_mem_err: printk(
                         ">[create_rdma_info] - no memory allocated for the reception buffer\n");
         ib_dma_unmap_single(ele->cm_id->device,
-                        (u64) (unsigned long) rid->send_info, sizeof(rdma_info),
-                        DMA_TO_DEVICE);
+                        (u64) (unsigned long) rid->send_info,
+                        sizeof(struct rdma_info), DMA_TO_DEVICE);
 
         send_info_err: printk(
                         ">[create_rdma_info] - ERROR : NO SEND INFO BUFFER\n");
@@ -433,7 +439,7 @@ static int create_rdma_info(conn_element *ele) {
         return -1;
 }
 
-static int init_tx_lists(conn_element *ele) {
+static int init_tx_lists(struct conn_element *ele) {
         int i;
         struct tx_buffer * tx = &ele->tx_buffer;
         int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
@@ -458,13 +464,13 @@ static int init_tx_lists(conn_element *ele) {
         return 0;
 }
 
-static void init_reply_wr(reply_work_request *rwr, u64 msg_addr, u32 lkey,
-                int id) {
+static void init_reply_wr(struct reply_work_request *rwr, u64 msg_addr,
+                u32 lkey, int id) {
         struct ib_sge * reply_sge = &rwr->wr_ele->sg;
-        rwr->wr_ele->dsm_msg = (dsm_message *) msg_addr;
+        rwr->wr_ele->dsm_msg = (struct dsm_message *) msg_addr;
 
         reply_sge->addr = msg_addr;
-        reply_sge->length = sizeof(dsm_message);
+        reply_sge->length = sizeof(struct dsm_message);
         reply_sge->lkey = lkey;
 
         rwr->wr_ele->wr.next = NULL;
@@ -475,7 +481,7 @@ static void init_reply_wr(reply_work_request *rwr, u64 msg_addr, u32 lkey,
         rwr->wr_ele->wr.wr_id = id;
 }
 
-static void init_page_wr(reply_work_request *rwr, u32 lkey, int id) {
+static void init_page_wr(struct reply_work_request *rwr, u32 lkey, int id) {
         rwr->page_sgl.addr = 0;
         rwr->page_sgl.length = PAGE_SIZE;
         rwr->page_sgl.lkey = lkey;
@@ -488,7 +494,7 @@ static void init_page_wr(reply_work_request *rwr, u32 lkey, int id) {
         rwr->wr.wr_id = id;
 }
 
-static void init_tx_wr(tx_buf_ele *tx_ele, u32 lkey, int id) {
+static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id) {
         tx_ele->wrk_req->wr_ele->wr.wr_id = (u64) id;
         tx_ele->wrk_req->wr_ele->wr.opcode = IB_WR_SEND;
         tx_ele->wrk_req->wr_ele->wr.send_flags = IB_SEND_SIGNALED;
@@ -497,13 +503,14 @@ static void init_tx_wr(tx_buf_ele *tx_ele, u32 lkey, int id) {
                         (struct ib_sge *) &tx_ele->wrk_req->wr_ele->sg;
 
         tx_ele->wrk_req->wr_ele->sg.addr = (u64) tx_ele->dsm_msg;
-        tx_ele->wrk_req->wr_ele->sg.length = sizeof(dsm_message);
+        tx_ele->wrk_req->wr_ele->sg.length = sizeof(struct dsm_message);
         tx_ele->wrk_req->wr_ele->sg.lkey = lkey;
 
         tx_ele->wrk_req->wr_ele->wr.next = NULL;
 }
 
-static void init_tx_ele(tx_buf_ele * tx_ele, conn_element *ele, int id) {
+static void init_tx_ele(struct tx_buf_ele * tx_ele, struct conn_element *ele,
+                int id) {
         tx_ele->id = id;
         init_tx_wr(tx_ele, ele->mr->lkey, id);
         init_reply_wr(tx_ele->reply_work_req, (u64) tx_ele->dsm_msg,
@@ -523,61 +530,65 @@ static void init_tx_ele(tx_buf_ele * tx_ele, conn_element *ele, int id) {
  * RETURN 0 if success,
  *               -1 if failure.
  */
-static int create_tx_buffer(conn_element *ele) {
+static int create_tx_buffer(struct conn_element *ele) {
         int i = 0;
         int undo;
         int ret = 0;
 
-        struct tx_buf_ele * tx_buff_e = kmalloc(
-                        (sizeof(tx_buf_ele) * TX_BUF_ELEMENTS_NUM), GFP_KERNEL);
+        struct tx_buf_ele * tx_buff_e =
+                        kmalloc(
+                                        (sizeof(struct tx_buf_ele)
+                                                        * TX_BUF_ELEMENTS_NUM), GFP_KERNEL)
+                                        ;
         if (unlikely(!tx_buff_e)) {
                 ret = -1;
                 goto err_buf;
         }
         ele->tx_buffer.tx_buf = tx_buff_e;
         for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
-                tx_buff_e[i].mem = vmalloc(sizeof(dsm_message));
+                tx_buff_e[i].mem = vmalloc(sizeof(struct dsm_message));
                 if (unlikely(!tx_buff_e[i].mem))
                         goto err1;
 
-                tx_buff_e[i].dsm_msg = (dsm_message *) ib_dma_map_single(
+                tx_buff_e[i].dsm_msg = (struct dsm_message *) ib_dma_map_single(
                                 ele->cm_id->device, tx_buff_e[i].mem,
-                                sizeof(dsm_message), DMA_TO_DEVICE);
+                                sizeof(struct dsm_message), DMA_TO_DEVICE);
                 if (unlikely(!tx_buff_e[i].dsm_msg))
                         goto err2;
 
-                memset(tx_buff_e[i].dsm_msg, 0, sizeof(dsm_message));
+                memset(tx_buff_e[i].dsm_msg, 0, sizeof(struct dsm_message));
 
-                tx_buff_e[i].wrk_req = kmalloc(sizeof(msg_work_request),
+                tx_buff_e[i].wrk_req = kmalloc(sizeof(struct msg_work_request),
                                 GFP_KERNEL);
                 if (unlikely(!tx_buff_e[i].wrk_req))
                         goto err3;
 
-                memset(tx_buff_e[i].wrk_req, 0, sizeof(msg_work_request));
+                memset(tx_buff_e[i].wrk_req, 0,
+                                sizeof(struct msg_work_request));
 
-                tx_buff_e[i].wrk_req->wr_ele = kmalloc(sizeof(work_request_ele),
-                                GFP_KERNEL);
+                tx_buff_e[i].wrk_req->wr_ele = kmalloc(
+                                sizeof(struct work_request_ele), GFP_KERNEL);
                 if (unlikely(!tx_buff_e[i].wrk_req->wr_ele))
                         goto err4;
 
                 memset(tx_buff_e[i].wrk_req->wr_ele, 0,
-                                sizeof(work_request_ele));
+                                sizeof(struct work_request_ele));
 
                 tx_buff_e[i].wrk_req->wr_ele->dsm_msg = tx_buff_e[i].dsm_msg;
 
                 tx_buff_e[i].reply_work_req = kmalloc(
-                                sizeof(reply_work_request), GFP_KERNEL);
+                                sizeof(struct reply_work_request), GFP_KERNEL);
                 if (!tx_buff_e[i].reply_work_req)
                         goto err5;
                 memset(tx_buff_e[i].reply_work_req, 0,
-                                sizeof(reply_work_request));
+                                sizeof(struct reply_work_request));
 
                 tx_buff_e[i].reply_work_req->wr_ele = kmalloc(
-                                sizeof(work_request_ele), GFP_KERNEL);
+                                sizeof(struct work_request_ele), GFP_KERNEL);
                 if (!tx_buff_e[i].reply_work_req->wr_ele)
                         goto err6;
                 memset(tx_buff_e[i].reply_work_req->wr_ele, 0,
-                                sizeof(work_request_ele));
+                                sizeof(struct work_request_ele));
 
                 init_tx_ele(&tx_buff_e[i], ele, i);
         }
@@ -595,7 +606,7 @@ static int create_tx_buffer(conn_element *ele) {
         err3: ++ret;
         ib_dma_unmap_single(ele->cm_id->device,
                         (u64) (unsigned long) tx_buff_e[i].dsm_msg,
-                        sizeof(dsm_message), DMA_TO_DEVICE);
+                        sizeof(struct dsm_message), DMA_TO_DEVICE);
         printk("> [create_tx_buffer][ERR] - Removed dsm_msg registration\n");
         err2: printk(">[create_tx_buffer] - 5\n");
         vfree(tx_buff_e[i].mem);
@@ -608,11 +619,11 @@ static int create_tx_buffer(conn_element *ele) {
                 kfree(tx_buff_e[undo].wrk_req);
                 ib_dma_unmap_single(ele->cm_id->device,
                                 (u64) (unsigned long) tx_buff_e[undo].dsm_msg,
-                                sizeof(dsm_message), DMA_TO_DEVICE);
+                                sizeof(struct dsm_message), DMA_TO_DEVICE);
                 vfree(tx_buff_e[undo].mem);
         }
 
-        memset(tx_buff_e, 0, sizeof(tx_buf_ele) * TX_BUF_ELEMENTS_NUM);
+        memset(tx_buff_e, 0, sizeof(struct tx_buf_ele) * TX_BUF_ELEMENTS_NUM);
         kfree(tx_buff_e);
         ele->tx_buffer.tx_buf = NULL;
         printk("> [create_tx_buffer][ERR] - Zeroing the tx buffer\n");
@@ -624,7 +635,7 @@ static int create_tx_buffer(conn_element *ele) {
         return ret;
 }
 
-int refill_recv_wr(conn_element *ele, rx_buf_ele * rx_e) {
+int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele * rx_e) {
 
         int ret = 0;
         ret = ib_post_recv(ele->cm_id->qp, &rx_e->recv_wrk_rq_ele->sq_wr,
@@ -637,7 +648,7 @@ int refill_recv_wr(conn_element *ele, rx_buf_ele * rx_e) {
         return ret;
 }
 
-void release_tx_element(conn_element * ele, tx_buf_ele * tx_e) {
+void release_tx_element(struct conn_element * ele, struct tx_buf_ele * tx_e) {
 
         struct tx_buffer * tx = &ele->tx_buffer;
         spin_lock(&tx->tx_free_elements_list_lock);
@@ -645,7 +656,8 @@ void release_tx_element(conn_element * ele, tx_buf_ele * tx_e) {
         spin_unlock(&tx->tx_free_elements_list_lock);
 
 }
-void release_tx_element_reply(conn_element * ele, tx_buf_ele * tx_e) {
+void release_tx_element_reply(struct conn_element * ele,
+                struct tx_buf_ele * tx_e) {
 
         struct tx_buffer * tx = &ele->tx_buffer;
         spin_lock(&tx->tx_free_elements_list_reply_lock);
@@ -654,16 +666,18 @@ void release_tx_element_reply(conn_element * ele, tx_buf_ele * tx_e) {
 
 }
 
-int create_rcm(rcm **rcm, char *ip, int port) {
+int create_rcm(char *ip, int port) {
         int ret = 0;
-
+        struct rcm **rcm = get_pointer_rcm();
         *rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
-        memset(*rcm, 0, sizeof(rcm));
+        BUG_ON(!(*rcm));
+        memset(*rcm, 0, sizeof(struct rcm));
         init_kmem_request_cache();
         spin_lock_init(&(*rcm)->rcm_lock);
         spin_lock_init(&(*rcm)->route_lock);
 
-        (*rcm)->dsm_wq = create_workqueue("dsm_wq");
+        (*rcm)->dsm_wq =
+                        alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_CPU_INTENSIVE| WQ_MEM_RECLAIM,0);
         (*rcm)->node_ip = inet_addr(ip);
 
         (*rcm)->root_conn = RB_ROOT;
@@ -720,10 +734,10 @@ int create_rcm(rcm **rcm, char *ip, int port) {
         return ret;
 }
 
-int create_connection(rcm *rcm, struct svm_data *conn_data) {
+int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
         struct sockaddr_in dst, src;
         struct rdma_conn_param param;
-        conn_element *ele;
+        struct conn_element *ele;
 
         memset(&param, 0, sizeof(struct rdma_conn_param));
         param.responder_resources = 1;
@@ -738,7 +752,7 @@ int create_connection(rcm *rcm, struct svm_data *conn_data) {
         src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
         src.sin_port = htons(5001);
 
-        ele = vmalloc(sizeof(conn_element));
+        ele = vmalloc(sizeof(struct conn_element));
         if (unlikely(!ele))
                 goto err;
         create_dsm_stats_data(&ele->stats);
@@ -761,7 +775,7 @@ int create_connection(rcm *rcm, struct svm_data *conn_data) {
         err: return -1;
 }
 
-void reg_rem_info(conn_element *ele) {
+void reg_rem_info(struct conn_element *ele) {
         ele->rid.remote_info->node_ip = ntohl(ele->rid.recv_info->node_ip);
         ele->rid.remote_info->buf_rx_addr =
                         ntohll(ele->rid.recv_info->buf_rx_addr);
@@ -775,9 +789,9 @@ void reg_rem_info(conn_element *ele) {
 }
 
 void release_replace_page_work(struct work_struct *work) {
-        page_pool_ele * ppe = NULL;
+        struct page_pool_ele * ppe = NULL;
 
-        conn_element * ele;
+        struct conn_element * ele;
         struct page_pool * pp;
         pp= container_of(work, struct page_pool ,page_release_work );
         ele= container_of(pp, struct conn_element ,page_pool );
@@ -787,9 +801,8 @@ void release_replace_page_work(struct work_struct *work) {
                 if (list_empty(&pp->page_recycle_list)) {
                         spin_unlock(&pp->page_recycle_lock);
                         break;
-                }
-                ppe =
-                                list_first_entry(&pp->page_recycle_list, page_pool_ele, page_ptr);
+                }ppe =
+                list_first_entry(&pp->page_recycle_list, struct page_pool_ele, page_ptr);
                 list_del(&ppe->page_ptr);
                 spin_unlock(&pp->page_recycle_lock);
                 try_recycle_page_pool_element(ele, ppe);
@@ -800,9 +813,8 @@ void release_replace_page_work(struct work_struct *work) {
                 if (list_empty(&pp->page_release_list)) {
                         spin_unlock(&pp->page_release_lock);
                         break;
-                }
-                ppe =
-                                list_first_entry(&pp->page_release_list, page_pool_ele, page_ptr);
+                }ppe =
+                list_first_entry(&pp->page_release_list, struct page_pool_ele, page_ptr);
                 list_del(&ppe->page_ptr);
                 spin_unlock(&pp->page_release_lock);
                 try_regenerate_empty_page_pool_element(ele, ppe);
@@ -810,10 +822,11 @@ void release_replace_page_work(struct work_struct *work) {
 
 }
 
-void release_replace_page(conn_element * ele, struct tx_buf_ele * tx_e) {
+void release_replace_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
 
         struct page_pool * pp = &ele->page_pool;
-        page_pool_ele * ppe = (page_pool_ele *) tx_e->wrk_req->dst_addr;
+        struct page_pool_ele * ppe =
+                        (struct page_pool_ele *) tx_e->wrk_req->dst_addr;
         tx_e->wrk_req->dst_addr = NULL;
         if (ppe->mem_page) {
                 spin_lock(&pp->page_recycle_lock);
@@ -836,7 +849,7 @@ void release_replace_page(conn_element * ele, struct tx_buf_ele * tx_e) {
  *RETURN 0 if success,
  *              -1 if failure.
  */
-int setup_recv_wr(conn_element *ele) {
+int setup_recv_wr(struct conn_element *ele) {
         int i;
         int r = 0;
         struct rx_buf_ele * rx = ele->rx_buffer.rx_buf;
@@ -882,10 +895,10 @@ unsigned int inet_addr(char *addr) {
         return *(unsigned int*) arr;
 }
 
-void create_message(conn_element *ele, struct tx_buf_ele * tx_e,
+void create_message(struct conn_element *ele, struct tx_buf_ele * tx_e,
                 int message_num, int status) {
         struct dsm_message *msg = tx_e->dsm_msg;
-        page_pool_ele * ppe = get_page_ele(ele);
+        struct page_pool_ele * ppe = get_page_ele(ele);
 
         if (unlikely(!ppe)) {
                 printk(">[create_message] - Cannot grab a page\n");
@@ -906,11 +919,12 @@ void create_message(conn_element *ele, struct tx_buf_ele * tx_e,
         return;
 }
 
-void create_page_request(conn_element *ele, struct tx_buf_ele * tx_e,
+void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
                 struct dsm_vm_id local_id, struct dsm_vm_id remote_id,
                 uint64_t addr, struct page *page) {
         struct dsm_message *msg = tx_e->dsm_msg;
-        page_pool_ele * ppe = create_new_page_pool_element_from_page(ele, page);
+        struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
+                        page);
 
         //in order to find the element on the reception of the page, and free it
         tx_e->wrk_req->dst_addr = ppe;
@@ -926,7 +940,7 @@ void create_page_request(conn_element *ele, struct tx_buf_ele * tx_e,
         return;
 }
 
-void free_page_ele(conn_element *ele, page_pool_ele * ppe) {
+void free_page_ele(struct conn_element *ele, struct page_pool_ele * ppe) {
         if (likely(ppe)) {
 
                 if (ppe->page_buf)
@@ -942,8 +956,8 @@ void free_page_ele(conn_element *ele, page_pool_ele * ppe) {
         return;
 }
 
-page_pool_ele * get_empty_page_ele(conn_element * ele) {
-        page_pool_ele * ppe;
+struct page_pool_ele * get_empty_page_ele(struct conn_element * ele) {
+        struct page_pool_ele * ppe;
 
         struct page_pool * pp = &ele->page_pool;
 
@@ -956,7 +970,7 @@ page_pool_ele * get_empty_page_ele(conn_element * ele) {
         }
 
         ppe =
-                        list_first_entry(&pp->page_empty_pool_list , page_pool_ele, page_ptr);
+        list_first_entry(&pp->page_empty_pool_list , struct page_pool_ele, page_ptr);
         list_del(&ppe->page_ptr);
         spin_unlock(&pp->page_pool_empty_list_lock);
 
@@ -964,7 +978,7 @@ page_pool_ele * get_empty_page_ele(conn_element * ele) {
 
 }
 struct page_pool_ele * create_new_page_pool_element_from_page(
-                conn_element * ele, struct page *page) {
+                struct conn_element * ele, struct page *page) {
         struct page_pool_ele *ppe;
 
         ppe = get_empty_page_ele(ele);
@@ -982,7 +996,7 @@ struct page_pool_ele * create_new_page_pool_element_from_page(
 
 }
 
-int setup_connection(conn_element *ele, int type) {
+int setup_connection(struct conn_element *ele, int type) {
         int ret = 0;
         int err = 0;
         struct rdma_conn_param conn_param;
@@ -1045,9 +1059,9 @@ int setup_connection(conn_element *ele, int type) {
         return err;
 }
 
-tx_buf_ele * try_get_next_empty_tx_ele(conn_element *ele) {
+struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
 
-        tx_buf_ele *tx_e = NULL;
+        struct tx_buf_ele *tx_e = NULL;
         struct tx_buffer * tx = &ele->tx_buffer;
 
         spin_lock(&tx->tx_free_elements_list_lock);
@@ -1063,9 +1077,9 @@ tx_buf_ele * try_get_next_empty_tx_ele(conn_element *ele) {
 
 }
 
-tx_buf_ele * try_get_next_empty_tx_reply_ele(conn_element *ele) {
+struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
 
-        tx_buf_ele *tx_e;
+        struct tx_buf_ele *tx_e;
         struct tx_buffer * tx = &ele->tx_buffer;
 
         spin_lock(&tx->tx_free_elements_list_reply_lock);

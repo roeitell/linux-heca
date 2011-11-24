@@ -42,7 +42,7 @@ static int __init init_dsm_zero_pfn(void)
 core_initcall(init_dsm_zero_pfn);
 
 void signal_completion_page_request(struct tx_buf_ele * tx_e) {
-        page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
+        struct page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
         ppe->mem_page = NULL;

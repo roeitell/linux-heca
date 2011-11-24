@@ -36,7 +36,7 @@ static void release_dsm_request(struct dsm_request *req) {
  * RETURN 0 if a page exists in the buffer at this offset
  *               -1 if the page cannot be found
  */
-int process_response(conn_element *ele, struct tx_buf_ele * tx_buf_e) {
+int process_response(struct conn_element *ele, struct tx_buf_ele * tx_buf_e) {
 
         if (tx_buf_e->callback.func) {
                 tx_buf_e->callback.func(tx_buf_e);
@@ -47,9 +47,10 @@ int process_response(conn_element *ele, struct tx_buf_ele * tx_buf_e) {
         return 0;
 }
 
-int rx_tx_message_transfer(conn_element * ele, struct rx_buf_ele * rx_buf_e) {
-        page_pool_ele * ppe;
-        tx_buf_ele *tx_e = NULL;
+int rx_tx_message_transfer(struct conn_element * ele,
+                struct rx_buf_ele * rx_buf_e) {
+        struct page_pool_ele * ppe;
+        struct tx_buf_ele *tx_e = NULL;
         struct page * page;
         int ret = 0;
 
@@ -80,7 +81,7 @@ int rx_tx_message_transfer(conn_element * ele, struct rx_buf_ele * rx_buf_e) {
         }
 
         //Copy the received message in it
-        memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg, sizeof(dsm_message));
+        memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg, sizeof(struct dsm_message));
         tx_e->dsm_msg->status = REQ_RCV_PROC;
         //Filling up the response details
         tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
@@ -137,7 +138,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 
 }
 
-int tx_dsm_send(conn_element * ele, struct tx_buf_ele *tx_e) {
+int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
         int ret = 0;
         dsm_stats_update_time_send(&tx_e->stats);
         switch (tx_e->dsm_msg->status) {
@@ -178,10 +179,10 @@ int tx_dsm_send(conn_element * ele, struct tx_buf_ele *tx_e) {
  *      u32 rkey_rx;
  *      u32 rx_buf_size;
  */
-int exchange_info(conn_element *ele, int id) {
+int exchange_info(struct conn_element *ele, int id) {
         int flag = (int) ele->rid.remote_info->flag;
         int ret = 0;
-        conn_element * ele_found;
+        struct conn_element * ele_found;
 
         if (unlikely(!ele->rid.recv_info))
                 goto err;
@@ -290,11 +291,11 @@ int exchange_info(conn_element *ele, int id) {
  * RETURN dsm_post_send
  */
 
-int dsm_send_info(conn_element *ele) {
+int dsm_send_info(struct conn_element *ele) {
         struct rdma_info_data *rid = &ele->rid;
 
         rid->send_sge.addr = (u64) rid->send_info;
-        rid->send_sge.length = sizeof(rdma_info);
+        rid->send_sge.length = sizeof(struct rdma_info);
         rid->send_sge.lkey = ele->mr->lkey;
 
         rid->send_wr.next = NULL;
@@ -312,11 +313,11 @@ int dsm_send_info(conn_element *ele) {
  *
  * RETURN ib_post_recv
  */
-int dsm_recv_info(conn_element *ele) {
+int dsm_recv_info(struct conn_element *ele) {
         struct rdma_info_data *rid = &ele->rid;
 
         rid->recv_sge.addr = (u64) rid->recv_info;
-        rid->recv_sge.length = sizeof(rdma_info);
+        rid->recv_sge.length = sizeof(struct rdma_info);
         rid->recv_sge.lkey = ele->mr->lkey;
 
         rid->recv_wr.next = NULL;

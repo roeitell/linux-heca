@@ -17,7 +17,7 @@ static void print_work_completion(struct ib_wc *wc, char * error_context) {
                         wc->opcode, wc->byte_len);
 }
 
-static int flush_dsm_request(conn_element *ele) {
+static int flush_dsm_request(struct conn_element *ele) {
         struct tx_buffer *tx = &ele->tx_buffer;
         struct tx_buf_ele *tx_e;
         struct dsm_request *req;
@@ -48,8 +48,9 @@ static int flush_dsm_request(conn_element *ele) {
         return;
 }
 
-static int dsm_recv_message_handler(struct conn_element *ele, rx_buf_ele *rx_e) {
-        tx_buf_ele *tx_e = NULL;
+static int dsm_recv_message_handler(struct conn_element *ele,
+                struct rx_buf_ele *rx_e) {
+        struct tx_buf_ele *tx_e = NULL;
         switch (rx_e->dsm_msg->status) {
                 case REQ_REPLY: {
                         tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
@@ -83,7 +84,7 @@ static int dsm_recv_message_handler(struct conn_element *ele, rx_buf_ele *rx_e) 
 }
 
 static int dsm_send_message_handler(struct conn_element *ele,
-                tx_buf_ele *tx_buf_e) {
+                struct tx_buf_ele *tx_buf_e) {
 
         dsm_stats_update_time_send_completion(&tx_buf_e->stats);
         switch (tx_buf_e->dsm_msg->status) {
@@ -150,7 +151,7 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context) {
 
 static void dsm_send_poll(struct ib_cq *cq) {
         struct ib_wc wc;
-        conn_element *ele = (conn_element *) cq->cq_context;
+        struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
         while (ib_poll_cq(cq, 1, &wc) > 0) {
                 if (likely(wc.status == IB_WC_SUCCESS)) {
@@ -198,7 +199,7 @@ static void dsm_send_poll(struct ib_cq *cq) {
 
 static void dsm_recv_poll(struct ib_cq *cq) {
         struct ib_wc wc;
-        conn_element *ele = (conn_element *) cq->cq_context;
+        struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
         while (ib_poll_cq(cq, 1, &wc) > 0) {
                 switch (wc.status) {
@@ -225,7 +226,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
                                         if (unlikely(
                                                         ele->rid.remote_info->flag)) {
                                                 if (wc.byte_len
-                                                                != sizeof(rdma_info)) {
+                                                                != sizeof(struct rdma_info)) {
                                                         print_work_completion(
                                                                         &wc,
                                                                         "[dsm_recv_poll] -Received bogus data, size -");
@@ -238,7 +239,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
                                         } else {
                                                 if (unlikely(
                                                                 wc.byte_len
-                                                                                != sizeof(dsm_message))) {
+                                                                                != sizeof(struct dsm_message))) {
                                                         print_work_completion(
                                                                         &wc,
                                                                         "[dsm_recv_poll] -Received bogus data, size -");
@@ -281,7 +282,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
  */
 static void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
         int ret = 0;
-        conn_element *ele = (conn_element *) cq->cq_context;
+        struct conn_element *ele = (struct conn_element *) cq->cq_context;
         dsm_send_poll(cq);
         ret = ib_req_notify_cq(cq,
                         IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
@@ -298,7 +299,7 @@ static void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
  */
 static void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
         int ret = 0;
-        conn_element *ele = (conn_element *) cq->cq_context;
+        struct conn_element *ele = (struct conn_element *) cq->cq_context;
         dsm_recv_poll(cq);
         ret = ib_req_notify_cq(cq,
                         IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
@@ -313,22 +314,22 @@ static void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
 
 void send_cq_handle_work(struct work_struct *work) {
 
-        conn_element *ele;
+        struct conn_element *ele;
         ele= container_of(work, struct conn_element ,send_work );
         _send_cq_handle(ele->send_cq, NULL);
 }
 void recv_cq_handle_work(struct work_struct *work) {
-        conn_element *ele;
+        struct conn_element *ele;
         ele= container_of(work, struct conn_element ,recv_work );
         _recv_cq_handle(ele->recv_cq, NULL);
 }
 
 void send_cq_handle(struct ib_cq *cq, void *cq_context) {
-        conn_element *ele = (conn_element *) cq->cq_context;
+        struct conn_element *ele = (struct conn_element *) cq->cq_context;
         queue_work(ele->rcm->dsm_wq, &ele->send_work);
 }
 void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
-        conn_element *ele = (conn_element *) cq->cq_context;
+        struct conn_element *ele = (struct conn_element *) cq->cq_context;
         queue_work(ele->rcm->dsm_wq, &ele->recv_work);
 }
 /*
@@ -338,7 +339,7 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
 int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
         int ret = 0;
         int err = 0;
-        conn_element *ele;
+        struct conn_element *ele;
 
         switch (event->event) {
                 case RDMA_CM_EVENT_ADDR_RESOLVED:
@@ -434,8 +435,8 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
  */
 int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
         int ret = 0;
-        conn_element *ele = 0;
-        rcm *rcm;
+        struct conn_element *ele = 0;
+        struct rcm *rcm;
 
         switch (event->event) {
                 case RDMA_CM_EVENT_ADDR_RESOLVED:
@@ -444,7 +445,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
 
                 case RDMA_CM_EVENT_CONNECT_REQUEST:
 
-                        ele = vmalloc(sizeof(conn_element));
+                        ele = vmalloc(sizeof(struct conn_element));
                         if (!ele)
                                 goto out;
                         create_dsm_stats_data(&ele->stats);

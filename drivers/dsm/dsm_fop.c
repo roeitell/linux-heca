@@ -7,10 +7,99 @@
 
 #include <dsm/dsm_fop.h>
 #include <dsm/dsm_sr.h>
+#include <dsm/dsm_rb.h>
 
-int destroy_rcm(rcm **rcm) {
+static void destroy_tx_buffer(struct conn_element *ele) {
+        int i;
+        struct tx_buf_ele * tx_buf = ele->tx_buffer.tx_buf;
+        if (tx_buf) {
+                for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
+                        ib_dma_unmap_single(ele->cm_id->device,
+                                        (u64) tx_buf[i].dsm_msg,
+                                        sizeof(struct dsm_message),
+                                        DMA_TO_DEVICE);
+
+                        vfree(tx_buf[i].mem);
+
+                        kfree(tx_buf[i].wrk_req->wr_ele);
+
+                        //                      if(likely(ele->tx_buf[i].wrk_req->page_buf))
+                        //                      {
+                        //                              ib_dma_unmap_page(ele->cm_id->device, (u64) (unsigned long) ele->tx_buf[i].wrk_req->page_buf, RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
+                        //                              ele->tx_buf[i].wrk_req->page_buf = NULL;
+                        //
+                        //                              __free_pages(ele->tx_buf[i].wrk_req->mem_page, 0);
+                        //                              ele->tx_buf[i].wrk_req->mem_page = NULL;
+                        //                      }
+
+                        kfree(tx_buf[i].wrk_req);
+                }
+
+                kfree(tx_buf);
+                ele->tx_buffer.tx_buf = 0;
+        }
+}
+
+static void destroy_rx_buffer(struct conn_element *ele) {
+        int i;
+        struct rx_buf_ele * rx = ele->rx_buffer.rx_buf;
+
+        if (rx) {
+                for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
+                        ib_dma_unmap_single(ele->cm_id->device,
+                                        (u64) rx[i].dsm_msg,
+                                        sizeof(struct dsm_message),
+                                        DMA_FROM_DEVICE);
+                        vfree(rx[i].mem);
+
+                        kfree(rx[i].recv_wrk_rq_ele);
+                }
+                kfree(rx);
+                ele->rx_buffer.rx_buf = 0;
+        }
+}
+
+static void free_rdma_info(struct conn_element *ele) {
+        if (ele->rid.send_info) {
+                ib_dma_unmap_single(ele->cm_id->device,
+                                (u64) (unsigned long) ele->rid.send_info,
+                                sizeof(struct rdma_info), DMA_TO_DEVICE);
+                vfree(ele->rid.send_mem);
+        }
+
+        if (ele->rid.recv_info) {
+                ib_dma_unmap_single(ele->cm_id->device,
+                                (u64) (unsigned long) ele->rid.recv_info,
+                                sizeof(struct rdma_info), DMA_FROM_DEVICE);
+                vfree(ele->rid.recv_mem);
+        }
+
+        if (ele->rid.remote_info) {
+                kfree(ele->rid.remote_info);
+        }
+
+        memset(&ele->rid, 0, sizeof(struct rdma_info_data));
+}
+
+static int destroy_connections(struct rcm *rcm) {
+        struct conn_element *ele;
+        int i = 0;
+
+        // DSM3: Temporarily using i - this doesn't make sense - what if nodes = 1, 3, 4?  We only free first!
+        while ((ele = search_rb_conn(i))) {
+
+                if (destroy_connection(&ele, rcm))
+                        goto err;
+                ++i;
+        }
+
+        i = 0;
+        err: return i; //returns which connection failed
+}
+
+int destroy_rcm() {
         int ret = 0;
-
+        struct rcm **rcm = get_pointer_rcm();
         if (*rcm) {
                 if ((ret = destroy_connections(*rcm)))
                         ;
@@ -49,23 +138,7 @@ int destroy_rcm(rcm **rcm) {
 
 }
 
-int destroy_connections(rcm *rcm) {
-        conn_element *ele;
-        int i = 0;
-
-        // DSM3: Temporarily using i - this doesn't make sense - what if nodes = 1, 3, 4?  We only free first!
-        while ((ele = search_rb_conn(i))) {
-
-                if (destroy_connection(&ele, rcm))
-                        goto err;
-                ++i;
-        }
-
-        i = 0;
-        err: return i; //returns which connection failed
-}
-
-int destroy_connection(conn_element **ele, rcm *rcm) {
+int destroy_connection(struct conn_element **ele, struct rcm *rcm) {
         int ret = 0;
 
         if (*ele) {
@@ -116,72 +189,3 @@ int destroy_connection(conn_element **ele, rcm *rcm) {
         return 0;
 }
 
-void free_rdma_info(conn_element *ele) {
-        if (ele->rid.send_info) {
-                ib_dma_unmap_single(ele->cm_id->device,
-                                (u64) (unsigned long) ele->rid.send_info,
-                                sizeof(rdma_info), DMA_TO_DEVICE);
-                vfree(ele->rid.send_mem);
-        }
-
-        if (ele->rid.recv_info) {
-                ib_dma_unmap_single(ele->cm_id->device,
-                                (u64) (unsigned long) ele->rid.recv_info,
-                                sizeof(rdma_info), DMA_FROM_DEVICE);
-                vfree(ele->rid.recv_mem);
-        }
-
-        if (ele->rid.remote_info) {
-                kfree(ele->rid.remote_info);
-        }
-
-        memset(&ele->rid, 0, sizeof(struct rdma_info_data));
-}
-
-void destroy_tx_buffer(conn_element *ele) {
-        int i;
-        struct tx_buf_ele * tx_buf = ele->tx_buffer.tx_buf;
-        if (tx_buf) {
-                for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
-                        ib_dma_unmap_single(ele->cm_id->device,
-                                        (u64) tx_buf[i].dsm_msg,
-                                        sizeof(dsm_message), DMA_TO_DEVICE);
-
-                        vfree(tx_buf[i].mem);
-
-                        kfree(tx_buf[i].wrk_req->wr_ele);
-
-                        //			if(likely(ele->tx_buf[i].wrk_req->page_buf))
-                        //			{
-                        //				ib_dma_unmap_page(ele->cm_id->device, (u64) (unsigned long) ele->tx_buf[i].wrk_req->page_buf, RDMA_PAGE_SIZE, DMA_FROM_DEVICE);
-                        //				ele->tx_buf[i].wrk_req->page_buf = NULL;
-                        //
-                        //				__free_pages(ele->tx_buf[i].wrk_req->mem_page, 0);
-                        //				ele->tx_buf[i].wrk_req->mem_page = NULL;
-                        //			}
-
-                        kfree(tx_buf[i].wrk_req);
-                }
-
-                kfree(tx_buf);
-                ele->tx_buffer.tx_buf = 0;
-        }
-}
-
-void destroy_rx_buffer(conn_element *ele) {
-        int i;
-        struct rx_buf_ele * rx = ele->rx_buffer.rx_buf;
-
-        if (rx) {
-                for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
-                        ib_dma_unmap_single(ele->cm_id->device,
-                                        (u64) rx[i].dsm_msg,
-                                        sizeof(dsm_message), DMA_FROM_DEVICE);
-                        vfree(rx[i].mem);
-
-                        kfree(rx[i].recv_wrk_rq_ele);
-                }
-                kfree(rx);
-                ele->rx_buffer.rx_buf = 0;
-        }
-}

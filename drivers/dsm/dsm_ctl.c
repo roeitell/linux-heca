@@ -29,7 +29,7 @@ static char *ip = 0;
 static int port = 0;
 
 static int open(struct inode *inode, struct file *f) {
-        private_data *data;
+        struct private_data *data;
         struct rcm * rcm = get_rcm();
         data = kmalloc(sizeof(*data), GFP_KERNEL);
 
@@ -67,7 +67,7 @@ static void free_mem_region(struct rcu_head *head) {
  *
  */
 static int release(struct inode *inode, struct file *f) {
-        private_data *data = (private_data *) f->private_data;
+        struct private_data *data = (struct private_data *) f->private_data;
         struct subvirtual_machine *svm = NULL;
         struct mem_region *mr = NULL;
         struct dsm *_dsm = NULL;
@@ -130,7 +130,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         struct dsm_message msg;
         struct page *page;
 
-        private_data *priv_data = (private_data *) f->private_data;
+        struct private_data *priv_data = (struct private_data *) f->private_data;
         void __user *argp = (void __user *) arg;
         struct svm_data svm_info;
         struct subvirtual_machine *svm = NULL;
@@ -480,7 +480,7 @@ static int dsm_init(void) {
         errk("[dsm_init] ip : %s\n", ip);
         errk("[dsm_init] port : %d\n", port);
 
-        if (create_rcm(get_pointer_rcm(), ip, port))
+        if (create_rcm(ip, port))
                 goto err;
         rcm = get_rcm();
         INIT_LIST_HEAD(&rcm->dsm_ls);
@@ -503,7 +503,7 @@ module_init(dsm_init);
 static void dsm_exit(void) {
         dereg_dsm_functions();
 
-        destroy_rcm(get_pointer_rcm());
+        destroy_rcm();
 
         misc_deregister(&rdma_misc);
 

@@ -138,7 +138,7 @@ static struct page *find_get_dsm_page(unsigned long addr) {
 static struct page * get_remote_dsm_page(gfp_t gfp_mask,
                 struct vm_area_struct *vma, unsigned long addr,
                 struct subvirtual_machine *svm,
-                struct subvirtual_machine *fault_svm) {
+                struct subvirtual_machine *fault_svm, int prefetch) {
 
         struct page *found_page, *new_page = NULL;
         int err;
@@ -178,6 +178,10 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
                         /*
                          * Initiate read into locked page and return.
                          */
+                        if (prefetch) {
+                                radix_tree_tag_set(&dsm_tree, addr,
+                                                DSM_PAGE_CACHE_PREFETCH);
+                        }
                         lru_cache_add_anon(new_page);
                         dsm_readpage(new_page, addr, svm, fault_svm);
                         return new_page;
@@ -512,7 +516,8 @@ static void prefault_dsm_page(struct mm_struct *mm, unsigned long addr,
                                                 get_remote_dsm_page(
                                                                 GFP_HIGHUSER_MOVABLE,
                                                                 vma, norm_addr,
-                                                                svm, fault_svm);
+                                                                svm, fault_svm,
+                                                                1);
 
                                         }
                                 }
@@ -560,7 +565,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
                 BUG_ON(!fault_svm);
 
                 page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr,
-                                svm, fault_svm);
+                                svm, fault_svm, 0);
 
                 if (!page) {
                         page_table = pte_offset_map_lock(mm, pmd, address,

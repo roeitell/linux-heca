@@ -661,5 +661,20 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned int flags, pte_t orig_pte, swp_entry_t entry) {
         return 0;
 }
+
 #endif /* CONFIG_DSM */
+
+int page_is_in_dsm_cache(unsigned long addr) {
+        struct page *page = NULL;
+        page = find_get_dsm_page(addr);
+        if (page)
+                return 1;
+        return 0;
+
+}
+
+int page_is_tagged_in_dsm_cache(unsigned long addr, int flag) {
+        return radix_tree_tag_get(&dsm_tree, addr, flag);
+
+}
 

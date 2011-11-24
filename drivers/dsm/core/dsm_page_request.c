@@ -85,8 +85,8 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
         }
 
         // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
+        pte = pte_offset_map(pmd, addr);
 
-        pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
         pte_entry = *pte;
 
         if (unlikely(!pte_present(pte_entry))) {
@@ -101,11 +101,17 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
                                         // forward page red or blue
                                         //forward_blue_page(msg, ele);
                                         //goto out_pte;
-                                        errk(
-                                                        "[[EXTRACT_PAGE]] we chain fault on dsm entry \n");
-                                        goto chain_fault;
+
+                                        if (page_is_in_dsm_cache(addr)) {
+                                                errk(
+                                                                "[[EXTRACT_PAGE]] we chanin fault as it is a prefetch page and in \n");
+                                                goto chain_fault;
+                                        } else {
+                                                errk(
+                                                                "[[EXTRACT_PAGE]] page not present and swapped out somewhere else, no handling yet \n");
+                                                BUG();
+                                        }
                                 } else if (is_migration_entry(swp_e)) {
-                                        pte_unmap_unlock(pte, ptl);
 
                                         migration_entry_wait(mm, pmd, addr);
                                         goto retry;
@@ -113,31 +119,27 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
                                         BUG();
                                 }
                         } else {
-                                chain_fault: pte_unmap_unlock(pte, ptl);
-                                get_user_pages(current, mm, addr, 1, 1, 0,
-                                                &page, NULL);
-//                                r = handle_mm_fault(mm, vma, addr,
-//                                                FAULT_FLAG_WRITE);
-//                                if (r & VM_FAULT_ERROR) {
-//                                        errk("[*] failed at faulting \n");
-//                                        BUG();
-//                                }
-//
-//                                r = 0;
+                                chain_fault: get_user_pages(current, mm, addr,
+                                                1, 1, 0, &page, NULL);
+
                                 goto retry;
                         }
                 }
-        } else {
-                page = vm_normal_page(vma, addr, *pte);
-                if (!page) {
-                        // DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
-                        if (pte_pfn(*pte)
-                                        == (unsigned long) (void *) ZERO_PAGE(0))
-                                goto bad_page;
-
-                        page = pte_page(*pte);
-                }
         }
+        pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
+        if (unlikely(!pte_same(*pte, pte_entry))) {
+                pte_unmap_unlock(pte, ptl);
+                goto retry;
+        }
+        page = vm_normal_page(vma, addr, *pte);
+        if (!page) {
+                // DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
+                if (pte_pfn(*pte) == (unsigned long) (void *) ZERO_PAGE(0))
+                        goto bad_page;
+
+                page = pte_page(*pte);
+        }
+
         if (unlikely(PageTransHuge(page))) {
                 errk("[dsm_extract_page] we have a huge page \n");
                 if (!PageHuge(page) && PageAnon(page)) {
@@ -190,7 +192,6 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
         if (PageActive(page)) {
                 ClearPageActive(page);
         }
-        out_pte:
 
         pte_unmap_unlock(pte, ptl);
         // if local

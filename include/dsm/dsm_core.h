@@ -11,6 +11,11 @@
 #include <dsm/dsm_def.h>
 #include <linux/swap.h>
 
+#define DSM_PAGE_CACHE_PREFETCH      0               /* pages that were prefetched */
+
+int page_is_in_dsm_cache(unsigned long);
+int page_is_tagged_in_dsm_cache(unsigned long, int);
+
 struct dsm_functions {
         struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *); //_find_svm;
         struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *); //_find_local_svm;

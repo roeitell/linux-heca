@@ -38,7 +38,7 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
         pmd_t *pmd;
         pte_t pte_entry;
         swp_entry_t swp_e;
-        errk("[request_page_insert] faulting for page %p  \n ", addr);
+        errk("[request_page_insert] faulting for page %p  \n ", (void*) addr);
         retry:
 
         vma = find_vma(mm, addr);
@@ -198,6 +198,7 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
 
         out:
         errk("[request_page_insert] got page %p  \n ", page);
+        dsm_stats_page_extract_update(NULL);
         return page;
 
         bad_page:

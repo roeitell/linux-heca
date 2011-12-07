@@ -26,6 +26,11 @@
 #include <linux/interrupt.h>
 #include <asm/atomic.h>
 
+#define debug_dsm
+#ifdef debug_dsm
+#define errk printk
+#endif
+
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
 #define MAX_CAP_SCQ 256
@@ -49,14 +54,15 @@
  * DSM_MESSAGE
  */
 
-#define REQ_PROC                        0x01 // we are processing the request
-#define REQ_RCV                         0x01 // we received a request from remote node
-#define REQ_RCV_PROC                    0x02 // we are processing the request from remote node
-#define REQ_REPLY                       0x02 // we received a reply to our request
-#define debug_dsm
-#ifdef debug_dsm
-#define errk printk
-#endif
+#define REQUEST_PAGE                    0x0000 // We Request a page
+#define REQUEST_PAGE_PULL               0x0001 // We Request a page pull
+#define PAGE_REQUEST_REPLY              0x0002 // We Reply to a page request
+#define PAGE_REQUEST_REDIRECT           0x0004 // We don't have the page  but we know where it is , we redirect
+#define PAGE_INFO_UPDATE                0x0008 // We send an update of the page location
+#define DSM_MSG_ERR                     0x8000 // ERROR
+/*
+ * DSM DATA structure
+ */
 
 struct dsm_vm_id {
         u16 dsm_id;
@@ -92,6 +98,12 @@ struct dsm {
         struct list_head ls;
 };
 
+struct dsm_kobjects {
+        struct kobject * dsm_kobject;
+        struct kobject * memory_kobject;
+        struct kobject * rdma_kobject;
+};
+
 struct rcm {
         int node_ip;
 
@@ -113,6 +125,7 @@ struct rcm {
 
         struct list_head dsm_ls;
         struct rb_root red_page_root;
+        struct dsm_kobjects dsm_kobjects;
 
         struct workqueue_struct * dsm_wq;
 
@@ -219,14 +232,13 @@ struct rdma_info {
 
 struct dsm_message {
 
-        u32 msg_num;
         u32 offset;
         u32 dest;
         u32 src;
         u64 req_addr;
         u64 dst_addr;
         u32 rkey;
-        u16 status;
+        u16 type;
 
 };
 
@@ -268,7 +280,7 @@ struct subvirtual_machine {
 
 };
 
-typedef struct work_request_ele {
+struct work_request_ele {
         struct conn_element *ele;
 
         struct ib_send_wr wr;

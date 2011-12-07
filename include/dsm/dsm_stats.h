@@ -12,22 +12,9 @@
 #include <linux/module.h>
 #include <asm/atomic.h>
 
-//static dsm_stats dsm_stats;
-//
-//static inline struct dsm_stats *get_dsm_stats(void) {
-//        return &dsm_stats;
-//}
-//
-//struct dsm_stats {
-//        struct proc_dir_entry *dsm_dir;
-//        struct list_head dsm_connection_stats_list;
-//};
-//
-//struct dsm_connection_stats_element {
-//        struct proc_dir_entry *dir;
-//        struct con_element_stats *stats;
-//        struct list_head ptr;
-//};
+struct tx_dsm_stats {
+//bla bla to fill in later
+};
 
 struct con_element_stats {
         atomic64_t out;
@@ -35,127 +22,27 @@ struct con_element_stats {
         atomic64_t in;
         atomic64_t in_rdma;
 
-        s64 total_wait_to_wait_completion;
-        s64 wait_to_wait_completion_min;
-        s64 wait_to_wait_completion_max;
-        s64 total_send_to_send_completion;
-        s64 send_to_send_completion_min;
-        s64 send_to_send_completion_max;
-        s64 total_send_completion_to_reply_completion;
-        s64 send_completion_to_reply_completion_min;
-        s64 send_completion_to_reply_completion_max;
-        s64 total_send_to_reply_completion;
-        s64 send_to_reply_completion_min;
-        s64 send_to_reply_completion_max;
-        s64 total_entry_to_reply;
-        s64 entry_to_reply_min;
-        s64 entry_to_reply_max;
-        u64 nb_total_processed;
-
-        s64 total_send_reply_to_send_reply_completion;
-        s64 send_reply_to_send_reply_completion_min;
-        s64 send_reply_to_send_reply_completion_max;
-        u64 nb_total_processed_send_reply;
-        spinlock_t lock ;
-
-        struct timespec t_start_bench;
-        struct timespec t_end_bench;
+        struct tx_dsm_stats * tx_dsm_stats;
 
 };
 
-struct tx_dsm_stats {
-        struct timespec t_entry;
-        struct timespec t_send;
-        struct timespec t_send_completion;
-        struct timespec t_reply;
+struct dsm_memory_stats {
+        atomic64_t fault;
+        atomic64_t extract;
+
 };
 
-#ifdef CONFIG_DSM_STATS
+long long get_dsm_stats_page_fault(struct dsm_memory_stats *);
+long long get_dsm_stats_page_extract(struct dsm_memory_stats *);
+void dsm_stats_page_fault_update(struct dsm_memory_stats *);
+void dsm_stats_page_extract_update(struct dsm_memory_stats *);
+void reset_dsm_memory_stats(struct dsm_memory_stats *);
 
-void dsm_stats_get_time_request(struct timespec *time);
-
-void dsm_stats_set_time_request(struct tx_dsm_stats *stats,
-                struct timespec time);
-
-void dsm_stats_update_time_send(struct tx_dsm_stats *stats);
-
-void dsm_stats_update_time_send_completion(struct tx_dsm_stats *stats);
-
-void dsm_stats_update_time_recv_completion(struct tx_dsm_stats *stats);
-
-void dsm_stats_message_send_completion(struct con_element_stats * stats);
-
-void dsm_stats_message_send_rdma_completion(struct con_element_stats * stats);
-void dsm_stats_message_recv_completion(struct con_element_stats * stats);
-
-void dsm_stats_message_recv_rdma_completion(struct con_element_stats * stats);
-
-void calc_dsm_stats_request_reply(struct con_element_stats *e_dsm_stats,
-                struct tx_dsm_stats *tx_dsm_stats);
-
-void calc_dsm_stats_reply(struct con_element_stats *e_dsm_stats,
-                struct tx_dsm_stats *tx_dsm_stats);
-
-int create_dsm_stats_data(struct con_element_stats *stats);
-
-void reset_dsm_stats(struct con_element_stats * stats);
-
-void print_dsm_stats(struct con_element_stats * stats);
-
-#else
-
-static inline int create_dsm_stats_data(struct con_element_stats *stats) {
-        return 0;
-}
-static inline void reset_dsm_stats(struct con_element_stats * dsm_stats) {
-}
-static inline void print_dsm_stats(struct con_element_stats * dsm_stats) {
-}
-static inline void calc_dsm_stats(struct con_element_stats *e_dsm_stats,
-                struct tx_dsm_stats *tx_dsm_stats) {
-}
-static inline void print_dsm_stats_time_detailed(
-                struct con_element_stats * dsm_stats) {
-}
-extern void calc_dsm_stats_request_reply(struct con_element_stats *c_stats,
-                struct tx_dsm_stats *tx_stats) {
-
-}
-extern void calc_dsm_stats_reply(struct con_element_stats *c_stats,
-                struct tx_dsm_stats *tx_stats) {
-
-}
-static inline void dsm_stats_update_time_send(struct tx_dsm_stats *stats) {
-}
-static inline void dsm_stats_update_time_send_completion(
-                struct tx_dsm_stats *stats) {
-}
-static inline void dsm_stats_get_time_request(struct timespec *time) {
-}
-static inline void dsm_stats_set_time_request(struct tx_dsm_stats *stats,
-                struct timespec time) {
-}
-static inline void dsm_stats_update_time_recv_completion(
-                struct tx_dsm_stats *stats) {
-}
-
-static inline void print_dsm_statss_time(struct con_element_stats * dsm_stats) {
-}
-static inline void print_dsm_statss_message_count(
-                struct con_element_stats * dsm_stats) {
-}
-static inline void dsm_stats_message_recv_completion(
-                struct con_element_stats * dsm_stats) {
-}
-static inline void dsm_stats_message_recv_rdma_completion(
-                struct con_element_stats * dsm_stats) {
-}
-static inline void dsm_stats_message_send_completion(
-                struct con_element_stats * dsm_stats) {
-}
-static inline void dsm_stats_message_send_rdma_completion(
-                struct con_element_stats * dsm_stats) {
-}
-#endif
+void dsm_stats_message_send_rdma_completion(struct con_element_stats *);
+void dsm_stats_message_recv_completion(struct con_element_stats *);
+void dsm_stats_message_recv_rdma_completion(struct con_element_stats *);
+void dsm_stats_message_send_completion(struct con_element_stats *);
+int create_dsm_connection_stats_data(struct con_element_stats *);
+void reset_dsm_connection_stats(struct con_element_stats *);
 
 #endif

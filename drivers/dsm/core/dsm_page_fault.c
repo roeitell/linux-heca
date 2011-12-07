@@ -28,6 +28,7 @@
 #include <dsm/dsm_ctl.h>
 #include <dsm/dsm_rb.h>
 #include <dsm/dsm_sr.h>
+#include <dsm/dsm_stats.h>
 
 RADIX_TREE(dsm_tree, GFP_ATOMIC);
 DEFINE_SPINLOCK(dsm_lock);
@@ -445,7 +446,7 @@ static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
 
 static void prefault_dsm_page(struct mm_struct *mm, unsigned long addr,
                 struct subvirtual_machine *fault_svm) {
-        spinlock_t *ptl;
+
         pte_t *pte;
         pgd_t *pgd;
         pud_t *pud;
@@ -505,8 +506,8 @@ static void prefault_dsm_page(struct mm_struct *mm, unsigned long addr,
                                         if (is_dsm_entry(swp_e)) {
                                                 errk(
                                                                 "[prefault_dsm_page] prefaulting at addr: %p  , norm %p \n",
-                                                                addr,
-                                                                norm_addr);
+                                                                (void*) addr,
+                                                                (void*) norm_addr);
                                                 dsm_entry_to_val(swp_e,
                                                                 &id.dsm_id,
                                                                 &id.svm_id);
@@ -548,7 +549,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         int locked;
 
         errk("[request_page_insert] faulting for page %p , norm %p \n ",
-                        address, norm_addr);
+                        (void*) address, (void*) norm_addr);
         if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte)) {
 
                 goto out;
@@ -606,6 +607,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         if (unlikely(!pte_same(*page_table, orig_pte))) {
                 goto out_nomap;
         }
+        dsm_stats_page_fault_update(NULL);
         if (unlikely(!PageUptodate(page))) {
                 ret = VM_FAULT_SIGBUS;
                 goto out_nomap;

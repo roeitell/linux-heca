@@ -22,6 +22,7 @@
 #include <dsm/dsm_sr.h>
 #include <dsm/dsm_core.h>
 #include <dsm/dsm_stats.h>
+#include <dsm/dsm_sysfs.h>
 
 #include <linux/stat.h>
 
@@ -417,7 +418,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         if (likely(cele)) {
 
-                                reset_dsm_stats(&cele->stats);
+                                reset_dsm_connection_stats(&cele->stats);
 
                         }
 
@@ -433,7 +434,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         if (likely(cele)) {
 
-                                print_dsm_stats(&cele->stats);
+                                //  print_dsm_stats(&cele->stats);
 
                         }
 
@@ -483,6 +484,12 @@ static int dsm_init(void) {
         if (create_rcm(ip, port))
                 goto err;
         rcm = get_rcm();
+        if (dsm_sysf_setup(rcm)) {
+                dereg_dsm_functions();
+
+                destroy_rcm();
+        }
+
         INIT_LIST_HEAD(&rcm->dsm_ls);
 
         _dsm = kmalloc(sizeof(*_dsm), GFP_KERNEL);
@@ -502,7 +509,7 @@ module_init(dsm_init);
 
 static void dsm_exit(void) {
         dereg_dsm_functions();
-
+        dsm_sysf_cleanup(get_rcm());
         destroy_rcm();
 
         misc_deregister(&rdma_misc);

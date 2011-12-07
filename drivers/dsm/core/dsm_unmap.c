@@ -61,7 +61,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
         swp_entry_t swp_e;
         struct subvirtual_machine *svm;
         unsigned long addr = request_addr & PAGE_MASK;
-        unsigned long ksm_flag;
 
         down_read(&mm->mmap_sem);
 

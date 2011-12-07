@@ -82,7 +82,7 @@ int rx_tx_message_transfer(struct conn_element * ele,
 
         //Copy the received message in it
         memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg, sizeof(struct dsm_message));
-        tx_e->dsm_msg->status = REQ_RCV_PROC;
+        tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
         //Filling up the response details
         tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
         tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
@@ -104,14 +104,12 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         struct timespec time;
         struct dsm_request *req;
 
-        dsm_stats_get_time_request(&time);
         spin_lock(&tx->request_queue_lock);
         if (list_empty(&tx->request_queue)) {
                 spin_unlock(&tx->request_queue_lock);
                 tx_e = try_get_next_empty_tx_ele(ele);
                 if (tx_e) {
 
-                        dsm_stats_set_time_request(&tx_e->stats, time);
                         create_page_request(ele, tx_e, fault_svm->id, svm->id,
                                         addr, page);
 
@@ -140,16 +138,16 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 
 int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
         int ret = 0;
-        dsm_stats_update_time_send(&tx_e->stats);
-        switch (tx_e->dsm_msg->status) {
-                case REQ_PROC: {
+
+        switch (tx_e->dsm_msg->type) {
+                case REQUEST_PAGE: {
 
                         ret = ib_post_send(ele->cm_id->qp,
                                         &tx_e->wrk_req->wr_ele->wr,
                                         &tx_e->wrk_req->wr_ele->bad_wr);
                         break;
                 }
-                case REQ_RCV_PROC: {
+                case PAGE_REQUEST_REPLY: {
                         ret = ib_post_send(ele->cm_id->qp,
                                         &tx_e->reply_work_req->wr,
                                         &tx_e->reply_work_req->wr_ele->bad_wr);

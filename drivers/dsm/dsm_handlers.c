@@ -22,8 +22,6 @@ static int flush_dsm_request(struct conn_element *ele) {
         struct tx_buf_ele *tx_e;
         struct dsm_request *req;
 
-        loop:
-
         spin_lock(&tx->request_queue_lock);
         while (!list_empty(&tx->request_queue)) {
                 tx_e = try_get_next_empty_tx_ele(ele);
@@ -33,7 +31,7 @@ static int flush_dsm_request(struct conn_element *ele) {
 
                 req= list_first_entry(&tx->request_queue, struct dsm_request, queue);
                 list_del(&req->queue);
-                dsm_stats_set_time_request(&tx_e->stats, req->time);
+
                 //populate it with a new message
                 create_page_request(ele, tx_e, req->fault_svm->id, req->svm->id,
                                 req->addr, req->page);
@@ -45,33 +43,32 @@ static int flush_dsm_request(struct conn_element *ele) {
         }
 
         spin_unlock(&tx->request_queue_lock);
-        return;
+        return 0;
 }
 
 static int dsm_recv_message_handler(struct conn_element *ele,
                 struct rx_buf_ele *rx_e) {
         struct tx_buf_ele *tx_e = NULL;
-        switch (rx_e->dsm_msg->status) {
-                case REQ_REPLY: {
+        switch (rx_e->dsm_msg->type) {
+                case PAGE_REQUEST_REPLY: {
                         tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
                         dsm_stats_message_recv_rdma_completion(&ele->stats);
-                        dsm_stats_update_time_recv_completion(&tx_e->stats);
-                        calc_dsm_stats_request_reply(&ele->stats, &tx_e->stats);
+
                         process_response(ele, tx_e); // client got its response
 
                         break;
                 }
 
-                case REQ_RCV: {
+                case REQUEST_PAGE: {
 
                         rx_tx_message_transfer(ele, rx_e); // server got a request
                         break;
                 }
                 default: {
                         printk(
-                                        "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d , msg_nb %d\n",
-                                        rx_e, rx_e->dsm_msg->status, rx_e->id,
-                                        rx_e->dsm_msg->msg_num);
+                                        "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
+                                        rx_e, rx_e->dsm_msg->type, rx_e->id
+                                        );
                         goto err;
 
                 }
@@ -86,25 +83,23 @@ static int dsm_recv_message_handler(struct conn_element *ele,
 static int dsm_send_message_handler(struct conn_element *ele,
                 struct tx_buf_ele *tx_buf_e) {
 
-        dsm_stats_update_time_send_completion(&tx_buf_e->stats);
-        switch (tx_buf_e->dsm_msg->status) {
-                case REQ_RCV_PROC: {
-                        calc_dsm_stats_reply(&ele->stats, &tx_buf_e->stats);
+        switch (tx_buf_e->dsm_msg->type) {
+                case PAGE_REQUEST_REPLY: {
+
                         release_replace_page(ele, tx_buf_e);
                         release_tx_element_reply(ele, tx_buf_e);
 
                         break;
                 }
-                case REQ_PROC: {
+                case REQUEST_PAGE: {
 
                         break;
                 }
                 default: {
                         printk(
-                                        "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d , msg_nb %d\n",
-                                        tx_buf_e, tx_buf_e->dsm_msg->status,
-                                        tx_buf_e->id,
-                                        tx_buf_e->dsm_msg->msg_num);
+                                        "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
+                                        tx_buf_e, tx_buf_e->dsm_msg->type,
+                                        tx_buf_e->id);
                         return 1;
                 }
         }
@@ -448,7 +443,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                         ele = vmalloc(sizeof(struct conn_element));
                         if (!ele)
                                 goto out;
-                        create_dsm_stats_data(&ele->stats);
+                        create_dsm_connection_stats_data(&ele->stats);
                         rcm = id->context;
 
                         ele->rcm = rcm;

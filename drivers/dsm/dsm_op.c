@@ -755,7 +755,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
         ele = vmalloc(sizeof(struct conn_element));
         if (unlikely(!ele))
                 goto err;
-        create_dsm_stats_data(&ele->stats);
+        create_dsm_connection_stats_data(&ele->stats);
         ele->remote_node_ip = inet_addr(conn_data->ip);
 
         insert_rb_conn(ele);
@@ -910,11 +910,10 @@ void create_message(struct conn_element *ele, struct tx_buf_ele * tx_e,
 
         msg->dest = (u32) ele->rid.recv_info->node_ip;
         msg->dst_addr = (u64) ppe->page_buf;
-        msg->msg_num = message_num;
         msg->req_addr = 0;
         msg->rkey = ele->mr->rkey;
         msg->src = (u32) ele->rcm->node_ip;
-        msg->status = status;
+        msg->type = status;
 
         return;
 }
@@ -931,11 +930,10 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
 
         msg->dest = dsm_vm_id_to_u32(&local_id);
         msg->dst_addr = (u64) ppe->page_buf;
-        msg->msg_num = 0;
         msg->req_addr = addr;
         msg->rkey = ele->mr->rkey;
         msg->src = dsm_vm_id_to_u32(&remote_id);
-        msg->status = REQ_PROC;
+        msg->type = REQUEST_PAGE;
 
         return;
 }
@@ -1011,7 +1009,7 @@ int setup_connection(struct conn_element *ele, int type) {
         if (!ele->mr)
                 goto err2;
 
-        reset_dsm_stats(&ele->stats);
+        reset_dsm_connection_stats(&ele->stats);
 
         if (setup_qp(ele))
                 goto err4;

@@ -26,11 +26,6 @@
 #include <linux/interrupt.h>
 #include <asm/atomic.h>
 
-#define debug_dsm
-#ifdef debug_dsm
-#define errk printk
-#endif
-
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
 #define MAX_CAP_SCQ 256
@@ -59,6 +54,8 @@
 #define PAGE_REQUEST_REPLY              0x0002 // We Reply to a page request
 #define PAGE_REQUEST_REDIRECT           0x0004 // We don't have the page  but we know where it is , we redirect
 #define PAGE_INFO_UPDATE                0x0008 // We send an update of the page location
+#define TRY_REQUEST_PAGE                0x0010 // We try to pull the page
+#define TRY_REQUEST_PAGE_FAIL           0x0020 // We try to get the page failed
 #define DSM_MSG_ERR                     0x8000 // ERROR
 /*
  * DSM DATA structure
@@ -350,6 +347,7 @@ struct rx_buf_ele {
 };
 
 struct dsm_request {
+        u16 type;
         struct page * page;
         struct subvirtual_machine *svm;
         struct subvirtual_machine *fault_svm;

@@ -16,7 +16,7 @@ static ssize_t memory_show(struct kobject *kobj, struct kobj_attribute *attr,
         else
                 var = 0;
 
-        return sprintf(buf, "%ld\n", var);
+        return sprintf(buf, "%lld\n", var);
 }
 
 static ssize_t rdma_show(struct kobject *kobj, struct kobj_attribute *attr,
@@ -34,7 +34,7 @@ static ssize_t rdma_show(struct kobject *kobj, struct kobj_attribute *attr,
         else
                 var = 0;
 
-        return sprintf(buf, "%ld\n", var);
+        return sprintf(buf, "%lld\n", var);
 }
 
 static struct kobj_attribute fault_attribute =

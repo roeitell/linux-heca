@@ -86,7 +86,7 @@ static int release(struct inode *inode, struct file *f) {
                         list_for_each_entry_rcu(svm, &_dsm->svm_ls, ls)
                         {
                                 if (svm == data->svm) {
-                                        errk(
+                                        printk(
                                                         "[release] SVM: dsm_id=%u ... vm_id=%u\n",
                                                         svm->id.dsm_id,
                                                         svm->id.svm_id);
@@ -157,10 +157,9 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         svm = find_svm(&id);
 
-                        errk(
-                                        "[DSM_SVM]\n\tfound svm : %d\n\tdsm_id : %u\n\tsvm_id : %u\n",
-                                        !!svm, svm_info.dsm_id,
-                                        svm_info.svm_id);
+                        printk(
+                                        "[DSM_SVM]\n\tfound svm : %p\n\tdsm_id : %u\n\tsvm_id : %u\n",
+                                        svm, svm_info.dsm_id, svm_info.svm_id);
 
                         if (!svm) {
                                 svm = kmalloc(sizeof(*svm), GFP_KERNEL);
@@ -208,7 +207,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                 }
                 case DSM_MR: {
 
-                        errk("[DSM_MR]\n");
+                        printk("[DSM_MR]\n");
 
                         r = -EFAULT;
 
@@ -240,7 +239,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                 }
                 case DSM_CONNECT: {
-                        //errk("[DSM_CONNECT]\n");
+                        //printk("[DSM_CONNECT]\n");
 
                         r = -EFAULT;
 
@@ -253,10 +252,9 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         svm = find_svm(&id);
 
-                        errk(
-                                        "[DSM_CONNECT]\n\tfound svm : %d\n\tdsm_id : %u\n\tsvm_id : %u\n",
-                                        !!svm, svm_info.dsm_id,
-                                        svm_info.svm_id);
+                        printk(
+                                        "[DSM_CONNECT]\n\tfound svm : %p\n\tdsm_id : %u\n\tsvm_id : %u\n",
+                                        svm, svm_info.dsm_id, svm_info.svm_id);
 
                         if (!svm) {
                                 svm = kmalloc(sizeof(*svm), GFP_KERNEL);
@@ -279,6 +277,8 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                                 goto fail2;
 
                                 }
+                                cele = search_rb_conn(ip_addr);
+                                BUG_ON(!cele);
                                 svm->ele = cele;
 
                                 _dsm = list_first_entry(&rcm->dsm_ls, struct dsm, ls);
@@ -314,7 +314,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                 }
                 case DSM_UNMAP_RANGE: {
-                        errk("[DSM_UNMAP_RANGE]\n");
+                        printk("[DSM_UNMAP_RANGE]\n");
 
                         r = -EFAULT;
 
@@ -346,7 +346,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                                 counter++;
 
                         }
-                        errk("[?] unmapped #pages : %d\n", counter);
+                        printk("[?] unmapped #pages : %d\n", counter);
                         r = 0;
 
                         break;
@@ -355,7 +355,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                 case PAGE_SWAP: {
                         r = -EFAULT;
 
-                        errk("[PAGE_SWAP] swapping of one page \n");
+                        printk("[PAGE_SWAP] swapping of one page \n");
                         if (copy_from_user((void *) &msg, argp, sizeof msg))
                                 goto out;
 
@@ -382,10 +382,10 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                         svm = find_svm(&udata.id);
 
                         if (!svm) {
-                                errk(
+                                printk(
                                                 "[UNMAP_PAGE] could not find the route element \n");
                                 r = -1;
-                                errk(
+                                printk(
                                                 "[unmap page 1] dsm_id : %d - vm_id : %d\n",
                                                 udata.id.dsm_id,
                                                 udata.id.svm_id);
@@ -393,11 +393,11 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
                         }
 
-                        errk("[unmap page 2] dsm_id : %d - vm_id : %d\n",
+                        printk("[unmap page 2] dsm_id : %d - vm_id : %d\n",
                                         udata.id.dsm_id, udata.id.svm_id);
 
                         if (priv_data->svm->id.dsm_id != svm->id.dsm_id) {
-                                errk(
+                                printk(
                                                 "[UNMAP_PAGE] DSM id not same, bad id  \n");
                                 r = -1;
                         }
@@ -405,6 +405,30 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                         r = dsm_flag_page_remote(current->mm, udata.id,
                                         udata.addr);
 
+                        break;
+
+                }
+                case DSM_TRY_PUSH_BACK_PAGE: {
+                        printk("[DSM_TRY_PUSH_BACK_PAGE]\n");
+
+                        r = -EFAULT;
+
+                        if (copy_from_user((void *) &udata, argp, sizeof udata))
+                                goto out;
+
+                        // DSM2: why are locks outside of function?
+
+                        svm = find_svm(&udata.id);
+
+                        r = -1;
+
+                        if (!svm)
+                                goto out;
+                        if (svm == priv_data->svm)
+                                goto out;
+
+                        r = dsm_request_page_pull(current->mm, svm,
+                                        priv_data->svm, udata.addr);
                         break;
 
                 }
@@ -478,8 +502,8 @@ static int dsm_init(void) {
         struct rcm * rcm;
         reg_dsm_functions(&find_svm, &find_local_svm, &request_dsm_page);
 
-        errk("[dsm_init] ip : %s\n", ip);
-        errk("[dsm_init] port : %d\n", port);
+        printk("[dsm_init] ip : %s\n", ip);
+        printk("[dsm_init] port : %d\n", port);
 
         if (create_rcm(ip, port))
                 goto err;

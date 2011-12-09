@@ -53,7 +53,7 @@ static void try_regenerate_empty_page_pool_element(struct conn_element *ele,
                                 ppe->mem_page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
                 if (ib_dma_mapping_error(ele->cm_id->device,
                                 (u64) (unsigned long) ppe->page_buf))
-                        errk(
+                        printk(
                                         "[try_regenerate_empty_page_pool_element] couldn't map page \n");
 
                 list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
@@ -920,7 +920,7 @@ void create_message(struct conn_element *ele, struct tx_buf_ele * tx_e,
 
 void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
                 struct dsm_vm_id local_id, struct dsm_vm_id remote_id,
-                uint64_t addr, struct page *page) {
+                uint64_t addr, struct page *page, u16 type) {
         struct dsm_message *msg = tx_e->dsm_msg;
         struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
                         page);
@@ -933,7 +933,25 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
         msg->req_addr = addr;
         msg->rkey = ele->mr->rkey;
         msg->src = dsm_vm_id_to_u32(&remote_id);
-        msg->type = REQUEST_PAGE;
+        msg->type = type;
+
+        return;
+}
+
+void create_page_pull_request(struct conn_element *ele,
+                struct tx_buf_ele * tx_e, struct dsm_vm_id local_id,
+                struct dsm_vm_id remote_id, uint64_t addr) {
+        struct dsm_message *msg = tx_e->dsm_msg;
+
+        //in order to find the element on the reception of the page, and free it
+        tx_e->wrk_req->dst_addr = NULL;
+
+        msg->dest = dsm_vm_id_to_u32(&local_id);
+        msg->dst_addr = NULL;
+        msg->req_addr = addr;
+        msg->rkey = ele->mr->rkey;
+        msg->src = dsm_vm_id_to_u32(&remote_id);
+        msg->type = REQUEST_PAGE_PULL;
 
         return;
 }

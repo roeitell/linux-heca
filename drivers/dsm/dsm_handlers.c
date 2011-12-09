@@ -9,6 +9,7 @@
 #include <dsm/dsm_op.h>
 #include <dsm/dsm_handlers.h>
 #include <dsm/dsm_sr.h>
+#include <dsm/dsm_core.h>
 
 static void print_work_completion(struct ib_wc *wc, char * error_context) {
         printk(
@@ -21,6 +22,7 @@ static int flush_dsm_request(struct conn_element *ele) {
         struct tx_buffer *tx = &ele->tx_buffer;
         struct tx_buf_ele *tx_e;
         struct dsm_request *req;
+        int ret = 0;
 
         spin_lock(&tx->request_queue_lock);
         while (!list_empty(&tx->request_queue)) {
@@ -33,17 +35,50 @@ static int flush_dsm_request(struct conn_element *ele) {
                 list_del(&req->queue);
 
                 //populate it with a new message
-                create_page_request(ele, tx_e, req->fault_svm->id, req->svm->id,
-                                req->addr, req->page);
+                switch (req->type) {
+                        case REQUEST_PAGE: {
+                                create_page_request(ele, tx_e,
+                                                req->fault_svm->id,
+                                                req->svm->id, req->addr,
+                                                req->page, req->type);
+                                break;
+                        }
+                        case TRY_REQUEST_PAGE: {
+                                create_page_request(ele, tx_e,
+                                                req->fault_svm->id,
+                                                req->svm->id, req->addr,
+                                                req->page, req->type);
+                                break;
+                        }
+                        case REQUEST_PAGE_PULL: {
+                                create_page_pull_request(ele, tx_e,
+                                                req->fault_svm->id,
+                                                req->svm->id, req->addr);
+                                break;
+                        }
+                        case TRY_REQUEST_PAGE_FAIL: {
+//                                create_try_page_request_fail(ele, tx_e,
+//                                                                                req->fault_svm->id,
+//                                                                                req->svm->id, req->addr);
 
+                                break;
+                        }
+
+                        default: {
+                                printk(
+                                                "[flush_dsm_request] unrecognised request type %d \n",
+                                                req->type);
+                                ret = 1;
+                                goto out;
+                        }
+                }
                 tx_e->callback.func = req->func;
 
                 tx_dsm_send(ele, tx_e);
 
         }
-
-        spin_unlock(&tx->request_queue_lock);
-        return 0;
+        out: spin_unlock(&tx->request_queue_lock);
+        return ret;
 }
 
 static int dsm_recv_message_handler(struct conn_element *ele,
@@ -58,17 +93,41 @@ static int dsm_recv_message_handler(struct conn_element *ele,
 
                         break;
                 }
+                case TRY_REQUEST_PAGE_FAIL: {
+                        printk(
+                                        "[dsm_recv_poll] try request page failed received   addr: %p ,status %d , id %d \n",
+                                        rx_e, rx_e->dsm_msg->type, rx_e->id);
+                        process_response(ele, tx_e);
 
+                        break;
+                }
                 case REQUEST_PAGE: {
 
                         rx_tx_message_transfer(ele, rx_e); // server got a request
                         break;
                 }
+
+                case TRY_REQUEST_PAGE: {
+                        printk(
+                                        "[dsm_recv_poll] try request page received   addr: %p ,status %d , id %d \n",
+                                        rx_e, rx_e->dsm_msg->type, rx_e->id);
+                        rx_tx_message_transfer(ele, rx_e);
+
+                        break;
+                }
+                case REQUEST_PAGE_PULL: {
+                        printk(
+                                        "[dsm_recv_poll] request pull received   addr: %p ,status %d , id %d \n",
+                                        rx_e, rx_e->dsm_msg->type, rx_e->id);
+                        dsm_trigger_page_pull(rx_e->dsm_msg);
+
+                        break;
+                }
+
                 default: {
                         printk(
                                         "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
-                                        rx_e, rx_e->dsm_msg->type, rx_e->id
-                                        );
+                                        rx_e, rx_e->dsm_msg->type, rx_e->id);
                         goto err;
 
                 }
@@ -93,6 +152,17 @@ static int dsm_send_message_handler(struct conn_element *ele,
                 }
                 case REQUEST_PAGE: {
 
+                        break;
+                }
+                case TRY_REQUEST_PAGE: {
+                        break;
+                }
+                case REQUEST_PAGE_PULL: {
+                        release_tx_element(ele, tx_buf_e);
+                        break;
+                }
+                case TRY_REQUEST_PAGE_FAIL: {
+                        release_tx_element(ele, tx_buf_e);
                         break;
                 }
                 default: {

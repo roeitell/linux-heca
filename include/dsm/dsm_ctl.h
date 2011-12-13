@@ -28,26 +28,26 @@
 #define DSM_TRY_PUSH_BACK_PAGE  _IOW(DSM_IO, 0xA8, struct unmap_data)
 
 struct svm_data {
-        int dsm_id;
-        int svm_id;
-        unsigned long offset;
-        char *ip;
-        int port;
+    int dsm_id;
+    int svm_id;
+    unsigned long offset;
+    char *ip;
+    int port;
 
 };
 
 struct mr_data {
-        int dsm_id;
-        int svm_id;
-        unsigned long start_addr;
-        unsigned long size;
+    int dsm_id;
+    int svm_id;
+    unsigned long start_addr;
+    unsigned long size;
 
 };
 
 struct unmap_data {
-        unsigned long addr;
-        size_t sz;
-        struct dsm_vm_id id;
+    unsigned long addr;
+    size_t sz;
+    struct dsm_vm_id id;
 };
 
 struct subvirtual_machine *find_svm(struct dsm_vm_id *);

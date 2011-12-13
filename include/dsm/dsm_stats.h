@@ -17,18 +17,18 @@ struct tx_dsm_stats {
 };
 
 struct con_element_stats {
-        atomic64_t out;
-        atomic64_t out_rdma;
-        atomic64_t in;
-        atomic64_t in_rdma;
+    atomic64_t out;
+    atomic64_t out_rdma;
+    atomic64_t in;
+    atomic64_t in_rdma;
 
-        struct tx_dsm_stats * tx_dsm_stats;
+    struct tx_dsm_stats * tx_dsm_stats;
 
 };
 
 struct dsm_memory_stats {
-        atomic64_t fault;
-        atomic64_t extract;
+    atomic64_t fault;
+    atomic64_t extract;
 
 };
 

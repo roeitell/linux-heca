@@ -19,10 +19,10 @@ unsigned int inet_addr(char *);
 int create_rcm(char *, int);
 
 void create_page_request(struct conn_element *, struct tx_buf_ele *,
-                struct dsm_vm_id, struct dsm_vm_id, uint64_t, struct page*, u16);
+        struct dsm_vm_id, struct dsm_vm_id, uint64_t, struct page*, u16);
 
 void create_page_pull_request(struct conn_element *, struct tx_buf_ele *,
-                struct dsm_vm_id, struct dsm_vm_id, uint64_t);
+        struct dsm_vm_id, struct dsm_vm_id, uint64_t);
 
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *);
@@ -38,7 +38,7 @@ int connect_client(struct rdma_cm_id *);
  * PAGE MANAGEMENT FUNCTION
  */
 struct page_pool_ele * create_new_page_pool_element_from_page(
-                struct conn_element *, struct page *);
+        struct conn_element *, struct page *);
 
 void release_replace_page(struct conn_element *, struct tx_buf_ele *);
 void release_replace_page_work(struct work_struct *);

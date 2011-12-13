@@ -120,7 +120,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
     unsigned long end = 0;
     int counter = 0;
     int ret = 0;
-
+    unsigned long addr;
     struct conn_element *cele;
     int ip_addr;
     struct dsm_message msg;
@@ -411,12 +411,16 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                 goto out;
             if (svm == priv_data->svm)
                 goto out;
-
-            r = dsm_request_page_pull(current->mm, svm, priv_data->svm,
-                    udata.addr);
+            addr = udata.addr & PAGE_MASK;
+            if (!page_is_in_dsm_cache(addr))
+                r = dsm_request_page_pull(current->mm, svm, priv_data->svm,
+                        udata.addr);
+            else
+                r = 0;
             break;
 
         }
+
         case DSM_GEN_STAT: {
             if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
                 goto out;

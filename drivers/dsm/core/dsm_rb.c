@@ -33,7 +33,6 @@ struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
             {
                 if (svm->id.svm_id == id->svm_id)
                     return svm;
-
             }
         }
     }
@@ -59,7 +58,6 @@ struct subvirtual_machine *find_local_svm(u16 dsm_id, struct mm_struct *mm) {
                 if (local_svm->priv)
                     if (local_svm->priv->mm == mm)
                         return local_svm;
-
             }
 
         }
@@ -79,9 +77,8 @@ int page_local(unsigned long addr, struct dsm_vm_id *id, struct mm_struct *mm) {
     if (svm) {
         list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
         {
-            if (addr > mr->addr && addr <= (mr->addr + mr->sz)) {
+            if (addr > mr->addr && addr <= (mr->addr + mr->sz))
                 return 1;
-            }
         }
     }
 
@@ -126,12 +123,8 @@ struct mem_region *find_mr_source(unsigned long addr) {
         list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
         {
             if (svm->priv)
-                if (svm->priv->mm == mm) {
-                    // This isn't the optimised solution.  Refinding ptr to dsm.
+                if (svm->priv->mm == mm)
                     return find_mr(addr - svm->priv->offset, &svm->id);
-
-                }
-
         }
 
     }
@@ -150,11 +143,10 @@ void insert_rb_conn(struct conn_element *ele) {
     while (*new) {
         this = rb_entry(*new, struct conn_element, rb_node);
         parent = *new;
-        if (ele->remote_node_ip < this->remote_node_ip) {
+        if (ele->remote_node_ip < this->remote_node_ip)
             new = &((*new)->rb_left);
-        } else if (ele->remote_node_ip > this->remote_node_ip) {
+        else if (ele->remote_node_ip > this->remote_node_ip)
             new = &((*new)->rb_right);
-        }
     }
 
     rb_link_node(&ele->rb_node, parent, new);
@@ -172,13 +164,11 @@ struct conn_element* search_rb_conn(int node_ip) {
     while (node) {
         this = rb_entry(node, struct conn_element, rb_node);
 
-        if (node_ip < this->remote_node_ip) {
+        if (node_ip < this->remote_node_ip)
             node = node->rb_left;
-
-        } else if (node_ip > this->remote_node_ip) {
+        else if (node_ip > this->remote_node_ip)
             node = node->rb_right;
-
-        } else
+        else
             break;
 
     }
@@ -191,9 +181,7 @@ EXPORT_SYMBOL(search_rb_conn);
 // Function will free the element
 void erase_rb_conn(struct rb_root *root, struct conn_element *ele) {
     BUG_ON(!ele);
-
     rb_erase(&ele->rb_node, root);
-
     kfree(ele);
 }
 EXPORT_SYMBOL(erase_rb_conn);

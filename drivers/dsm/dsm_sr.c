@@ -38,36 +38,38 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
     struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e;
     int ret = 0;
-
     struct dsm_request *req;
+
     printk("[send_request_dsm_page_pull]requesting page pull  addr %p\n",
             (void *) addr);
+
     spin_lock(&tx->request_queue_lock);
     if (list_empty(&tx->request_queue)) {
         spin_unlock(&tx->request_queue_lock);
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
-
             create_page_pull_request(ele, tx_e, fault_svm->id, svm->id, addr);
-
             tx_e->callback.func = NULL;
-
             ret = tx_dsm_send(ele, tx_e);
             return ret;
         }
     } else {
         spin_unlock(&tx->request_queue_lock);
     }
+
     req = get_dsm_request();
     req->type = REQUEST_PAGE_PULL;
     req->addr = addr;
     req->fault_svm = fault_svm;
     req->func = NULL;
     req->svm = svm;
+
     spin_lock(&tx->request_queue_lock);
     list_add_tail(&req->queue, &tx->request_queue);
     spin_unlock(&tx->request_queue_lock);
+
     queue_work(ele->rcm->dsm_wq, &ele->recv_work);
+
     return ret;
 
 }
@@ -82,8 +84,8 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     int ret = 0;
     struct dsm_request *req;
 
-    printk("[request_dsm_page]svm %p, ele %p txbuff %p , addr %p, try %d\n",
-            svm, svm->ele, tx, (void *) addr, try);
+//    printk("[request_dsm_page]svm %p, ele %p txbuff %p , addr %p, try %d\n",
+//            svm, svm->ele, tx, (void *) addr, try);
 
     spin_lock(&tx->request_queue_lock);
     if (list_empty(&tx->request_queue)) {
@@ -92,11 +94,11 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
 
-            if (try) {
+            if (try)
                 create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
                         page, TRY_REQUEST_PAGE);
 
-            } else
+            else
                 create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
                         page, REQUEST_PAGE);
 
@@ -105,23 +107,28 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
             ret = tx_dsm_send(ele, tx_e);
             return ret;
         }
-    } else {
+    } else
         spin_unlock(&tx->request_queue_lock);
-    }
+
     req = get_dsm_request();
+
     if (try)
         req->type = TRY_REQUEST_PAGE;
     else
         req->type = REQUEST_PAGE;
+
     req->addr = addr;
     req->fault_svm = fault_svm;
     req->func = func;
     req->page = page;
     req->svm = svm;
+
     spin_lock(&tx->request_queue_lock);
     list_add_tail(&req->queue, &tx->request_queue);
     spin_unlock(&tx->request_queue_lock);
+
     queue_work(ele->rcm->dsm_wq, &ele->recv_work);
+
     return ret;
 
 }
@@ -134,9 +141,9 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
  */
 int process_response(struct conn_element *ele, struct tx_buf_ele * tx_buf_e) {
 
-    if (tx_buf_e->callback.func) {
+    if (tx_buf_e->callback.func)
         tx_buf_e->callback.func(tx_buf_e);
-    }
+
     release_replace_page(ele, tx_buf_e);
     release_tx_element(ele, tx_buf_e);
 
@@ -162,27 +169,23 @@ int rx_tx_message_transfer(struct conn_element * ele,
                 spin_unlock(&tx->request_queue_lock);
 
                 tx_e = try_get_next_empty_tx_ele(ele);
-
                 if (tx_e) {
-
                     memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
                             sizeof(struct dsm_message));
                     tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                     tx_e->wrk_req->dst_addr = NULL;
                     tx_e->callback.func = NULL;
-
                     goto send;
                 }
             } else {
                 spin_unlock(&tx->request_queue_lock);
             }
-            req = get_dsm_request();
 
+            req = get_dsm_request();
             req->type = TRY_REQUEST_PAGE_FAIL;
             req->func = NULL;
             memcpy(&req->dsm_msg, rx_buf_e->dsm_msg,
                     sizeof(struct dsm_message));
-
             spin_lock(&tx->request_queue_lock);
             list_add_tail(&req->queue, &tx->request_queue);
             spin_unlock(&tx->request_queue_lock);
@@ -199,15 +202,12 @@ int rx_tx_message_transfer(struct conn_element * ele,
     tx_e = try_get_next_empty_tx_reply_ele(ele);
     BUG_ON(!tx_e);
 
-    BUG_ON(tx_e->wrk_req->dst_addr);
-
     ppe = create_new_page_pool_element_from_page(ele, page);
     BUG_ON(!ppe);
 
-//Copy the received message in it
     memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg, sizeof(struct dsm_message));
+
     tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
-//Filling up the response details
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
     tx_e->wrk_req->dst_addr = ppe;
@@ -284,27 +284,21 @@ int exchange_info(struct conn_element *ele, int id) {
 
     switch (flag) {
         case RDMA_INFO_CL: {
-
             --ele->rid.send_info->flag;
-
             goto recv_send;
         }
         case RDMA_INFO_SV: {
-
             ret = dsm_recv_info(ele);
             if (ret) {
                 printk(
                         ">[exchange_info] - Could not post the receive work request\n");
                 goto err;
             }
-
             ele->rid.send_info->flag = ele->rid.send_info->flag - 2;
             ret = setup_recv_wr(ele);
-
             goto send;
         }
         case RDMA_INFO_READY_CL: {
-
             ele->rid.send_info->flag = ele->rid.send_info->flag - 2;
             ret = setup_recv_wr(ele);
             refill_recv_wr(ele,
@@ -343,7 +337,6 @@ int exchange_info(struct conn_element *ele, int id) {
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
             //Server acknowledged --> connection is complete.
             //start sending messages.
-
             goto out;
         }
         default: {
@@ -423,10 +416,9 @@ int dsm_request_page_pull(struct mm_struct *mm, struct subvirtual_machine *svm,
     ret = dsm_try_push_page(mm, svm->id, addr);
     up_read(&mm->mmap_sem);
 
-    if (!ret) {
+    if (!ret)
         send_request_dsm_page_pull(svm, fault_svm,
                 (uint64_t) (addr - fault_svm->priv->offset));
-    }
 
     return ret;
 

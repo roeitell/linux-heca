@@ -46,10 +46,14 @@ core_initcall(init_dsm_zero_pfn);
 
 void signal_completion_page_request(struct tx_buf_ele * tx_e) {
     struct page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
+    BUG_ON(!ppe);
+    BUG_ON(!ppe->mem_page);
+
     set_page_private(ppe->mem_page, 0);
     SetPageUptodate(ppe->mem_page);
     unlock_page(ppe->mem_page);
     ppe->mem_page = NULL;
+    return;
 
 }
 
@@ -59,7 +63,10 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     struct dsm_vm_id local_id;
     struct subvirtual_machine *local_svm;
     unsigned long addr;
+
     struct page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
+    BUG_ON(!ppe);
+    BUG_ON(!ppe->mem_page);
 
     local_id.dsm_id = u32_to_dsm_id(tx_e->dsm_msg->dest);
     local_id.svm_id = u32_to_vm_id(tx_e->dsm_msg->dest);
@@ -67,14 +74,11 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     BUG_ON(!local_svm);
     addr = tx_e->dsm_msg->req_addr + local_svm->priv->offset;
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
-
         delete_from_dsm_cache(ppe->mem_page, addr);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
         return;
-    }
-
-    else {
+    } else {
         set_page_private(ppe->mem_page, 0);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
@@ -95,12 +99,11 @@ int delete_from_dsm_cache(struct page *page, unsigned long addr) {
     VM_BUG_ON(!PageLocked(page));
 
     spin_lock_irq(&dsm_lock);
-    if (unlikely(!radix_tree_delete(&dsm_tree, addr))) {
+    if (unlikely(!radix_tree_delete(&dsm_tree, addr)))
         ret = 0;
-    } else {
-
+    else
         page_cache_release(page);
-    }
+
     spin_unlock_irq(&dsm_lock);
     return ret;
 }
@@ -116,20 +119,14 @@ static int __add_to_dsm_cache(struct page *page, unsigned long addr,
 
     spin_lock_irq(&dsm_lock);
     error = radix_tree_insert(&dsm_tree, addr, page);
-    if ((!error) && (tag < RADIX_TREE_MAX_TAGS)) {
+    if ((!error) && (tag < RADIX_TREE_MAX_TAGS))
         radix_tree_tag_set(&dsm_tree, addr, tag);
-    }
+
     spin_unlock_irq(&dsm_lock);
 
     if (unlikely(error)) {
-        /*
-         * Only the context which have set SWAP_HAS_CACHE flag
-         * would call add_to_swap_cache().
-         * So add_to_swap_cache() doesn't returns -EEXIST.
-         */
         VM_BUG_ON(error == -EEXIST);
         set_page_private(page, 0UL);
-
         page_cache_release(page);
     }
 
@@ -138,7 +135,8 @@ static int __add_to_dsm_cache(struct page *page, unsigned long addr,
 
 static void dsm_readpage(struct page* page, unsigned long addr,
         struct subvirtual_machine *svm, struct subvirtual_machine *fault_svm) {
-
+    VM_BUG_ON(!PageLocked(page));
+    VM_BUG_ON(PageUptodate(page));
     funcs->request_dsm_page(
             page,
             svm,
@@ -149,7 +147,8 @@ static void dsm_readpage(struct page* page, unsigned long addr,
 
 static void dsm_try_readpage(struct page* page, unsigned long addr,
         struct subvirtual_machine *svm, struct subvirtual_machine *fault_svm) {
-
+    VM_BUG_ON(!PageLocked(page));
+    VM_BUG_ON(PageUptodate(page));
     funcs->request_dsm_page(
             page,
             svm,
@@ -168,33 +167,21 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
     int err;
 
     do {
-        /*
-         * First check the  cache.  Since this is normally
-         * called after cache() failed, re-calling
-         * that would confuse statistics.
-         */
-        found_page = find_get_dsm_page(addr);
-        if (found_page) {
-            break;
-        }
 
-        /*
-         * Get a new page to read into from remote
-         */
+        found_page = find_get_dsm_page(addr);
+        if (found_page)
+            break;
+
         if (!new_page) {
             new_page = alloc_page_vma(gfp_mask, vma, addr);
             if (!new_page)
                 break; /* Out of memory */
         }
 
-        /*
-         * call radix_tree_preload() while we can wait.
-         */
         err = radix_tree_preload(gfp_mask & GFP_KERNEL);
         if (err)
             break;
 
-        /* May fail (-ENOMEM) if radix-tree node allocation failed. */
         __set_page_locked(new_page);
 
         err = __add_to_dsm_cache(new_page, addr, private, tag);
@@ -202,11 +189,12 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
             radix_tree_preload_end();
 
             lru_cache_add_anon(new_page);
-            if (tag == TRY_TAG
+            if (tag != TRY_TAG
             )
-                dsm_try_readpage(new_page, addr, svm, fault_svm);
-            else
                 dsm_readpage(new_page, addr, svm, fault_svm);
+
+            else
+                dsm_try_readpage(new_page, addr, svm, fault_svm);
             return new_page;
         }
         radix_tree_preload_end();
@@ -285,7 +273,6 @@ static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
 
     old_page = vm_normal_page(vma, address, orig_pte);
     if (!old_page) {
-
         if ((vma->vm_flags & (VM_WRITE | VM_SHARED)) == (VM_WRITE | VM_SHARED))
             goto reuse;
         goto gotten;
@@ -304,7 +291,6 @@ static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
             page_cache_release(old_page);
         }
         if (reuse_dsm_page(old_page, norm_address)) {
-
             page_move_anon_rmap(old_page, vma, address);
             unlock_page(old_page);
             goto reuse;
@@ -480,38 +466,29 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
     if (!find_get_dsm_page(norm_addr)) {
 
         vma = find_vma(mm, addr);
-        if (unlikely(!vma || vma->vm_start > addr)) {
-
+        if (unlikely(!vma || vma->vm_start > addr))
             goto out;
-        }
 
         pgd = pgd_offset(mm, addr);
-        if (unlikely(!pgd_present(*pgd))) {
-
+        if (unlikely(!pgd_present(*pgd)))
             goto out;
-        }
 
         pud = pud_offset(pgd, addr);
-        if (unlikely(!pud_present(*pud))) {
-
+        if (unlikely(!pud_present(*pud)))
             goto out;
-        }
 
         pmd = pmd_offset(pud, addr);
 
-        if (unlikely(pmd_none(*pmd))) {
-
+        if (unlikely(pmd_none(*pmd)))
             goto out;
-        }
+
         if (unlikely(pmd_bad(*pmd))) {
             pmd_clear_bad(pmd);
 
             goto out;
         }
-        if (unlikely(pmd_trans_huge(*pmd))) {
-
+        if (unlikely(pmd_trans_huge(*pmd)))
             goto out;
-        }
 
         pte = pte_offset_map(pmd, addr);
 
@@ -519,19 +496,14 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
 
         if (unlikely(!pte_present(pte_entry))) {
             if (!pte_none(pte_entry)) {
-
                 swp_e = pte_to_swp_entry(pte_entry);
                 if (non_swap_entry(swp_e)) {
                     if (is_dsm_entry(swp_e)) {
-
                         dsm_entry_to_val(swp_e, &id.dsm_id, &id.svm_id);
-
                         svm = funcs->_find_svm(&id);
                         BUG_ON(!svm);
-
                         return get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,
                                 norm_addr, svm, fault_svm, private, tag);
-
                     }
                 }
             }
@@ -563,20 +535,16 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
             (void*) address, (void*) norm_addr);
     retry:
 
-    if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte)) {
-
+    if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
         goto out;
-    }
 
     page = find_get_dsm_page(norm_addr);
     if (!page) {
         dsm_entry_to_val(entry, &id.dsm_id, &id.svm_id);
-
         svm = funcs->_find_svm(&id);
         BUG_ON(!svm);
 
         fault_svm = funcs->_find_local_svm(svm->id.dsm_id, mm);
-
         BUG_ON(!fault_svm);
 
         page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr, svm,
@@ -586,14 +554,12 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
             if (likely(pte_same(*page_table, orig_pte)))
                 ret = VM_FAULT_OOM;
-
             goto unlock;
         }
         ret = VM_FAULT_MAJOR;
         for (i = 1; i < 40; i++)
             get_dsm_page(mm, address + i * PAGE_SIZE
             , fault_svm, 0, PREFETCH_TAG);
-
     }
 
     locked = lock_page_or_retry(page, mm, flags);
@@ -601,15 +567,13 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         ret |= VM_FAULT_RETRY;
         goto out;
     }
-    if (unlikely(page_private(page) == ULONG_MAX)) {
+    if (unlikely(page_private(page) == ULONG_MAX))
         if (page_is_tagged_in_dsm_cache(norm_addr, TRY_TAG))
             goto rebelote;
 
-    }
     if (ksm_might_need_to_copy(page, vma, address)) {
         swapcache = page;
         page = ksm_does_need_to_copy(page, vma, address);
-
         if (unlikely(!page)) {
             ret = VM_FAULT_OOM;
             page = swapcache;
@@ -619,9 +583,9 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     }
 
     page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
-    if (unlikely(!pte_same(*page_table, orig_pte))) {
+    if (unlikely(!pte_same(*page_table, orig_pte)))
         goto out_nomap;
-    }
+
     dsm_stats_page_fault_update(NULL);
     if (unlikely(!PageUptodate(page))) {
         ret = VM_FAULT_SIGBUS;
@@ -719,13 +683,11 @@ struct page *find_get_dsm_page(unsigned long addr) {
 
 int add_page_pull_to_dsm_cache(struct page * page, unsigned long addr,
         gfp_t gfp_mask) {
-    int err = 0;
-    err = radix_tree_preload(gfp_mask & GFP_KERNEL);
+    int err = radix_tree_preload(gfp_mask & GFP_KERNEL);
+
     if (err)
         return err;
-
     err = __add_to_dsm_cache(page, addr, 0, PULL_TAG);
-
     radix_tree_preload_end();
     return err;
 }
@@ -735,9 +697,7 @@ int page_is_tagged_in_dsm_cache(unsigned long addr, int tag) {
     int res;
 
     rcu_read_lock();
-
     res = radix_tree_tag_get(&dsm_tree, addr, tag);
-
     rcu_read_unlock();
 
     return res;

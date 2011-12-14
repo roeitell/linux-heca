@@ -91,24 +91,20 @@ int dsm_sysf_setup(struct rcm *rcm) {
 
     dsm_kobjects->memory_kobject = kobject_create_and_add("memory",
             dsm_kobjects->dsm_kobject);
-    if (!dsm_kobjects->memory_kobject) {
+    if (!dsm_kobjects->memory_kobject)
         goto err1;
 
-    }
     reset_dsm_memory_stats(NULL);
-    if (sysfs_create_group(dsm_kobjects->memory_kobject, &mem_attr_group)) {
+    if (sysfs_create_group(dsm_kobjects->memory_kobject, &mem_attr_group))
         goto err2;
-    }
 
     dsm_kobjects->rdma_kobject = kobject_create_and_add("rdma_engine",
             dsm_kobjects->dsm_kobject);
-    if (!dsm_kobjects->rdma_kobject) {
+    if (!dsm_kobjects->rdma_kobject)
         goto err2;
 
-    }
-    if (sysfs_create_group(dsm_kobjects->rdma_kobject, &rdma_attr_group)) {
+    if (sysfs_create_group(dsm_kobjects->rdma_kobject, &rdma_attr_group))
         goto err3;
-    }
 
     return 0;
 

@@ -91,10 +91,10 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
     pte_entry = *pte;
 
     if (unlikely(!pte_present(pte_entry))) {
-        if (pte_none(pte_entry)) {
+        if (pte_none(pte_entry))
             goto chain_fault;
 
-        } else {
+        else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
@@ -106,8 +106,8 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
                                     PREFETCH_TAG)) {
                                 extract = 1;
                                 printk(
-                                        "[_dsm_extract_page]  harmfull prefetch  \n");
-                                // prefetch harmfull
+                                        "[_dsm_extract_page]  Harmful prefetch  \n");
+
                             } else {
                                 extract = page_is_tagged_in_dsm_cache(addr,
                                         PULL_TAG);
@@ -146,9 +146,9 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
 
                     migration_entry_wait(mm, pmd, addr);
                     goto retry;
-                } else {
+                } else
                     BUG();
-                }
+
             } else {
                 chain_fault: get_user_pages(current, mm, addr, 1, 1, 0, &page,
                         NULL);
@@ -218,9 +218,8 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
 //DSM1 do we need a put_page???/
     unlock_page(page);
     isolate_lru_page(page);
-    if (PageActive(page)) {
+    if (PageActive(page))
         ClearPageActive(page);
-    }
 
     pte_unmap_unlock(pte, ptl);
 // if local
@@ -318,8 +317,6 @@ static struct page *_try_dsm_extract_page(struct dsm_vm_id id,
 
                                     set_page_private(page, 0);
                                     unlock_page(page);
-                                    printk(
-                                            "[_try_dsm_extract_page]  page found \n");
                                     return page;
                                 }
                             }
@@ -330,8 +327,7 @@ static struct page *_try_dsm_extract_page(struct dsm_vm_id id,
             }
         }
     }
-    out: printk("[_try_dsm_extract_page] no page found \n");
-    return NULL;
+    out: return NULL;
 
 }
 
@@ -341,10 +337,9 @@ static struct page *dsm_extract_page(struct dsm_vm_id id,
     struct mm_struct *mm;
     struct page * page;
     mm = svm->priv->mm;
-// if local
+
     use_mm(mm);
     down_read(&mm->mmap_sem);
-
     page = _dsm_extract_page(id, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
@@ -362,7 +357,6 @@ static struct page *try_dsm_extract_page(struct dsm_vm_id id,
 
     use_mm(mm);
     down_read(&mm->mmap_sem);
-
     page = _try_dsm_extract_page(id, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
@@ -389,7 +383,7 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
     local_id.svm_id = u32_to_vm_id(msg->src);
     local_svm = funcs->_find_svm(&local_id);
     BUG_ON(!local_svm);
-
+    BUG_ON(!local_svm->priv->mm);
     norm_addr = msg->req_addr + local_svm->priv->offset;
     if (msg->type == TRY_REQUEST_PAGE
     )

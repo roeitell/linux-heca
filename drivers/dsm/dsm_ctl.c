@@ -80,6 +80,8 @@ static int release(struct inode *inode, struct file *f) {
 
     dsm_id = data->svm->id.dsm_id;
     spin_lock(&rcm->rcm_lock);
+    if (data->svm->ele)
+        release_replace_page_work(&data->svm->ele->page_pool.page_release_work);
     list_for_each_entry_rcu(_dsm, &rcm->dsm_ls, ls)
     {
         if (_dsm->dsm_id == dsm_id) {

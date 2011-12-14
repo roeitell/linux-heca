@@ -67,7 +67,6 @@ static void try_regenerate_empty_page_pool_element(struct conn_element *ele,
 
     spin_lock(&pp->page_pool_list_lock);
     if (pp->nb_full_element < PAGE_POOL_SIZE) {
-
         ppe->mem_page = alloc_page( GFP_ATOMIC | __GFP_ZERO);
         BUG_ON(!ppe->mem_page);
 
@@ -83,7 +82,6 @@ static void try_regenerate_empty_page_pool_element(struct conn_element *ele,
 
     } else {
         spin_lock(&pp->page_pool_empty_list_lock);
-
         list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
         spin_unlock(&pp->page_pool_empty_list_lock);
 
@@ -467,15 +465,11 @@ static int init_tx_lists(struct conn_element *ele) {
     spin_lock_init(&tx->tx_free_elements_list_reply_lock);
     spin_lock_init(&tx->request_queue_lock);
 
-    for (i = 0; i < max_tx_send; ++i) {
+    for (i = 0; i < max_tx_send; ++i)
         release_tx_element(ele, &tx->tx_buf[i]);
 
-    }
-
-    for (; i < max_tx_reply; ++i) {
+    for (; i < max_tx_reply; ++i)
         release_tx_element_reply(ele, &tx->tx_buf[i]);
-
-    }
 
     return 0;
 }
@@ -833,8 +827,13 @@ void release_replace_page_work(struct work_struct *work) {
 void release_replace_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
 //DSM1 FIXME we need to make sure nobody is referencing the page before freeing it.
     struct page_pool * pp = &ele->page_pool;
-    struct page_pool_ele * ppe =
-            (struct page_pool_ele *) tx_e->wrk_req->dst_addr;
+    struct page_pool_ele * ppe;
+
+    if (likely(tx_e->wrk_req->dst_addr))
+        ppe = (struct page_pool_ele *) tx_e->wrk_req->dst_addr;
+    else
+        return;
+
     tx_e->wrk_req->dst_addr = NULL;
     if (ppe->mem_page) {
         spin_lock(&pp->page_recycle_lock);
@@ -903,37 +902,13 @@ unsigned int inet_addr(char *addr) {
     return *(unsigned int*) arr;
 }
 
-void create_message(struct conn_element *ele, struct tx_buf_ele * tx_e,
-        int message_num, int status) {
-    struct dsm_message *msg = tx_e->dsm_msg;
-    struct page_pool_ele * ppe = get_page_ele(ele);
-
-    if (unlikely(!ppe)) {
-        printk(">[create_message] - Cannot grab a page\n");
-        return;
-    }
-
-    //in order to find the element on the reception of the page, and free it
-    tx_e->wrk_req->dst_addr = ppe;
-
-    msg->dest = (u32) ele->rid.recv_info->node_ip;
-    msg->dst_addr = (u64) ppe->page_buf;
-    msg->req_addr = 0;
-    msg->rkey = ele->mr->rkey;
-    msg->src = (u32) ele->rcm->node_ip;
-    msg->type = status;
-
-    return;
-}
-
 void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
         struct dsm_vm_id local_id, struct dsm_vm_id remote_id, uint64_t addr,
         struct page *page, u16 type) {
     struct dsm_message *msg = tx_e->dsm_msg;
+
     struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
             page);
-
-    //in order to find the element on the reception of the page, and free it
     tx_e->wrk_req->dst_addr = ppe;
 
     msg->dest = dsm_vm_id_to_u32(&local_id);
@@ -951,7 +926,7 @@ void create_page_pull_request(struct conn_element *ele,
         struct dsm_vm_id remote_id, uint64_t addr) {
     struct dsm_message *msg = tx_e->dsm_msg;
 
-    //in order to find the element on the reception of the page, and free it
+
     tx_e->wrk_req->dst_addr = NULL;
 
     msg->dest = dsm_vm_id_to_u32(&local_id);

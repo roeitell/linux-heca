@@ -129,18 +129,16 @@ static int dsm_send_message_handler(struct conn_element *ele,
 
     switch (tx_buf_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
-
             release_replace_page(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
+            break;
+        }
+        case REQUEST_PAGE:
+            break;
 
+        case TRY_REQUEST_PAGE:
             break;
-        }
-        case REQUEST_PAGE: {
-            break;
-        }
-        case TRY_REQUEST_PAGE: {
-            break;
-        }
+
         case REQUEST_PAGE_PULL: {
             release_tx_element(ele, tx_buf_e);
             break;
@@ -178,10 +176,8 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context) {
     if ((ret = ib_poll_cq(cq, 1, &wc)) > 0) {
         if (likely(wc.status == IB_WC_SUCCESS)) {
             switch (wc.opcode) {
-                case IB_WC_RECV: {
-
+                case IB_WC_RECV:
                     break;
-                }
                 default: {
                     printk(
                             ">[listener_cq_handle] - expected opcode %d got %d\n",

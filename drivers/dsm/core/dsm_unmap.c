@@ -115,7 +115,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-
             set_pte_at(
                     mm,
                     addr,
@@ -136,22 +135,16 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
                     goto out_pte_unlock;
                 }
             } else {
-
                 pte_unmap_unlock(pte, ptl);
                 r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
                 if (r & VM_FAULT_ERROR) {
                     printk("[*] failed at faulting \n");
                     BUG();
                 }
-
                 r = 0;
-
                 goto retry;
-
             }
-
         }
-
     } else {
         page = vm_normal_page(vma, request_addr, *pte);
         if (unlikely(!page)) {
@@ -166,7 +159,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
                 printk("[*] failed at splitting page \n");
                 goto out;
             }
-
         }
     }
     if (PageKsm(page)) {
@@ -180,9 +172,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
             // DSM1 : better ksm error handling required.
             return -EFAULT;
-
         }
-
     }
 
     if (!trylock_page(page)) {
@@ -192,7 +182,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
     }
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
-
     ptep_clear_flush_notify(vma, addr, pte);
     set_pte_at(
             mm,
@@ -299,18 +288,14 @@ int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
         if (!pte_none(pte_entry)) {
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e)) {
-
                 if (is_migration_entry(swp_e)) {
-
                     migration_entry_wait(mm, pmd, addr);
                     goto retry;
                 }
             }
         }
-
         printk(
                 "[dsm_extract_page_from_remote] the pte is not present in the first place.. we exit \n");
-
         goto out;
     }
 
@@ -324,7 +309,6 @@ int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
         // DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
         if (pte_pfn(*pte) == (unsigned long) (void *) ZERO_PAGE(0))
             goto bad_page;
-
         page = pte_page(*pte);
     }
 
@@ -336,18 +320,14 @@ int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
                         "[dsm_extract_page_from_remote] failed at splitting page \n");
                 goto bad_page;
             }
-
         }
     }
     if (unlikely(PageKsm(page))) {
         printk("[dsm_extract_page_from_remote] KSM page\n");
-
         r = ksm_madvise(vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE
                 , &vma->vm_flags);
-
         if (r) {
             printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
-
             // DSM1 : better ksm error handling required.
             goto bad_page;
         }

@@ -5,26 +5,7 @@
  *      Author: john
  */
 
-#include <asm-generic/memory_model.h>
-#include <linux/pagemap.h>
-#include <linux/types.h>
-#include "../../../mm/internal.h"
-#include <linux/page-flags.h>
-#include <linux/swap.h>
-#include <linux/swapops.h>
-#include <linux/hugetlb.h>
-#include <linux/mm.h>
-#include <linux/rmap.h>
-
-#include <dsm/dsm_core.h>
-#include <dsm/dsm_ctl.h>
-#include <dsm/dsm_rb.h>
-
-#include <linux/mmu_notifier.h>
-
-#include <linux/ksm.h>
-#include <linux/mmu_context.h>
-#include <asm-generic/mman-common.h>
+#include <dsm/dsm_module.h>
 
 static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
         unsigned long addr) {

@@ -63,8 +63,6 @@
 
 #include "internal.h"
 
-#include <dsm/dsm_core.h>
-#include <linux/dsm.h>
 
 static struct kmem_cache *anon_vma_cachep;
 static struct kmem_cache *anon_vma_chain_cachep;

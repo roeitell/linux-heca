@@ -5,9 +5,7 @@
  *      Author: john
  */
 
-#include <dsm/dsm_sr.h>
-#include <dsm/dsm_core.h>
-#include <dsm/dsm_stats.h>
+#include <dsm/dsm_module.h>
 
 static struct kmem_cache *kmem_request_cache;
 
@@ -15,7 +13,7 @@ void init_kmem_request_cache(void) {
     kmem_request_cache = kmem_cache_create("dsm_request",
             sizeof(struct dsm_request), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
             NULL);
-}
+        }
 
 void destroy_kmem_request_cache(void) {
     kmem_cache_destroy(kmem_request_cache);

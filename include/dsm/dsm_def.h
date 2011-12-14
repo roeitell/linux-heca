@@ -8,8 +8,6 @@
 #ifndef DSM_DEF_H_
 #define DSM_DEF_H_
 
-#include <dsm/dsm_stats.h>
-
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_verbs.h>
 #include <linux/spinlock.h>
@@ -25,6 +23,8 @@
 #include <linux/module.h>
 #include <linux/interrupt.h>
 #include <asm/atomic.h>
+
+#include <dsm/dsm_stats.h>
 
 //#define ULONG_MAX       0xFFFFFFFFFFFFFFFF
 
@@ -357,6 +357,43 @@ struct dsm_request {
     void(*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
     struct list_head queue;
+};
+
+/*
+ * CTL info
+ */
+#define DSM_IO                          0xFF
+#define DSM_SVM                         _IOW(DSM_IO, 0xA0, struct svm_data)
+#define DSM_CONNECT                     _IOW(DSM_IO, 0xA1, struct svm_data)
+#define DSM_UNMAP_RANGE                 _IOW(DSM_IO, 0xA2, struct unmap_data)
+#define DSM_MR                          _IOW(DSM_IO, 0xA3, struct mr_data)
+#define PAGE_SWAP                       _IOW(DSM_IO, 0xA4, struct dsm_message)
+#define UNMAP_PAGE                      _IOW(DSM_IO, 0xA5, struct unmap_data)
+#define DSM_GET_STAT                    _IOW(DSM_IO, 0xA6, struct svm_data)
+#define DSM_GEN_STAT                    _IOW(DSM_IO, 0xA7, struct svm_data)
+#define DSM_TRY_PUSH_BACK_PAGE          _IOW(DSM_IO, 0xA8, struct unmap_data)
+
+struct svm_data {
+    int dsm_id;
+    int svm_id;
+    unsigned long offset;
+    char *ip;
+    int port;
+
+};
+
+struct mr_data {
+    int dsm_id;
+    int svm_id;
+    unsigned long start_addr;
+    unsigned long size;
+
+};
+
+struct unmap_data {
+    unsigned long addr;
+    size_t sz;
+    struct dsm_vm_id id;
 };
 
 #endif /* DSM_DEF_H_ */

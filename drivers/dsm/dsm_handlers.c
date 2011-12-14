@@ -5,11 +5,7 @@
  *      Author: john
  */
 
-#include <dsm/dsm_def.h>
-#include <dsm/dsm_op.h>
-#include <dsm/dsm_handlers.h>
-#include <dsm/dsm_sr.h>
-#include <dsm/dsm_core.h>
+#include <dsm/dsm_module.h>
 
 static void print_work_completion(struct ib_wc *wc, char * error_context) {
     printk(

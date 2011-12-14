@@ -5,23 +5,7 @@
  *      Author: john
  */
 
-#include <asm-generic/memory_model.h>
-#include <linux/pagemap.h>
-#include <linux/types.h>
-#include "../../../mm/internal.h"
-#include <linux/page-flags.h>
-#include <linux/swap.h>
-#include <linux/swapops.h>
-#include <linux/hugetlb.h>
-#include <linux/mm.h>
-#include <linux/rmap.h>
-
-#include <linux/mmu_notifier.h>
-
 #include <dsm/dsm_core.h>
-
-#include <linux/ksm.h>
-#include <asm-generic/mman-common.h>
 
 struct dsm_functions *funcs;
 

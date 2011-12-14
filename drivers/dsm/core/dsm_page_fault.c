@@ -5,32 +5,8 @@
  *      Author: john
  */
 
-#include <asm-generic/memory_model.h>
-#include <linux/pagemap.h>
-#include <linux/types.h>
-#include "../../../mm/internal.h"
-#include <linux/page-flags.h>
-#include <linux/swap.h>
-#include <linux/init.h>
-#include <linux/swapops.h>
-#include <linux/hugetlb.h>
-#include <linux/mm.h>
-#include <linux/radix-tree.h>
-#include <linux/spinlock.h>
-#include <linux/rcupdate.h>
-#include <linux/mmu_notifier.h>
-#include <linux/memcontrol.h>
-#include <linux/rmap.h>
-#include <linux/gfp.h>
-#include <linux/ksm.h>
-#include <linux/writeback.h>
-#include <linux/mmu_context.h>
-
-#include <dsm/dsm_core.h>
-#include <dsm/dsm_ctl.h>
-#include <dsm/dsm_rb.h>
-#include <dsm/dsm_sr.h>
-#include <dsm/dsm_stats.h>
+#include <dsm/dsm_mem.h>
+#include <dsm/dsm_module.h>
 
 RADIX_TREE(dsm_tree, GFP_ATOMIC);
 DEFINE_SPINLOCK(dsm_lock);

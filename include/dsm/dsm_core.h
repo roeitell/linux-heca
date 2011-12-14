@@ -8,12 +8,42 @@
 #ifndef DSM_PAGE_FAULT_H_
 #define DSM_PAGE_FAULT_H_
 
-#include <dsm/dsm_def.h>
+#include <linux/pagemap.h>
+#include <linux/types.h>
+#include <linux/page-flags.h>
 #include <linux/swap.h>
+#include <linux/hugetlb.h>
+#include <linux/mm.h>
+#include <linux/rmap.h>
+#include <linux/ksm.h>
+#include <linux/mmu_notifier.h>
+#include <linux/mmu_context.h>
+#include <linux/init.h>
+#include <linux/radix-tree.h>
+#include <linux/spinlock.h>
+#include <linux/rcupdate.h>
+#include <linux/memcontrol.h>
+#include <linux/gfp.h>
+#include <linux/writeback.h>
+#include <linux/swap.h>
+
+#include <asm-generic/memory_model.h>
+#include <asm-generic/mman-common.h>
+
+#include "../../../mm/internal.h"
+
+#include <dsm/dsm_def.h>
 
 #define TRY_TAG         0
 #define PREFETCH_TAG    1
 #define PULL_TAG        2               /* pages that we try to get pulled */
+
+/*
+ * memory c hook
+ *
+ */
+int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *, unsigned long,
+        pte_t *, pmd_t *, unsigned int, pte_t, swp_entry_t);
 
 struct page *page_is_in_dsm_cache(unsigned long);
 int page_is_tagged_in_dsm_cache(unsigned long, int);
@@ -44,8 +74,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 struct page * dsm_extract_page_from_remote(struct dsm_message *);
 
 // dsm_page_fault
-int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *, unsigned long,
-        pte_t *, pmd_t *, unsigned int, pte_t, swp_entry_t);
 int dsm_try_push_page(struct mm_struct *, struct dsm_vm_id, unsigned long);
 
 extern struct dsm_functions *funcs;

@@ -5,9 +5,7 @@
  *      Author: john
  */
 
-#include <dsm/dsm_rb.h>
-#include <dsm/dsm_def.h>
-#include <dsm/dsm_core.h>
+#include <dsm/dsm_module.h>
 
 static struct rcm *_rcm;
 

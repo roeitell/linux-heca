@@ -4,27 +4,10 @@
  *  Created on: 22 Jun 2011
  *      Author: john
  */
-#include <linux/miscdevice.h>
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/fs.h>
-#include <linux/rculist.h>
-#include <asm/uaccess.h>
-#include <asm-generic/memory_model.h>
-#include <linux/socket.h>
-#include <linux/kernel.h>
-#include <rdma/rdma_cm_ib.h>
-#include <asm/byteorder.h>
 
-#include <dsm/dsm_ctl.h>
-#include <dsm/dsm_op.h>
-#include <dsm/dsm_rb.h>
-#include <dsm/dsm_sr.h>
-#include <dsm/dsm_core.h>
-#include <dsm/dsm_stats.h>
-#include <dsm/dsm_sysfs.h>
+#include <dsm/dsm_module.h>
 
-#include <linux/stat.h>
+
 
 static char *ip = 0;
 static int port = 0;

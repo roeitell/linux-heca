@@ -1,9 +1,8 @@
-#include <linux/kobject.h>
-#include  <linux/sysfs.h>
+/*
+ *
+ */
 
-#include <dsm/dsm_def.h>
-#include <dsm/dsm_sysfs.h>
-#include <dsm/dsm_stats.h>
+#include <dsm/dsm_module.h>
 
 static ssize_t memory_show(struct kobject *kobj, struct kobj_attribute *attr,
         char *buf) {

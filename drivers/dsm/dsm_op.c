@@ -25,7 +25,6 @@ static void liberate_page(struct page * page) {
         count = page_mapcount(page);
         unlock_page(page);
     }
-
     set_page_private(page, 0);
     __free_page(page);
 

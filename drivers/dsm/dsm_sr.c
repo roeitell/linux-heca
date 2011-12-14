@@ -154,7 +154,7 @@ int rx_tx_message_transfer(struct conn_element * ele,
 
     page = dsm_extract_page_from_remote(rx_buf_e->dsm_msg);
     if (unlikely(!page)) {
-        printk("[rx_tx_message_transfer]no page found\n");
+
         if (rx_buf_e->dsm_msg->type == TRY_REQUEST_PAGE) {
             tx = &ele->tx_buffer;
             spin_lock(&tx->request_queue_lock);
@@ -162,7 +162,7 @@ int rx_tx_message_transfer(struct conn_element * ele,
                 spin_unlock(&tx->request_queue_lock);
 
                 tx_e = try_get_next_empty_tx_ele(ele);
-                printk("[rx_tx_message_transfer]trying to send fail \n");
+
                 if (tx_e) {
 
                     memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
@@ -197,21 +197,12 @@ int rx_tx_message_transfer(struct conn_element * ele,
     }
 
     tx_e = try_get_next_empty_tx_reply_ele(ele);
-    if (!tx_e) {
-        printk(
-                ">[rx_tx_message_transfer][FATAL_ERROR] - Shouldn't be empty at that stage\n");
-        return -1;
-    }
+    BUG_ON(!tx_e);
 
-    if (unlikely(tx_e->wrk_req->dst_addr))
-        printk(
-                "[rx_tx_message_transfer][FATAL_ERROR] this slot has a link to a former page\n");
+    BUG_ON(tx_e->wrk_req->dst_addr);
+
     ppe = create_new_page_pool_element_from_page(ele, page);
-    if (unlikely(!ppe)) {
-        printk(
-                "[rx_tx_message_transfer][FATAL_ERROR] - couldn't create papge pool element\n");
-        return -1;
-    }
+    BUG_ON(!ppe);
 
 //Copy the received message in it
     memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg, sizeof(struct dsm_message));
@@ -244,7 +235,7 @@ int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
             break;
         }
         case TRY_REQUEST_PAGE: {
-            printk(">[tx_flush_queue] - trying to send a try request page\n");
+
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);
             break;

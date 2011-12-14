@@ -88,32 +88,22 @@ static int dsm_recv_message_handler(struct conn_element *ele,
         }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            printk(
-                    "[dsm_recv_poll] try request page failed received   addr: %p ,status %d , id %d \n",
-                    rx_e, rx_e->dsm_msg->type, rx_e->id);
             tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
             process_response(ele, tx_e);
 
             break;
         }
         case REQUEST_PAGE: {
-
             rx_tx_message_transfer(ele, rx_e); // server got a request
             break;
         }
 
         case TRY_REQUEST_PAGE: {
-            printk(
-                    "[dsm_recv_poll] try request page received   addr: %p ,status %d , id %d \n",
-                    rx_e, rx_e->dsm_msg->type, rx_e->id);
             rx_tx_message_transfer(ele, rx_e);
 
             break;
         }
         case REQUEST_PAGE_PULL: {
-            printk(
-                    "[dsm_recv_poll] request pull received   addr: %p ,status %d , id %d \n",
-                    rx_e, rx_e->dsm_msg->type, rx_e->id);
             dsm_trigger_page_pull(rx_e->dsm_msg);
 
             break;
@@ -146,7 +136,6 @@ static int dsm_send_message_handler(struct conn_element *ele,
             break;
         }
         case REQUEST_PAGE: {
-
             break;
         }
         case TRY_REQUEST_PAGE: {

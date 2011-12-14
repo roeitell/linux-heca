@@ -717,6 +717,33 @@ struct page *find_get_dsm_page(unsigned long addr) {
     return page;
 }
 
+int add_page_pull_to_dsm_cache(struct page * page, unsigned long addr,
+        gfp_t gfp_mask) {
+    int err = 0;
+    err = radix_tree_preload(gfp_mask & GFP_KERNEL);
+    if (err)
+        return err;
+
+    err = __add_to_dsm_cache(page, addr, 0, PULL_TAG);
+
+    radix_tree_preload_end();
+    return err;
+}
+
+int page_is_tagged_in_dsm_cache(unsigned long addr, int tag) {
+
+    int res;
+
+    rcu_read_lock();
+
+    res = radix_tree_tag_get(&dsm_tree, addr, tag);
+
+    rcu_read_unlock();
+
+    return res;
+
+}
+
 struct page * page_is_in_dsm_cache(unsigned long addr) {
 
     void **pagep;
@@ -739,33 +766,7 @@ struct page * page_is_in_dsm_cache(unsigned long addr) {
     return page;
 
 }
-
-int page_is_tagged_in_dsm_cache(unsigned long addr, int tag) {
-
-    int res;
-
-    rcu_read_lock();
-
-    res = radix_tree_tag_get(&dsm_tree, addr, tag);
-
-    rcu_read_unlock();
-
-    return res;
-
-}
-
-int add_page_pull_to_dsm_cache(struct page * page, unsigned long addr,
-        gfp_t gfp_mask) {
-    int err = 0;
-    err = radix_tree_preload(gfp_mask & GFP_KERNEL);
-    if (err)
-        return err;
-
-    err = __add_to_dsm_cache(page, addr, 0, PULL_TAG);
-
-    radix_tree_preload_end();
-    return err;
-}
+EXPORT_SYMBOL(page_is_in_dsm_cache);
 
 struct page *dsm_trigger_page_pull(struct dsm_message *msg) {
 
@@ -778,12 +779,7 @@ struct page *dsm_trigger_page_pull(struct dsm_message *msg) {
     local_id.dsm_id = u32_to_dsm_id(msg->src);
     local_id.svm_id = u32_to_vm_id(msg->src);
     local_svm = funcs->_find_svm(&local_id);
-    if (unlikely(!local_svm)) {
-        printk(
-                "[dsm_extract_page_from_remote] coudln't find local_svm id:  [dsm %d / svm %d]  \n",
-                local_id.dsm_id, local_id.svm_id);
-        return NULL;
-    }
+    BUG_ON(!local_svm);
 
     norm_addr = msg->req_addr + local_svm->priv->offset;
 

@@ -26,6 +26,7 @@
 #include <linux/gfp.h>
 #include <linux/writeback.h>
 #include <linux/swap.h>
+#include <linux/swapops.h>
 
 #include <asm-generic/memory_model.h>
 #include <asm-generic/mman-common.h>
@@ -34,16 +35,11 @@
 
 #include <dsm/dsm_def.h>
 
-#define TRY_TAG         0
-#define PREFETCH_TAG    1
+#define PREFETCH_TAG    0
+#define TRY_TAG         1
 #define PULL_TAG        2               /* pages that we try to get pulled */
+#define DEFAULT_TAG    RADIX_TREE_MAX_TAGS
 
-/*
- * memory c hook
- *
- */
-int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *, unsigned long,
-        pte_t *, pmd_t *, unsigned int, pte_t, swp_entry_t);
 
 struct page *page_is_in_dsm_cache(unsigned long);
 int page_is_tagged_in_dsm_cache(unsigned long, int);

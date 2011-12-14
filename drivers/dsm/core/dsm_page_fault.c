@@ -5,7 +5,6 @@
  *      Author: john
  */
 
-#include <dsm/dsm_mem.h>
 #include <dsm/dsm_module.h>
 
 RADIX_TREE(dsm_tree, GFP_ATOMIC);
@@ -110,28 +109,19 @@ static int __add_to_dsm_cache(struct page *page, unsigned long addr,
 }
 
 static void dsm_readpage(struct page* page, unsigned long addr,
-        struct subvirtual_machine *svm, struct subvirtual_machine *fault_svm) {
+        struct subvirtual_machine *svm, struct subvirtual_machine *fault_svm,
+        int tag) {
+    void (*func)(struct tx_buf_ele *) = NULL;
+
     VM_BUG_ON(!PageLocked(page));
     VM_BUG_ON(PageUptodate(page));
-    funcs->request_dsm_page(
-            page,
-            svm,
-            fault_svm,
-            (uint64_t) (addr - fault_svm->priv->offset), signal_completion_page_request, 0)
-            ;
-}
-
-static void dsm_try_readpage(struct page* page, unsigned long addr,
-        struct subvirtual_machine *svm, struct subvirtual_machine *fault_svm) {
-    VM_BUG_ON(!PageLocked(page));
-    VM_BUG_ON(PageUptodate(page));
-    funcs->request_dsm_page(
-            page,
-            svm,
-            fault_svm,
-            (uint64_t) (addr - fault_svm->priv->offset), signal_completion_try_page_request, 1)
-            ;
-
+    if (tag != TRY_TAG
+    )
+        func = signal_completion_page_request;
+    else
+        func = signal_completion_try_page_request;
+    funcs->request_dsm_page(page, svm, fault_svm,
+            (uint64_t) (addr - fault_svm->priv->offset), func, tag);
 }
 
 static struct page * get_remote_dsm_page(gfp_t gfp_mask,
@@ -165,12 +155,9 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
             radix_tree_preload_end();
 
             lru_cache_add_anon(new_page);
-            if (tag != TRY_TAG
-            )
-                dsm_readpage(new_page, addr, svm, fault_svm);
 
-            else
-                dsm_try_readpage(new_page, addr, svm, fault_svm);
+            dsm_readpage(new_page, addr, svm, fault_svm, tag);
+
             return new_page;
         }
         radix_tree_preload_end();
@@ -524,7 +511,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         BUG_ON(!fault_svm);
 
         page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr, svm,
-                fault_svm, 0, RADIX_TREE_MAX_TAGS);
+                fault_svm, 0, DEFAULT_TAG);
 
         if (!page) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);

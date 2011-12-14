@@ -74,7 +74,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
 
 int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         struct subvirtual_machine *fault_svm, uint64_t addr,
-        void(*func)(struct tx_buf_ele *), int try) {
+        void(*func)(struct tx_buf_ele *), int tag) {
 
     struct conn_element * ele = svm->ele;
     struct tx_buffer *tx = &ele->tx_buffer;
@@ -92,13 +92,14 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
 
-            if (try)
+            if (tag != TRY_TAG
+                )
                 create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
-                        page, TRY_REQUEST_PAGE);
+                        page, REQUEST_PAGE);
 
             else
                 create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
-                        page, REQUEST_PAGE);
+                        page, TRY_REQUEST_PAGE);
 
             tx_e->callback.func = func;
 
@@ -110,10 +111,11 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 
     req = get_dsm_request();
 
-    if (try)
-        req->type = TRY_REQUEST_PAGE;
-    else
+    if (tag != TRY_TAG
+        )
         req->type = REQUEST_PAGE;
+    else
+        req->type = TRY_REQUEST_PAGE;
 
     req->addr = addr;
     req->fault_svm = fault_svm;

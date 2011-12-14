@@ -68,7 +68,7 @@
 #include "internal.h"
 
 
-#include <dsm/dsm_core.h>
+#include <dsm/dsm_mem.h>
 
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES

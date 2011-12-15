@@ -93,7 +93,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         if (tx_e) {
 
             if (tag != TRY_TAG
-                )
+            )
                 create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
                         page, REQUEST_PAGE);
 
@@ -112,7 +112,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     req = get_dsm_request();
 
     if (tag != TRY_TAG
-        )
+    )
         req->type = REQUEST_PAGE;
     else
         req->type = TRY_REQUEST_PAGE;
@@ -144,7 +144,7 @@ int process_response(struct conn_element *ele, struct tx_buf_ele * tx_buf_e) {
     if (tx_buf_e->callback.func)
         tx_buf_e->callback.func(tx_buf_e);
 
-    release_replace_page(ele, tx_buf_e);
+    release_page(ele, tx_buf_e);
     release_tx_element(ele, tx_buf_e);
 
     return 0;
@@ -161,7 +161,6 @@ int rx_tx_message_transfer(struct conn_element * ele,
 
     page = dsm_extract_page_from_remote(rx_buf_e->dsm_msg);
     if (unlikely(!page)) {
-
         if (rx_buf_e->dsm_msg->type == TRY_REQUEST_PAGE) {
             tx = &ele->tx_buffer;
             spin_lock(&tx->request_queue_lock);
@@ -175,7 +174,9 @@ int rx_tx_message_transfer(struct conn_element * ele,
                     tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                     tx_e->wrk_req->dst_addr = NULL;
                     tx_e->callback.func = NULL;
-                    goto send;
+                    ret = tx_dsm_send(ele, tx_e);
+
+                    return ret;
                 }
             } else {
                 spin_unlock(&tx->request_queue_lock);
@@ -213,7 +214,7 @@ int rx_tx_message_transfer(struct conn_element * ele,
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 
-    send: ret = tx_dsm_send(ele, tx_e);
+    ret = tx_dsm_send(ele, tx_e);
 
     return ret;
 }

@@ -54,8 +54,8 @@ int setup_connection(struct conn_element *, int);
 int connect_client(struct rdma_cm_id *);
 struct page_pool_ele * create_new_page_pool_element_from_page(
         struct conn_element *, struct page *);
-void release_replace_page(struct conn_element *, struct tx_buf_ele *);
-void release_replace_page_work(struct work_struct *);
+void release_page(struct conn_element *, struct tx_buf_ele *);
+void release_page_work(struct work_struct *);
 void release_tx_element(struct conn_element *, struct tx_buf_ele *);
 void release_tx_element_reply(struct conn_element *, struct tx_buf_ele *);
 int setup_recv_wr(struct conn_element *);

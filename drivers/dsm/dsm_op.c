@@ -5,8 +5,6 @@
  *      Author: john
  */
 
-
-
 #include <dsm/dsm_module.h>
 
 static void destroy_tx_buffer(struct conn_element *ele) {
@@ -110,63 +108,25 @@ static void liberate_page(struct page * page) {
 
 }
 
-static void try_recycle_page_pool_element(struct conn_element *ele,
+static void try_recycle_empty_page_pool_element(struct conn_element *ele,
         struct page_pool_ele * ppe) {
 
     struct page_pool * pp = &ele->page_pool;
-    struct page * page = NULL;
-    spin_lock(&pp->page_pool_list_lock);
-    if (pp->nb_full_element < PAGE_POOL_SIZE) {
-        memset(ppe->page_buf, 0, RDMA_PAGE_SIZE);
-        list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
-        pp->nb_full_element++;
+    struct page * page = ppe->mem_page;
 
-    } else {
-        spin_lock(&pp->page_pool_empty_list_lock);
-
+    if (ppe->page_buf) {
         ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf, PAGE_SIZE,
                 DMA_BIDIRECTIONAL);
-        page = ppe->mem_page;
-        ppe->mem_page = NULL;
-        list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
-        spin_unlock(&pp->page_pool_empty_list_lock);
-
+        ppe->page_buf = NULL;
     }
-    spin_unlock(&pp->page_pool_list_lock);
+
     if (page)
         liberate_page(page);
-}
 
-static void try_regenerate_empty_page_pool_element(struct conn_element *ele,
-        struct page_pool_ele * ppe) {
+    spin_lock(&pp->page_pool_empty_list_lock);
+    list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
+    spin_unlock(&pp->page_pool_empty_list_lock);
 
-    struct page_pool * pp = &ele->page_pool;
-
-    ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf, PAGE_SIZE,
-            DMA_BIDIRECTIONAL);
-
-    spin_lock(&pp->page_pool_list_lock);
-    if (pp->nb_full_element < PAGE_POOL_SIZE) {
-        ppe->mem_page = alloc_page( GFP_ATOMIC | __GFP_ZERO);
-        BUG_ON(!ppe->mem_page);
-
-        ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device,
-                ppe->mem_page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
-        if (ib_dma_mapping_error(ele->cm_id->device,
-                (u64) (unsigned long) ppe->page_buf))
-            printk(
-                    "[try_regenerate_empty_page_pool_element] couldn't map page \n");
-
-        list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
-        pp->nb_full_element++;
-
-    } else {
-        spin_lock(&pp->page_pool_empty_list_lock);
-        list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
-        spin_unlock(&pp->page_pool_empty_list_lock);
-
-    }
-    spin_unlock(&pp->page_pool_list_lock);
 }
 
 static void init_recv_wr(struct rx_buf_ele *rx_ele, struct conn_element * ele) {
@@ -362,63 +322,6 @@ static void format_rdma_info(struct conn_element *ele) {
     ele->rid.send_info->flag = RDMA_INFO_CL;
 }
 
-static struct page_pool_ele * get_page_ele(struct conn_element * ele) {
-    struct page_pool_ele * ppe;
-
-    struct page_pool * pp = &ele->page_pool;
-
-    loop: spin_lock(&pp->page_pool_list_lock);
-    if (list_empty(&pp->page_pool_list)) {
-        spin_unlock(&pp->page_pool_list_lock);
-        printk("[get_page_ele] forcing a page refill\n");
-        release_replace_page_work(&ele->page_pool.page_release_work);
-        goto loop;
-    }
-
-    ppe = list_first_entry(&pp->page_pool_list, struct page_pool_ele, page_ptr);
-    list_del(&ppe->page_ptr);
-    pp->nb_full_element--;
-    spin_unlock(&pp->page_pool_list_lock);
-
-    return ppe;
-
-}
-
-/*
- * Allocates a new page, register it, warp it in a page pool element stucture and and this ppe to the list
- * Registered as DMA_BIDIRECTIONNAL as it could be use as a send or receiving buffer.
- */
-static int create_new_page_pool_element(struct conn_element * ele) {
-    struct page_pool * pp = &ele->page_pool;
-    int ret = 0;
-    struct page_pool_ele *ppe;
-
-    ppe = kmalloc(sizeof(struct page_pool_ele), GFP_USER);
-    memset(ppe, 0, sizeof(struct page_pool_ele));
-
-    ppe->mem_page = alloc_page( GFP_USER | __GFP_ZERO);
-    if (unlikely(!ppe->mem_page))
-        goto err1;
-
-    ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device, ppe->mem_page,
-            0, PAGE_SIZE, DMA_BIDIRECTIONAL);
-    if (ib_dma_mapping_error(ele->cm_id->device,
-            (u64) (unsigned long) ppe->page_buf))
-        goto err2;
-
-    spin_lock(&pp->page_pool_list_lock);
-    list_add_tail(&ppe->page_ptr, &pp->page_pool_list);
-    pp->nb_full_element++;
-    spin_unlock(&pp->page_pool_list_lock);
-
-    return ret;
-
-    err2: ret++;
-    err1: ret++;
-
-    return ret;
-}
-
 static int create_new_empty_page_pool_element(struct conn_element * ele) {
     struct page_pool * pp = &ele->page_pool;
 
@@ -428,7 +331,6 @@ static int create_new_empty_page_pool_element(struct conn_element * ele) {
     if (!ppe)
         return -1;
     memset(ppe, 0, sizeof(struct page_pool_ele));
-
     spin_lock(&pp->page_pool_empty_list_lock);
     list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
     spin_unlock(&pp->page_pool_empty_list_lock);
@@ -440,22 +342,13 @@ static int create_page_pool(struct conn_element * ele) {
     int ret = 0;
     int i;
     struct page_pool * pp = &ele->page_pool;
-    pp->nb_full_element = 0;
-    spin_lock_init(&pp->page_pool_list_lock);
+
     spin_lock_init(&pp->page_release_lock);
     spin_lock_init(&pp->page_pool_empty_list_lock);
-    spin_lock_init(&pp->page_recycle_lock);
 
-    INIT_WORK(&pp->page_release_work, release_replace_page_work);
-    INIT_LIST_HEAD(&pp->page_pool_list);
+    INIT_WORK(&pp->page_release_work, release_page_work);
     INIT_LIST_HEAD(&pp->page_empty_pool_list);
-    INIT_LIST_HEAD(&pp->page_recycle_list);
     INIT_LIST_HEAD(&pp->page_release_list);
-    for (i = 0; i < PAGE_POOL_SIZE; i++) {
-        ret = create_new_page_pool_element(ele);
-        if (ret)
-            break;
-    }
 
     for (i = 0; i < PAGE_POOL_SIZE; i++) {
         ret = create_new_empty_page_pool_element(ele);
@@ -870,60 +763,41 @@ void reg_rem_info(struct conn_element *ele) {
     ele->rid.remote_info->flag = ele->rid.recv_info->flag;
 }
 
-void release_replace_page_work(struct work_struct *work) {
+void release_page_work(struct work_struct *work) {
     struct page_pool_ele * ppe = NULL;
-
     struct conn_element * ele;
     struct page_pool * pp;
+
     pp= container_of(work, struct page_pool ,page_release_work );
     ele= container_of(pp, struct conn_element ,page_pool );
-
-    do {
-        spin_lock(&pp->page_recycle_lock);
-        if (list_empty(&pp->page_recycle_list)) {
-            spin_unlock(&pp->page_recycle_lock);
-            break;
-        }ppe =
-        list_first_entry(&pp->page_recycle_list, struct page_pool_ele, page_ptr);
-        list_del(&ppe->page_ptr);
-        spin_unlock(&pp->page_recycle_lock);
-        try_recycle_page_pool_element(ele, ppe);
-    } while (1);
 
     do {
         spin_lock(&pp->page_release_lock);
         if (list_empty(&pp->page_release_list)) {
             spin_unlock(&pp->page_release_lock);
             break;
-        }ppe =
-        list_first_entry(&pp->page_release_list, struct page_pool_ele, page_ptr);
+        }
+
+        ppe = list_first_entry(&pp->page_release_list, struct page_pool_ele, page_ptr);
         list_del(&ppe->page_ptr);
         spin_unlock(&pp->page_release_lock);
-        try_regenerate_empty_page_pool_element(ele, ppe);
+        try_recycle_empty_page_pool_element(ele, ppe);
     } while (1);
 
 }
 
-void release_replace_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
-//DSM1 FIXME we need to make sure nobody is referencing the page before freeing it.
+void release_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
+
     struct page_pool * pp = &ele->page_pool;
     struct page_pool_ele * ppe;
-
     if (likely(tx_e->wrk_req->dst_addr))
         ppe = (struct page_pool_ele *) tx_e->wrk_req->dst_addr;
     else
         return;
 
-    tx_e->wrk_req->dst_addr = NULL;
-    if (ppe->mem_page) {
-        spin_lock(&pp->page_recycle_lock);
-        list_add_tail(&ppe->page_ptr, &pp->page_recycle_list);
-        spin_unlock(&pp->page_recycle_lock);
-    } else {
-        spin_lock(&pp->page_release_lock);
-        list_add_tail(&ppe->page_ptr, &pp->page_release_list);
-        spin_unlock(&pp->page_release_lock);
-    }
+    spin_lock(&pp->page_release_lock);
+    list_add_tail(&ppe->page_ptr, &pp->page_release_list);
+    spin_unlock(&pp->page_release_lock);
     schedule_work(&pp->page_release_work);
 
 }
@@ -990,7 +864,8 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
     struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
             page);
     tx_e->wrk_req->dst_addr = ppe;
-
+    //we need to reset the offset just in case if we actually use the element for reply as an error
+    msg->offset = tx_e->id;
     msg->dest = dsm_vm_id_to_u32(&local_id);
     msg->dst_addr = (u64) ppe->page_buf;
     msg->req_addr = addr;
@@ -1042,7 +917,7 @@ struct page_pool_ele * get_empty_page_ele(struct conn_element * ele) {
     if (list_empty(&pp->page_empty_pool_list)) {
         spin_unlock(&pp->page_pool_empty_list_lock);
         printk("[get_empty_page_ele] forcing a page refill\n");
-        release_replace_page_work(&ele->page_pool.page_release_work);
+        release_page_work(&ele->page_pool.page_release_work);
         goto loop;
     }
 

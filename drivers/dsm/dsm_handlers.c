@@ -96,12 +96,10 @@ static int dsm_recv_message_handler(struct conn_element *ele,
 
         case TRY_REQUEST_PAGE: {
             rx_tx_message_transfer(ele, rx_e);
-
             break;
         }
         case REQUEST_PAGE_PULL: {
             dsm_trigger_page_pull(rx_e->dsm_msg);
-
             break;
         }
 
@@ -125,7 +123,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
 
     switch (tx_buf_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
-            release_replace_page(ele, tx_buf_e);
+            release_page(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
             break;
         }

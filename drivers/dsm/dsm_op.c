@@ -91,37 +91,14 @@ static int destroy_connections(struct rcm *rcm) {
     err: return i; //returns which connection failed
 }
 
-static void liberate_page(struct page * page) {
-    int count;
-    lock_page(page);
-    count = page_mapcount(page);
-    unlock_page(page);
-
-    while (count != 0) {
-        might_sleep();
-        lock_page(page);
-        count = page_mapcount(page);
-        unlock_page(page);
-    }
-    set_page_private(page, 0);
-    __free_page(page);
-
-}
-
 static void try_recycle_empty_page_pool_element(struct conn_element *ele,
         struct page_pool_ele * ppe) {
 
     struct page_pool * pp = &ele->page_pool;
     struct page * page = ppe->mem_page;
 
-    if (ppe->page_buf) {
-        ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf, PAGE_SIZE,
-                DMA_BIDIRECTIONAL);
-        ppe->page_buf = NULL;
-    }
-
     if (page)
-        liberate_page(page);
+        put_page(page);
 
     spin_lock(&pp->page_pool_empty_list_lock);
     list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
@@ -790,9 +767,14 @@ void release_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
 
     struct page_pool * pp = &ele->page_pool;
     struct page_pool_ele * ppe;
-    if (likely(tx_e->wrk_req->dst_addr))
+    if (likely(tx_e->wrk_req->dst_addr)) {
         ppe = (struct page_pool_ele *) tx_e->wrk_req->dst_addr;
-    else
+        if (ppe->page_buf) {
+            ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
+                    PAGE_SIZE, DMA_BIDIRECTIONAL);
+            ppe->page_buf = NULL;
+        }
+    } else
         return;
 
     spin_lock(&pp->page_release_lock);

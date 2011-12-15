@@ -180,7 +180,7 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
         printk("[[_dsm_extract_page]] cannot lock page\n");
         goto bad_page;
     }
-
+    get_page(page);
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
     set_pte_at(
@@ -198,9 +198,6 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
         try_to_free_swap(page);
 //DSM1 do we need a put_page???/
     unlock_page(page);
-    isolate_lru_page(page);
-    if (PageActive(page))
-        ClearPageActive(page);
 
     pte_unmap_unlock(pte, ptl);
 // if local

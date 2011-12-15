@@ -24,10 +24,13 @@ void signal_completion_page_request(struct tx_buf_ele * tx_e) {
     BUG_ON(!ppe);
     BUG_ON(!ppe->mem_page);
 
+    // automatic decrement in order to remove thepage pinning
+    put_page(ppe->mem_page);
     set_page_private(ppe->mem_page, 0);
     SetPageUptodate(ppe->mem_page);
     unlock_page(ppe->mem_page);
     ppe->mem_page = NULL;
+
     return;
 
 }
@@ -43,6 +46,8 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     BUG_ON(!ppe);
     BUG_ON(!ppe->mem_page);
 
+    // automatic decrement in order to remove thepage pinning
+
     local_id.dsm_id = u32_to_dsm_id(tx_e->dsm_msg->dest);
     local_id.svm_id = u32_to_vm_id(tx_e->dsm_msg->dest);
     local_svm = funcs->_find_svm(&local_id);
@@ -54,6 +59,7 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
         unlock_page(ppe->mem_page);
         return;
     } else {
+        put_page(ppe->mem_page);
         set_page_private(ppe->mem_page, 0);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
@@ -494,8 +500,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     pte_t pte;
     int locked;
 
-    printk("[request_page_insert] faulting for page %p , norm %p \n ",
-            (void*) address, (void*) norm_addr);
+//    printk("[request_page_insert] faulting for page %p , norm %p \n ",
+//            (void*) address, (void*) norm_addr);
     retry:
 
     if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
@@ -530,9 +536,15 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         ret |= VM_FAULT_RETRY;
         goto out;
     }
-    if (unlikely(page_private(page) == ULONG_MAX))
+    if (unlikely(page_private(page) == ULONG_MAX)) {
         if (page_is_tagged_in_dsm_cache(norm_addr, TRY_TAG))
             goto rebelote;
+        else if (page_is_tagged_in_dsm_cache(norm_addr, PULL_TAG)) {
+            printk(
+                    "[request_page_insert] page pull tag we decrement the ref count \n ");
+            put_page(page);
+        }
+    }
 
     if (ksm_might_need_to_copy(page, vma, address)) {
         swapcache = page;
@@ -581,7 +593,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         goto out;
     }
     update_mmu_cache(vma, address, page_table);
-    printk("[request_page_insert] page fault success \n ");
+    // printk("[request_page_insert] page fault success \n ");
     unlock: pte_unmap_unlock(pte, ptl);
     out: return ret;
 
@@ -650,7 +662,7 @@ int add_page_pull_to_dsm_cache(struct page * page, unsigned long addr,
 
     if (err)
         return err;
-    err = __add_to_dsm_cache(page, addr, 0, PULL_TAG);
+    err = __add_to_dsm_cache(page, addr, ULONG_MAX, PULL_TAG);
     radix_tree_preload_end();
     return err;
 }

@@ -176,17 +176,13 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
+
     // this is a page flagging without data exchange so we can free the page
     if (likely(!page_mapped(page)))
         try_to_free_swap(page);
 
-    // DSM1 - should we put_page in flag remote?
-    //put_page(page);
     unlock_page(page);
-    isolate_lru_page(page);
-    if (PageActive(page))
-        ClearPageActive(page);
-    __free_page(page);
+    put_page(page);
 
     out_pte_unlock:
 
@@ -321,7 +317,7 @@ int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
         printk("[[EXTRACT_PAGE]] cannot lock page\n");
         goto bad_page;
     }
-
+    get_page(page);
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
     set_pte_at(

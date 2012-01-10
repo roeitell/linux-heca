@@ -848,11 +848,11 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
     tx_e->wrk_req->dst_addr = ppe;
     //we need to reset the offset just in case if we actually use the element for reply as an error
     msg->offset = tx_e->id;
-    msg->dest = dsm_vm_id_to_u32(&local_id);
+    msg->dest = dsm_vm_id_to_u64(&local_id);
     msg->dst_addr = (u64) ppe->page_buf;
     msg->req_addr = addr;
     msg->rkey = ele->mr->rkey;
-    msg->src = dsm_vm_id_to_u32(&remote_id);
+    msg->src = dsm_vm_id_to_u64(&remote_id);
     msg->type = type;
 
     return;
@@ -865,11 +865,11 @@ void create_page_pull_request(struct conn_element *ele,
 
     tx_e->wrk_req->dst_addr = NULL;
 
-    msg->dest = dsm_vm_id_to_u32(&local_id);
+    msg->dest = dsm_vm_id_to_u64(&local_id);
     msg->dst_addr = 0;
     msg->req_addr = addr;
     msg->rkey = ele->mr->rkey;
-    msg->src = dsm_vm_id_to_u32(&remote_id);
+    msg->src = dsm_vm_id_to_u64(&remote_id);
     msg->type = REQUEST_PAGE_PULL;
 
     return;

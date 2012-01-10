@@ -48,8 +48,8 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
 
     // automatic decrement in order to remove thepage pinning
 
-    local_id.dsm_id = u32_to_dsm_id(tx_e->dsm_msg->dest);
-    local_id.svm_id = u32_to_vm_id(tx_e->dsm_msg->dest);
+    local_id.dsm_id = u64_to_dsm_id(tx_e->dsm_msg->dest);
+    local_id.svm_id = u64_to_vm_id(tx_e->dsm_msg->dest);
     local_svm = funcs->_find_svm(&local_id);
     BUG_ON(!local_svm);
     addr = tx_e->dsm_msg->req_addr + local_svm->priv->offset;
@@ -711,8 +711,8 @@ struct page *dsm_trigger_page_pull(struct dsm_message *msg) {
     unsigned long norm_addr;
     struct mm_struct *mm;
 
-    local_id.dsm_id = u32_to_dsm_id(msg->src);
-    local_id.svm_id = u32_to_vm_id(msg->src);
+    local_id.dsm_id = u64_to_dsm_id(msg->src);
+    local_id.svm_id = u64_to_vm_id(msg->src);
     local_svm = funcs->_find_svm(&local_id);
     BUG_ON(!local_svm);
 

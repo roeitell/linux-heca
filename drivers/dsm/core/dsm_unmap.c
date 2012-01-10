@@ -99,13 +99,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(
-                    mm,
-                    addr,
-                    pte,
-                    swp_entry_to_pte(
-                            make_dsm_entry((uint16_t) id.dsm_id,
-                                    (uint8_t) id.svm_id)));
+            set_pte_at(mm, addr, pte,
+                    swp_entry_to_pte(make_dsm_entry(id.dsm_id, id.svm_id)));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -167,12 +162,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(
-            mm,
-            addr,
-            pte,
-            swp_entry_to_pte(
-                    make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
+    set_pte_at(mm, addr, pte,
+            swp_entry_to_pte(make_dsm_entry(id.dsm_id, id.svm_id)));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
@@ -320,12 +311,8 @@ int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
     get_page(page);
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(
-            mm,
-            addr,
-            pte,
-            swp_entry_to_pte(
-                    make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
+    set_pte_at(mm, addr, pte,
+            swp_entry_to_pte(make_dsm_entry(id.dsm_id, id.svm_id)));
 
     page_remove_rmap(page);
 

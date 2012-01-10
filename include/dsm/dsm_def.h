@@ -64,15 +64,15 @@
  */
 
 struct dsm_vm_id {
-    u16 dsm_id;
-    u8 svm_id;
+    u32 dsm_id;
+    u32 svm_id;
 
 };
 
-static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id) {
-    u32 val = id->dsm_id;
+static inline u64 dsm_vm_id_to_u64(struct dsm_vm_id *id) {
+    u64 val = id->dsm_id;
 
-    val = val << 8;
+    val = val << 24;
 
     val |= id->svm_id;
 
@@ -80,18 +80,18 @@ static inline u32 dsm_vm_id_to_u32(struct dsm_vm_id *id) {
 
 }
 
-static inline u16 u32_to_dsm_id(u32 val) {
-    return val >> 8;
+static inline u32 u64_to_dsm_id(u64 val) {
+    return val >> 24;
 
 }
 
-static inline u8 u32_to_vm_id(u32 val) {
-    return val & 0xFF;
+static inline u32 u64_to_vm_id(u64 val) {
+    return val & 0xFFFFFF;
 
 }
 
 struct dsm {
-    u16 dsm_id;
+    u32 dsm_id;
 
     struct list_head svm_ls;
     struct list_head ls;
@@ -226,8 +226,8 @@ struct rdma_info {
 struct dsm_message {
 
     u32 offset;
-    u32 dest;
-    u32 src;
+    u64 dest;
+    u64 src;
     u64 req_addr;
     u64 dst_addr;
     u32 rkey;

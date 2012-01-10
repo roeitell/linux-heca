@@ -188,7 +188,7 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
             addr,
             pte,
             swp_entry_to_pte(
-                    make_dsm_entry((uint16_t) id.dsm_id, (uint8_t) id.svm_id)));
+                    make_dsm_entry(id.dsm_id, id.svm_id)));
 
     page_remove_rmap(page);
 
@@ -354,11 +354,11 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
         printk("[dsm_extract_page_from_remote] no message ! %p  \n", msg);
         return NULL;
     }
-    remote_id.dsm_id = u32_to_dsm_id(msg->dest);
-    remote_id.svm_id = u32_to_vm_id(msg->dest);
+    remote_id.dsm_id = u64_to_dsm_id(msg->dest);
+    remote_id.svm_id = u64_to_vm_id(msg->dest);
 
-    local_id.dsm_id = u32_to_dsm_id(msg->src);
-    local_id.svm_id = u32_to_vm_id(msg->src);
+    local_id.dsm_id = u64_to_dsm_id(msg->src);
+    local_id.svm_id = u64_to_vm_id(msg->src);
     local_svm = funcs->_find_svm(&local_id);
     BUG_ON(!local_svm);
     BUG_ON(!local_svm->priv->mm);
@@ -403,8 +403,8 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     swp_entry_t swp_e;
     struct mm_struct *mm;
 
-    id.dsm_id = u32_to_dsm_id(msg->dest);
-    id.svm_id = u32_to_vm_id(msg->dest);
+    id.dsm_id = u64_to_dsm_id(msg->dest);
+    id.svm_id = u64_to_vm_id(msg->dest);
 
     svm = funcs->_find_svm(&id);
     BUG_ON(!svm);
@@ -439,8 +439,8 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                     msg->req_addr,
                     pte,
                     swp_entry_to_pte(
-                            make_dsm_entry((uint16_t) id.dsm_id,
-                                    (uint8_t) id.svm_id)));
+                            make_dsm_entry( id.dsm_id,
+                                    id.svm_id)));
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (!non_swap_entry(swp_e)) {
@@ -458,8 +458,8 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                                 msg->req_addr,
                                 pte,
                                 swp_entry_to_pte(
-                                        make_dsm_entry((uint16_t) id.dsm_id,
-                                                (uint8_t) id.svm_id)));
+                                        make_dsm_entry( id.dsm_id,
+                                                 id.svm_id)));
 
                         // forward msg
                         // DSM1: fwd message RDMA function call.

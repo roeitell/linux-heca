@@ -172,11 +172,11 @@ static inline int non_swap_entry(swp_entry_t entry)
 
 #ifdef CONFIG_DSM_CORE
 // SWP_DSM
-static inline swp_entry_t make_dsm_entry(uint16_t dsm_id, uint8_t vm_id)
+static inline swp_entry_t make_dsm_entry(u32 dsm_id, u32 vm_id)
 {
 	unsigned long val = dsm_id;
 
-	val = val << 8;
+	val = val << 24;
 
 	val |= vm_id;
 
@@ -190,23 +190,23 @@ static inline int is_dsm_entry(swp_entry_t entry)
 
 }
 
-static inline void dsm_entry_to_val(swp_entry_t entry, uint16_t *dsm_id, uint8_t *vm_id)
+static inline void dsm_entry_to_val(swp_entry_t entry, u32 *dsm_id, u32 *vm_id)
 {
 	unsigned long val = swp_offset(entry);
 
-	*dsm_id = val >> 8;
-	*vm_id =  val & ((1ul << 9) - 1);
+	*dsm_id = val >> 24;
+	*vm_id =  val & 0xFFFFFF;
 
 }
 
 static inline int  is_empty_dsm_entry(swp_entry_t entry)
 {
-        uint16_t dsm_id;
-        uint8_t vm_id;
+        u32 dsm_id;
+        u32 vm_id;
         unsigned long val = swp_offset(entry);
 
-        dsm_id = val >> 8;
-        vm_id =  val & ((1ul << 9) - 1);
+        dsm_id = val >> 24;
+        vm_id =  val & 0xFFFFFF;
         if( dsm_id ==0 && vm_id==0 )
                 return 1;
         return 0;
@@ -219,7 +219,7 @@ static inline int  is_empty_dsm_entry(swp_entry_t entry)
 {
         return 0;
 }
-static inline swp_entry_t make_dsm_entry(uint16_t dsm_id, uint8_t vm_id)
+static inline swp_entry_t make_dsm_entry(u32 dsm_id, u32 vm_id)
 {
 	return swp_entry(0, 0);
 
@@ -231,6 +231,6 @@ static inline int is_dsm_entry(swp_entry_t entry)
 
 }
 
-static inline void dsm_entry_to_val(swp_entry_t entry, uint16_t *dsm_id, uint8_t *vm_id) {}
+static inline void dsm_entry_to_val(swp_entry_t entry, u32 *dsm_id, u32 *vm_id) {}
 
 #endif /* CONFIG_DSM */

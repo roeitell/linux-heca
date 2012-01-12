@@ -444,7 +444,7 @@ static ssize_t set_in_min(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	unsigned long val;
 
-	if (strict_strtoul(buf, 10, &val) < 0)
+	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -463,7 +463,7 @@ static ssize_t set_in_max(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	unsigned long val;
 
-	if (strict_strtoul(buf, 10, &val) < 0)
+	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -539,7 +539,7 @@ static ssize_t set_temp_max(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0)
+	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -557,7 +557,7 @@ static ssize_t set_temp_min(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0)
+	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -604,7 +604,7 @@ static ssize_t set_sensor(struct device *dev, struct device_attribute *attr,
 	long val;
 	u8 reg;
 
-	if (strict_strtol(buf, 10, &val) < 0)
+	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	reg = it87_read_value(data, IT87_REG_TEMP_ENABLE);
@@ -718,7 +718,7 @@ static ssize_t set_fan_min(struct device *dev, struct device_attribute *attr,
 	long val;
 	u8 reg;
 
-	if (strict_strtol(buf, 10, &val) < 0)
+	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -751,7 +751,7 @@ static ssize_t set_fan_div(struct device *dev, struct device_attribute *attr,
 	int min;
 	u8 old;
 
-	if (strict_strtoul(buf, 10, &val) < 0)
+	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -820,7 +820,7 @@ static ssize_t set_pwm_enable(struct device *dev,
 	struct it87_data *data = dev_get_drvdata(dev);
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0 || val < 0 || val > 2)
+	if (kstrtol(buf, 10, &val) < 0 || val < 0 || val > 2)
 		return -EINVAL;
 
 	/* Check trip points before switching to automatic mode */
@@ -866,7 +866,7 @@ static ssize_t set_pwm(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0 || val < 0 || val > 255)
+	if (kstrtol(buf, 10, &val) < 0 || val < 0 || val > 255)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -900,7 +900,7 @@ static ssize_t set_pwm_freq(struct device *dev,
 	unsigned long val;
 	int i;
 
-	if (strict_strtoul(buf, 10, &val) < 0)
+	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	/* Search for the nearest available frequency */
@@ -949,7 +949,7 @@ static ssize_t set_pwm_temp_map(struct device *dev,
 		return -EINVAL;
 	}
 
-	if (strict_strtol(buf, 10, &val) < 0)
+	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	switch (val) {
@@ -1001,7 +1001,7 @@ static ssize_t set_auto_pwm(struct device *dev,
 	int point = sensor_attr->index;
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0 || val < 0 || val > 255)
+	if (kstrtol(buf, 10, &val) < 0 || val < 0 || val > 255)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -1034,7 +1034,7 @@ static ssize_t set_auto_temp(struct device *dev,
 	int point = sensor_attr->index;
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0 || val < -128000 || val > 127000)
+	if (kstrtol(buf, 10, &val) < 0 || val < -128000 || val > 127000)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -1126,7 +1126,7 @@ static ssize_t set_fan16_min(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0)
+	if (kstrtol(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	mutex_lock(&data->update_lock);
@@ -1172,6 +1172,32 @@ static ssize_t show_alarm(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = it87_update_device(dev);
 	return sprintf(buf, "%u\n", (data->alarms >> bitnr) & 1);
 }
+
+static ssize_t clear_intrusion(struct device *dev, struct device_attribute
+		*attr, const char *buf, size_t count)
+{
+	struct it87_data *data = dev_get_drvdata(dev);
+	long val;
+	int config;
+
+	if (kstrtol(buf, 10, &val) < 0 || val != 0)
+		return -EINVAL;
+
+	mutex_lock(&data->update_lock);
+	config = it87_read_value(data, IT87_REG_CONFIG);
+	if (config < 0) {
+		count = config;
+	} else {
+		config |= 1 << 5;
+		it87_write_value(data, IT87_REG_CONFIG, config);
+		/* Invalidate cache to force re-read */
+		data->valid = 0;
+	}
+	mutex_unlock(&data->update_lock);
+
+	return count;
+}
+
 static SENSOR_DEVICE_ATTR(in0_alarm, S_IRUGO, show_alarm, NULL, 8);
 static SENSOR_DEVICE_ATTR(in1_alarm, S_IRUGO, show_alarm, NULL, 9);
 static SENSOR_DEVICE_ATTR(in2_alarm, S_IRUGO, show_alarm, NULL, 10);
@@ -1188,6 +1214,8 @@ static SENSOR_DEVICE_ATTR(fan5_alarm, S_IRUGO, show_alarm, NULL, 6);
 static SENSOR_DEVICE_ATTR(temp1_alarm, S_IRUGO, show_alarm, NULL, 16);
 static SENSOR_DEVICE_ATTR(temp2_alarm, S_IRUGO, show_alarm, NULL, 17);
 static SENSOR_DEVICE_ATTR(temp3_alarm, S_IRUGO, show_alarm, NULL, 18);
+static SENSOR_DEVICE_ATTR(intrusion0_alarm, S_IRUGO | S_IWUSR,
+			  show_alarm, clear_intrusion, 4);
 
 static ssize_t show_beep(struct device *dev, struct device_attribute *attr,
 		char *buf)
@@ -1203,7 +1231,7 @@ static ssize_t set_beep(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	long val;
 
-	if (strict_strtol(buf, 10, &val) < 0
+	if (kstrtol(buf, 10, &val) < 0
 	 || (val != 0 && val != 1))
 		return -EINVAL;
 
@@ -1250,7 +1278,7 @@ static ssize_t store_vrm_reg(struct device *dev, struct device_attribute *attr,
 	struct it87_data *data = dev_get_drvdata(dev);
 	unsigned long val;
 
-	if (strict_strtoul(buf, 10, &val) < 0)
+	if (kstrtoul(buf, 10, &val) < 0)
 		return -EINVAL;
 
 	data->vrm = val;
@@ -1350,6 +1378,7 @@ static struct attribute *it87_attributes[] = {
 	&sensor_dev_attr_temp3_alarm.dev_attr.attr,
 
 	&dev_attr_alarms.attr,
+	&sensor_dev_attr_intrusion0_alarm.dev_attr.attr,
 	&dev_attr_name.attr,
 	NULL
 };
@@ -1538,7 +1567,7 @@ static struct attribute *it87_attributes_label[] = {
 };
 
 static const struct attribute_group it87_group_label = {
-	.attrs = it87_attributes_vid,
+	.attrs = it87_attributes_label,
 };
 
 /* SuperIO detection - will change isa_address if a chip is found */

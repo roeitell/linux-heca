@@ -215,13 +215,6 @@ static int __init mac_scsi_setup(char *str) {
 __setup("mac5380=", mac_scsi_setup);
 
 /*
- * If you want to find the instance with (k)gdb ...
- */
-#if NDEBUG
-static struct Scsi_Host *default_instance;
-#endif
-
-/*
  * Function : int macscsi_detect(struct scsi_host_template * tpnt)
  *
  * Purpose : initializes mac NCR5380 driver based on the
@@ -233,7 +226,7 @@ static struct Scsi_Host *default_instance;
  *
  */
  
-int macscsi_detect(struct scsi_host_template * tpnt)
+int __init macscsi_detect(struct scsi_host_template * tpnt)
 {
     static int called = 0;
     int flags = 0;
@@ -268,10 +261,7 @@ int macscsi_detect(struct scsi_host_template * tpnt)
     /* Once we support multiple 5380s (e.g. DuoDock) we'll do
        something different here */
     instance = scsi_register (tpnt, sizeof(struct NCR5380_hostdata));
-#if NDEBUG
-    default_instance = instance;
-#endif
-    
+
     if (macintosh_config->ident == MAC_MODEL_IIFX) {
 	mac_scsi_regp  = via1+0x8000;
 	mac_scsi_drq   = via1+0xE000;
@@ -301,8 +291,7 @@ int macscsi_detect(struct scsi_host_template * tpnt)
     ((struct NCR5380_hostdata *)instance->hostdata)->ctrl = 0;
 
     if (instance->irq != SCSI_IRQ_NONE)
-	if (request_irq(instance->irq, NCR5380_intr, IRQ_FLG_SLOW, 
-			"ncr5380", instance)) {
+	if (request_irq(instance->irq, NCR5380_intr, 0, "ncr5380", instance)) {
 	    printk(KERN_WARNING "scsi%d: IRQ%d not free, interrupts disabled\n",
 		   instance->host_no, instance->irq);
 	    instance->irq = SCSI_IRQ_NONE;

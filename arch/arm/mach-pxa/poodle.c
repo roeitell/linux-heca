@@ -16,6 +16,7 @@
  */
 #include <linux/kernel.h>
 #include <linux/init.h>
+#include <linux/export.h>
 #include <linux/platform_device.h>
 #include <linux/fb.h>
 #include <linux/pm.h>
@@ -165,8 +166,8 @@ static struct resource locomo_resources[] = {
 		.flags		= IORESOURCE_MEM,
 	},
 	[1] = {
-		.start		= IRQ_GPIO(10),
-		.end		= IRQ_GPIO(10),
+		.start		= PXA_GPIO_TO_IRQ(10),
+		.end		= PXA_GPIO_TO_IRQ(10),
 		.flags		= IORESOURCE_IRQ,
 	},
 };
@@ -211,7 +212,7 @@ static struct spi_board_info poodle_spi_devices[] = {
 		.bus_num	= 1,
 		.platform_data	= &poodle_ads7846_info,
 		.controller_data= &poodle_ads7846_chip,
-		.irq		= gpio_to_irq(POODLE_GPIO_TP_INT),
+		.irq		= PXA_GPIO_TO_IRQ(POODLE_GPIO_TP_INT),
 	},
 };
 
@@ -416,12 +417,7 @@ static struct i2c_board_info __initdata poodle_i2c_devices[] = {
 
 static void poodle_poweroff(void)
 {
-	arm_machine_restart('h', NULL);
-}
-
-static void poodle_restart(char mode, const char *cmd)
-{
-	arm_machine_restart('h', cmd);
+	pxa_restart('h', NULL);
 }
 
 static void __init poodle_init(void)
@@ -429,7 +425,6 @@ static void __init poodle_init(void)
 	int ret = 0;
 
 	pm_power_off = poodle_poweroff;
-	arm_pm_restart = poodle_restart;
 
 	PCFR |= PCFR_OPDE;
 
@@ -454,8 +449,8 @@ static void __init poodle_init(void)
 	poodle_init_spi();
 }
 
-static void __init fixup_poodle(struct machine_desc *desc,
-		struct tag *tags, char **cmdline, struct meminfo *mi)
+static void __init fixup_poodle(struct tag *tags, char **cmdline,
+				struct meminfo *mi)
 {
 	sharpsl_save_param();
 	mi->nr_banks=1;
@@ -468,6 +463,8 @@ MACHINE_START(POODLE, "SHARP Poodle")
 	.map_io		= pxa25x_map_io,
 	.nr_irqs	= POODLE_NR_IRQS,	/* 4 for LoCoMo */
 	.init_irq	= pxa25x_init_irq,
+	.handle_irq	= pxa25x_handle_irq,
 	.timer		= &pxa_timer,
 	.init_machine	= poodle_init,
+	.restart	= pxa_restart,
 MACHINE_END

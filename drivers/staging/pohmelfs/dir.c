@@ -512,7 +512,7 @@ struct dentry *pohmelfs_lookup(struct inode *dir, struct dentry *dentry, struct 
 	int err, lock_type = POHMELFS_READ_LOCK, need_lock = 1;
 	struct qstr str = dentry->d_name;
 
-	if ((nd->intent.open.flags & O_ACCMODE) > 1)
+	if ((nd->intent.open.flags & O_ACCMODE) != O_RDONLY)
 		lock_type = POHMELFS_WRITE_LOCK;
 
 	if (test_bit(NETFS_INODE_OWNED, &parent->state)) {
@@ -590,13 +590,13 @@ out:
  * during writeback for given inode.
  */
 struct pohmelfs_inode *pohmelfs_create_entry_local(struct pohmelfs_sb *psb,
-	struct pohmelfs_inode *parent, struct qstr *str, u64 start, int mode)
+	struct pohmelfs_inode *parent, struct qstr *str, u64 start, umode_t mode)
 {
 	struct pohmelfs_inode *npi;
 	int err = -ENOMEM;
 	struct netfs_inode_info info;
 
-	dprintk("%s: name: '%s', mode: %o, start: %llu.\n",
+	dprintk("%s: name: '%s', mode: %ho, start: %llu.\n",
 			__func__, str->name, mode, start);
 
 	info.mode = mode;
@@ -630,7 +630,8 @@ err_out_unlock:
 /*
  * Create local object and bind it to dentry.
  */
-static int pohmelfs_create_entry(struct inode *dir, struct dentry *dentry, u64 start, int mode)
+static int pohmelfs_create_entry(struct inode *dir, struct dentry *dentry,
+				 u64 start, umode_t mode)
 {
 	struct pohmelfs_sb *psb = POHMELFS_SB(dir->i_sb);
 	struct pohmelfs_inode *npi, *parent;
@@ -661,13 +662,13 @@ static int pohmelfs_create_entry(struct inode *dir, struct dentry *dentry, u64 s
 /*
  * VFS create and mkdir callbacks.
  */
-static int pohmelfs_create(struct inode *dir, struct dentry *dentry, int mode,
+static int pohmelfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
 		struct nameidata *nd)
 {
 	return pohmelfs_create_entry(dir, dentry, 0, mode);
 }
 
-static int pohmelfs_mkdir(struct inode *dir, struct dentry *dentry, int mode)
+static int pohmelfs_mkdir(struct inode *dir, struct dentry *dentry, umode_t mode)
 {
 	int err;
 

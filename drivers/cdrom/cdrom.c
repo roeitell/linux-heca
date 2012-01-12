@@ -267,7 +267,6 @@
 
 #include <linux/module.h>
 #include <linux/fs.h>
-#include <linux/buffer_head.h>
 #include <linux/major.h>
 #include <linux/types.h>
 #include <linux/errno.h>
@@ -1929,11 +1928,17 @@ static int dvd_read_manufact(struct cdrom_device_info *cdi, dvd_struct *s,
 		goto out;
 
 	s->manufact.len = buf[0] << 8 | buf[1];
-	if (s->manufact.len < 0 || s->manufact.len > 2048) {
+	if (s->manufact.len < 0) {
 		cdinfo(CD_WARNING, "Received invalid manufacture info length"
 				   " (%d)\n", s->manufact.len);
 		ret = -EIO;
 	} else {
+		if (s->manufact.len > 2048) {
+			cdinfo(CD_WARNING, "Received invalid manufacture info "
+					"length (%d): truncating to 2048\n",
+					s->manufact.len);
+			s->manufact.len = 2048;
+		}
 		memcpy(s->manufact.value, &buf[4], s->manufact.len);
 	}
 

@@ -19,6 +19,7 @@
 #include <linux/slab.h>
 #include <linux/usb.h>
 #include <linux/usb/audio.h>
+#include <linux/module.h>
 #include <sound/core.h>
 #include <sound/hwdep.h>
 #include <sound/pcm.h>
@@ -771,16 +772,4 @@ static struct usb_driver snd_us122l_usb_driver = {
 	.supports_autosuspend = 1
 };
 
-
-static int __init snd_us122l_module_init(void)
-{
-	return usb_register(&snd_us122l_usb_driver);
-}
-
-static void __exit snd_us122l_module_exit(void)
-{
-	usb_deregister(&snd_us122l_usb_driver);
-}
-
-module_init(snd_us122l_module_init)
-module_exit(snd_us122l_module_exit)
+module_usb_driver(snd_us122l_usb_driver);

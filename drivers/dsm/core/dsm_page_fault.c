@@ -640,8 +640,11 @@ struct page *find_get_dsm_page(unsigned long addr) {
         page = radix_tree_deref_slot(pagep);
         if (unlikely(!page))
             goto out;
-        if (radix_tree_deref_retry(page))
-            goto repeat;
+        if (radix_tree_exception(page)) {
+            if (radix_tree_deref_retry(page))
+                goto repeat;
+            goto out;
+        }
 
         if (!page_cache_get_speculative(page))
             goto repeat;
@@ -688,12 +691,15 @@ struct page * page_is_in_dsm_cache(unsigned long addr) {
     repeat: page = NULL;
     pagep = radix_tree_lookup_slot(&dsm_tree, addr);
     if (pagep) {
-        //NEED TO BE UPDATED TO 3.1
+
         page = radix_tree_deref_slot(pagep);
         if (unlikely(!page))
             goto out;
-        if (radix_tree_deref_retry(page))
-            goto repeat;
+        if (radix_tree_exception(page)) {
+            if (radix_tree_deref_retry(page))
+                goto repeat;
+            goto out;
+        }
 
     }
     out: rcu_read_unlock();

@@ -22,7 +22,10 @@ void remove_svm(struct subvirtual_machine *svm) {
         svm->dsm->nb_local_svm--;
     radix_tree_delete(&svm->dsm->svm_mm_tree_root,
             (unsigned long) svm->id.svm_id);
-    radix_tree_delete(&svm->dsm->svm_tree_root, (unsigned long) svm->id.svm_id);
+    if (svm->priv)
+        radix_tree_delete(&svm->dsm->svm_tree_root,
+                (unsigned long) svm->id.svm_id);
+    synchronize_rcu();
     mutex_unlock(&svm->dsm->dsm_mutex);
     kfree(svm);
 
@@ -37,6 +40,7 @@ void remove_dsm(struct dsm * dsm) {
     mutex_lock(&dsm_state->dsm_state_mutex);
     list_del(&dsm->dsm_ptr);
     radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);
+    synchronize_rcu();
     mutex_unlock(&dsm_state->dsm_state_mutex);
 
     while (!list_empty(&dsm->svm_list)) {
@@ -59,12 +63,15 @@ static struct dsm* _find_dsm(struct radix_tree_root *root, unsigned long id) {
     repeat: dsm = NULL;
     dsmp = (struct dsm **) radix_tree_lookup_slot(root, id);
     if (dsmp) {
-        //NEED TO BE UPDATED TO 3.1
+
         dsm = radix_tree_deref_slot((void**) dsmp);
         if (unlikely(!dsm))
             goto out;
-        if (radix_tree_deref_retry(dsm))
-            goto repeat;
+        if (radix_tree_exception(dsm)) {
+            if (radix_tree_deref_retry(dsm))
+                goto repeat;
+            goto out;
+        }
 
     }
     out: return dsm;
@@ -78,12 +85,15 @@ static struct subvirtual_machine* _find_svm_in_dsm(struct radix_tree_root *root,
     repeat: svm = NULL;
     svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root, id);
     if (svmp) {
-        //NEED TO BE UPDATED TO 3.1
+
         svm = radix_tree_deref_slot((void**) svmp);
         if (unlikely(!svm))
             goto out;
-        if (radix_tree_deref_retry(svm))
-            goto repeat;
+        if (radix_tree_exception(svm)) {
+            if (radix_tree_deref_retry(svm))
+                goto repeat;
+            goto out;
+        }
 
     }
     out: return svm;
@@ -129,7 +139,7 @@ struct subvirtual_machine *find_local_svm(struct dsm * dsm,
 EXPORT_SYMBOL(find_local_svm);
 
 void insert_rb_conn(struct conn_element *ele) {
-    struct rb_root *root = &get_dsm_module_state()->rcm->root_conn;
+    struct rb_root *root = &(get_dsm_module_state()->rcm->root_conn);
     struct rb_node **new = &root->rb_node;
     struct rb_node *parent = NULL;
     struct conn_element *this;
@@ -151,7 +161,7 @@ EXPORT_SYMBOL(insert_rb_conn);
 
 // Return NULL if no element contained within tree.
 struct conn_element* search_rb_conn(int node_ip) {
-    struct rb_root *root = &get_dsm_module_state()->rcm->root_conn;
+    struct rb_root *root = &(get_dsm_module_state()->rcm->root_conn);
     struct rb_node *node = root->rb_node;
     struct conn_element *this = 0;
 

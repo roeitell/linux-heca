@@ -32,6 +32,7 @@
 #include <linux/spi/pxa2xx_spi.h>
 #include <linux/mtd/sharpsl.h>
 #include <linux/input/matrix_keypad.h>
+#include <linux/module.h>
 #include <video/w100fb.h>
 
 #include <asm/setup.h>
@@ -530,7 +531,7 @@ static struct spi_board_info corgi_spi_devices[] = {
 		.chip_select	= 0,
 		.platform_data	= &corgi_ads7846_info,
 		.controller_data= &corgi_ads7846_chip,
-		.irq		= gpio_to_irq(CORGI_GPIO_TP_INT),
+		.irq		= PXA_GPIO_TO_IRQ(CORGI_GPIO_TP_INT),
 	}, {
 		.modalias	= "corgi-lcd",
 		.max_speed_hz	= 50000,
@@ -654,7 +655,7 @@ static void corgi_poweroff(void)
 		/* Green LED off tells the bootloader to halt */
 		gpio_set_value(CORGI_GPIO_LED_GREEN, 0);
 
-	arm_machine_restart('h', NULL);
+	pxa_restart('h', NULL);
 }
 
 static void corgi_restart(char mode, const char *cmd)
@@ -663,13 +664,12 @@ static void corgi_restart(char mode, const char *cmd)
 		/* Green LED on tells the bootloader to reboot */
 		gpio_set_value(CORGI_GPIO_LED_GREEN, 1);
 
-	arm_machine_restart('h', cmd);
+	pxa_restart('h', cmd);
 }
 
 static void __init corgi_init(void)
 {
 	pm_power_off = corgi_poweroff;
-	arm_pm_restart = corgi_restart;
 
 	/* Stop 3.6MHz and drive HIGH to PCMCIA and CS */
 	PCFR |= PCFR_OPDE;
@@ -705,8 +705,8 @@ static void __init corgi_init(void)
 	platform_add_devices(devices, ARRAY_SIZE(devices));
 }
 
-static void __init fixup_corgi(struct machine_desc *desc,
-		struct tag *tags, char **cmdline, struct meminfo *mi)
+static void __init fixup_corgi(struct tag *tags, char **cmdline,
+			       struct meminfo *mi)
 {
 	sharpsl_save_param();
 	mi->nr_banks=1;
@@ -722,8 +722,10 @@ MACHINE_START(CORGI, "SHARP Corgi")
 	.fixup		= fixup_corgi,
 	.map_io		= pxa25x_map_io,
 	.init_irq	= pxa25x_init_irq,
+	.handle_irq	= pxa25x_handle_irq,
 	.init_machine	= corgi_init,
 	.timer		= &pxa_timer,
+	.restart	= corgi_restart,
 MACHINE_END
 #endif
 
@@ -732,8 +734,10 @@ MACHINE_START(SHEPHERD, "SHARP Shepherd")
 	.fixup		= fixup_corgi,
 	.map_io		= pxa25x_map_io,
 	.init_irq	= pxa25x_init_irq,
+	.handle_irq	= pxa25x_handle_irq,
 	.init_machine	= corgi_init,
 	.timer		= &pxa_timer,
+	.restart	= corgi_restart,
 MACHINE_END
 #endif
 
@@ -742,8 +746,10 @@ MACHINE_START(HUSKY, "SHARP Husky")
 	.fixup		= fixup_corgi,
 	.map_io		= pxa25x_map_io,
 	.init_irq	= pxa25x_init_irq,
+	.handle_irq	= pxa25x_handle_irq,
 	.init_machine	= corgi_init,
 	.timer		= &pxa_timer,
+	.restart	= corgi_restart,
 MACHINE_END
 #endif
 

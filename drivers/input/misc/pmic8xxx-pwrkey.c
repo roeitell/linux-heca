@@ -90,7 +90,8 @@ static int __devinit pmic8xxx_pwrkey_probe(struct platform_device *pdev)
 	unsigned int delay;
 	u8 pon_cntl;
 	struct pmic8xxx_pwrkey *pwrkey;
-	const struct pm8xxx_pwrkey_platform_data *pdata = mfd_get_data(pdev);
+	const struct pm8xxx_pwrkey_platform_data *pdata =
+					dev_get_platdata(&pdev->dev);
 
 	if (!pdata) {
 		dev_err(&pdev->dev, "power key platform data not supplied\n");
@@ -212,18 +213,7 @@ static struct platform_driver pmic8xxx_pwrkey_driver = {
 		.pm	= &pm8xxx_pwr_key_pm_ops,
 	},
 };
-
-static int __init pmic8xxx_pwrkey_init(void)
-{
-	return platform_driver_register(&pmic8xxx_pwrkey_driver);
-}
-module_init(pmic8xxx_pwrkey_init);
-
-static void __exit pmic8xxx_pwrkey_exit(void)
-{
-	platform_driver_unregister(&pmic8xxx_pwrkey_driver);
-}
-module_exit(pmic8xxx_pwrkey_exit);
+module_platform_driver(pmic8xxx_pwrkey_driver);
 
 MODULE_ALIAS("platform:pmic8xxx_pwrkey");
 MODULE_DESCRIPTION("PMIC8XXX Power Key driver");

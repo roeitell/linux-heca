@@ -26,6 +26,7 @@
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
 #include <linux/interrupt.h>
+#include <linux/sched.h>
 #include <linux/irqreturn.h>
 #include <linux/proc_fs.h>
 #include <linux/slab.h>
@@ -34,7 +35,8 @@
 
 #include <linux/mm.h>
 #include <linux/pfn.h>
-#include <asm/atomic.h>
+#include <linux/atomic.h>
+#include <linux/sched.h>
 #include <mach/dma.h>
 
 /* I don't quite understand why dc4 fails when this is set to 1 and DMA is enabled */
@@ -835,7 +837,7 @@ int dma_init(void)
 
 	/* Create /proc/dma/channels and /proc/dma/devices */
 
-	gDmaDir = create_proc_entry("dma", S_IFDIR | S_IRUGO | S_IXUGO, NULL);
+	gDmaDir = proc_mkdir("dma", NULL);
 
 	if (gDmaDir == NULL) {
 		printk(KERN_ERR "Unable to create /proc/dma\n");
@@ -1613,7 +1615,7 @@ DMA_MemType_t dma_mem_type(void *addr)
 {
 	unsigned long addrVal = (unsigned long)addr;
 
-	if (addrVal >= VMALLOC_END) {
+	if (addrVal >= CONSISTENT_BASE) {
 		/* NOTE: DMA virtual memory space starts at 0xFFxxxxxx */
 
 		/* dma_alloc_xxx pages are physically and virtually contiguous */

@@ -5,7 +5,7 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-
+#define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
 #include <linux/gfp.h>
 #include <linux/skbuff.h>
@@ -62,8 +62,8 @@ static int xt_ct_tg_check(const struct xt_tgchk_param *par)
 	int ret = 0;
 	u8 proto;
 
-	if (info->flags & ~XT_CT_NOTRACK)
-		return -EINVAL;
+	if (info->flags & ~(XT_CT_NOTRACK | XT_CT_USERSPACE_HELPER))
+		return -EOPNOTSUPP;
 
 	if (info->flags & XT_CT_NOTRACK) {
 		ct = nf_ct_untracked_get();
@@ -92,11 +92,16 @@ static int xt_ct_tg_check(const struct xt_tgchk_param *par)
 				  GFP_KERNEL))
 		goto err3;
 
-	if (info->helper[0]) {
+	if (info->flags & XT_CT_USERSPACE_HELPER) {
+		__set_bit(IPS_USERSPACE_HELPER_BIT, &ct->status);
+	} else if (info->helper[0]) {
 		ret = -ENOENT;
 		proto = xt_ct_find_proto(par);
-		if (!proto)
+		if (!proto) {
+			pr_info("You must specify a L4 protocol, "
+				"and not use inversions on it.\n");
 			goto err3;
+		}
 
 		ret = -ENOMEM;
 		help = nf_ct_helper_ext_add(ct, GFP_KERNEL);
@@ -107,8 +112,10 @@ static int xt_ct_tg_check(const struct xt_tgchk_param *par)
 		help->helper = nf_conntrack_helper_try_module_get(info->helper,
 								  par->family,
 								  proto);
-		if (help->helper == NULL)
+		if (help->helper == NULL) {
+			pr_info("No such helper \"%s\"\n", info->helper);
 			goto err3;
+		}
 	}
 
 	__set_bit(IPS_TEMPLATE_BIT, &ct->status);

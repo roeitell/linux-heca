@@ -31,6 +31,7 @@
 #include <mach/hardware.h>
 #include <asm/mach-types.h>
 #include <asm/irq.h>
+#include <asm/page.h>
 #include <asm/setup.h>
 #include <mach/collie.h>
 
@@ -386,4 +387,5 @@ MACHINE_START(COLLIE, "Sharp-Collie")
 	.init_irq	= sa1100_init_irq,
 	.timer		= &sa1100_timer,
 	.init_machine	= collie_init,
+	.restart	= sa11x0_restart,
 MACHINE_END

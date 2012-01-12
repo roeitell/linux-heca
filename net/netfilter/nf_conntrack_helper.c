@@ -121,6 +121,18 @@ int __nf_ct_try_assign_helper(struct nf_conn *ct, struct nf_conn *tmpl,
 	int ret = 0;
 
 	if (tmpl != NULL) {
+		/* we've got a userspace helper. */
+		if (tmpl->status & IPS_USERSPACE_HELPER) {
+			help = nf_ct_helper_ext_add(ct, flags);
+			if (help == NULL) {
+				ret = -ENOMEM;
+				goto out;
+			}
+			rcu_assign_pointer(help->helper, NULL);
+			__set_bit(IPS_USERSPACE_HELPER_BIT, &ct->status);
+			ret = 0;
+			goto out;
+		}
 		help = nfct_help(tmpl);
 		if (help != NULL)
 			helper = help->helper;
@@ -131,7 +143,7 @@ int __nf_ct_try_assign_helper(struct nf_conn *ct, struct nf_conn *tmpl,
 		helper = __nf_ct_helper_find(&ct->tuplehash[IP_CT_DIR_REPLY].tuple);
 	if (helper == NULL) {
 		if (help)
-			rcu_assign_pointer(help->helper, NULL);
+			RCU_INIT_POINTER(help->helper, NULL);
 		goto out;
 	}
 
@@ -145,7 +157,7 @@ int __nf_ct_try_assign_helper(struct nf_conn *ct, struct nf_conn *tmpl,
 		memset(&help->help, 0, sizeof(help->help));
 	}
 
-	rcu_assign_pointer(help->helper, helper);
+	RCU_INIT_POINTER(help->helper, helper);
 out:
 	return ret;
 }
@@ -162,7 +174,7 @@ static inline int unhelp(struct nf_conntrack_tuple_hash *i,
 			lockdep_is_held(&nf_conntrack_lock)
 			) == me) {
 		nf_conntrack_event(IPCT_HELPER, ct);
-		rcu_assign_pointer(help->helper, NULL);
+		RCU_INIT_POINTER(help->helper, NULL);
 	}
 	return 0;
 }

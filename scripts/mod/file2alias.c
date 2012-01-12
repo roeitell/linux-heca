@@ -735,6 +735,27 @@ static int do_virtio_entry(const char *filename, struct virtio_device_id *id,
 	return 1;
 }
 
+/*
+ * Looks like: vmbus:guid
+ * Each byte of the guid will be represented by two hex characters
+ * in the name.
+ */
+
+static int do_vmbus_entry(const char *filename, struct hv_vmbus_device_id *id,
+			  char *alias)
+{
+	int i;
+	char guid_name[((sizeof(id->guid) + 1)) * 2];
+
+	for (i = 0; i < (sizeof(id->guid) * 2); i += 2)
+		sprintf(&guid_name[i], "%02x", id->guid[i/2]);
+
+	strcpy(alias, "vmbus:");
+	strcat(alias, guid_name);
+
+	return 1;
+}
+
 /* Looks like: i2c:S */
 static int do_i2c_entry(const char *filename, struct i2c_device_id *id,
 			char *alias)
@@ -856,6 +877,74 @@ static int do_isapnp_entry(const char *filename,
 		'A' + ((id->vendor >> 8) & 0x1f) - 1,
 		(id->function >> 4) & 0x0f, id->function & 0x0f,
 		(id->function >> 12) & 0x0f, (id->function >> 8) & 0x0f);
+	return 1;
+}
+
+/*
+ * Append a match expression for a single masked hex digit.
+ * outp points to a pointer to the character at which to append.
+ *	*outp is updated on return to point just after the appended text,
+ *	to facilitate further appending.
+ */
+static void append_nibble_mask(char **outp,
+			       unsigned int nibble, unsigned int mask)
+{
+	char *p = *outp;
+	unsigned int i;
+
+	switch (mask) {
+	case 0:
+		*p++ = '?';
+		break;
+
+	case 0xf:
+		p += sprintf(p, "%X",  nibble);
+		break;
+
+	default:
+		/*
+		 * Dumbly emit a match pattern for all possible matching
+		 * digits.  This could be improved in some cases using ranges,
+		 * but it has the advantage of being trivially correct, and is
+		 * often optimal.
+		 */
+		*p++ = '[';
+		for (i = 0; i < 0x10; i++)
+			if ((i & mask) == nibble)
+				p += sprintf(p, "%X", i);
+		*p++ = ']';
+	}
+
+	/* Ensure that the string remains NUL-terminated: */
+	*p = '\0';
+
+	/* Advance the caller's end-of-string pointer: */
+	*outp = p;
+}
+
+/*
+ * looks like: "amba:dN"
+ *
+ * N is exactly 8 digits, where each is an upper-case hex digit, or
+ *	a ? or [] pattern matching exactly one digit.
+ */
+static int do_amba_entry(const char *filename,
+			 struct amba_id *id, char *alias)
+{
+	unsigned int digit;
+	char *p = alias;
+
+	if ((id->id & id->mask) != id->id)
+		fatal("%s: Masked-off bit(s) of AMBA device ID are non-zero: "
+		      "id=0x%08X, mask=0x%08X.  Please fix this driver.\n",
+		      filename, id->id, id->mask);
+
+	p += sprintf(alias, "amba:d");
+	for (digit = 0; digit < 8; digit++)
+		append_nibble_mask(&p,
+				   (id->id >> (4 * (7 - digit))) & 0xf,
+				   (id->mask >> (4 * (7 - digit))) & 0xf);
+
 	return 1;
 }
 
@@ -994,6 +1083,10 @@ void handle_moddevtable(struct module *mod, struct elf_info *info,
 		do_table(symval, sym->st_size,
 			 sizeof(struct virtio_device_id), "virtio",
 			 do_virtio_entry, mod);
+	else if (sym_is(symname, "__mod_vmbus_device_table"))
+		do_table(symval, sym->st_size,
+			 sizeof(struct hv_vmbus_device_id), "vmbus",
+			 do_vmbus_entry, mod);
 	else if (sym_is(symname, "__mod_i2c_device_table"))
 		do_table(symval, sym->st_size,
 			 sizeof(struct i2c_device_id), "i2c",
@@ -1022,6 +1115,10 @@ void handle_moddevtable(struct module *mod, struct elf_info *info,
 		do_table(symval, sym->st_size,
 			sizeof(struct isapnp_device_id), "isa",
 			do_isapnp_entry, mod);
+	else if (sym_is(symname, "__mod_amba_device_table"))
+		do_table(symval, sym->st_size,
+			sizeof(struct amba_id), "amba",
+			do_amba_entry, mod);
 	free(zeros);
 }
 

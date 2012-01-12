@@ -1,3 +1,8 @@
+#ifndef _LINUX_SWAPOPS_H
+#define _LINUX_SWAPOPS_H
+
+#include <linux/radix-tree.h>
+
 /*
  * swapcache pages are stored in the swapper_space radix tree.  We want to
  * get good packing density in that tree, so the index should be dense in
@@ -74,6 +79,22 @@ static inline pte_t swp_entry_to_pte(swp_entry_t entry)
 	arch_entry = __swp_entry(swp_type(entry), swp_offset(entry));
 	BUG_ON(pte_file(__swp_entry_to_pte(arch_entry)));
 	return __swp_entry_to_pte(arch_entry);
+}
+
+static inline swp_entry_t radix_to_swp_entry(void *arg)
+{
+	swp_entry_t entry;
+
+	entry.val = (unsigned long)arg >> RADIX_TREE_EXCEPTIONAL_SHIFT;
+	return entry;
+}
+
+static inline void *swp_to_radix_entry(swp_entry_t entry)
+{
+	unsigned long value;
+
+	value = entry.val << RADIX_TREE_EXCEPTIONAL_SHIFT;
+	return (void *)(value | RADIX_TREE_EXCEPTIONAL_ENTRY);
 }
 
 #ifdef CONFIG_MIGRATION
@@ -170,6 +191,7 @@ static inline int non_swap_entry(swp_entry_t entry)
 }
 #endif
 
+
 #ifdef CONFIG_DSM_CORE
 // SWP_DSM
 static inline swp_entry_t make_dsm_entry(u32 dsm_id, u32 vm_id)
@@ -234,3 +256,6 @@ static inline int is_dsm_entry(swp_entry_t entry)
 static inline void dsm_entry_to_val(swp_entry_t entry, u32 *dsm_id, u32 *vm_id) {}
 
 #endif /* CONFIG_DSM */
+
+#endif /* _LINUX_SWAPOPS_H */
+

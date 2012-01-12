@@ -13,6 +13,9 @@
  *  Do not include any C declarations in this file - it is included by
  *  assembler source.
  */
+#ifndef __ASM_ASSEMBLER_H__
+#define __ASM_ASSEMBLER_H__
+
 #ifndef __ASSEMBLY__
 #error "Only include this from assembly code"
 #endif
@@ -184,6 +187,17 @@
 #endif
 
 /*
+ * Instruction barrier
+ */
+	.macro	instr_sync
+#if __LINUX_ARM_ARCH__ >= 7
+	isb
+#elif __LINUX_ARM_ARCH__ == 6
+	mcr	p15, 0, r0, c7, c5, 4
+#endif
+	.endm
+
+/*
  * SMP data memory barrier
  */
 	.macro	smp_dmb mode
@@ -290,3 +304,13 @@
 	.macro	ldrusr, reg, ptr, inc, cond=al, rept=1, abort=9001f
 	usracc	ldr, \reg, \ptr, \inc, \cond, \rept, \abort
 	.endm
+
+/* Utility macro for declaring string literals */
+	.macro	string name:req, string
+	.type \name , #object
+\name:
+	.asciz "\string"
+	.size \name , . - \name
+	.endm
+
+#endif /* __ASM_ASSEMBLER_H__ */

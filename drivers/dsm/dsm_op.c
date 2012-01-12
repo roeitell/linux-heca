@@ -621,67 +621,63 @@ void release_tx_element_reply(struct conn_element * ele,
 
 }
 
-int create_rcm(char *ip, int port) {
+int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     int ret = 0;
-    struct rcm **rcm = get_pointer_rcm();
-    *rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
-    BUG_ON(!(*rcm));
-    memset(*rcm, 0, sizeof(struct rcm));
+
+    struct rcm *rcm = NULL;
+    rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
+    BUG_ON(!(rcm));
+    memset(rcm, 0, sizeof(struct rcm));
     init_kmem_request_cache();
-    mutex_init(&(*rcm)->rcm_mutex);
-    spin_lock_init(&(*rcm)->route_lock);
+    mutex_init(&rcm->rcm_mutex);
 
-    INIT_RADIX_TREE(&(*rcm)->dsm_tree_root, GFP_KERNEL);
-    INIT_LIST_HEAD(&(*rcm)->dsm_list);
+    rcm->node_ip = inet_addr(ip);
 
-    (*rcm)->dsm_wq = alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
-    (*rcm)->node_ip = inet_addr(ip);
+    rcm->root_conn = RB_ROOT;
+    rcm->root_route = RB_ROOT;
 
-    (*rcm)->root_conn = RB_ROOT;
-    (*rcm)->root_route = RB_ROOT;
+    rcm->sin.sin_family = AF_INET;
+    rcm->sin.sin_addr.s_addr = (__u32) rcm->node_ip;
+    rcm->sin.sin_port = (__u16) htons(port);
 
-    (*rcm)->sin.sin_family = AF_INET;
-    (*rcm)->sin.sin_addr.s_addr = (__u32) (*rcm)->node_ip;
-    (*rcm)->sin.sin_port = (__u16) htons(port);
-
-    (*rcm)->cm_id = rdma_create_id(server_event_handler, *rcm, RDMA_PS_TCP,
+    rcm->cm_id = rdma_create_id(server_event_handler, rcm, RDMA_PS_TCP,
             IB_QPT_RC);
-    if (IS_ERR((*rcm)->cm_id))
+    if (IS_ERR(rcm->cm_id))
         goto err_cm_id;
 
-    if ((ret = rdma_bind_addr((*rcm)->cm_id,
-            (struct sockaddr *) &((*rcm)->sin)))) {
+    if ((ret = rdma_bind_addr(rcm->cm_id, (struct sockaddr *) &(rcm->sin)))) {
         printk("{r = %d}\n", ret);
         goto err_bind;
     }
 
-    if (!(*rcm)->cm_id->device)
+    if (!rcm->cm_id->device)
         goto nodevice;
 
-    (*rcm)->pd = ib_alloc_pd((*rcm)->cm_id->device);
-    if (IS_ERR((*rcm)->pd))
+    rcm->pd = ib_alloc_pd(rcm->cm_id->device);
+    if (IS_ERR(rcm->pd))
         goto err_pd;
 
-    (*rcm)->listen_cq = ib_create_cq((*rcm)->cm_id->device, listener_cq_handle,
-            NULL, (*rcm), 2, 0);
-    if (IS_ERR((*rcm)->listen_cq))
+    rcm->listen_cq = ib_create_cq(rcm->cm_id->device, listener_cq_handle, NULL,
+            rcm, 2, 0);
+    if (IS_ERR(rcm->listen_cq))
         goto err_cq;
 
-    if (ib_req_notify_cq((*rcm)->listen_cq, IB_CQ_NEXT_COMP))
+    if (ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))
         goto err_notify;
 
-    (*rcm)->mr = ib_get_dma_mr(
-            (*rcm)->pd,
+    rcm->mr = ib_get_dma_mr(
+            rcm->pd,
             IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ
                     | IB_ACCESS_REMOTE_WRITE);
-    if (IS_ERR((*rcm)->mr))
+    if (IS_ERR(rcm->mr))
         goto err_mr;
 
+    dsm_state->rcm = rcm;
     return ret;
 
-    err_mr: err_notify: ib_destroy_cq((*rcm)->listen_cq);
-    err_cq: ib_dealloc_pd((*rcm)->pd);
-    err_pd: err_bind: rdma_destroy_id((*rcm)->cm_id);
+    err_mr: err_notify: ib_destroy_cq(rcm->listen_cq);
+    err_cq: ib_dealloc_pd(rcm->pd);
+    err_pd: err_bind: rdma_destroy_id(rcm->cm_id);
     err_cm_id: printk(">[create_rcm] Failed.\n");
 
     return ret;
@@ -1036,45 +1032,38 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
 
 }
 
-int destroy_rcm() {
-    struct dsm * dsm = NULL;
-    int ret = 0;
-    struct rcm **rcm = get_pointer_rcm();
-    if (*rcm) {
-        if ((ret = destroy_connections(*rcm)))
-            ;
-        printk(">[destroy_rcm] - Cannot destroy connections\n");
+int destroy_rcm(struct dsm_module_state *dsm_state) {
 
-        if (likely((*rcm)->cm_id)) {
-            if ((*rcm)->cm_id->qp)
-                if ((ret = ib_destroy_qp((*rcm)->cm_id->qp)))
+    int ret = 0;
+    struct rcm *rcm = dsm_state->rcm;
+    dsm_state->rcm = NULL;
+    if (rcm) {
+        if ((ret = destroy_connections(rcm)))
+            printk(">[destroy_rcm] - Cannot destroy connections\n");
+
+        if (likely(rcm->cm_id)) {
+            if (rcm->cm_id->qp)
+                if ((ret = ib_destroy_qp(rcm->cm_id->qp)))
                     printk(">[destroy_rcm] - Cannot destroy qp\n");
 
-            if ((*rcm)->mr)
-                if ((ret = (*rcm)->cm_id->device->dereg_mr((*rcm)->mr)))
+            if (rcm->mr)
+                if ((ret = rcm->cm_id->device->dereg_mr(rcm->mr)))
                     printk(">[destroy_rcm] - Cannot dereg mr\n");
 
-            if ((*rcm)->pd)
-                if ((ret = ib_dealloc_pd((*rcm)->pd)))
+            if (rcm->pd)
+                if ((ret = ib_dealloc_pd(rcm->pd)))
                     printk(">[destroy_rcm] -Cannot dealloc pd\n");
 
-            if ((*rcm)->cm_id)
+            if (rcm->cm_id)
 
-                rdma_destroy_id((*rcm)->cm_id);
+                rdma_destroy_id(rcm->cm_id);
 
         } else
             printk(">[destroy_rcm] - no cm_id\n");
 
-        while (!list_empty(&(*rcm)->dsm_list)) {
+        mutex_destroy(&rcm->rcm_mutex);
+        kfree(rcm);
 
-            dsm = list_first_entry(&(*rcm)->dsm_list, struct dsm, dsm_ptr );
-            remove_dsm(dsm);
-
-        }
-
-        mutex_destroy((*rcm)->rcm_mutex);
-        kfree(*rcm);
-        *rcm = 0;
     } else
         printk(">[destroy_rcm] - no rcm\n");
     destroy_kmem_request_cache();

@@ -105,8 +105,6 @@ struct dsm {
 
     int nb_local_svm;
 
-//    struct list_head svm_ls;
-//    struct list_head ls;
 };
 
 struct dsm_kobjects {
@@ -127,21 +125,13 @@ struct rcm {
 
     struct mutex rcm_mutex;
 
-    spinlock_t route_lock;
-
     struct rb_root root_conn;
     struct rb_root root_route;
 
     struct sockaddr_in sin;
 
-    //   struct list_head dsm_ls;
-    struct radix_tree_root dsm_tree_root;
-    struct list_head dsm_list;
-
-    struct dsm_kobjects dsm_kobjects;
-    struct workqueue_struct * dsm_wq;
-
 };
+
 struct rdma_info_data {
 
     void *send_mem;
@@ -275,10 +265,6 @@ struct subvirtual_machine {
     struct private_data *priv;
     struct list_head svm_ptr;
     struct dsm * dsm;
-//    struct list_head mr_ls;
-//    struct list_head ls;
-//    struct rcu_head rcu_head;
-
     spinlock_t svm_lock;
 };
 
@@ -360,6 +346,17 @@ struct dsm_request {
     void(*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
     struct list_head queue;
+};
+
+struct dsm_module_state {
+
+    struct rcm * rcm;
+    struct mutex dsm_state_mutex;
+    struct radix_tree_root dsm_tree_root;
+    struct list_head dsm_list;
+
+    struct dsm_kobjects dsm_kobjects;
+    struct workqueue_struct * dsm_wq;
 };
 
 /*

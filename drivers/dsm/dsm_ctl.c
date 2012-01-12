@@ -15,12 +15,12 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
     struct svm_data svm_info;
     struct dsm * found_dsm, *new_dsm = NULL;
 
-    struct rcm *rcm = get_rcm();
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
         return r;
 
-    mutex_lock(&rcm->rcm_mutex);
+    mutex_lock(&dsm_state->dsm_state_mutex);
 
     do {
 
@@ -43,12 +43,12 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         if (r)
             break;
 
-        r = radix_tree_insert(&rcm->dsm_tree_root,
+        r = radix_tree_insert(&dsm_state->dsm_tree_root,
                 (unsigned long) svm_info.dsm_id, new_dsm);
         if (likely(!r)) {
             radix_tree_preload_end();
             priv_data->dsm = new_dsm;
-            list_add(&new_dsm->dsm_ptr, &rcm->dsm_list);
+            list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
             printk("[DSM_DSM]\n registered dsm %p,  dsm_id : %u, res: %d \n",
                     new_dsm, svm_info.dsm_id, r);
             goto exit;
@@ -62,7 +62,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
 
     exit:
 
-    mutex_unlock(&rcm->rcm_mutex);
+    mutex_unlock(&dsm_state->dsm_state_mutex);
     return r;
 
 }
@@ -139,7 +139,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     struct svm_data svm_info;
     struct conn_element *cele;
     int ip_addr;
-    struct rcm * rcm = get_rcm();
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
         return r;
@@ -179,7 +179,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             cele = search_rb_conn(ip_addr);
 
             if (!cele) {
-                r = create_connection(rcm, &svm_info);
+                r = create_connection(dsm_state->rcm, &svm_info);
                 if (r)
                     goto connect_fail;
 
@@ -367,7 +367,8 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
 
 static int open(struct inode *inode, struct file *f) {
     struct private_data *data;
-    struct rcm * rcm = get_rcm();
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
+
     data = kmalloc(sizeof(*data), GFP_KERNEL);
     data->svm = NULL;
     data->offset = 0;
@@ -375,10 +376,10 @@ static int open(struct inode *inode, struct file *f) {
     if (!data)
         return -EFAULT;
 
-    mutex_lock(&rcm->rcm_mutex);
+    mutex_lock(&dsm_state->dsm_state_mutex);
     data->mm = current->mm;
     f->private_data = (void *) data;
-    mutex_unlock(&rcm->rcm_mutex);
+    mutex_unlock(&dsm_state->dsm_state_mutex);
 
     return 0;
 
@@ -390,7 +391,6 @@ static int release(struct inode *inode, struct file *f) {
     struct mem_region *mr = NULL;
     struct dsm *_dsm = NULL;
     u16 dsm_id;
-    struct rcm * rcm = get_rcm();
 
     if (!data->svm)
         return 1;
@@ -536,22 +536,27 @@ MODULE_PARM_DESC(
         "The port on the machine running this module - used for DSM_RDMA communication.");
 
 static int dsm_init(void) {
-    struct rcm * rcm;
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
+
     reg_dsm_functions(&find_svm, &find_local_svm, &request_dsm_page);
 
     printk("[dsm_init] ip : %s\n", ip);
     printk("[dsm_init] port : %d\n", port);
 
-    if (create_rcm(ip, port))
-        goto err;
-    rcm = get_rcm();
-    if (dsm_sysf_setup(rcm)) {
-        dereg_dsm_functions();
+    INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
+    INIT_LIST_HEAD(&dsm_state->dsm_list);
+    mutex_init(&dsm_state->dsm_state_mutex);
+    dsm_state->dsm_wq = alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
 
-        destroy_rcm();
+    if (create_rcm(dsm_state, ip, port))
+        goto err;
+
+    if (dsm_sysf_setup(dsm_state)) {
+        dereg_dsm_functions();
+        destroy_rcm(dsm_state);
     }
 
-    rdma_listen(rcm->cm_id, 2);
+    rdma_listen(dsm_state->rcm->cm_id, 2);
 
     err: return misc_register(&rdma_misc);
 
@@ -559,9 +564,18 @@ static int dsm_init(void) {
 module_init(dsm_init);
 
 static void dsm_exit(void) {
+    struct dsm * dsm = NULL;
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
+    while (!list_empty(&dsm_state->dsm_list)) {
+
+        dsm = list_first_entry(&dsm_state->dsm_list, struct dsm, dsm_ptr );
+        remove_dsm(dsm);
+
+    }
+
     dereg_dsm_functions();
-    dsm_sysf_cleanup(get_rcm());
-    destroy_rcm();
+    dsm_sysf_cleanup(dsm_state);
+    destroy_rcm(dsm_state);
 
     misc_deregister(&rdma_misc);
 

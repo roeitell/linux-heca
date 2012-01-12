@@ -40,8 +40,8 @@
  */
 unsigned int inet_addr(char *);
 
-int create_rcm(char *, int);
-int destroy_rcm(void);
+int create_rcm(struct dsm_module_state *, char *, int);
+int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element **, struct rcm *);
 void create_page_request(struct conn_element *, struct tx_buf_ele *,
         struct dsm_vm_id, struct dsm_vm_id, uint64_t, struct page*, u16);
@@ -77,8 +77,7 @@ struct mem_region *find_mr(unsigned long, struct dsm_vm_id *);
 void insert_rb_conn(struct conn_element *);
 struct conn_element* search_rb_conn(int);
 void erase_rb_conn(struct rb_root *, struct conn_element*);
-struct rcm * get_rcm(void);
-struct rcm ** get_pointer_rcm(void);
+struct dsm_module_state * get_dsm_module_state(void);
 struct subvirtual_machine *find_svm(struct dsm_vm_id *);
 struct dsm *find_dsm( u32);
 struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
@@ -118,7 +117,7 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 /*
  * SYSFS
  */
-void dsm_sysf_cleanup(struct rcm *);
-int dsm_sysf_setup(struct rcm *);
+void dsm_sysf_cleanup(struct dsm_module_state *);
+int dsm_sysf_setup(struct dsm_module_state *);
 
 #endif /* DSM_OP_H_ */

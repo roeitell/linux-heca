@@ -48,7 +48,7 @@ struct page *find_get_dsm_page(unsigned long);
 
 struct dsm_functions {
     struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *); //_find_svm;
-    struct subvirtual_machine *(*_find_local_svm)(struct dsm * ,
+    struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
             struct mm_struct *);
     int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
             struct subvirtual_machine *, uint64_t,
@@ -58,7 +58,8 @@ struct dsm_functions {
 // dsm_unmap
 void reg_dsm_functions(
         struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
-        struct subvirtual_machine *(*_find_local_svm)(struct dsm * , struct mm_struct *),
+        struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
+                struct mm_struct *),
         int(*request_dsm_page)(struct page *, struct subvirtual_machine *,
                 struct subvirtual_machine *, uint64_t,
                 void(*func)(struct tx_buf_ele *), int));

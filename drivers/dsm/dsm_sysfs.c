@@ -69,8 +69,8 @@ static struct attribute *rdma_attrs[] = { &rdma_send_attribute.attr,
 
 static struct attribute_group rdma_attr_group = { .attrs = rdma_attrs, };
 
-static void cleanup_top_level_kobject(struct rcm *rcm) {
-    struct dsm_kobjects *dsm_kobjects = &rcm->dsm_kobjects;
+static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
+    struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
     kobject_put(dsm_kobjects->rdma_kobject);
     kobject_del(dsm_kobjects->rdma_kobject);
@@ -80,9 +80,9 @@ static void cleanup_top_level_kobject(struct rcm *rcm) {
     return;
 }
 
-int dsm_sysf_setup(struct rcm *rcm) {
+int dsm_sysf_setup(struct dsm_module_state *dsm_state) {
 
-    struct dsm_kobjects *dsm_kobjects = &rcm->dsm_kobjects;
+    struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
     dsm_kobjects->dsm_kobject = kobject_create_and_add("dsm", mm_kobj);
     if (!dsm_kobjects->dsm_kobject)
@@ -116,9 +116,9 @@ int dsm_sysf_setup(struct rcm *rcm) {
 
 }
 
-void dsm_sysf_cleanup(struct rcm *rcm) {
+void dsm_sysf_cleanup(struct dsm_module_state *dsm_state) {
 
-    cleanup_top_level_kobject(rcm);
+    cleanup_top_level_kobject(dsm_state);
 
 }
 

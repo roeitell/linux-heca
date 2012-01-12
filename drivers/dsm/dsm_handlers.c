@@ -311,7 +311,7 @@ static void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
     ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
     dsm_send_poll(cq);
     if (ret > 0)
-        queue_work(ele->rcm->dsm_wq, &ele->send_work);
+        queue_work(get_dsm_module_state()->dsm_wq, &ele->send_work);
     else if (ret < 0)
         printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
 
@@ -328,7 +328,7 @@ static void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
     dsm_recv_poll(cq);
     flush_dsm_request(ele);
     if (ret > 0)
-        queue_work(ele->rcm->dsm_wq, &ele->recv_work);
+        queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
     else if (ret < 0)
         printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
 
@@ -348,11 +348,11 @@ void recv_cq_handle_work(struct work_struct *work) {
 
 void send_cq_handle(struct ib_cq *cq, void *cq_context) {
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
-    queue_work(ele->rcm->dsm_wq, &ele->send_work);
+    queue_work(get_dsm_module_state()->dsm_wq, &ele->send_work);
 }
 void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
-    queue_work(ele->rcm->dsm_wq, &ele->recv_work);
+    queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
 }
 /*
  * This one is specific to the client part

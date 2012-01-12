@@ -66,7 +66,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
     list_add_tail(&req->queue, &tx->request_queue);
     spin_unlock(&tx->request_queue_lock);
 
-    queue_work(ele->rcm->dsm_wq, &ele->recv_work);
+    queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
 
     return ret;
 
@@ -127,7 +127,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     list_add_tail(&req->queue, &tx->request_queue);
     spin_unlock(&tx->request_queue_lock);
 
-    queue_work(ele->rcm->dsm_wq, &ele->recv_work);
+    queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
 
     return ret;
 
@@ -190,7 +190,7 @@ int rx_tx_message_transfer(struct conn_element * ele,
             spin_lock(&tx->request_queue_lock);
             list_add_tail(&req->queue, &tx->request_queue);
             spin_unlock(&tx->request_queue_lock);
-            queue_work(ele->rcm->dsm_wq, &ele->recv_work);
+            queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
             return ret;
 
         } else {
@@ -311,7 +311,8 @@ int exchange_info(struct conn_element *ele, int id) {
 
             // We find that a connection is already open with that node - delete this connection request.
             if (ele_found) {
-                if (ele->remote_node_ip != get_rcm()->node_ip) {
+                if (ele->remote_node_ip
+                        != get_dsm_module_state()->rcm->node_ip) {
                     printk(
                             ">[exchange_info] - destroy_connection duplicate : %d\n former : %d\n",
                             ele->remote_node_ip, ele_found->remote_node_ip);

@@ -7,16 +7,12 @@
 
 #include <dsm/dsm_module.h>
 
-static struct rcm *_rcm;
+static struct dsm_module_state dsm_state;
 
-struct rcm * get_rcm(void) {
-    return _rcm;
+struct dsm_module_state * get_dsm_module_state(void) {
+    return &dsm_state;
 }
-EXPORT_SYMBOL(get_rcm);
-struct rcm ** get_pointer_rcm(void) {
-    return &_rcm;
-}
-EXPORT_SYMBOL(get_pointer_rcm);
+EXPORT_SYMBOL(get_dsm_module_state);
 
 void remove_svm(struct subvirtual_machine *svm) {
 
@@ -36,12 +32,12 @@ EXPORT_SYMBOL(remove_svm);
 void remove_dsm(struct dsm * dsm) {
 
     struct subvirtual_machine *svm;
-    struct rcm * rcm = get_rcm();
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
 
-    mutex_lock(&rcm->rcm_mutex);
+    mutex_lock(&dsm_state->dsm_state_mutex);
     list_del(&dsm->dsm_ptr);
-    radix_tree_delete(&rcm->dsm_tree_root, (unsigned long) dsm->dsm_id);
-    mutex_unlock(&rcm->rcm_mutex);
+    radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);
+    mutex_unlock(&dsm_state->dsm_state_mutex);
 
     while (!list_empty(&dsm->svm_list)) {
 
@@ -50,7 +46,7 @@ void remove_dsm(struct dsm * dsm) {
 
     }
 
-    mutex_destroy(dsm->dsm_mutex);
+    mutex_destroy(&dsm->dsm_mutex);
     kfree(dsm);
 
 }
@@ -96,9 +92,9 @@ static struct subvirtual_machine* _find_svm_in_dsm(struct radix_tree_root *root,
 struct dsm *find_dsm(u32 id) {
 
     struct dsm *dsm = NULL;
-    struct rcm * rcm = get_rcm();
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
     rcu_read_lock();
-    dsm = _find_dsm(&rcm->dsm_tree_root, (unsigned long) id);
+    dsm = _find_dsm(&dsm_state->dsm_tree_root, (unsigned long) id);
     rcu_read_unlock();
     return dsm;
 
@@ -109,9 +105,9 @@ struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
 
     struct dsm *dsm = NULL;
     struct subvirtual_machine *svm = NULL;
-    struct rcm * rcm = get_rcm();
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
     rcu_read_lock();
-    dsm = _find_dsm(&rcm->dsm_tree_root, (unsigned long) id->dsm_id);
+    dsm = _find_dsm(&dsm_state->dsm_tree_root, (unsigned long) id->dsm_id);
     if (dsm) {
         svm = _find_svm_in_dsm(&dsm->svm_tree_root, id->svm_id);
     }
@@ -133,7 +129,7 @@ struct subvirtual_machine *find_local_svm(struct dsm * dsm,
 EXPORT_SYMBOL(find_local_svm);
 
 void insert_rb_conn(struct conn_element *ele) {
-    struct rb_root *root = &get_rcm()->root_conn;
+    struct rb_root *root = &get_dsm_module_state()->rcm->root_conn;
     struct rb_node **new = &root->rb_node;
     struct rb_node *parent = NULL;
     struct conn_element *this;
@@ -155,7 +151,7 @@ EXPORT_SYMBOL(insert_rb_conn);
 
 // Return NULL if no element contained within tree.
 struct conn_element* search_rb_conn(int node_ip) {
-    struct rb_root *root = &get_rcm()->root_conn;
+    struct rb_root *root = &get_dsm_module_state()->rcm->root_conn;
     struct rb_node *node = root->rb_node;
     struct conn_element *this = 0;
 

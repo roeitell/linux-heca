@@ -40,7 +40,6 @@
 #define PULL_TAG        2               /* pages that we try to get pulled */
 #define DEFAULT_TAG    RADIX_TREE_MAX_TAGS
 
-
 struct page *page_is_in_dsm_cache(unsigned long);
 int page_is_tagged_in_dsm_cache(unsigned long, int);
 int add_page_pull_to_dsm_cache(struct page *, unsigned long, gfp_t);
@@ -49,7 +48,8 @@ struct page *find_get_dsm_page(unsigned long);
 
 struct dsm_functions {
     struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *); //_find_svm;
-    struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *); //_find_local_svm;
+    struct subvirtual_machine *(*_find_local_svm)(struct dsm * ,
+            struct mm_struct *);
     int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
             struct subvirtual_machine *, uint64_t,
             void(*func)(struct tx_buf_ele *), int);
@@ -58,7 +58,7 @@ struct dsm_functions {
 // dsm_unmap
 void reg_dsm_functions(
         struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *),
-        struct subvirtual_machine *(*_find_local_svm)(u16, struct mm_struct *),
+        struct subvirtual_machine *(*_find_local_svm)(struct dsm * , struct mm_struct *),
         int(*request_dsm_page)(struct page *, struct subvirtual_machine *,
                 struct subvirtual_machine *, uint64_t,
                 void(*func)(struct tx_buf_ele *), int));

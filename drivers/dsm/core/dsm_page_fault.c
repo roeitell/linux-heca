@@ -513,7 +513,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         svm = funcs->_find_svm(&id);
         BUG_ON(!svm);
 
-        fault_svm = funcs->_find_local_svm(svm->id.dsm_id, mm);
+        fault_svm = funcs->_find_local_svm(svm->dsm, mm);
         BUG_ON(!fault_svm);
 
         page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr, svm,

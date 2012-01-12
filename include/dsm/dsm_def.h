@@ -93,8 +93,20 @@ static inline u32 u64_to_vm_id(u64 val) {
 struct dsm {
     u32 dsm_id;
 
-    struct list_head svm_ls;
-    struct list_head ls;
+    struct radix_tree_root svm_tree_root;
+    struct radix_tree_root svm_mm_tree_root;
+    struct rb_root mr_tree_root;
+
+    struct mutex dsm_mutex;
+    struct list_head svm_list;
+    struct list_head mr_list;
+
+    struct list_head dsm_ptr;
+
+    int nb_local_svm;
+
+//    struct list_head svm_ls;
+//    struct list_head ls;
 };
 
 struct dsm_kobjects {
@@ -113,7 +125,7 @@ struct rcm {
 
     struct ib_cq *listen_cq;
 
-    spinlock_t rcm_lock;
+    struct mutex rcm_mutex;
 
     spinlock_t route_lock;
 
@@ -122,10 +134,11 @@ struct rcm {
 
     struct sockaddr_in sin;
 
-    struct list_head dsm_ls;
-    struct rb_root red_page_root;
-    struct dsm_kobjects dsm_kobjects;
+    //   struct list_head dsm_ls;
+    struct radix_tree_root dsm_tree_root;
+    struct list_head dsm_list;
 
+    struct dsm_kobjects dsm_kobjects;
     struct workqueue_struct * dsm_wq;
 
 };
@@ -249,28 +262,24 @@ struct mem_region {
 };
 
 struct private_data {
-
-    struct rb_root root_swap;
-
     struct mm_struct *mm;
-
     unsigned long offset;
+    struct dsm * dsm;
     struct subvirtual_machine *svm;
-
-    struct list_head head;
 
 };
 
 struct subvirtual_machine {
-    struct conn_element *ele;
     struct dsm_vm_id id;
-    struct list_head mr_ls;
-    struct list_head ls;
-
+    struct conn_element *ele;
     struct private_data *priv;
-    struct rcu_head rcu_head;
-    struct rb_node rb_node;
+    struct list_head svm_ptr;
+    struct dsm * dsm;
+//    struct list_head mr_ls;
+//    struct list_head ls;
+//    struct rcu_head rcu_head;
 
+    spinlock_t svm_lock;
 };
 
 struct work_request_ele {
@@ -366,10 +375,11 @@ struct dsm_request {
 #define DSM_GET_STAT                    _IOW(DSM_IO, 0xA6, struct svm_data)
 #define DSM_GEN_STAT                    _IOW(DSM_IO, 0xA7, struct svm_data)
 #define DSM_TRY_PUSH_BACK_PAGE          _IOW(DSM_IO, 0xA8, struct unmap_data)
+#define DSM_DSM                         _IOW(DSM_IO, 0xA9, struct svm_data)
 
 struct svm_data {
-    int dsm_id;
-    int svm_id;
+    u32 dsm_id;
+    u32 svm_id;
     unsigned long offset;
     char *ip;
     int port;
@@ -377,8 +387,8 @@ struct svm_data {
 };
 
 struct mr_data {
-    int dsm_id;
-    int svm_id;
+    u32 dsm_id;
+    u32 svm_id;
     unsigned long start_addr;
     unsigned long size;
 

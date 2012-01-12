@@ -18,119 +18,119 @@ struct rcm ** get_pointer_rcm(void) {
 }
 EXPORT_SYMBOL(get_pointer_rcm);
 
-struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
-    //return search_rb_route(_rcm, id);
-    struct dsm *dsm;
+void remove_svm(struct subvirtual_machine *svm) {
+
+    mutex_lock(&svm->dsm->dsm_mutex);
+
+    if (svm->priv)
+        svm->dsm->nb_local_svm--;
+    radix_tree_delete(&svm->dsm->svm_mm_tree_root,
+            (unsigned long) svm->id.svm_id);
+    radix_tree_delete(&svm->dsm->svm_tree_root, (unsigned long) svm->id.svm_id);
+    mutex_unlock(&svm->dsm->dsm_mutex);
+    kfree(svm);
+
+}
+EXPORT_SYMBOL(remove_svm);
+
+void remove_dsm(struct dsm * dsm) {
+
     struct subvirtual_machine *svm;
     struct rcm * rcm = get_rcm();
 
-    list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-    {
-        if (dsm->dsm_id == id->dsm_id) {
-            list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
-            {
-                if (svm->id.svm_id == id->svm_id)
-                    return svm;
-            }
-        }
+    mutex_lock(&rcm->rcm_mutex);
+    list_del(&dsm->dsm_ptr);
+    radix_tree_delete(&rcm->dsm_tree_root, (unsigned long) dsm->dsm_id);
+    mutex_unlock(&rcm->rcm_mutex);
+
+    while (!list_empty(&dsm->svm_list)) {
+
+        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr );
+        remove_svm(svm);
+
     }
 
-    return NULL;
+    mutex_destroy(dsm->dsm_mutex);
+    kfree(dsm);
 
+}
+EXPORT_SYMBOL(remove_dsm);
+
+static struct dsm* _find_dsm(struct radix_tree_root *root, unsigned long id) {
+    struct dsm *dsm;
+    struct dsm **dsmp;
+
+    repeat: dsm = NULL;
+    dsmp = (struct dsm **) radix_tree_lookup_slot(root, id);
+    if (dsmp) {
+        //NEED TO BE UPDATED TO 3.1
+        dsm = radix_tree_deref_slot((void**) dsmp);
+        if (unlikely(!dsm))
+            goto out;
+        if (radix_tree_deref_retry(dsm))
+            goto repeat;
+
+    }
+    out: return dsm;
+}
+
+static struct subvirtual_machine* _find_svm_in_dsm(struct radix_tree_root *root,
+        unsigned long id) {
+    struct subvirtual_machine *svm;
+    struct subvirtual_machine **svmp;
+
+    repeat: svm = NULL;
+    svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root, id);
+    if (svmp) {
+        //NEED TO BE UPDATED TO 3.1
+        svm = radix_tree_deref_slot((void**) svmp);
+        if (unlikely(!svm))
+            goto out;
+        if (radix_tree_deref_retry(svm))
+            goto repeat;
+
+    }
+    out: return svm;
+}
+
+struct dsm *find_dsm(u32 id) {
+
+    struct dsm *dsm = NULL;
+    struct rcm * rcm = get_rcm();
+    rcu_read_lock();
+    dsm = _find_dsm(&rcm->dsm_tree_root, (unsigned long) id);
+    rcu_read_unlock();
+    return dsm;
+
+}
+EXPORT_SYMBOL(find_dsm);
+
+struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
+
+    struct dsm *dsm = NULL;
+    struct subvirtual_machine *svm = NULL;
+    struct rcm * rcm = get_rcm();
+    rcu_read_lock();
+    dsm = _find_dsm(&rcm->dsm_tree_root, (unsigned long) id->dsm_id);
+    if (dsm) {
+        svm = _find_svm_in_dsm(&dsm->svm_tree_root, id->svm_id);
+    }
+    rcu_read_unlock();
+    return svm;
 }
 EXPORT_SYMBOL(find_svm);
 
-/*
- * Find and return SVM with pointer to process file desc private_data. *
- */
-struct subvirtual_machine *find_local_svm(u16 dsm_id, struct mm_struct *mm) {
-    struct subvirtual_machine *local_svm;
-    struct dsm *dsm;
-    struct rcm * rcm = get_rcm();
+struct subvirtual_machine *find_local_svm(struct dsm * dsm,
+        struct mm_struct *mm) {
 
-    list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-    {
-        if (dsm->dsm_id == dsm_id) {
-            list_for_each_entry_rcu(local_svm, &dsm->svm_ls, ls)
-            {
-                if (local_svm->priv)
-                    if (local_svm->priv->mm == mm)
-                        return local_svm;
-            }
+    struct subvirtual_machine *svm = NULL;
 
-        }
-
-    }
-
-    return NULL;
+    rcu_read_lock();
+    svm = _find_svm_in_dsm(&dsm->svm_mm_tree_root, (unsigned long) mm);
+    rcu_read_unlock();
+    return svm;
 }
 EXPORT_SYMBOL(find_local_svm);
-
-int page_local(unsigned long addr, struct dsm_vm_id *id, struct mm_struct *mm) {
-    struct subvirtual_machine *svm = NULL;
-    struct mem_region *mr = NULL;
-
-    svm = find_local_svm(id->dsm_id, mm);
-
-    if (svm) {
-        list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
-        {
-            if (addr > mr->addr && addr <= (mr->addr + mr->sz))
-                return 1;
-        }
-    }
-
-    return 0;
-}
-EXPORT_SYMBOL(page_local);
-
-struct mem_region *find_mr(unsigned long addr, struct dsm_vm_id *id) {
-    struct dsm *dsm;
-    struct subvirtual_machine *svm;
-    struct mem_region *mr;
-    struct rcm * rcm = get_rcm();
-    list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-    {
-        if (dsm->dsm_id == id->dsm_id)
-        list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
-        {
-            if (svm->id.svm_id == id->svm_id)
-            list_for_each_entry_rcu(mr, &svm->mr_ls, ls)
-            {
-                if (addr >= mr->addr && addr <= (mr->addr + mr->sz))
-                    return mr;
-
-            }
-
-        }
-
-    }
-
-    return NULL;
-
-}
-EXPORT_SYMBOL(find_mr);
-
-struct mem_region *find_mr_source(unsigned long addr) {
-    struct mm_struct *mm = current->mm;
-    struct subvirtual_machine *svm;
-    struct dsm *dsm;
-    struct rcm * rcm = get_rcm();
-    list_for_each_entry_rcu(dsm, &rcm->dsm_ls, ls)
-    {
-        list_for_each_entry_rcu(svm, &dsm->svm_ls, ls)
-        {
-            if (svm->priv)
-                if (svm->priv->mm == mm)
-                    return find_mr(addr - svm->priv->offset, &svm->id);
-        }
-
-    }
-
-    return NULL;
-
-}
-EXPORT_SYMBOL(find_mr_source);
 
 void insert_rb_conn(struct conn_element *ele) {
     struct rb_root *root = &get_rcm()->root_conn;

@@ -80,10 +80,10 @@ void erase_rb_conn(struct rb_root *, struct conn_element*);
 struct rcm * get_rcm(void);
 struct rcm ** get_pointer_rcm(void);
 struct subvirtual_machine *find_svm(struct dsm_vm_id *);
-struct subvirtual_machine *find_local_svm(u16, struct mm_struct *);
-int page_local(unsigned long, struct dsm_vm_id *, struct mm_struct *);
-struct mem_region *find_mr(unsigned long, struct dsm_vm_id *);
-struct mem_region *find_mr_source(unsigned long);
+struct dsm *find_dsm( u32);
+struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
+void remove_svm(struct subvirtual_machine *);
+void remove_dsm(struct dsm *);
 
 /*
  * handler

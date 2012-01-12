@@ -628,8 +628,11 @@ int create_rcm(char *ip, int port) {
     BUG_ON(!(*rcm));
     memset(*rcm, 0, sizeof(struct rcm));
     init_kmem_request_cache();
-    spin_lock_init(&(*rcm)->rcm_lock);
+    mutex_init(&(*rcm)->rcm_mutex);
     spin_lock_init(&(*rcm)->route_lock);
+
+    INIT_RADIX_TREE(&(*rcm)->dsm_tree_root, GFP_KERNEL);
+    INIT_LIST_HEAD(&(*rcm)->dsm_list);
 
     (*rcm)->dsm_wq = alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
     (*rcm)->node_ip = inet_addr(ip);
@@ -1034,6 +1037,7 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
 }
 
 int destroy_rcm() {
+    struct dsm * dsm = NULL;
     int ret = 0;
     struct rcm **rcm = get_pointer_rcm();
     if (*rcm) {
@@ -1061,6 +1065,14 @@ int destroy_rcm() {
         } else
             printk(">[destroy_rcm] - no cm_id\n");
 
+        while (!list_empty(&(*rcm)->dsm_list)) {
+
+            dsm = list_first_entry(&(*rcm)->dsm_list, struct dsm, dsm_ptr );
+            remove_dsm(dsm);
+
+        }
+
+        mutex_destroy((*rcm)->rcm_mutex);
         kfree(*rcm);
         *rcm = 0;
     } else

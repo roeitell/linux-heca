@@ -7,26 +7,42 @@
 
 #include <dsm/dsm_module.h>
 
-static struct dsm_module_state dsm_state;
+static struct dsm_module_state *dsm_state;
+
+struct dsm_module_state * create_dsm_module_state(void) {
+    dsm_state = kmalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
+    BUG_ON(!(dsm_state));
+    INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
+    INIT_LIST_HEAD(&dsm_state->dsm_list);
+    mutex_init(&dsm_state->dsm_state_mutex);
+    dsm_state->dsm_wq = alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
+    return dsm_state;
+}
+EXPORT_SYMBOL(create_dsm_module_state);
+
+void destroy_dsm_module_state(void) {
+    mutex_destroy(&dsm_state->dsm_state_mutex);
+    destroy_workqueue(dsm_state->dsm_wq);
+    kfree(dsm_state);
+}
+EXPORT_SYMBOL(destroy_dsm_module_state);
 
 struct dsm_module_state * get_dsm_module_state(void) {
-    return &dsm_state;
+    return dsm_state;
 }
 EXPORT_SYMBOL(get_dsm_module_state);
 
 void remove_svm(struct subvirtual_machine *svm) {
 
-    mutex_lock(&svm->dsm->dsm_mutex);
-
-    if (svm->priv)
-        svm->dsm->nb_local_svm--;
-    radix_tree_delete(&svm->dsm->svm_mm_tree_root,
-            (unsigned long) svm->id.svm_id);
-    if (svm->priv)
-        radix_tree_delete(&svm->dsm->svm_tree_root,
-                (unsigned long) svm->id.svm_id);
+    struct dsm * dsm = svm->dsm;
+    mutex_lock(&dsm->dsm_mutex);
+    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->id.svm_id);
+    if (svm->priv) {
+        dsm->nb_local_svm--;
+        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->id.svm_id);
+    }
+    mutex_unlock(&dsm->dsm_mutex);
     synchronize_rcu();
-    mutex_unlock(&svm->dsm->dsm_mutex);
     kfree(svm);
 
 }
@@ -40,17 +56,12 @@ void remove_dsm(struct dsm * dsm) {
     mutex_lock(&dsm_state->dsm_state_mutex);
     list_del(&dsm->dsm_ptr);
     radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);
-    synchronize_rcu();
     mutex_unlock(&dsm_state->dsm_state_mutex);
-
+    synchronize_rcu();
     while (!list_empty(&dsm->svm_list)) {
-
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr );
         remove_svm(svm);
-
     }
-
-    mutex_destroy(&dsm->dsm_mutex);
     kfree(dsm);
 
 }

@@ -395,8 +395,10 @@ static int release(struct inode *inode, struct file *f) {
     if (!data->svm)
         return 1;
     remove_svm(data->svm);
-    if (data->dsm->nb_local_svm == 0)
+    if (data->dsm->nb_local_svm == 0) {
         remove_dsm(data->dsm);
+        printk("[Release ] last local svm , freeing the dsm\n");
+    }
     kfree(data);
 
     return 0;
@@ -496,12 +498,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
             ip_addr = inet_addr(svm_info.ip);
             cele = search_rb_conn(ip_addr);
 
-            if (likely(cele)) {
-
-                //  print_dsm_stats(&cele->stats);
-
-            }
-
             break;
         }
         default: {
@@ -536,17 +532,12 @@ MODULE_PARM_DESC(
         "The port on the machine running this module - used for DSM_RDMA communication.");
 
 static int dsm_init(void) {
-    struct dsm_module_state *dsm_state = get_dsm_module_state();
+    struct dsm_module_state *dsm_state = create_dsm_module_state();
 
     reg_dsm_functions(&find_svm, &find_local_svm, &request_dsm_page);
 
     printk("[dsm_init] ip : %s\n", ip);
     printk("[dsm_init] port : %d\n", port);
-
-    INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
-    INIT_LIST_HEAD(&dsm_state->dsm_list);
-    mutex_init(&dsm_state->dsm_state_mutex);
-    dsm_state->dsm_wq = alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
 
     if (create_rcm(dsm_state, ip, port))
         goto err;
@@ -578,6 +569,7 @@ static void dsm_exit(void) {
     destroy_rcm(dsm_state);
 
     misc_deregister(&rdma_misc);
+    destroy_dsm_module_state();
 
 }
 module_exit(dsm_exit);

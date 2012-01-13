@@ -17,17 +17,20 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
 
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
-    if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
+    if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
+        printk("[register_dsm] reading data from userspace failed \n");
         return r;
+    }
 
     mutex_lock(&dsm_state->dsm_state_mutex);
 
     do {
 
         found_dsm = find_dsm(svm_info.dsm_id);
-        if (found_dsm)
+        if (found_dsm) {
+            printk("[register_dsm] we already have the dsm in place \n");
             break;
-
+        }
         new_dsm = kmalloc(sizeof(*new_dsm), GFP_KERNEL);
         if (!new_dsm)
             break;
@@ -38,7 +41,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         INIT_LIST_HEAD(&new_dsm->svm_list);
         new_dsm->mr_tree_root = RB_ROOT;
         INIT_LIST_HEAD(&new_dsm->mr_list);
-
+        new_dsm->nb_local_svm = 0;
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (r)
             break;

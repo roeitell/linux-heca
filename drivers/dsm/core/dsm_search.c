@@ -35,9 +35,14 @@ EXPORT_SYMBOL(get_dsm_module_state);
 void remove_svm(struct subvirtual_machine *svm) {
 
     struct dsm * dsm = svm->dsm;
+    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->id.dsm_id,
+            svm->id.svm_id);
     mutex_lock(&dsm->dsm_mutex);
+    list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->id.svm_id);
     if (svm->priv) {
+        printk("[remove_svm] we have private data before decreasing %d \n",
+                dsm->nb_local_svm);
         dsm->nb_local_svm--;
         radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->id.svm_id);
     }
@@ -52,7 +57,7 @@ void remove_dsm(struct dsm * dsm) {
 
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
-
+    printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
     mutex_lock(&dsm_state->dsm_state_mutex);
     list_del(&dsm->dsm_ptr);
     radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);

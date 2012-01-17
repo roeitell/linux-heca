@@ -179,7 +179,7 @@ static struct sh_mobile_lcdc_info lcdc_info = {
 	.clock_source = LCDC_CLK_EXTERNAL,
 	.ch[0] = {
 		.chan = LCDC_CHAN_MAINLCD,
-		.bpp = 16,
+		.fourcc = V4L2_PIX_FMT_RGB565,
 		.clock_divider = 1,
 		.lcd_size_cfg = { /* 7.0 inch */
 			.width = 152,
@@ -303,8 +303,20 @@ static struct platform_device fsi_device = {
 	},
 };
 
+static struct fsi_ak4642_info fsi_ak4642_info = {
+	.name		= "AK4642",
+	.card		= "FSIA-AK4642",
+	.cpu_dai	= "fsia-dai",
+	.codec		= "ak4642-codec.0-0012",
+	.platform	= "sh_fsi.0",
+	.id		= FSI_PORT_A,
+};
+
 static struct platform_device fsi_ak4642_device = {
-	.name		= "sh_fsi_a_ak4642",
+	.name	= "fsi-ak4642-audio",
+	.dev	= {
+		.platform_data	= &fsi_ak4642_info,
+	},
 };
 
 /* KEYSC in SoC (Needs SW33-2 set to ON) */

@@ -57,7 +57,6 @@ void remove_svm(struct subvirtual_machine *svm) {
         kfree(mr);
 
     }
-
     write_sequnlock(&dsm->mr_seq_lock);
     mutex_unlock(&dsm->dsm_mutex);
     synchronize_rcu();

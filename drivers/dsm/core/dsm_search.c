@@ -35,6 +35,8 @@ EXPORT_SYMBOL(get_dsm_module_state);
 void remove_svm(struct subvirtual_machine *svm) {
 
     struct dsm * dsm = svm->dsm;
+    struct memory_region *mr = NULL;
+
     printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->id.dsm_id,
             svm->id.svm_id);
     mutex_lock(&dsm->dsm_mutex);
@@ -46,6 +48,17 @@ void remove_svm(struct subvirtual_machine *svm) {
         dsm->nb_local_svm--;
         radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->id.svm_id);
     }
+    write_seqlock(&dsm->mr_seq_lock);
+    while (!list_empty(&svm->mr_list)) {
+        mr = list_first_entry(&svm->mr_list, struct memory_region, ls );
+
+        list_del(&mr->ls);
+        rb_erase(&mr->rb_node, &dsm->mr_tree_root);
+        kfree(mr);
+
+    }
+
+    write_sequnlock(&dsm->mr_seq_lock);
     mutex_unlock(&dsm->dsm_mutex);
     synchronize_rcu();
     kfree(svm);
@@ -205,4 +218,53 @@ void erase_rb_conn(struct rb_root *root, struct conn_element *ele) {
     kfree(ele);
 }
 EXPORT_SYMBOL(erase_rb_conn);
+
+void insert_mr(struct dsm *dsm, struct memory_region *mr) {
+    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_node **new = &root->rb_node;
+    struct rb_node *parent = NULL;
+    struct memory_region *this;
+    write_seqlock(&dsm->mr_seq_lock);
+    while (*new) {
+        this = rb_entry(*new, struct memory_region, rb_node);
+        parent = *new;
+        if (mr->addr < this->addr)
+            new = &((*new)->rb_left);
+        else if (mr->addr > this->addr)
+            new = &((*new)->rb_right);
+    }
+
+    rb_link_node(&mr->rb_node, parent, new);
+    rb_insert_color(&mr->rb_node, root);
+    write_sequnlock(&dsm->mr_seq_lock);
+}
+EXPORT_SYMBOL(insert_mr);
+
+// Return NULL if no element contained within tree.
+struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
+    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_node *node = root->rb_node;
+    struct memory_region *this = NULL;
+    unsigned long seq;
+    do {
+        seq = read_seqbegin(&dsm->mr_seq_lock);
+        while (node) {
+            this = rb_entry(node, struct memory_region, rb_node);
+
+            if (addr < this->addr)
+                node = node->rb_left;
+            else if (addr > this->addr)
+                if (addr < (this->addr + this->sz))
+                    break;
+                else
+                    node = node->rb_right;
+            else
+                break;
+
+        }
+    } while (read_seqretry(&dsm->mr_seq_lock, seq));
+    return this;
+
+}
+EXPORT_SYMBOL(search_mr);
 

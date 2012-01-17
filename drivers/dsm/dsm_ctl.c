@@ -36,11 +36,11 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
             break;
         new_dsm->dsm_id = svm_info.dsm_id;
         mutex_init(&new_dsm->dsm_mutex);
+        seqlock_init(&new_dsm->mr_seq_lock);
         INIT_RADIX_TREE(&new_dsm->svm_tree_root, GFP_KERNEL);
         INIT_RADIX_TREE(&new_dsm->svm_mm_tree_root, GFP_KERNEL);
         INIT_LIST_HEAD(&new_dsm->svm_list);
         new_dsm->mr_tree_root = RB_ROOT;
-        INIT_LIST_HEAD(&new_dsm->mr_list);
         new_dsm->nb_local_svm = 0;
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (r)
@@ -113,7 +113,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
-            spin_lock_init(&new_svm->svm_lock);
+            INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
             printk(
                     "[DSM_SVM]\n\t registered svm %p , res : %d\n\tdsm_id : %u\n\tsvm_id : %u\n",
@@ -173,7 +173,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             new_svm->id.svm_id = svm_info.svm_id;
             new_svm->priv = NULL;
             new_svm->dsm = priv_data->dsm;
-            spin_lock_init(&new_svm->svm_lock);
+            INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
             ip_addr = inet_addr(svm_info.ip);
 
@@ -216,31 +216,53 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
 }
 
 static int register_mr(struct private_data *priv_data, void __user *argp) {
-//    printk("[DSM_MR]\n");
-//
-//    r = -EFAULT;
-//
-//    if (copy_from_user((void *) &mr_info, argp, sizeof mr_info))
-//        goto out;
-//
-//    id.dsm_id = mr_info.dsm_id;
-//    id.svm_id = mr_info.svm_id;
-//
-//    // Make sure specific MR not already created.
-//  //  mr = find_mr(mr_info.start_addr, &id);
-//    if (mr)
-//        goto out;
-//
-//    mr = kmalloc(sizeof(*mr), GFP_KERNEL);
-//    if (!mr)
-//        goto out;
-//
-//    mr->addr = mr_info.start_addr;
-//    mr->sz = mr_info.size;
-//    mr->svm = find_svm(&id);
-//
-//    r = 0;
-    return 0;
+    int r = -EFAULT;
+    struct dsm_vm_id id;
+    struct memory_region *mr;
+    struct subvirtual_machine *svm;
+    struct mr_data mr_info;
+    unsigned long i, end;
+
+    printk("[DSM_MR]\n");
+
+    if (copy_from_user((void *) &mr_info, argp, sizeof mr_info))
+        goto out;
+
+    id.dsm_id = mr_info.dsm_id;
+    id.svm_id = mr_info.svm_id;
+
+    svm = find_svm(&id);
+    if (!svm)
+        goto out;
+
+//     Make sure specific MR not already created.
+    mr = search_mr(svm->dsm, mr_info.start_addr);
+    if (mr)
+        goto out;
+
+    mr = kmalloc(sizeof(*mr), GFP_KERNEL);
+    if (!mr)
+        goto out;
+
+    mr->addr = mr_info.start_addr;
+    mr->sz = mr_info.size;
+    mr->svm = svm;
+
+    insert_mr(svm->dsm, mr);
+    list_add(&mr->ls, &svm->mr_list);
+    r = 0;
+    if (!svm->priv || (svm->priv->mm != current->mm)) {
+        i = mr->addr;
+        end = i + mr->sz - 1;
+        while (i < end) {
+            r = dsm_flag_page_remote(current->mm, mr->svm->id, i);
+            if (r)
+                break;
+            i += PAGE_SIZE;
+
+        }
+    }
+    out: return r;
 }
 
 static int unmap_range(struct private_data *priv_data, void __user *argp) {
@@ -390,10 +412,6 @@ static int open(struct inode *inode, struct file *f) {
 
 static int release(struct inode *inode, struct file *f) {
     struct private_data *data = (struct private_data *) f->private_data;
-    struct subvirtual_machine *svm = NULL;
-    struct mem_region *mr = NULL;
-    struct dsm *_dsm = NULL;
-    u16 dsm_id;
 
     if (!data->svm)
         return 1;

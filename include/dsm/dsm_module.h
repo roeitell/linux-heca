@@ -68,8 +68,6 @@ void reg_rem_info(struct conn_element *);
 
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
-struct subvirtual_machine *find_svm(struct dsm_vm_id *);
-struct mem_region *find_mr(unsigned long, struct dsm_vm_id *);
 
 /*
  * RB
@@ -85,6 +83,9 @@ struct dsm *find_dsm(u32);
 struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
 void remove_svm(struct subvirtual_machine *);
 void remove_dsm(struct dsm *);
+struct subvirtual_machine *find_svm(struct dsm_vm_id *);
+void insert_mr(struct dsm *dsm, struct memory_region *);
+struct memory_region * search_mr(struct dsm *, unsigned long);
 
 /*
  * handler

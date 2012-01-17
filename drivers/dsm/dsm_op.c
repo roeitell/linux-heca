@@ -634,7 +634,6 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     rcm->node_ip = inet_addr(ip);
 
     rcm->root_conn = RB_ROOT;
-    rcm->root_route = RB_ROOT;
 
     rcm->sin.sin_family = AF_INET;
     rcm->sin.sin_addr.s_addr = (__u32) rcm->node_ip;

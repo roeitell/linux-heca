@@ -99,7 +99,7 @@ struct dsm {
 
     struct mutex dsm_mutex;
     struct list_head svm_list;
-    struct list_head mr_list;
+    seqlock_t mr_seq_lock;
 
     struct list_head dsm_ptr;
 
@@ -126,7 +126,6 @@ struct rcm {
     struct mutex rcm_mutex;
 
     struct rb_root root_conn;
-    struct rb_root root_route;
 
     struct sockaddr_in sin;
 
@@ -241,13 +240,13 @@ struct dsm_message {
 /*
  * region represents local area of VM memory.
  */
-struct mem_region {
+struct memory_region {
     unsigned long addr;
     unsigned long sz;
     struct subvirtual_machine *svm;
 
     struct list_head ls;
-    struct rcu_head rcu;
+    struct rb_node  rb_node;
 
 };
 
@@ -265,7 +264,8 @@ struct subvirtual_machine {
     struct private_data *priv;
     struct list_head svm_ptr;
     struct dsm * dsm;
-    spinlock_t svm_lock;
+    struct list_head mr_list;
+
 };
 
 struct work_request_ele {

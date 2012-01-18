@@ -54,7 +54,8 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     BUG_ON(!local_svm);
     addr = tx_e->dsm_msg->req_addr + local_svm->priv->offset;
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
-        printk("[signal_completion_try_page_request] request failed we release everything \n ");
+        printk(
+                "[signal_completion_try_page_request] request failed we release everything \n ");
         delete_from_dsm_cache(ppe->mem_page, addr);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
@@ -95,6 +96,7 @@ static int __add_to_dsm_cache(struct page *page, unsigned long addr,
     int error;
 
     VM_BUG_ON(!PageLocked(page));
+    VM_BUG_ON(!PageSwapBacked(page));
 
     page_cache_get(page);
     set_page_private(page, private);
@@ -156,11 +158,11 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
             break;
 
         __set_page_locked(new_page);
-
+        SetPageSwapBacked(new_page);
         err = __add_to_dsm_cache(new_page, addr, private, tag);
         if (likely(!err)) {
             radix_tree_preload_end();
-
+            mem_cgroup_reset_owner(new_page);
             lru_cache_add_anon(new_page);
 
             dsm_readpage(new_page, addr, svm, fault_svm, tag);

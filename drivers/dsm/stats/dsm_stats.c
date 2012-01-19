@@ -2,14 +2,11 @@
  * dsm_stats.c
  *
  *  Created on: 7 Dec 2011
- *      Author: jn
- */
-
-/*
+ *      Author: Benoit
+ *
  * Statistic for dsm
  *
  */
-
 
 #include <dsm/dsm_stats.h>
 #include <dsm/dsm_def.h>

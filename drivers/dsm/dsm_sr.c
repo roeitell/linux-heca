@@ -2,7 +2,7 @@
  * dsm_sr.c
  *
  *  Created on: 26 Jul 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #include <dsm/dsm_module.h>
@@ -323,6 +323,7 @@ int exchange_info(struct conn_element *ele, int id) {
             }
             //ok, inserting this connection to the tree
             else {
+                complete(&ele->completion);
                 insert_rb_conn(ele);
                 printk(
                         ">[exchange_info] inserted conn_element to rb_tree :  %d\n",
@@ -339,6 +340,7 @@ int exchange_info(struct conn_element *ele, int id) {
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
             //Server acknowledged --> connection is complete.
             //start sending messages.
+            complete(&ele->completion);
             goto out;
         }
         default: {

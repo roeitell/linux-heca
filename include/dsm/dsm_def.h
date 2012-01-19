@@ -2,7 +2,7 @@
  * dsm_def.h
  *
  *  Created on: 7 Jul 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #ifndef DSM_DEF_H_
@@ -210,6 +210,8 @@ struct conn_element {
     struct rb_node rb_node;
 
     struct con_element_stats stats;
+
+    struct completion completion;
 
 };
 

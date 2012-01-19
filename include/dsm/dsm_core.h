@@ -2,7 +2,7 @@
  * dsm_page_fault.h
  *
  *  Created on: 1 Aug 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #ifndef DSM_PAGE_FAULT_H_

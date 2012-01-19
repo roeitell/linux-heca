@@ -2,7 +2,7 @@
  * dsm_mem.h
  *
  *  Created on: 14 Dec 2011
- *      Author: jn
+ *      Author: Benoit
  */
 
 #ifndef DSM_MEM_H_

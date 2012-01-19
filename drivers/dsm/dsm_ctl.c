@@ -2,7 +2,7 @@
  1 * rdma.c
  *
  *  Created on: 22 Jun 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #include <dsm/dsm_module.h>
@@ -187,11 +187,14 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
                     goto connect_fail;
 
             }
+
+            might_sleep();
             cele = search_rb_conn(ip_addr);
             if (!cele) {
                 r = -ENOLINK;
                 goto connect_fail;
             }
+            wait_for_completion(&cele->completion);
             new_svm->ele = cele;
             printk(
                     "[DSM_SVM]\n\t connecting svm \n\tdsm_id : %u\n\tsvm_id : %u\n\tres : %d\n",

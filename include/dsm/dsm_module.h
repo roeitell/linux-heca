@@ -2,7 +2,7 @@
  * dsm_op.h
  *
  *  Created on: 7 Jul 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #ifndef DSM_OP_H_

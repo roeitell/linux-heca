@@ -2,7 +2,7 @@
  * dsm_handlers.c
  *
  *  Created on: 11 Jul 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #include <dsm/dsm_module.h>
@@ -468,6 +468,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
             ele = vmalloc(sizeof(struct conn_element));
             if (!ele)
                 goto out;
+            init_completion(&ele->completion);
             create_dsm_connection_stats_data(&ele->stats);
             rcm = id->context;
 

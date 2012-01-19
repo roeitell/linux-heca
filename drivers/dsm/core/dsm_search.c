@@ -2,7 +2,7 @@
  * rb.c
  *
  *  Created on: 7 Jul 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #include <dsm/dsm_module.h>

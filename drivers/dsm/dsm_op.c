@@ -2,7 +2,7 @@
  * dsm_op.c
  *
  *  Created on: 7 Jul 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #include <dsm/dsm_module.h>
@@ -707,6 +707,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     ele = vmalloc(sizeof(struct conn_element));
     if (unlikely(!ele))
         goto err;
+    init_completion(&ele->completion);
     create_dsm_connection_stats_data(&ele->stats);
     ele->remote_node_ip = inet_addr(conn_data->ip);
 

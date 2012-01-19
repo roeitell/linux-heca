@@ -2,7 +2,7 @@
  * dsm_page_request.c
  *
  *  Created on: 1 Aug 2011
- *      Author: john
+ *      Author: Benoit
  */
 
 #include <dsm/dsm_module.h>

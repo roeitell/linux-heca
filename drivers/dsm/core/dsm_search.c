@@ -51,7 +51,8 @@ void remove_svm(struct subvirtual_machine *svm) {
     write_seqlock(&dsm->mr_seq_lock);
     while (!list_empty(&svm->mr_list)) {
         mr = list_first_entry(&svm->mr_list, struct memory_region, ls );
-
+        printk("[remove_svm] removing MR: addr %ul, size %ul  \n", mr->addr,
+                mr->sz);
         list_del(&mr->ls);
         rb_erase(&mr->rb_node, &dsm->mr_tree_root);
         kfree(mr);

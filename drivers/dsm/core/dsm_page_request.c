@@ -7,8 +7,8 @@
 
 #include <dsm/dsm_module.h>
 
-static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
-        unsigned long addr) {
+static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
+        struct dsm_vm_id remote_id, struct mm_struct *mm, unsigned long addr) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
@@ -66,7 +66,6 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
         goto retry;
     }
 
-    // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
     pte = pte_offset_map(pmd, addr);
 
     pte_entry = *pte;
@@ -79,19 +78,19 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
-                    page = find_get_dsm_page(addr);
+                    page = find_get_dsm_page(local_svm, addr);
                     if (page) {
                         if (trylock_page(page)) {
 
-                            if (page_is_tagged_in_dsm_cache(addr,
+                            if (page_is_tagged_in_dsm_cache(local_svm, addr,
                                     PREFETCH_TAG)) {
                                 extract = 1;
                                 printk(
                                         "[_dsm_extract_page]  Harmful prefetch  \n");
 
                             } else {
-                                extract = page_is_tagged_in_dsm_cache(addr,
-                                        PULL_TAG);
+                                extract = page_is_tagged_in_dsm_cache(local_svm,
+                                        addr, PULL_TAG);
                                 printk(
                                         "[_dsm_extract_page]   we cancel the pull for transfer  \n");
                             }
@@ -99,12 +98,13 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
                             if (extract) {
 
                                 if (!page_mapcount(page)) {
-                                    if (delete_from_dsm_cache(page, addr)) {
+                                    if (delete_from_dsm_cache(local_svm, page,
+                                            addr)) {
 
                                         set_page_private(page, 0);
                                         unlock_page(page);
                                         printk(
-                                                "[_try_dsm_extract_page]  page found and we send back because preftech or pull \n");
+                                                "[_dsm_extract_page]  page found and we send back because preftech or pull \n");
                                         return page;
                                     }
                                 }
@@ -188,7 +188,7 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
             addr,
             pte,
             swp_entry_to_pte(
-                    make_dsm_entry(id.dsm_id, id.svm_id)));
+                    make_dsm_entry(remote_id.dsm_id, remote_id.svm_id)));
 
     page_remove_rmap(page);
 
@@ -216,7 +216,7 @@ static struct page *_dsm_extract_page(struct dsm_vm_id id, struct mm_struct *mm,
 
 }
 
-static struct page *_try_dsm_extract_page(struct dsm_vm_id id,
+static struct page *_try_dsm_extract_page(struct subvirtual_machine *local_svm,
         struct mm_struct *mm, unsigned long addr) {
 
     pte_t *pte;
@@ -273,7 +273,6 @@ static struct page *_try_dsm_extract_page(struct dsm_vm_id id,
         goto retry;
     }
 
-// we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
     pte = pte_offset_map(pmd, addr);
 
     pte_entry = *pte;
@@ -286,13 +285,14 @@ static struct page *_try_dsm_extract_page(struct dsm_vm_id id,
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
-                    page = find_get_dsm_page(addr);
+                    page = find_get_dsm_page(local_svm, addr);
                     if (page) {
                         if (trylock_page(page)) {
-                            if (page_is_tagged_in_dsm_cache(addr, PULL_TAG)) {
+                            if (page_is_tagged_in_dsm_cache(local_svm, addr,
+                                    PULL_TAG)) {
 
-                                if (delete_from_dsm_cache(page, addr)) {
-
+                                if (delete_from_dsm_cache(local_svm, page,
+                                        addr)) {
                                     set_page_private(page, 0);
                                     unlock_page(page);
                                     return page;
@@ -310,15 +310,15 @@ static struct page *_try_dsm_extract_page(struct dsm_vm_id id,
 }
 
 static struct page *dsm_extract_page(struct dsm_vm_id id,
-        struct subvirtual_machine *svm, unsigned long addr) {
+        struct subvirtual_machine *local_svm, unsigned long addr) {
 
     struct mm_struct *mm;
     struct page * page;
-    mm = svm->priv->mm;
+    mm = local_svm->priv->mm;
 
     use_mm(mm);
     down_read(&mm->mmap_sem);
-    page = _dsm_extract_page(id, mm, addr);
+    page = _dsm_extract_page(local_svm, id, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 
@@ -326,16 +326,16 @@ static struct page *dsm_extract_page(struct dsm_vm_id id,
 
 }
 
-static struct page *try_dsm_extract_page(struct dsm_vm_id id,
-        struct subvirtual_machine *svm, unsigned long addr) {
+static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
+        unsigned long addr) {
 
     struct mm_struct *mm;
     struct page * page;
-    mm = svm->priv->mm;
+    mm = local_svm->priv->mm;
 
     use_mm(mm);
     down_read(&mm->mmap_sem);
-    page = _try_dsm_extract_page(id, mm, addr);
+    page = _try_dsm_extract_page(local_svm, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 
@@ -365,7 +365,7 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
     norm_addr = msg->req_addr + local_svm->priv->offset;
     if (msg->type == TRY_REQUEST_PAGE
     )
-        page = try_dsm_extract_page(remote_id, local_svm, norm_addr);
+        page = try_dsm_extract_page(local_svm, norm_addr);
     else
 
         page = dsm_extract_page(remote_id, local_svm, norm_addr);
@@ -434,13 +434,8 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(
-                    mm,
-                    msg->req_addr,
-                    pte,
-                    swp_entry_to_pte(
-                            make_dsm_entry( id.dsm_id,
-                                    id.svm_id)));
+            set_pte_at(mm, msg->req_addr, pte,
+                    swp_entry_to_pte(make_dsm_entry(id.dsm_id, id.svm_id)));
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (!non_swap_entry(swp_e)) {
@@ -458,8 +453,7 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                                 msg->req_addr,
                                 pte,
                                 swp_entry_to_pte(
-                                        make_dsm_entry( id.dsm_id,
-                                                 id.svm_id)));
+                                        make_dsm_entry(id.dsm_id, id.svm_id)));
 
                         // forward msg
                         // DSM1: fwd message RDMA function call.

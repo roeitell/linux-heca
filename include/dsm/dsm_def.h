@@ -248,7 +248,7 @@ struct memory_region {
     struct subvirtual_machine *svm;
 
     struct list_head ls;
-    struct rb_node  rb_node;
+    struct rb_node rb_node;
 
 };
 
@@ -267,6 +267,9 @@ struct subvirtual_machine {
     struct list_head svm_ptr;
     struct dsm * dsm;
     struct list_head mr_list;
+
+    struct radix_tree_root page_cache;
+    spinlock_t page_cache_spinlock;
 
 };
 

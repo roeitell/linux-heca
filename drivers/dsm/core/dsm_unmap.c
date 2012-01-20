@@ -190,8 +190,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 }
 EXPORT_SYMBOL(dsm_flag_page_remote);
 
-int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
-        unsigned long addr) {
+int dsm_try_push_page(struct subvirtual_machine *local_svm,
+        struct mm_struct *mm, struct dsm_vm_id remote_id, unsigned long addr) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
@@ -314,7 +314,7 @@ int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
     set_pte_at(mm, addr, pte,
-            swp_entry_to_pte(make_dsm_entry(id.dsm_id, id.svm_id)));
+            swp_entry_to_pte(make_dsm_entry(remote_id.dsm_id, remote_id.svm_id)));
 
     page_remove_rmap(page);
 
@@ -324,7 +324,7 @@ int dsm_try_push_page(struct mm_struct *mm, struct dsm_vm_id id,
         try_to_free_swap(page);
 //DSM1 do we need a put_page???/
 
-    add_page_pull_to_dsm_cache(page, addr, GFP_HIGHUSER_MOVABLE);
+    add_page_pull_to_dsm_cache(local_svm, page, addr, GFP_HIGHUSER_MOVABLE);
     unlock_page(page);
 
     pte_unmap_unlock(pte, ptl);

@@ -40,11 +40,14 @@
 #define PULL_TAG        2               /* pages that we try to get pulled */
 #define DEFAULT_TAG    RADIX_TREE_MAX_TAGS
 
-struct page *page_is_in_dsm_cache(unsigned long);
-int page_is_tagged_in_dsm_cache(unsigned long, int);
-int add_page_pull_to_dsm_cache(struct page *, unsigned long, gfp_t);
-int delete_from_dsm_cache(struct page *, unsigned long);
-struct page *find_get_dsm_page(unsigned long);
+struct page *page_is_in_svm_page_cache(struct subvirtual_machine *,
+        unsigned long);
+int page_is_tagged_in_dsm_cache(struct subvirtual_machine *, unsigned long, int);
+int add_page_pull_to_dsm_cache(struct subvirtual_machine *, struct page *,
+        unsigned long, gfp_t);
+int delete_from_dsm_cache(struct subvirtual_machine *, struct page *,
+        unsigned long);
+struct page *find_get_dsm_page(struct subvirtual_machine *, unsigned long);
 
 struct dsm_functions {
     struct subvirtual_machine *(*_find_svm)(struct dsm_vm_id *); //_find_svm;
@@ -71,7 +74,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 struct page * dsm_extract_page_from_remote(struct dsm_message *);
 
 // dsm_page_fault
-int dsm_try_push_page(struct mm_struct *, struct dsm_vm_id, unsigned long);
+int dsm_try_push_page(struct subvirtual_machine *, struct mm_struct *,
+        struct dsm_vm_id, unsigned long);
 
 extern struct dsm_functions *funcs;
 struct page *dsm_trigger_page_pull(struct dsm_message *);

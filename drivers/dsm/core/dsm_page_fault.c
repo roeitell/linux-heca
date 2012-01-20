@@ -56,7 +56,7 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
         printk(
                 "[signal_completion_try_page_request] request failed we release everything \n ");
-        delete_from_dsm_cache(ppe->mem_page, addr);
+        delete_from_dsm_cache(local_svm, ppe->mem_page, addr);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
         return;
@@ -76,23 +76,24 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
 
 }
 
-int delete_from_dsm_cache(struct page *page, unsigned long addr) {
+int delete_from_dsm_cache(struct subvirtual_machine *svm, struct page *page,
+        unsigned long addr) {
 
     int ret = 1;
     VM_BUG_ON(!PageLocked(page));
 
-    spin_lock_irq(&dsm_lock);
-    if (unlikely(!radix_tree_delete(&dsm_tree, addr)))
+    spin_lock_irq(&svm->page_cache_spinlock);
+    if (unlikely(!radix_tree_delete(&svm->page_cache, addr)))
         ret = 0;
     else
         page_cache_release(page);
 
-    spin_unlock_irq(&dsm_lock);
+    spin_unlock_irq(&svm->page_cache_spinlock);
     return ret;
 }
 
-static int __add_to_dsm_cache(struct page *page, unsigned long addr,
-        unsigned long private, int tag) {
+static int __add_to_dsm_cache(struct subvirtual_machine *svm, struct page *page,
+        unsigned long addr, unsigned long private, int tag) {
     int error;
 
     VM_BUG_ON(!PageLocked(page));
@@ -101,12 +102,12 @@ static int __add_to_dsm_cache(struct page *page, unsigned long addr,
     page_cache_get(page);
     set_page_private(page, private);
 
-    spin_lock_irq(&dsm_lock);
-    error = radix_tree_insert(&dsm_tree, addr, page);
+    spin_lock_irq(&svm->page_cache_spinlock);
+    error = radix_tree_insert(&svm->page_cache, addr, page);
     if ((!error) && (tag < RADIX_TREE_MAX_TAGS))
-        radix_tree_tag_set(&dsm_tree, addr, tag);
+        radix_tree_tag_set(&svm->page_cache, addr, tag);
 
-    spin_unlock_irq(&dsm_lock);
+    spin_unlock_irq(&svm->page_cache_spinlock);
 
     if (unlikely(error)) {
         VM_BUG_ON(error == -EEXIST);
@@ -143,7 +144,7 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
 
     do {
 
-        found_page = find_get_dsm_page(addr);
+        found_page = find_get_dsm_page(fault_svm, addr);
         if (found_page)
             break;
 
@@ -159,7 +160,7 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
 
         __set_page_locked(new_page);
         SetPageSwapBacked(new_page);
-        err = __add_to_dsm_cache(new_page, addr, private, tag);
+        err = __add_to_dsm_cache(fault_svm, new_page, addr, private, tag);
         if (likely(!err)) {
             radix_tree_preload_end();
             mem_cgroup_reset_owner(new_page);
@@ -197,7 +198,8 @@ static inline int pte_unmap_dsm_same(struct mm_struct *mm, pmd_t *pmd,
     pte_unmap(page_table);
     return same;
 }
-static int reuse_dsm_page(struct page * page, unsigned long addr) {
+static int reuse_dsm_page(struct subvirtual_machine *svm, struct page * page,
+        unsigned long addr) {
     int count;
 
     VM_BUG_ON(!PageLocked(page));
@@ -205,7 +207,7 @@ static int reuse_dsm_page(struct page * page, unsigned long addr) {
         return 0;
     count = page_mapcount(page);
     if (count == 0 && !PageWriteback(page)) {
-        delete_from_dsm_cache(page, addr);
+        delete_from_dsm_cache(svm, page, addr);
         set_page_private(page, 0);
         if (!PageSwapBacked(page))
             SetPageDirty(page);
@@ -233,9 +235,10 @@ static inline void cow_user_page(struct page *dst, struct page *src,
         copy_user_highpage(dst, src, va, vma);
 }
 
-static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
-        unsigned long address, pte_t *page_table, pmd_t *pmd, spinlock_t *ptl,
-        pte_t orig_pte, unsigned long norm_address) __releases(ptl)
+static int do_wp_dsm_page(struct subvirtual_machine *fault_svm,
+        struct mm_struct *mm, struct vm_area_struct *vma, unsigned long address,
+        pte_t *page_table, pmd_t *pmd, spinlock_t *ptl, pte_t orig_pte,
+        unsigned long norm_address) __releases(ptl)
 {
     struct page *old_page, *new_page;
     pte_t entry;
@@ -262,7 +265,7 @@ static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
             }
             page_cache_release(old_page);
         }
-        if (reuse_dsm_page(old_page, norm_address)) {
+        if (reuse_dsm_page(fault_svm, old_page, norm_address)) {
             page_move_anon_rmap(old_page, vma, address);
             unlock_page(old_page);
             goto reuse;
@@ -435,7 +438,7 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
     struct subvirtual_machine *svm;
     struct dsm_vm_id id;
 
-    if (!find_get_dsm_page(norm_addr)) {
+    if (!find_get_dsm_page(fault_svm, norm_addr)) {
 
         vma = find_vma(mm, addr);
         if (unlikely(!vma || vma->vm_start > addr))
@@ -510,15 +513,15 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
         goto out;
 
-    page = find_get_dsm_page(norm_addr);
+    dsm_entry_to_val(entry, &id.dsm_id, &id.svm_id);
+    svm = funcs->_find_svm(&id);
+    BUG_ON(!svm);
+
+    fault_svm = funcs->_find_local_svm(svm->dsm, mm);
+    BUG_ON(!fault_svm);
+
+    page = find_get_dsm_page(fault_svm, norm_addr);
     if (!page) {
-        dsm_entry_to_val(entry, &id.dsm_id, &id.svm_id);
-        svm = funcs->_find_svm(&id);
-        BUG_ON(!svm);
-
-        fault_svm = funcs->_find_local_svm(svm->dsm, mm);
-        BUG_ON(!fault_svm);
-
         page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr, svm,
                 fault_svm, 0, DEFAULT_TAG);
 
@@ -540,9 +543,9 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         goto out;
     }
     if (unlikely(page_private(page) == ULONG_MAX)) {
-        if (page_is_tagged_in_dsm_cache(norm_addr, TRY_TAG))
+        if (page_is_tagged_in_dsm_cache(fault_svm, norm_addr, TRY_TAG))
             goto rebelote;
-        else if (page_is_tagged_in_dsm_cache(norm_addr, PULL_TAG)) {
+        else if (page_is_tagged_in_dsm_cache(fault_svm, norm_addr, PULL_TAG)) {
             printk(
                     "[request_page_insert] page pull tag we decrement the ref count \n ");
             put_page(page);
@@ -571,7 +574,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     }
     inc_mm_counter(mm, MM_ANONPAGES);
     pte = mk_pte(page, vma->vm_page_prot);
-    if (likely(reuse_dsm_page(page, norm_addr))) {
+    if (likely(reuse_dsm_page(fault_svm, page, norm_addr))) {
 //we should pretty much always get in there unless we read fault
         pte = maybe_mkwrite(pte_mkdirty(pte), vma);
         flags &= ~FAULT_FLAG_WRITE;
@@ -589,8 +592,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         page_cache_release(swapcache);
     }
     if ((flags & FAULT_FLAG_WRITE)) {
-        ret |= do_wp_dsm_page(mm, vma, address, page_table, pmd, ptl, pte,
-                norm_addr);
+        ret |= do_wp_dsm_page(fault_svm, mm, vma, address, page_table, pmd, ptl,
+                pte, norm_addr);
         if (ret & VM_FAULT_ERROR)
             ret &= VM_FAULT_ERROR;
         goto out;
@@ -631,15 +634,15 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
 
 #endif /* CONFIG_DSM */
 
-struct page *find_get_dsm_page(unsigned long addr) {
+struct page *find_get_dsm_page(struct subvirtual_machine *svm,
+        unsigned long addr) {
     void **pagep;
     struct page *page;
 
     rcu_read_lock();
     repeat: page = NULL;
-    pagep = radix_tree_lookup_slot(&dsm_tree, addr);
+    pagep = radix_tree_lookup_slot(&svm->page_cache, addr);
     if (pagep) {
-//NEED TO BE UPDATED TO 3.1
         page = radix_tree_deref_slot(pagep);
         if (unlikely(!page))
             goto out;
@@ -662,37 +665,39 @@ struct page *find_get_dsm_page(unsigned long addr) {
     return page;
 }
 
-int add_page_pull_to_dsm_cache(struct page * page, unsigned long addr,
-        gfp_t gfp_mask) {
+int add_page_pull_to_dsm_cache(struct subvirtual_machine *svm,
+        struct page * page, unsigned long addr, gfp_t gfp_mask) {
     int err = radix_tree_preload(gfp_mask & GFP_KERNEL);
 
     if (err)
         return err;
-    err = __add_to_dsm_cache(page, addr, ULONG_MAX, PULL_TAG);
+    err = __add_to_dsm_cache(svm, page, addr, ULONG_MAX, PULL_TAG);
     radix_tree_preload_end();
     return err;
 }
 
-int page_is_tagged_in_dsm_cache(unsigned long addr, int tag) {
+int page_is_tagged_in_dsm_cache(struct subvirtual_machine *svm,
+        unsigned long addr, int tag) {
 
     int res;
 
     rcu_read_lock();
-    res = radix_tree_tag_get(&dsm_tree, addr, tag);
+    res = radix_tree_tag_get(&svm->page_cache, addr, tag);
     rcu_read_unlock();
 
     return res;
 
 }
 
-struct page * page_is_in_dsm_cache(unsigned long addr) {
+struct page * page_is_in_svm_page_cache(struct subvirtual_machine *svm,
+        unsigned long addr) {
 
     void **pagep;
     struct page *page;
 
     rcu_read_lock();
     repeat: page = NULL;
-    pagep = radix_tree_lookup_slot(&dsm_tree, addr);
+    pagep = radix_tree_lookup_slot(&svm->page_cache, addr);
     if (pagep) {
 
         page = radix_tree_deref_slot(pagep);
@@ -710,7 +715,7 @@ struct page * page_is_in_dsm_cache(unsigned long addr) {
     return page;
 
 }
-EXPORT_SYMBOL(page_is_in_dsm_cache);
+EXPORT_SYMBOL(page_is_in_svm_page_cache);
 
 struct page *dsm_trigger_page_pull(struct dsm_message *msg) {
 

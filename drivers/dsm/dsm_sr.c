@@ -417,7 +417,7 @@ int dsm_request_page_pull(struct mm_struct *mm, struct subvirtual_machine *svm,
     int ret = -1;
     unsigned long addr = request_addr & PAGE_MASK;
     down_read(&mm->mmap_sem);
-    ret = dsm_try_push_page(mm, svm->id, addr);
+    ret = dsm_try_push_page(fault_svm, mm, svm->id, addr);
     up_read(&mm->mmap_sem);
 
     if (!ret)

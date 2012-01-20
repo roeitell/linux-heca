@@ -113,6 +113,8 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
+            spin_lock_init(&new_svm->page_cache_spinlock);
+            INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
             INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
             printk(
@@ -186,15 +188,14 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
                 if (r)
                     goto connect_fail;
 
+                might_sleep();
+                cele = search_rb_conn(ip_addr);
+                if (!cele) {
+                    r = -ENOLINK;
+                    goto connect_fail;
+                }
+                wait_for_completion(&cele->completion);
             }
-
-            might_sleep();
-            cele = search_rb_conn(ip_addr);
-            if (!cele) {
-                r = -ENOLINK;
-                goto connect_fail;
-            }
-            wait_for_completion(&cele->completion);
             new_svm->ele = cele;
             printk(
                     "[DSM_SVM]\n\t connecting svm \n\tdsm_id : %u\n\tsvm_id : %u\n\tres : %d\n",
@@ -383,7 +384,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
     if (svm == priv_data->svm)
         goto out;
     addr = udata.addr & PAGE_MASK;
-    if (!page_is_in_dsm_cache(addr))
+    if (!page_is_in_svm_page_cache(svm, addr))
         r = dsm_request_page_pull(current->mm, svm, priv_data->svm, udata.addr);
     else
         r = 0;

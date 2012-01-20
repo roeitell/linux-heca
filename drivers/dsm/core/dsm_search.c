@@ -32,6 +32,26 @@ struct dsm_module_state * get_dsm_module_state(void) {
 }
 EXPORT_SYMBOL(get_dsm_module_state);
 
+static void clean_up_page_cache(struct subvirtual_machine *svm,
+        struct memory_region *mr) {
+    unsigned long addr;
+    struct page *page = NULL;
+
+    for (addr = mr->addr; addr < (addr + mr->sz); addr += PAGE_SIZE) {
+        page = page_is_in_svm_page_cache(svm, addr);
+        printk(
+                "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
+                svm->id.dsm_id, svm->id.svm_id, (void *) addr, page);
+        if (page) {
+            printk(
+                    "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
+                    svm->id.dsm_id, svm->id.svm_id, (void *) addr, page);
+            delete_from_dsm_cache(svm, page, addr);
+        }
+    }
+
+}
+
 void remove_svm(struct subvirtual_machine *svm) {
 
     struct dsm * dsm = svm->dsm;
@@ -51,10 +71,11 @@ void remove_svm(struct subvirtual_machine *svm) {
     write_seqlock(&dsm->mr_seq_lock);
     while (!list_empty(&svm->mr_list)) {
         mr = list_first_entry(&svm->mr_list, struct memory_region, ls );
-        printk("[remove_svm] removing MR: addr %ul, size %ul  \n", mr->addr,
-                mr->sz);
+        printk("[remove_svm] removing MR: addr %p, size %ul  \n",
+                (void*) mr->addr, mr->sz);
         list_del(&mr->ls);
         rb_erase(&mr->rb_node, &dsm->mr_tree_root);
+        //clean_up_page_cache(svm, mr);
         kfree(mr);
 
     }

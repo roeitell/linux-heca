@@ -23,8 +23,6 @@ void signal_completion_page_request(struct tx_buf_ele * tx_e) {
     struct page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
     BUG_ON(!ppe);
     BUG_ON(!ppe->mem_page);
-
-    // automatic decrement in order to remove thepage pinning
     put_page(ppe->mem_page);
     set_page_private(ppe->mem_page, 0);
     SetPageUptodate(ppe->mem_page);
@@ -45,8 +43,6 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     struct page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
     BUG_ON(!ppe);
     BUG_ON(!ppe->mem_page);
-
-    // automatic decrement in order to remove thepage pinning
 
     local_id.dsm_id = u64_to_dsm_id(tx_e->dsm_msg->dest);
     local_id.svm_id = u64_to_vm_id(tx_e->dsm_msg->dest);

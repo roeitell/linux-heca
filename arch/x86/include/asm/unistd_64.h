@@ -717,7 +717,7 @@ __SYSCALL(__NR_process_vm_writev, sys_process_vm_writev)
 
 #ifndef COMPILE_OFFSETS
 #include <asm/asm-offsets.h>
-#define NR_syscalls (__NR_syscall_max + 1)
+//#define NR_syscalls (__NR_syscall_max + 1)
 #endif
 
 /*

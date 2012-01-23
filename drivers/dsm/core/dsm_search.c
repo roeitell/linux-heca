@@ -47,6 +47,7 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
                     "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
                     svm->id.dsm_id, svm->id.svm_id, (void *) addr, page);
             delete_from_dsm_cache(svm, page, addr);
+            synchronize_rcu();
         }
     }
 
@@ -75,6 +76,7 @@ void remove_svm(struct subvirtual_machine *svm) {
                 (void*) mr->addr, mr->sz);
         list_del(&mr->ls);
         rb_erase(&mr->rb_node, &dsm->mr_tree_root);
+        //TODO need to be solved at some point ... what do we do if we have floatign page / request during crash ?
         //clean_up_page_cache(svm, mr);
         kfree(mr);
 

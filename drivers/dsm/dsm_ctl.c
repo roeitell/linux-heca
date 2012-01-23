@@ -384,7 +384,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
     if (svm == priv_data->svm)
         goto out;
     addr = udata.addr & PAGE_MASK;
-    if (!page_is_in_svm_page_cache(svm, addr))
+    if (!page_is_in_svm_page_cache(priv_data->svm, addr))
         r = dsm_request_page_pull(current->mm, svm, priv_data->svm, udata.addr);
     else
         r = 0;

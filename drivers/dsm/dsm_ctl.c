@@ -10,8 +10,115 @@
 static char *ip = 0;
 static int port = 0;
 
+static void reset_dsm_page_stats(struct dsm_page_stats * stats) {
+    atomic64_set(&stats->nb_page_push, 0);
+    atomic64_set(&stats->nb_page_push_fail, 0);
+    atomic64_set(&stats->nb_page_push_request, 0);
+    atomic64_set(&stats->nb_page_requested, 0);
+    atomic64_set(&stats->nb_page_sent, 0);
+    atomic64_set(&stats->nb_page_redirect, 0);
+    atomic64_set(&stats->nb_err, 0);
+
+}
+static void reset_svm_stats(struct svm_sysfs *sysfs) {
+    reset_dsm_page_stats(&sysfs->stats);
+}
+
+static void reset_msg_stats(struct msg_stats *stats) {
+    atomic64_set(&stats->err, 0);
+    atomic64_set(&stats->page_info_update, 0);
+    atomic64_set(&stats->page_request_reply, 0);
+    atomic64_set(&stats->request_page, 0);
+    atomic64_set(&stats->request_page_pull, 0);
+    atomic64_set(&stats->try_request_page, 0);
+    atomic64_set(&stats->try_request_page_fail, 0);
+
+}
+
+void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
+    reset_msg_stats(&sysfs->rx_stats);
+    reset_msg_stats(&sysfs->tx_stats);
+}
+
+static void clean_up_page_cache(struct subvirtual_machine *svm,
+        struct memory_region *mr) {
+    unsigned long addr;
+    struct page *page = NULL;
+
+    for (addr = mr->addr; addr < (addr + mr->sz); addr += PAGE_SIZE) {
+        page = page_is_in_svm_page_cache(svm, addr);
+        printk(
+                "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
+                svm->id.dsm_id, svm->id.svm_id, (void *) addr, page);
+        if (page) {
+            printk(
+                    "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
+                    svm->id.dsm_id, svm->id.svm_id, (void *) addr, page);
+            delete_from_dsm_cache(svm, page, addr);
+            synchronize_rcu();
+        }
+    }
+
+}
+
+static void remove_svm(struct subvirtual_machine *svm) {
+
+    struct dsm * dsm = svm->dsm;
+    struct memory_region *mr = NULL;
+
+    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->id.dsm_id,
+            svm->id.svm_id);
+    mutex_lock(&dsm->dsm_mutex);
+    list_del(&svm->svm_ptr);
+    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->id.svm_id);
+    if (svm->priv) {
+        printk("[remove_svm] we have private data before decreasing %d \n",
+                dsm->nb_local_svm);
+        dsm->nb_local_svm--;
+        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->id.svm_id);
+    }
+    write_seqlock(&dsm->mr_seq_lock);
+    while (!list_empty(&svm->mr_list)) {
+        mr = list_first_entry(&svm->mr_list, struct memory_region, ls );
+        printk("[remove_svm] removing MR: addr %p, size %lu  \n",
+                (void*) mr->addr, mr->sz);
+        list_del(&mr->ls);
+        rb_erase(&mr->rb_node, &dsm->mr_tree_root);
+        //TODO need to be solved at some point ... what do we do if we have floatign page / request during crash ?
+        //clean_up_page_cache(svm, mr);
+        kfree(mr);
+
+    }
+    write_sequnlock(&dsm->mr_seq_lock);
+    mutex_unlock(&dsm->dsm_mutex);
+    synchronize_rcu();
+    delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
+    kfree(svm);
+
+}
+
+static void remove_dsm(struct dsm * dsm) {
+
+    struct subvirtual_machine *svm;
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
+    printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
+    mutex_lock(&dsm_state->dsm_state_mutex);
+    list_del(&dsm->dsm_ptr);
+    radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);
+    mutex_unlock(&dsm_state->dsm_state_mutex);
+    synchronize_rcu();
+    while (!list_empty(&dsm->svm_list)) {
+        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr );
+        remove_svm(svm);
+    }
+    delete_dsm_sysfs_entry(&dsm->dsm_kobject);
+    kfree(dsm);
+
+}
+
 static int register_dsm(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
+    char id[11];
     struct svm_data svm_info;
     struct dsm * found_dsm, *new_dsm = NULL;
 
@@ -31,7 +138,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
             printk("[register_dsm] we already have the dsm in place \n");
             break;
         }
-        new_dsm = kmalloc(sizeof(*new_dsm), GFP_KERNEL);
+        new_dsm = kzalloc(sizeof(*new_dsm), GFP_KERNEL);
         if (!new_dsm)
             break;
         new_dsm->dsm_id = svm_info.dsm_id;
@@ -50,7 +157,11 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
                 (unsigned long) svm_info.dsm_id, new_dsm);
         if (likely(!r)) {
             radix_tree_preload_end();
+            scnprintf(id, 11, "%x", new_dsm->dsm_id);
             priv_data->dsm = new_dsm;
+            //TODO catch error
+            create_dsm_sysfs_entry(&new_dsm->dsm_kobject,
+                    dsm_state->dsm_kobjects.domains_kobject, id);
             list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
             printk("[DSM_DSM]\n registered dsm %p,  dsm_id : %u, res: %d \n",
                     new_dsm, svm_info.dsm_id, r);
@@ -72,6 +183,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
 
 static int register_svm(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
+    char charid[11];
     struct dsm_vm_id id;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
     struct svm_data svm_info;
@@ -88,7 +200,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
         if (found_svm)
             break;
 
-        new_svm = kmalloc(sizeof(*new_svm), GFP_KERNEL);
+        new_svm = kzalloc(sizeof(*new_svm), GFP_KERNEL);
         if (!new_svm)
             break;
 
@@ -113,6 +225,13 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
+            reset_svm_stats(&new_svm->svm_sysfs);
+            new_svm->svm_sysfs.local = 1;
+            scnprintf(charid, 11, "%x", new_svm->id.svm_id);
+            //TODO catch error
+            create_svm_sysfs_entry(&new_svm->svm_sysfs.svm_kobject,
+                    &new_svm->dsm->dsm_kobject, charid);
+
             spin_lock_init(&new_svm->page_cache_spinlock);
             INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
             INIT_LIST_HEAD(&new_svm->mr_list);
@@ -138,6 +257,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
 static int connect_svm(struct private_data *priv_data, void __user *argp)
 
 {
+    char charid[11];
     int r = -EFAULT;
     struct dsm_vm_id id;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
@@ -158,7 +278,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
         if (found_svm)
             break;
 
-        new_svm = kmalloc(sizeof(*new_svm), GFP_KERNEL);
+        new_svm = kzalloc(sizeof(*new_svm), GFP_KERNEL);
         if (!new_svm)
             break;
 
@@ -175,6 +295,13 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             new_svm->id.svm_id = svm_info.svm_id;
             new_svm->priv = NULL;
             new_svm->dsm = priv_data->dsm;
+            reset_svm_stats(&new_svm->svm_sysfs);
+            new_svm->svm_sysfs.local = 0;
+            spin_lock_init(&new_svm->page_cache_spinlock);
+            scnprintf(charid, 11, "%x", new_svm->id.svm_id);
+            //TODO catch error
+            create_svm_sysfs_entry(&new_svm->svm_sysfs.svm_kobject,
+                    &new_svm->dsm->dsm_kobject, charid);
             INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
             ip_addr = inet_addr(svm_info.ip);
@@ -197,6 +324,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
                 wait_for_completion(&cele->completion);
             }
             new_svm->ele = cele;
+
             printk(
                     "[DSM_SVM]\n\t connecting svm \n\tdsm_id : %u\n\tsvm_id : %u\n\tres : %d\n",
                     svm_info.dsm_id, svm_info.svm_id, r);
@@ -244,7 +372,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     if (mr)
         goto out;
 
-    mr = kmalloc(sizeof(*mr), GFP_KERNEL);
+    mr = kzalloc(sizeof(*mr), GFP_KERNEL);
     if (!mr)
         goto out;
 
@@ -510,7 +638,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
             if (likely(cele)) {
 
-                reset_dsm_connection_stats(&cele->stats);
+                reset_dsm_connection_stats(&cele->sysfs);
 
             }
 

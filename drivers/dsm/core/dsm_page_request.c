@@ -203,7 +203,6 @@ static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
 // if local
 
     out: printk("[_dsm_extract_page] got page %p  \n ", page);
-    dsm_stats_page_extract_update(NULL);
     return page;
 
     bad_page:

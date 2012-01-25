@@ -13,26 +13,6 @@
 #include <linux/module.h>
 #include <asm/atomic.h>
 
-struct tx_dsm_stats {
-//bla bla to fill in later
-};
-
-struct con_element_stats {
-    atomic64_t out;
-    atomic64_t out_rdma;
-    atomic64_t in;
-    atomic64_t in_rdma;
-
-    struct tx_dsm_stats * tx_dsm_stats;
-
-};
-
-struct dsm_memory_stats {
-    atomic64_t fault;
-    atomic64_t extract;
-
-};
-
 long long get_dsm_stats_page_fault(struct dsm_memory_stats *);
 long long get_dsm_stats_page_extract(struct dsm_memory_stats *);
 void dsm_stats_page_fault_update(struct dsm_memory_stats *);

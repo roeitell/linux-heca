@@ -76,7 +76,6 @@ static int dsm_recv_message_handler(struct conn_element *ele,
     switch (rx_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            dsm_stats_message_recv_rdma_completion(&ele->stats);
 
             process_response(ele, tx_e); // client got its response
 
@@ -200,7 +199,6 @@ static void dsm_send_poll(struct ib_cq *cq) {
                                 ">[dsm_send_poll] - ack rdma info exchange wr_id %llu \n",
                                 wc.wr_id);
                     } else {
-                        dsm_stats_message_send_completion(&ele->stats);
 
                         if (dsm_send_message_handler(ele,
                                 &ele->tx_buffer.tx_buf[wc.wr_id]))
@@ -212,7 +210,7 @@ static void dsm_send_poll(struct ib_cq *cq) {
                     break;
                 }
                 case IB_WC_RDMA_WRITE: {
-                    dsm_stats_message_send_rdma_completion(&ele->stats);
+
                     break;
                 }
                 default: {
@@ -273,7 +271,6 @@ static void dsm_recv_poll(struct ib_cq *cq) {
                             goto err;
                         }
 
-                        dsm_stats_message_recv_completion(&ele->stats);
                         if (dsm_recv_message_handler(ele,
                                 &ele->rx_buffer.rx_buf[wc.wr_id]))
                             print_work_completion(
@@ -457,7 +454,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
     int ret = 0;
     struct conn_element *ele = 0;
     struct rcm *rcm;
-
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
     switch (event->event) {
         case RDMA_CM_EVENT_ADDR_RESOLVED:
 
@@ -469,7 +466,9 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
             if (!ele)
                 goto out;
             init_completion(&ele->completion);
-            create_dsm_connection_stats_data(&ele->stats);
+            //TODO catch error
+            create_connection_sysfs_entry(&ele->sysfs,
+                    dsm_state->dsm_kobjects.rdma_kobject, "bla");
             rcm = id->context;
 
             ele->rcm = rcm;

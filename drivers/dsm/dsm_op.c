@@ -690,7 +690,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     struct sockaddr_in dst, src;
     struct rdma_conn_param param;
     struct conn_element *ele;
-
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
     memset(&param, 0, sizeof(struct rdma_conn_param));
     param.responder_resources = 1;
     param.initiator_depth = 1;
@@ -704,11 +704,13 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
     src.sin_port = htons(5001);
 
-    ele = vmalloc(sizeof(struct conn_element));
+    ele = vzalloc(sizeof(struct conn_element));
     if (unlikely(!ele))
         goto err;
     init_completion(&ele->completion);
-    create_dsm_connection_stats_data(&ele->stats);
+    //TODO catch error
+    create_connection_sysfs_entry(&ele->sysfs,
+            dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip);
     ele->remote_node_ip = inet_addr(conn_data->ip);
 
     insert_rb_conn(ele);
@@ -944,7 +946,7 @@ int setup_connection(struct conn_element *ele, int type) {
     if (!ele->mr)
         goto err2;
 
-    reset_dsm_connection_stats(&ele->stats);
+    reset_dsm_connection_stats(&ele->sysfs);
 
     if (setup_qp(ele))
         goto err4;

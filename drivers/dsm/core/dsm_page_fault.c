@@ -563,7 +563,6 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     if (unlikely(!pte_same(*page_table, orig_pte)))
         goto out_nomap;
 
-    dsm_stats_page_fault_update(NULL);
     if (unlikely(!PageUptodate(page))) {
         ret = VM_FAULT_SIGBUS;
         goto out_nomap;

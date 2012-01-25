@@ -21,6 +21,7 @@
 #include <linux/socket.h>
 #include <linux/kernel.h>
 #include <linux/stat.h>
+#include <linux/kobject.h>
 
 #include <asm/byteorder.h>
 #include <asm/uaccess.h>
@@ -68,9 +69,10 @@ void reg_rem_info(struct conn_element *);
 
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
+void reset_dsm_connection_stats(struct con_element_sysfs *);
 
 /*
- * RB
+ * search
  */
 void insert_rb_conn(struct conn_element *);
 struct conn_element* search_rb_conn(int);
@@ -81,8 +83,6 @@ void destroy_dsm_module_state(void);
 struct subvirtual_machine *find_svm(struct dsm_vm_id *);
 struct dsm *find_dsm(u32);
 struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
-void remove_svm(struct subvirtual_machine *);
-void remove_dsm(struct dsm *);
 struct subvirtual_machine *find_svm(struct dsm_vm_id *);
 void insert_mr(struct dsm *dsm, struct memory_region *);
 struct memory_region * search_mr(struct dsm *, unsigned long);
@@ -122,5 +122,12 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
  */
 void dsm_sysf_cleanup(struct dsm_module_state *);
 int dsm_sysf_setup(struct dsm_module_state *);
+int create_svm_sysfs_entry(struct kobject*, struct kobject *, char*);
+void delete_svm_sysfs_entry(struct kobject *);
+int create_dsm_sysfs_entry(struct kobject*, struct kobject *, char*);
+void delete_dsm_sysfs_entry(struct kobject *);
+int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
+        char*);
+void delete_connection_entry(struct con_element_sysfs *);
 
 #endif /* DSM_OP_H_ */

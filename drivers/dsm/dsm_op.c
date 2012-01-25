@@ -828,10 +828,10 @@ int connect_client(struct rdma_cm_id *id) {
 }
 
 unsigned int inet_addr(char *addr) {
-    int a, b, c, d;
+    unsigned int a, b, c, d;
     char arr[4];
 
-    sscanf(addr, "%d.%d.%d.%d", &a, &b, &c, &d);
+    sscanf(addr, "%u.%u.%u.%u", &a, &b, &c, &d);
     arr[0] = a;
     arr[1] = b;
     arr[2] = c;

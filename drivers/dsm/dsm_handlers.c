@@ -451,6 +451,7 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
  * Then it creates it's own connection element and accept the request to complete the connection
  */
 int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
+    char ip[32];
     int ret = 0;
     struct conn_element *ele = 0;
     struct rcm *rcm;
@@ -467,8 +468,10 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                 goto out;
             init_completion(&ele->completion);
             //TODO catch error
+            scnprintf(ip, 32, "%p", id);
             create_connection_sysfs_entry(&ele->sysfs,
-                    dsm_state->dsm_kobjects.rdma_kobject, "bla");
+                    dsm_state->dsm_kobjects.rdma_kobject, ip);
+
             rcm = id->context;
 
             ele->rcm = rcm;

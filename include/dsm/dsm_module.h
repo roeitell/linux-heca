@@ -130,4 +130,5 @@ int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
         char*);
 void delete_connection_entry(struct con_element_sysfs *);
 
+
 #endif /* DSM_OP_H_ */

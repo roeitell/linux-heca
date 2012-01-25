@@ -5,7 +5,8 @@
 #include <dsm/dsm_module.h>
 
 static void dsm_kobject_type_release(struct kobject * kobj) {
-    kfree(kobj);
+    //kfree(kobj);
+    printk("Releasing kobject %p", kobj);
 }
 
 /* default kobject attribute operations */
@@ -48,9 +49,8 @@ static ssize_t svm_show(struct kobject *kobj, struct kobj_attribute *attr,
     unsigned long var = 0;
 
 svm_sysfs = container_of(kobj, struct svm_sysfs , svm_kobject);
+                BUG_ON(!svm_sysfs);
 
-//
-                                            BUG_ON(!svm_sysfs);
     if (strcmp(attr->attr.name, "local") == 0)
         var = 0;
     else if (strcmp(attr->attr.name, "nb_page_requested") == 0)
@@ -66,6 +66,8 @@ svm_sysfs = container_of(kobj, struct svm_sysfs , svm_kobject);
     else if (strcmp(attr->attr.name, "nb_page_redirect") == 0)
         var = 0;
     else if (strcmp(attr->attr.name, "nb_page_error") == 0)
+        var = 0;
+    else if (strcmp(attr->attr.name, "nb_request_page_prefetch") == 0)
         var = 0;
     else
         var = 0;
@@ -90,12 +92,15 @@ static struct kobj_attribute nb_page_error_attribute =
         __ATTR(nb_page_error, 0444, svm_show, NULL);
 static struct kobj_attribute nb_page_redirect_attribute =
         __ATTR(nb_page_redirect, 0444, svm_show, NULL);
+static struct kobj_attribute nb_request_page_prefetch_attribute =
+        __ATTR(nb_request_page_prefetch, 0444, svm_show, NULL);
 
 static struct attribute *svm_attrs[] = { &local_attribute.attr,
         &nb_page_requested_attribute.attr, &nb_page_sent_attribute.attr,
         &nb_page_push_attribute.attr, &nb_page_push_fail_attribute.attr,
         &nb_page_push_request_attribute.attr, &nb_page_redirect_attribute.attr,
-        &nb_page_error_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
+        &nb_page_error_attribute.attr,
+        &nb_request_page_prefetch_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
 };
 
 /*
@@ -141,9 +146,8 @@ static ssize_t connection_tx_show(struct kobject *kobj,
     unsigned long var;
 
 cele_sysfs = container_of(kobj,struct con_element_sysfs, connection_tx_kobject);
+                BUG_ON(!cele_sysfs);
 
-//
-                                            BUG_ON(!cele_sysfs);
     var = connection_show(&cele_sysfs->tx_stats, attr);
     return sprintf(buf, "%lu\n", var);
 
@@ -155,9 +159,8 @@ static ssize_t connection_rx_show(struct kobject *kobj,
     unsigned long var = 0;
 
 cele_sysfs = container_of(kobj,struct con_element_sysfs, connection_rx_kobject);
+                BUG_ON(!cele_sysfs);
 
-//
-                                            BUG_ON(!cele_sysfs);
     var = connection_show(&cele_sysfs->rx_stats, attr);
     return sprintf(buf, "%lu\n", var);
 }

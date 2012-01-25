@@ -279,7 +279,8 @@ int exchange_info(struct conn_element *ele, int id) {
     int flag = (int) ele->rid.remote_info->flag;
     int ret = 0;
     struct conn_element * ele_found;
-
+    unsigned int arr[4];
+    char charid[20];
     if (unlikely(!ele->rid.recv_info))
         goto err;
 
@@ -325,6 +326,13 @@ int exchange_info(struct conn_element *ele, int id) {
             else {
                 complete(&ele->completion);
                 insert_rb_conn(ele);
+                arr[0] = (ele->remote_node_ip) & 0x000000ff;
+                arr[1] = (ele->remote_node_ip >> 8) & 0x000000ff;
+                arr[2] = (ele->remote_node_ip >> 16) & 0x000000ff;
+                arr[3] = (ele->remote_node_ip >> 24) & 0x000000ff;
+                scnprintf(charid, 20, "%u.%u.%u.%u", arr[0], arr[1], arr[2],
+                        arr[3]);
+                kobject_rename(&ele->sysfs.connection_kobject, charid);
                 printk(
                         ">[exchange_info] inserted conn_element to rb_tree :  %d\n",
                         ele->remote_node_ip);

@@ -110,7 +110,6 @@ header-y += dm-ioctl.h
 header-y += dm-log-userspace.h
 header-y += dn.h
 header-y += dqblk_xfs.h
-header-y += dsm.h
 header-y += edd.h
 header-y += efs_fs_sb.h
 header-y += elf-em.h

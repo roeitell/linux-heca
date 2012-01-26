@@ -73,9 +73,10 @@ static inline int current_is_kswapd(void)
 #define SWP_DSM_NUM 0
 #endif /* CONFIG_DSM_CORE */
 
-#define MAX_SWAPFILES \
-	((1 << MAX_SWAPFILES_SHIFT) - SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - SWP_DSM_NUM)
 
+
+#define MAX_SWAPFILES \
+        ((1 << MAX_SWAPFILES_SHIFT) - SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - SWP_DSM_NUM)
 /*
  * Magic header for a swap area. The first part of the union is
  * what the swap magic looks like for the old (limited to 128MB)
@@ -283,7 +284,7 @@ static inline int zone_reclaim(struct zone *z, gfp_t mask, unsigned int order)
 #endif
 
 extern int page_evictable(struct page *page, struct vm_area_struct *vma);
-extern void scan_mapping_unevictable_pages(struct address_space *);
+extern void check_move_unevictable_pages(struct page **, int nr_pages);
 
 extern unsigned long scan_unevictable_pages;
 extern int scan_unevictable_handler(struct ctl_table *, int,

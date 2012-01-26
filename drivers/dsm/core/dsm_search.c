@@ -10,7 +10,7 @@
 static struct dsm_module_state *dsm_state;
 
 struct dsm_module_state * create_dsm_module_state(void) {
-    dsm_state = kmalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
+    dsm_state = kzalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
     BUG_ON(!(dsm_state));
     INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
     INIT_LIST_HEAD(&dsm_state->dsm_list);

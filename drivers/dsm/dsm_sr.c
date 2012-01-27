@@ -40,6 +40,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
 
     printk("[send_request_dsm_page_pull]requesting page pull  addr %p\n",
             (void *) addr);
+    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
 
     spin_lock(&tx->request_queue_lock);
     if (list_empty(&tx->request_queue)) {

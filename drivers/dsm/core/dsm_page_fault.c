@@ -52,6 +52,7 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
         printk(
                 "[signal_completion_try_page_request] request failed we release everything \n ");
+        atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
         delete_from_dsm_cache(local_svm, ppe->mem_page, addr);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
@@ -121,11 +122,13 @@ static void dsm_readpage(struct page* page, unsigned long addr,
 
     VM_BUG_ON(!PageLocked(page));
     VM_BUG_ON(PageUptodate(page));
-    if (tag != TRY_TAG
-    )
+    if (tag != TRY_TAG) {
+        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
         func = signal_completion_page_request;
-    else
+    } else {
+        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
         func = signal_completion_try_page_request;
+    }
     funcs->request_dsm_page(page, svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag);
 }
@@ -403,6 +406,7 @@ static int do_wp_dsm_page(struct subvirtual_machine *fault_svm,
         }
         page_cache_release(old_page);
     }
+
     return ret;
     oom_free_new:
     page_cache_release(new_page);
@@ -433,6 +437,7 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
     unsigned long norm_addr = addr & PAGE_MASK;
     struct subvirtual_machine *svm;
     struct dsm_vm_id id;
+    struct page * page = NULL;
 
     if (!find_get_dsm_page(fault_svm, norm_addr)) {
 
@@ -472,9 +477,11 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
                     if (is_dsm_entry(swp_e)) {
                         dsm_entry_to_val(swp_e, &id.dsm_id, &id.svm_id);
                         svm = funcs->_find_svm(&id);
-                        BUG_ON(!svm);
-                        return get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,
+
+                        page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,
                                 norm_addr, svm, fault_svm, private, tag);
+                        atomic64_inc(
+                                &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
                     }
                 }
             }
@@ -482,7 +489,7 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
     }
     out:
 
-    return NULL;
+    return page;
 }
 
 static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
@@ -595,6 +602,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     }
     update_mmu_cache(vma, address, page_table);
     // printk("[request_page_insert] page fault success \n ");
+    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
     unlock: pte_unmap_unlock(pte, ptl);
     out: return ret;
 

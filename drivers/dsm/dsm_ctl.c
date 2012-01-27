@@ -11,13 +11,15 @@ static char *ip = 0;
 static int port = 0;
 
 static void reset_dsm_page_stats(struct dsm_page_stats * stats) {
-    atomic64_set(&stats->nb_page_push, 0);
-    atomic64_set(&stats->nb_page_push_fail, 0);
+    atomic64_set(&stats->nb_page_pull, 0);
+    atomic64_set(&stats->nb_page_pull_fail, 0);
     atomic64_set(&stats->nb_page_push_request, 0);
     atomic64_set(&stats->nb_page_requested, 0);
     atomic64_set(&stats->nb_page_sent, 0);
     atomic64_set(&stats->nb_page_redirect, 0);
     atomic64_set(&stats->nb_err, 0);
+    atomic64_set(&stats->nb_page_request_success, 0);
+    atomic64_set(&stats->nb_page_requested_prefetch, 0);
 
 }
 static void reset_svm_stats(struct svm_sysfs *sysfs) {
@@ -32,6 +34,7 @@ static void reset_msg_stats(struct msg_stats *stats) {
     atomic64_set(&stats->request_page_pull, 0);
     atomic64_set(&stats->try_request_page, 0);
     atomic64_set(&stats->try_request_page_fail, 0);
+    atomic64_set(&stats->page_request_redirect, 0);
 
 }
 
@@ -226,11 +229,10 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
             reset_svm_stats(&new_svm->svm_sysfs);
-            new_svm->svm_sysfs.local = 1;
             scnprintf(charid, 11, "%x", new_svm->id.svm_id);
             //TODO catch error
-            create_svm_sysfs_entry(&new_svm->svm_sysfs.svm_kobject,
-                    &new_svm->dsm->dsm_kobject, charid);
+            create_svm_sysfs_entry(&new_svm->svm_sysfs,
+                    &new_svm->dsm->dsm_kobject, charid, "local");
 
             spin_lock_init(&new_svm->page_cache_spinlock);
             INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
@@ -296,12 +298,11 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             new_svm->priv = NULL;
             new_svm->dsm = priv_data->dsm;
             reset_svm_stats(&new_svm->svm_sysfs);
-            new_svm->svm_sysfs.local = 0;
             spin_lock_init(&new_svm->page_cache_spinlock);
             scnprintf(charid, 11, "%x", new_svm->id.svm_id);
             //TODO catch error
-            create_svm_sysfs_entry(&new_svm->svm_sysfs.svm_kobject,
-                    &new_svm->dsm->dsm_kobject, charid);
+            create_svm_sysfs_entry(&new_svm->svm_sysfs,
+                    &new_svm->dsm->dsm_kobject, charid, svm_info.ip);
             INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
             ip_addr = inet_addr(svm_info.ip);
@@ -417,14 +418,14 @@ static int unmap_range(struct private_data *priv_data, void __user *argp) {
     if (!svm) {
         printk("[UNMAP_RANGE] could not find the route element \n");
         r = -1;
-        printk("[unmap range ] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
+        printk("[UNMAP_RANGE ] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
                 udata.id.svm_id);
         goto out;
 
     }
 
     if (priv_data->svm->id.dsm_id != svm->id.dsm_id) {
-        printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
+        printk("[UNMAP_RANGE] DSM id not same, bad id  \n");
         r = -1;
         goto out;
     }
@@ -456,7 +457,7 @@ static int unmap_page(struct private_data *priv_data, void __user *argp) {
     struct subvirtual_machine *svm = NULL;
     struct unmap_data udata;
 
-    printk("[DSM_UNMAP_RANGE]\n");
+   // printk("[DSM_UNMAP_RANGE]\n");
 
     r = -EFAULT;
 
@@ -475,8 +476,7 @@ static int unmap_page(struct private_data *priv_data, void __user *argp) {
 
     }
 
-    printk("[unmap page 2] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
-            udata.id.svm_id);
+    //printk("[unmap page 2] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id, udata.id.svm_id);
 
     if (priv_data->svm->id.dsm_id != svm->id.dsm_id) {
         printk("[UNMAP_PAGE] DSM id not same, bad id  \n");

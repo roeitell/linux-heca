@@ -93,6 +93,7 @@ struct msg_stats {
     atomic64_t request_page_pull;
     atomic64_t page_request_reply;
     atomic64_t page_info_update;
+    atomic64_t page_request_redirect;
     atomic64_t try_request_page;
     atomic64_t try_request_page_fail;
     atomic64_t err;
@@ -108,17 +109,20 @@ struct con_element_sysfs {
 
 struct dsm_page_stats {
     atomic64_t nb_page_requested;
+    atomic64_t nb_page_request_success;
     atomic64_t nb_page_sent;
-    atomic64_t nb_page_push;
-    atomic64_t nb_page_push_fail;
+    atomic64_t nb_page_pull;
+    atomic64_t nb_page_pull_fail;
     atomic64_t nb_page_push_request;
     atomic64_t nb_page_redirect;
+    atomic64_t nb_page_requested_prefetch;
     atomic64_t nb_err;
 };
 
 struct svm_sysfs {
-    int local;
+
     struct kobject svm_kobject;
+    struct kobject local;
     struct dsm_page_stats stats;
 
 };

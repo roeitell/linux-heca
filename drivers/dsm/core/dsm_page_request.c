@@ -20,6 +20,7 @@ static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     int extract = 0;
+
     printk("[_dsm_extract_page] faulting for page %p  \n ", (void*) addr);
     retry:
 
@@ -183,12 +184,11 @@ static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
     get_page(page);
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(
-            mm,
-            addr,
-            pte,
-            swp_entry_to_pte(
-                    make_dsm_entry(remote_id.dsm_id, remote_id.svm_id)));
+
+    set_pte_at(mm, addr, pte, 
+        swp_entry_to_pte(dsm_vm_id_to_swp_entry(
+        remote_id.dsm_id, alloc_svm_ids(funcs->_find_dsm(remote_id.dsm_id), 1, 
+        remote_id.svm_ids[0]))));
 
     page_remove_rmap(page);
 
@@ -213,7 +213,6 @@ static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
 // if local
 
     return NULL;
-
 }
 
 static struct page *_try_dsm_extract_page(struct subvirtual_machine *local_svm,
@@ -323,7 +322,6 @@ static struct page *dsm_extract_page(struct dsm_vm_id id,
     unuse_mm(mm);
 
     return page;
-
 }
 
 static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
@@ -340,12 +338,12 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     unuse_mm(mm);
 
     return page;
-
 }
 
 struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
     struct dsm_vm_id remote_id;
     struct dsm_vm_id local_id;
+    struct dsm *dsm;
     struct subvirtual_machine *local_svm;
     struct page *page = NULL;
     unsigned long norm_addr;
@@ -354,20 +352,20 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
         printk("[dsm_extract_page_from_remote] no message ! %p  \n", msg);
         return NULL;
     }
-    remote_id.dsm_id = u64_to_dsm_id(msg->dest);
-    remote_id.svm_id = u64_to_vm_id(msg->dest);
+    remote_id = u64_to_dsm_vm_id(msg->dest);
+    local_id = u64_to_dsm_vm_id(msg->src);
 
-    local_id.dsm_id = u64_to_dsm_id(msg->src);
-    local_id.svm_id = u64_to_vm_id(msg->src);
-    local_svm = funcs->_find_svm(&local_id);
+    dsm = funcs->_find_dsm(local_id.dsm_id);
+    BUG_ON(!dsm);
+
+    local_svm = funcs->_find_svm(dsm, local_id.svm_ids[0]);
     BUG_ON(!local_svm);
     BUG_ON(!local_svm->priv->mm);
+
     norm_addr = msg->req_addr + local_svm->priv->offset;
-    if (msg->type == TRY_REQUEST_PAGE
-    )
+    if (msg->type == TRY_REQUEST_PAGE)
         page = try_dsm_extract_page(local_svm, norm_addr);
     else
-
         page = dsm_extract_page(remote_id, local_svm, norm_addr);
 
     return page;
@@ -399,15 +397,18 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     pud_t *pud;
     pmd_t *pmd;
     pte_t pte_entry;
+    struct dsm *dsm;
     struct subvirtual_machine *svm;
     swp_entry_t swp_e;
     struct mm_struct *mm;
 
-    id.dsm_id = u64_to_dsm_id(msg->dest);
-    id.svm_id = u64_to_vm_id(msg->dest);
+    id = u64_to_dsm_vm_id(msg->dest);
+    dsm = funcs->_find_dsm(id.dsm_id);
+    BUG_ON(!dsm);
 
-    svm = funcs->_find_svm(&id);
+    svm = funcs->_find_svm(dsm, id.svm_ids[0]);
     BUG_ON(!svm);
+
     mm = svm->priv->mm;
     down_read(&mm->mmap_sem);
     retry:
@@ -434,26 +435,22 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, msg->req_addr, pte,
-                    swp_entry_to_pte(make_dsm_entry(id.dsm_id, id.svm_id)));
+            set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
+                dsm_vm_id_to_swp_entry(id.dsm_id, alloc_svm_ids(dsm, 1, 
+                id.svm_ids[0]))));
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (!non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
                     // store old dest
-                    struct dsm_vm_id old;
+                    struct dsm_vm_id old = swp_entry_to_dsm_vm_id(
+                        pte_to_swp_entry(pte_entry));
 
-                    dsm_entry_to_val(pte_to_swp_entry(pte_entry), &old.dsm_id,
-                            &old.svm_id);
-
-                    if (old.dsm_id != id.dsm_id && old.svm_id != id.svm_id) {
+                    if (old.dsm_id != id.dsm_id && 
+                            old.svm_ids[0] != id.svm_ids[0]) {
                         // update pte
-                        set_pte_at(
-                                mm,
-                                msg->req_addr,
-                                pte,
-                                swp_entry_to_pte(
-                                        make_dsm_entry(id.dsm_id, id.svm_id)));
+                        set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
+                            dsm_vm_id_to_swp_entry(id.dsm_id, id.svm_ids)));
 
                         // forward msg
                         // DSM1: fwd message RDMA function call.

@@ -11,9 +11,9 @@ static struct kmem_cache *kmem_request_cache;
 
 void init_kmem_request_cache(void) {
     kmem_request_cache = kmem_cache_create("dsm_request",
-            sizeof(struct dsm_request), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
-            NULL);
-        }
+        sizeof(struct dsm_request), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
+        NULL);
+}
 
 void destroy_kmem_request_cache(void) {
     kmem_cache_destroy(kmem_request_cache);
@@ -69,7 +69,6 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
     queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
 
     return ret;
-
 }
 
 int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
@@ -92,11 +91,9 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
 
-            if (tag != TRY_TAG
-            )
+            if (tag != TRY_TAG)
                 create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
                         page, REQUEST_PAGE);
-
             else
                 create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
                         page, TRY_REQUEST_PAGE);
@@ -130,7 +127,6 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
 
     return ret;
-
 }
 
 /**
@@ -409,7 +405,6 @@ int dsm_recv_info(struct conn_element *ele) {
     rid->recv_wr.sg_list = &rid->recv_sge;
 
     return ib_post_recv(ele->cm_id->qp, &rid->recv_wr, &rid->recv_bad_wr);
-
 }
 
 int dsm_request_page_pull(struct mm_struct *mm, struct subvirtual_machine *svm,
@@ -425,6 +420,5 @@ int dsm_request_page_pull(struct mm_struct *mm, struct subvirtual_machine *svm,
                 (uint64_t) (addr - fault_svm->priv->offset));
 
     return ret;
-
 }
 

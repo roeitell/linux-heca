@@ -551,7 +551,7 @@ static int create_tx_buffer(struct conn_element *ele) {
 
     return ret;
 
-    err7: kfree(tx_buff_e[i].reply_work_req->wr_ele);
+    kfree(tx_buff_e[i].reply_work_req->wr_ele);
     ++ret;
     err6: kfree(tx_buff_e[i].reply_work_req);
     ++ret;
@@ -841,17 +841,20 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
         struct dsm_vm_id local_id, struct dsm_vm_id remote_id, uint64_t addr,
         struct page *page, u16 type) {
     struct dsm_message *msg = tx_e->dsm_msg;
-
+    struct dsm *dsm = find_dsm(local_id.dsm_id);
     struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
             page);
+
     tx_e->wrk_req->dst_addr = ppe;
     //we need to reset the offset just in case if we actually use the element for reply as an error
     msg->offset = tx_e->id;
-    msg->dest = dsm_vm_id_to_u64(&local_id);
+    msg->dest = dsm_vm_id_to_u64(local_id.dsm_id, alloc_svm_ids(dsm, 1,
+        local_id.svm_ids[0]));
     msg->dst_addr = (u64) ppe->page_buf;
     msg->req_addr = addr;
     msg->rkey = ele->mr->rkey;
-    msg->src = dsm_vm_id_to_u64(&remote_id);
+    msg->src = dsm_vm_id_to_u64(local_id.dsm_id, alloc_svm_ids(dsm, 1,
+        remote_id.svm_ids[0]));
     msg->type = type;
 
     return;
@@ -861,14 +864,17 @@ void create_page_pull_request(struct conn_element *ele,
         struct tx_buf_ele * tx_e, struct dsm_vm_id local_id,
         struct dsm_vm_id remote_id, uint64_t addr) {
     struct dsm_message *msg = tx_e->dsm_msg;
+    struct dsm *dsm = find_dsm(local_id.dsm_id);
 
     tx_e->wrk_req->dst_addr = NULL;
 
-    msg->dest = dsm_vm_id_to_u64(&local_id);
+    msg->dest = dsm_vm_id_to_u64(local_id.dsm_id, alloc_svm_ids(dsm, 1, 
+        local_id.svm_ids[0]));
     msg->dst_addr = 0;
     msg->req_addr = addr;
     msg->rkey = ele->mr->rkey;
-    msg->src = dsm_vm_id_to_u64(&remote_id);
+    msg->src = dsm_vm_id_to_u64(local_id.dsm_id, alloc_svm_ids(dsm, 1, 
+        remote_id.svm_ids[0]));
     msg->type = REQUEST_PAGE_PULL;
 
     return;

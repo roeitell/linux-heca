@@ -78,12 +78,11 @@ void erase_rb_conn(struct rb_root *, struct conn_element*);
 struct dsm_module_state * get_dsm_module_state(void);
 struct dsm_module_state * create_dsm_module_state(void);
 void destroy_dsm_module_state(void);
-struct subvirtual_machine *find_svm(struct dsm_vm_id *);
 struct dsm *find_dsm(u32);
 struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
 void remove_svm(struct subvirtual_machine *);
 void remove_dsm(struct dsm *);
-struct subvirtual_machine *find_svm(struct dsm_vm_id *);
+struct subvirtual_machine *find_svm(struct dsm *, u32);
 void insert_mr(struct dsm *dsm, struct memory_region *);
 struct memory_region * search_mr(struct dsm *, unsigned long);
 
@@ -122,5 +121,6 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
  */
 void dsm_sysf_cleanup(struct dsm_module_state *);
 int dsm_sysf_setup(struct dsm_module_state *);
+
 
 #endif /* DSM_OP_H_ */

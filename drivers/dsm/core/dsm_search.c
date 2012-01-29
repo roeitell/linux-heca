@@ -1,7 +1,6 @@
 /*
  * rb.c
- *
- *  Created on: 7 Jul 2011
+ **  Created on: 7 Jul 2011
  *      Author: Benoit
  */
 
@@ -41,16 +40,15 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
         page = page_is_in_svm_page_cache(svm, addr);
         printk(
                 "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                svm->id.dsm_id, svm->id.svm_id, (void *) addr, page);
+                svm->id.dsm_id, svm->id.svm_ids[0], (void *) addr, page);
         if (page) {
             printk(
                     "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                    svm->id.dsm_id, svm->id.svm_id, (void *) addr, page);
+                    svm->id.dsm_id, svm->id.svm_ids[0], (void *) addr, page);
             delete_from_dsm_cache(svm, page, addr);
             synchronize_rcu();
         }
     }
-
 }
 
 void remove_svm(struct subvirtual_machine *svm) {
@@ -59,15 +57,15 @@ void remove_svm(struct subvirtual_machine *svm) {
     struct memory_region *mr = NULL;
 
     printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->id.dsm_id,
-            svm->id.svm_id);
+            svm->id.svm_ids[0]);
     mutex_lock(&dsm->dsm_mutex);
     list_del(&svm->svm_ptr);
-    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->id.svm_id);
+    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->id.svm_ids[0]);
     if (svm->priv) {
         printk("[remove_svm] we have private data before decreasing %d \n",
                 dsm->nb_local_svm);
         dsm->nb_local_svm--;
-        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->id.svm_id);
+        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->id.svm_ids[0]);
     }
     write_seqlock(&dsm->mr_seq_lock);
     while (!list_empty(&svm->mr_list)) {
@@ -93,100 +91,83 @@ void remove_dsm(struct dsm * dsm) {
 
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
+    int i;
+
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
     mutex_lock(&dsm_state->dsm_state_mutex);
     list_del(&dsm->dsm_ptr);
     radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);
     mutex_unlock(&dsm_state->dsm_state_mutex);
     synchronize_rcu();
+
     while (!list_empty(&dsm->svm_list)) {
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr );
         remove_svm(svm);
     }
-    kfree(dsm);
 
+    for (i = 0; dsm->svm_combinations[i]; i++) {
+        kfree(dsm->svm_combinations[i]);
+    }
+
+    kfree(dsm);
 }
 EXPORT_SYMBOL(remove_dsm);
 
-static struct dsm* _find_dsm(struct radix_tree_root *root, unsigned long id) {
+struct dsm *find_dsm(u32 id) {
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct dsm *dsm;
     struct dsm **dsmp;
+    struct radix_tree_root *root;
 
+    rcu_read_lock();
+    root = &dsm_state->dsm_tree_root;
     repeat: dsm = NULL;
-    dsmp = (struct dsm **) radix_tree_lookup_slot(root, id);
+    dsmp = (struct dsm **) radix_tree_lookup_slot(root, (unsigned long) id);
     if (dsmp) {
-
-        dsm = radix_tree_deref_slot((void**) dsmp);
+        dsm = radix_tree_deref_slot((void **) dsmp);
         if (unlikely(!dsm))
             goto out;
         if (radix_tree_exception(dsm)) {
             if (radix_tree_deref_retry(dsm))
                 goto repeat;
-            goto out;
         }
-
     }
-    out: return dsm;
+    out: rcu_read_unlock();
+    return dsm;
 }
+EXPORT_SYMBOL(find_dsm);
 
-static struct subvirtual_machine* _find_svm_in_dsm(struct radix_tree_root *root,
-        unsigned long id) {
+struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
     struct subvirtual_machine *svm;
     struct subvirtual_machine **svmp;
+    struct radix_tree_root *root;
+
+    BUG_ON(!dsm);
+
+    rcu_read_lock();
+    root = &dsm->svm_mm_tree_root;
 
     repeat: svm = NULL;
-    svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root, id);
+    svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root, 
+        (unsigned long) svm_id);
     if (svmp) {
-
         svm = radix_tree_deref_slot((void**) svmp);
         if (unlikely(!svm))
             goto out;
         if (radix_tree_exception(svm)) {
             if (radix_tree_deref_retry(svm))
                 goto repeat;
-            goto out;
         }
-
     }
-    out: return svm;
-}
 
-struct dsm *find_dsm(u32 id) {
-
-    struct dsm *dsm = NULL;
-    struct dsm_module_state *dsm_state = get_dsm_module_state();
-    rcu_read_lock();
-    dsm = _find_dsm(&dsm_state->dsm_tree_root, (unsigned long) id);
-    rcu_read_unlock();
-    return dsm;
-
-}
-EXPORT_SYMBOL(find_dsm);
-
-struct subvirtual_machine *find_svm(struct dsm_vm_id *id) {
-
-    struct dsm *dsm = NULL;
-    struct subvirtual_machine *svm = NULL;
-    struct dsm_module_state *dsm_state = get_dsm_module_state();
-    rcu_read_lock();
-    dsm = _find_dsm(&dsm_state->dsm_tree_root, (unsigned long) id->dsm_id);
-    if (dsm) {
-        svm = _find_svm_in_dsm(&dsm->svm_tree_root, id->svm_id);
-    }
-    rcu_read_unlock();
+    out: rcu_read_unlock();
     return svm;
 }
 EXPORT_SYMBOL(find_svm);
 
 struct subvirtual_machine *find_local_svm(struct dsm * dsm,
         struct mm_struct *mm) {
-
-    struct subvirtual_machine *svm = NULL;
-
-    rcu_read_lock();
-    svm = _find_svm_in_dsm(&dsm->svm_mm_tree_root, (unsigned long) mm);
-    rcu_read_unlock();
-    return svm;
+    return find_svm(dsm, (unsigned long) mm);
 }
 EXPORT_SYMBOL(find_local_svm);
 

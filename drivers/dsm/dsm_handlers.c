@@ -24,10 +24,9 @@ static int flush_dsm_request(struct conn_element *ele) {
     while (!list_empty(&tx->request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (!tx_e)
-
             break;
 
-        req= list_first_entry(&tx->request_queue, struct dsm_request, queue);
+        req = list_first_entry(&tx->request_queue, struct dsm_request, queue);
         list_del(&req->queue);
 
         //populate it with a new message
@@ -62,9 +61,7 @@ static int flush_dsm_request(struct conn_element *ele) {
             }
         }
         tx_e->callback.func = req->func;
-
         tx_dsm_send(ele, tx_e);
-
     }
     out: spin_unlock(&tx->request_queue_lock);
     return ret;
@@ -79,14 +76,12 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             dsm_stats_message_recv_rdma_completion(&ele->stats);
 
             process_response(ele, tx_e); // client got its response
-
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
             tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
             process_response(ele, tx_e);
-
             break;
         }
         case REQUEST_PAGE: {

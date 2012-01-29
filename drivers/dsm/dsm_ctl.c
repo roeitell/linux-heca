@@ -249,16 +249,21 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
 
     id.svm_ids = alloc_svm_ids(dsm, 1, mr_info.svm_id);
 
+printk("[register_mr] found dsm %p\n", dsm);
+printk("[register_mr] finding svm %d\n", id.svm_ids[0]);
     svm = find_svm(dsm, id.svm_ids[0]);
+    printk("[register_mr] did we find svm %d? => %p\n", id.svm_ids[0], svm);
     if (!svm)
         goto out;
 
 //     Make sure specific MR not already created.
     mr = search_mr(svm->dsm, mr_info.start_addr);
+    printk("[register_mr] did we find an existing mr? => %p\n", mr);
     if (mr)
         goto out;
 
     mr = kmalloc(sizeof(*mr), GFP_KERNEL);
+    printk("[register_mr] could we kmalloc space for mr? => %p\n", mr);
     if (!mr)
         goto out;
 
@@ -269,6 +274,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     insert_mr(svm->dsm, mr);
     list_add(&mr->ls, &svm->mr_list);
     r = 0;
+printk("[register_mr] starting to mark pages as remote\n");
     if (!svm->priv || (svm->priv->mm != current->mm)) {
         i = mr->addr;
         end = i + mr->sz - 1;

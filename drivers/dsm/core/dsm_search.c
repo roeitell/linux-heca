@@ -137,15 +137,11 @@ struct dsm *find_dsm(u32 id) {
 }
 EXPORT_SYMBOL(find_dsm);
 
-struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
+static struct subvirtual_machine *_find_svm_in_tree(struct radix_tree_root *root, 
+        unsigned long svm_id) {
+
     struct subvirtual_machine *svm;
     struct subvirtual_machine **svmp;
-    struct radix_tree_root *root;
-
-    BUG_ON(!dsm);
-
-    rcu_read_lock();
-    root = &dsm->svm_mm_tree_root;
 
     repeat: svm = NULL;
     svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root, 
@@ -160,14 +156,29 @@ struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
         }
     }
 
-    out: rcu_read_unlock();
+    out: return svm;
+};
+
+struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
+    struct subvirtual_machine *svm;
+
+    rcu_read_lock();
+    svm = _find_svm_in_tree(&dsm->svm_tree_root, (unsigned long) svm_id);
+    rcu_read_unlock();
+
     return svm;
 }
 EXPORT_SYMBOL(find_svm);
 
 struct subvirtual_machine *find_local_svm(struct dsm * dsm,
         struct mm_struct *mm) {
-    return find_svm(dsm, (unsigned long) mm);
+    struct subvirtual_machine *svm;
+
+    rcu_read_lock();
+    svm = _find_svm_in_tree(&dsm->svm_mm_tree_root, (unsigned long) mm);
+    rcu_read_unlock();
+
+    return svm;
 }
 EXPORT_SYMBOL(find_local_svm);
 

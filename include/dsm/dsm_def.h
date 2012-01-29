@@ -398,14 +398,11 @@ static inline u32 lookup_svm_ids(u32 **combs, u32 *svm_ids) {
         return i;
         next: continue;
     }
-printk("[lookup_svm_ids] reached here\n");
+
     /* TODO: dbl-size arr if needed */
     for (j = 0; svm_ids[j]; j++)
         ;
     combs[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
-    printk("[lookup_svm_ids] memcpying\n");
-    printk("[lookup_svm_ids] %d \n", combs[i]);
-    printk("[lookup_svm_ids] %d \n", svm_ids);
     memcpy(combs[i], svm_ids, sizeof(u32)*(j+1));
     combs[i+1] = NULL;
     return i;

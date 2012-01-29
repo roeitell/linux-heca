@@ -84,16 +84,12 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             process_response(ele, tx_e);
             break;
         }
+        case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
             rx_tx_message_transfer(ele, rx_e); // server got a request
             break;
         }
-
-        case TRY_REQUEST_PAGE: {
-            rx_tx_message_transfer(ele, rx_e);
-            break;
-        }
-        case REQUEST_PAGE_PULL: {
+       case REQUEST_PAGE_PULL: {
             dsm_trigger_page_pull(rx_e->dsm_msg);
             break;
         }

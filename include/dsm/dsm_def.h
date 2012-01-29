@@ -80,7 +80,7 @@ struct dsm {
 
     int nb_local_svm;
 
-    u32 **svm_combinations;
+    u32 **svm_descriptors;
 };
 
 struct dsm_vm_id {
@@ -386,12 +386,12 @@ struct unmap_data {
 /* dsm_vm_id<->u64 conversions */
 struct dsm *find_dsm(u32 id);
 
-static inline u32 lookup_svm_ids(u32 **combs, u32 *svm_ids) {
+static inline u32 lookup_svm_ids(u32 **sdsc, u32 *svm_ids) {
     int i, j;
 
-    for (i = 0; combs[i]; i++) {
-        for (j = 0; combs[i][j]; j++) {
-            if (combs[i][j] != svm_ids[j]) {
+    for (i = 0; sdsc[i]; i++) {
+        for (j = 0; sdsc[i][j]; j++) {
+            if (sdsc[i][j] != svm_ids[j]) {
                 goto next;
             }
         }
@@ -402,17 +402,15 @@ static inline u32 lookup_svm_ids(u32 **combs, u32 *svm_ids) {
     /* TODO: dbl-size arr if needed */
     for (j = 0; svm_ids[j]; j++)
         ;
-    combs[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
-    memcpy(combs[i], svm_ids, sizeof(u32)*(j+1));
-    combs[i+1] = NULL;
+    sdsc[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
+    memcpy(sdsc[i], svm_ids, sizeof(u32)*(j+1));
+    sdsc[i+1] = NULL;
     return i;
 };
 
 static inline unsigned long dsm_vm_id_to_u64(u32 dsm_id, u32 *svm_ids) {
     struct dsm *dsm = find_dsm(dsm_id);
-    BUG_ON(!dsm);
-
-    return (lookup_svm_ids(dsm->svm_combinations, svm_ids) << 24) | dsm_id;
+    return (lookup_svm_ids(dsm->svm_descriptors, svm_ids) << 24) | dsm_id;
 };
 
 static inline struct dsm_vm_id u64_to_dsm_vm_id(unsigned long val) {
@@ -421,9 +419,8 @@ static inline struct dsm_vm_id u64_to_dsm_vm_id(unsigned long val) {
 
     id.dsm_id = val & 0xFFFFFF;
     dsm = find_dsm(id.dsm_id);
-    BUG_ON(!dsm);
 
-    id.svm_ids = dsm->svm_combinations[val >> 24];
+    id.svm_ids = dsm->svm_descriptors[val >> 24];
     return id;
 };
 
@@ -435,12 +432,11 @@ static inline swp_entry_t dsm_vm_id_to_swp_entry(u32 dsm_id, u32 *svm_ids) {
     return val_to_dsm_entry(dsm_vm_id_to_u64(dsm_id, svm_ids));
 };
 
-static inline u32 *alloc_svm_ids(struct dsm *dsm, int n, ...)
-{
+static inline u32 *alloc_svm_ids(struct dsm *dsm, int n, ...) {
     va_list ap;
     u32 *svm_ids, index;
     int i;
-    
+ 
     va_start(ap, n);
     svm_ids = kmalloc(sizeof(u32)*(n+1), GFP_KERNEL);
     for (i = 0; i < n; i++) {
@@ -449,10 +445,10 @@ static inline u32 *alloc_svm_ids(struct dsm *dsm, int n, ...)
     svm_ids[n] = 0;
     va_end(ap);
 
-    index = lookup_svm_ids(dsm->svm_combinations, svm_ids);
+    index = lookup_svm_ids(dsm->svm_descriptors, svm_ids);
     kfree(svm_ids);
 
-    return dsm->svm_combinations[index];
+    return dsm->svm_descriptors[index];
 }
 
 #endif /* DSM_DEF_H_ */

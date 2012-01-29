@@ -157,8 +157,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
 
     mutex_lock(&priv_data->dsm->dsm_mutex);
     do {
-        struct subvirtual_machine *test_svm;
-
         found_svm = find_svm(dsm, svm_info.svm_id);
         if (found_svm)
             break;

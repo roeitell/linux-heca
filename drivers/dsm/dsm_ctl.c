@@ -75,7 +75,6 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
 
 static int register_svm(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
-    struct dsm_vm_id id;
     struct dsm *dsm;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
     struct svm_data svm_info;
@@ -83,15 +82,12 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
         return r;
 
-    id.dsm_id = svm_info.dsm_id;
-    dsm = find_dsm(id.dsm_id);
+    dsm = find_dsm(svm_info.dsm_id);
     BUG_ON(!dsm);
-
-    id.svm_ids = alloc_svm_ids(dsm, 1, svm_info.svm_id);
 
     mutex_lock(&priv_data->dsm->dsm_mutex);
     do {
-        found_svm = find_svm(dsm, id.svm_ids[0]);
+        found_svm = find_svm(dsm, svm_info.svm_id);
         if (found_svm)
             break;
 
@@ -104,7 +100,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             break;
 
         r = radix_tree_insert(&priv_data->dsm->svm_tree_root,
-                (unsigned long) id.svm_ids[0], new_svm);
+                (unsigned long) svm_info.svm_id, new_svm);
         if (likely(!r)) {
             //the following should never fail as we locked the dsm and we made sure that we add the ID first
             r = radix_tree_insert(&priv_data->dsm->svm_mm_tree_root,
@@ -146,7 +142,6 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
 static int connect_svm(struct private_data *priv_data, void __user *argp)
 {
     int r = -EFAULT;
-    struct dsm_vm_id id;
     struct dsm *dsm;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
     struct svm_data svm_info;
@@ -157,15 +152,14 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
         return r;
 
-    id.dsm_id = svm_info.dsm_id;
-    dsm = find_dsm(id.dsm_id);
+    dsm = find_dsm(svm_info.dsm_id);
     BUG_ON(!dsm);
-
-    id.svm_ids = alloc_svm_ids(dsm, 1, svm_info.svm_id);
 
     mutex_lock(&priv_data->dsm->dsm_mutex);
     do {
-        found_svm = find_svm(dsm, id.svm_ids[0]);
+        struct subvirtual_machine *test_svm;
+
+        found_svm = find_svm(dsm, svm_info.svm_id);
         if (found_svm)
             break;
 
@@ -176,12 +170,11 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (r)
             break;
-
         r = radix_tree_insert(&priv_data->dsm->svm_tree_root,
-                (unsigned long) id.svm_ids[0], new_svm);
-        if (likely(!r)) {
-            radix_tree_preload_end();
+                (unsigned long) svm_info.svm_id, new_svm);
+        radix_tree_preload_end();
 
+        if (likely(!r)) {
             new_svm->id.dsm_id = svm_info.dsm_id;
             new_svm->id.svm_ids = alloc_svm_ids(dsm, 1, svm_info.svm_id);
             new_svm->priv = NULL;
@@ -191,7 +184,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             ip_addr = inet_addr(svm_info.ip);
 
             // Check for connection
-
             cele = search_rb_conn(ip_addr);
 
             if (!cele) {
@@ -213,7 +205,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
                     svm_info.dsm_id, svm_info.svm_id, r);
             goto exit;
         }
-        radix_tree_preload_end();
 
     } while (r != -ENOMEM);
     if (new_svm) {
@@ -231,7 +222,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
 
 static int register_mr(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
-    struct dsm_vm_id id;
     struct memory_region *mr;
     struct dsm *dsm;
     struct subvirtual_machine *svm;
@@ -243,27 +233,19 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     if (copy_from_user((void *) &mr_info, argp, sizeof mr_info))
         goto out;
 
-    id.dsm_id = mr_info.dsm_id;
-    dsm = find_dsm(id.dsm_id);
+    dsm = find_dsm(mr_info.dsm_id);
     BUG_ON(!dsm);
 
-    id.svm_ids = alloc_svm_ids(dsm, 1, mr_info.svm_id);
-
-printk("[register_mr] found dsm %p\n", dsm);
-printk("[register_mr] finding svm %d\n", id.svm_ids[0]);
-    svm = find_svm(dsm, id.svm_ids[0]);
-    printk("[register_mr] did we find svm %d? => %p\n", id.svm_ids[0], svm);
+    svm = find_svm(dsm, mr_info.svm_id);
     if (!svm)
         goto out;
 
 //     Make sure specific MR not already created.
     mr = search_mr(svm->dsm, mr_info.start_addr);
-    printk("[register_mr] did we find an existing mr? => %p\n", mr);
     if (mr)
         goto out;
 
     mr = kmalloc(sizeof(*mr), GFP_KERNEL);
-    printk("[register_mr] could we kmalloc space for mr? => %p\n", mr);
     if (!mr)
         goto out;
 
@@ -274,7 +256,6 @@ printk("[register_mr] finding svm %d\n", id.svm_ids[0]);
     insert_mr(svm->dsm, mr);
     list_add(&mr->ls, &svm->mr_list);
     r = 0;
-printk("[register_mr] starting to mark pages as remote\n");
     if (!svm->priv || (svm->priv->mm != current->mm)) {
         i = mr->addr;
         end = i + mr->sz - 1;

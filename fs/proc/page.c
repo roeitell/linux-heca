@@ -12,8 +12,6 @@
 #include <asm/uaccess.h>
 #include "internal.h"
 
-#include <linux/dsm.h>
-
 #define KPMSIZE sizeof(u64)
 #define KPMMASK (KPMSIZE - 1)
 
@@ -106,8 +104,6 @@ u64 stable_page_flags(struct page *page)
 		u |= 1 << KPF_ANON;
 	if (PageKsm(page))
 		u |= 1 << KPF_KSM;
-	if (PageDsm(page))
-	    u |= 1 << KPF_DSM;
 
 	/*
 	 * compound pages: export both head/tail info

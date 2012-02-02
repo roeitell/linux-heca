@@ -191,7 +191,6 @@ static inline int non_swap_entry(swp_entry_t entry)
 }
 #endif
 
-
 #ifdef CONFIG_DSM_CORE
 static inline int is_dsm_entry(swp_entry_t entry)
 {
@@ -224,6 +223,4 @@ static inline unsigned long dsm_entry_to_val(swp_entry_t entry)
 }
 #endif /* CONFIG_DSM */
 
-
 #endif /* _LINUX_SWAPOPS_H */
-

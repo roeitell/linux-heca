@@ -1,1 +1,0 @@
-obj-$(CONFIG_DSM_STATS) += dsm_stats.o

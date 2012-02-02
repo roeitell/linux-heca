@@ -75,8 +75,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
     switch (rx_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            dsm_stats_message_recv_rdma_completion(&ele->stats);
-
+            atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
             process_response(ele, tx_e); // client got its response
             break;
         }
@@ -84,19 +83,23 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
             tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
             process_response(ele, tx_e);
+            atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
             break;
         }
         case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
             rx_tx_message_transfer(ele, rx_e); // server got a request
+            atomic64_inc(&ele->sysfs.rx_stats.request_page);
             break;
         }
-       case REQUEST_PAGE_PULL: {
+        case REQUEST_PAGE_PULL: {
             dsm_trigger_page_pull(rx_e->dsm_msg);
+            atomic64_inc(&ele->sysfs.rx_stats.request_page_pull);
             break;
         }
 
         default: {
+            atomic64_inc(&ele->sysfs.rx_stats.err);
             printk(
                     "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
                     rx_e, rx_e->dsm_msg->type, rx_e->id);
@@ -118,23 +121,29 @@ static int dsm_send_message_handler(struct conn_element *ele,
         case PAGE_REQUEST_REPLY: {
             release_page(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
+            atomic64_inc(&ele->sysfs.tx_stats.page_request_reply);
             break;
         }
-        case REQUEST_PAGE:
+        case REQUEST_PAGE: {
+            atomic64_inc(&ele->sysfs.tx_stats.request_page);
             break;
-
-        case TRY_REQUEST_PAGE:
+        }
+        case TRY_REQUEST_PAGE: {
+            atomic64_inc(&ele->sysfs.tx_stats.try_request_page);
             break;
-
+        }
         case REQUEST_PAGE_PULL: {
             release_tx_element(ele, tx_buf_e);
+            atomic64_inc(&ele->sysfs.tx_stats.request_page_pull);
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             release_tx_element(ele, tx_buf_e);
+            atomic64_inc(&ele->sysfs.tx_stats.try_request_page_fail);
             break;
         }
         default: {
+            atomic64_inc(&ele->sysfs.tx_stats.err);
             printk(
                     "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
                     tx_buf_e, tx_buf_e->dsm_msg->type, tx_buf_e->id);
@@ -193,7 +202,6 @@ static void dsm_send_poll(struct ib_cq *cq) {
                                 ">[dsm_send_poll] - ack rdma info exchange wr_id %llu \n",
                                 wc.wr_id);
                     } else {
-                        dsm_stats_message_send_completion(&ele->stats);
 
                         if (dsm_send_message_handler(ele,
                                 &ele->tx_buffer.tx_buf[wc.wr_id]))
@@ -205,7 +213,7 @@ static void dsm_send_poll(struct ib_cq *cq) {
                     break;
                 }
                 case IB_WC_RDMA_WRITE: {
-                    dsm_stats_message_send_rdma_completion(&ele->stats);
+
                     break;
                 }
                 default: {
@@ -266,7 +274,6 @@ static void dsm_recv_poll(struct ib_cq *cq) {
                             goto err;
                         }
 
-                        dsm_stats_message_recv_completion(&ele->stats);
                         if (dsm_recv_message_handler(ele,
                                 &ele->rx_buffer.rx_buf[wc.wr_id]))
                             print_work_completion(
@@ -447,10 +454,11 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
  * Then it creates it's own connection element and accept the request to complete the connection
  */
 int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
+    char ip[32];
     int ret = 0;
     struct conn_element *ele = 0;
     struct rcm *rcm;
-
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
     switch (event->event) {
         case RDMA_CM_EVENT_ADDR_RESOLVED:
 
@@ -462,7 +470,11 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
             if (!ele)
                 goto out;
             init_completion(&ele->completion);
-            create_dsm_connection_stats_data(&ele->stats);
+            //TODO catch error
+            scnprintf(ip, 32, "%p", id);
+            create_connection_sysfs_entry(&ele->sysfs,
+                    dsm_state->dsm_kobjects.rdma_kobject, ip);
+
             rcm = id->context;
 
             ele->rcm = rcm;

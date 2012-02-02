@@ -26,8 +26,6 @@
 #include <linux/swapops.h>
 #include <asm/atomic.h>
 
-#include <dsm/dsm_stats.h>
-
 //#define ULONG_MAX       0xFFFFFFFFFFFFFFFF
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
@@ -66,6 +64,45 @@
  */
 
 
+struct msg_stats {
+    atomic64_t request_page;
+    atomic64_t request_page_pull;
+    atomic64_t page_request_reply;
+    atomic64_t page_info_update;
+    atomic64_t page_request_redirect;
+    atomic64_t try_request_page;
+    atomic64_t try_request_page_fail;
+    atomic64_t err;
+};
+
+struct con_element_sysfs {
+    struct kobject connection_kobject;
+    struct kobject connection_rx_kobject;
+    struct kobject connection_tx_kobject;
+    struct msg_stats rx_stats;
+    struct msg_stats tx_stats;
+};
+
+struct dsm_page_stats {
+    atomic64_t nb_page_requested;
+    atomic64_t nb_page_request_success;
+    atomic64_t nb_page_sent;
+    atomic64_t nb_page_pull;
+    atomic64_t nb_page_pull_fail;
+    atomic64_t nb_page_push_request;
+    atomic64_t nb_page_redirect;
+    atomic64_t nb_page_requested_prefetch;
+    atomic64_t nb_err;
+};
+
+struct svm_sysfs {
+
+    struct kobject svm_kobject;
+    struct kobject local;
+    struct dsm_page_stats stats;
+
+};
+
 struct dsm {
     u32 dsm_id;
 
@@ -79,6 +116,7 @@ struct dsm {
 
     struct list_head dsm_ptr;
 
+    struct kobject dsm_kobject;
     int nb_local_svm;
 
     u32 **svm_descriptors;
@@ -86,8 +124,8 @@ struct dsm {
 
 struct dsm_kobjects {
     struct kobject * dsm_kobject;
-    struct kobject * memory_kobject;
     struct kobject * rdma_kobject;
+    struct kobject * domains_kobject;
 };
 
 struct rcm {
@@ -186,7 +224,7 @@ struct conn_element {
     struct page_pool page_pool;
     struct rb_node rb_node;
 
-    struct con_element_stats stats;
+    struct con_element_sysfs sysfs;
 
     struct completion completion;
 
@@ -245,6 +283,8 @@ struct subvirtual_machine {
 
     struct radix_tree_root page_cache;
     spinlock_t page_cache_spinlock;
+
+    struct svm_sysfs svm_sysfs;
 };
 
 struct work_request_ele {
@@ -301,19 +341,14 @@ struct tx_buf_ele {
     struct list_head tx_buf_ele_ptr;
 
     struct tx_callback callback;
-
-    struct tx_dsm_stats stats;
-
 };
 
 struct rx_buf_ele {
     int id;
-
     void *mem;
     struct dsm_message *dsm_msg;
     //The one for catching the request in the first place
     struct recv_work_req_ele *recv_wrk_rq_ele;
-
 };
 
 struct dsm_request {

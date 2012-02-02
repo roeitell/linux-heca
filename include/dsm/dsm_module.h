@@ -43,10 +43,10 @@ unsigned int inet_addr(char *);
 int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element **, struct rcm *);
-void create_page_request(struct conn_element *, struct tx_buf_ele *,
-        struct dsm_vm_id, struct dsm_vm_id, uint64_t, struct page*, u16);
-void create_page_pull_request(struct conn_element *, struct tx_buf_ele *,
-        struct dsm_vm_id, struct dsm_vm_id, uint64_t);
+void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32, 
+    u32, uint64_t, struct page*, u16);
+void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32, 
+    u32, u32, uint64_t);
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *);
 int create_connection(struct rcm *, struct svm_data *);
@@ -112,7 +112,7 @@ int dsm_recv_info(struct conn_element *);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
         struct subvirtual_machine *, uint64_t, void(*func)(struct tx_buf_ele *),
         int);
-int dsm_request_page_pull(struct mm_struct *, struct subvirtual_machine *,
+int dsm_request_page_pull(struct dsm *, struct mm_struct *, u32 *,
         struct subvirtual_machine *, unsigned long);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 

@@ -32,18 +32,20 @@ static int flush_dsm_request(struct conn_element *ele) {
         //populate it with a new message
         switch (req->type) {
             case REQUEST_PAGE: {
-                create_page_request(ele, tx_e, req->fault_svm->id, req->svm->id,
-                        req->addr, req->page, req->type);
+                create_page_request(ele, tx_e, req->fault_svm->dsm_id, 
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, req->page, 
+                    req->type);
                 break;
             }
             case TRY_REQUEST_PAGE: {
-                create_page_request(ele, tx_e, req->fault_svm->id, req->svm->id,
-                        req->addr, req->page, req->type);
+                create_page_request(ele, tx_e, req->fault_svm->dsm_id, 
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, req->page, 
+                    req->type);
                 break;
             }
             case REQUEST_PAGE_PULL: {
-                create_page_pull_request(ele, tx_e, req->fault_svm->id,
-                        req->svm->id, req->addr);
+                create_page_pull_request(ele, tx_e, req->fault_svm->dsm_id, 
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr);
                 break;
             }
             case TRY_REQUEST_PAGE_FAIL: {

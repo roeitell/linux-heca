@@ -40,11 +40,11 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
         page = page_is_in_svm_page_cache(svm, addr);
         printk(
                 "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                svm->id.dsm_id, svm->id.svm_ids[0], (void *) addr, page);
+                svm->dsm_id, svm->svm_id, (void *) addr, page);
         if (page) {
             printk(
                     "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                    svm->id.dsm_id, svm->id.svm_ids[0], (void *) addr, page);
+                    svm->dsm_id, svm->svm_id, (void *) addr, page);
             delete_from_dsm_cache(svm, page, addr);
             synchronize_rcu();
         }
@@ -56,21 +56,21 @@ void remove_svm(struct subvirtual_machine *svm) {
     struct dsm * dsm = svm->dsm;
     struct memory_region *mr = NULL;
 
-    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->id.dsm_id,
-            svm->id.svm_ids[0]);
+    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm_id,
+            svm->svm_id);
     mutex_lock(&dsm->dsm_mutex);
     list_del(&svm->svm_ptr);
-    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->id.svm_ids[0]);
+    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
     if (svm->priv) {
         printk("[remove_svm] we have private data before decreasing %d \n",
                 dsm->nb_local_svm);
         dsm->nb_local_svm--;
-        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->id.svm_ids[0]);
+        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
     }
     write_seqlock(&dsm->mr_seq_lock);
     while (!list_empty(&svm->mr_list)) {
         mr = list_first_entry(&svm->mr_list, struct memory_region, ls );
-        printk("[remove_svm] removing MR: addr %p, size %ul  \n",
+        printk("[remove_svm] removing MR: addr %p, size %lu  \n",
                 (void*) mr->addr, mr->sz);
         list_del(&mr->ls);
         rb_erase(&mr->rb_node, &dsm->mr_tree_root);
@@ -105,8 +105,8 @@ void remove_dsm(struct dsm * dsm) {
         remove_svm(svm);
     }
 
-    for (i = 0; dsm->svm_combinations[i]; i++) {
-        kfree(dsm->svm_combinations[i]);
+    for (i = 0; dsm->svm_descriptors[i]; i++) {
+        kfree(dsm->svm_descriptors[i]);
     }
 
     kfree(dsm);

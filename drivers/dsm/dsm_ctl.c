@@ -43,8 +43,9 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         INIT_LIST_HEAD(&new_dsm->svm_list);
         new_dsm->mr_tree_root = RB_ROOT;
         new_dsm->nb_local_svm = 0;
-        new_dsm->svm_combinations = kmalloc(sizeof(u32 *)*1024, GFP_KERNEL);
-        new_dsm->svm_combinations[0] = NULL;
+        new_dsm->svm_descriptors = kmalloc(sizeof(u32 *)*256, GFP_KERNEL);
+        memset(new_dsm->svm_descriptors, 0, (sizeof(u32 *)*256));
+        new_dsm->svm_descriptors[255] = (u32 *) -1;
 
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (r)
@@ -111,8 +112,8 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->priv = priv_data;
             priv_data->svm = new_svm;
             priv_data->offset = svm_info.offset;
-            new_svm->id.dsm_id = svm_info.dsm_id;
-            new_svm->id.svm_ids = alloc_svm_ids(dsm, 1, svm_info.svm_id);
+            new_svm->dsm_id = svm_info.dsm_id;
+            new_svm->svm_id = svm_info.svm_id;
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
@@ -173,8 +174,8 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
         radix_tree_preload_end();
 
         if (likely(!r)) {
-            new_svm->id.dsm_id = svm_info.dsm_id;
-            new_svm->id.svm_ids = alloc_svm_ids(dsm, 1, svm_info.svm_id);
+            new_svm->dsm_id = svm_info.dsm_id;
+            new_svm->svm_id = svm_info.svm_id;
             new_svm->priv = NULL;
             new_svm->dsm = priv_data->dsm;
             INIT_LIST_HEAD(&new_svm->mr_list);
@@ -222,24 +223,20 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
     struct memory_region *mr;
     struct dsm *dsm;
-    struct subvirtual_machine *svm;
-    struct mr_data mr_info;
+    struct unmap_data udata;
     unsigned long i, end;
+    int j;
 
     printk("[DSM_MR]\n");
 
-    if (copy_from_user((void *) &mr_info, argp, sizeof mr_info))
+    if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
 
-    dsm = find_dsm(mr_info.dsm_id);
+    dsm = find_dsm(udata.dsm_id);
     BUG_ON(!dsm);
 
-    svm = find_svm(dsm, mr_info.svm_id);
-    if (!svm)
-        goto out;
-
 //     Make sure specific MR not already created.
-    mr = search_mr(svm->dsm, mr_info.start_addr);
+    mr = search_mr(dsm, udata.addr);
     if (mr)
         goto out;
 
@@ -247,24 +244,32 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     if (!mr)
         goto out;
 
-    mr->addr = mr_info.start_addr;
-    mr->sz = mr_info.size;
-    mr->svm = svm;
+    mr->addr = udata.addr;
+    mr->sz = udata.sz;
+//    mr->svm = svm;
 
-    insert_mr(svm->dsm, mr);
-    list_add(&mr->ls, &svm->mr_list);
+    insert_mr(dsm, mr);
+    for (j = 0; udata.svm_ids[j]; j++) {
+        struct subvirtual_machine *svm;
+
+        svm = find_svm(dsm, udata.svm_ids[j]);
+        if (!svm)
+            goto out;
+        list_add(&mr->ls, &svm->mr_list);
+    }
+
     r = 0;
-    if (!svm->priv || (svm->priv->mm != current->mm)) {
+//    if (!svm->priv || (svm->priv->mm != current->mm)) {
         i = mr->addr;
         end = i + mr->sz - 1;
         while (i < end) {
-            r = dsm_flag_page_remote(current->mm, mr->svm->id, i);
+            r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, i);
             if (r)
                 break;
             i += PAGE_SIZE;
 
         }
-    }
+//    }
     out: return r;
 }
 
@@ -277,43 +282,43 @@ static int unmap_range(struct private_data *priv_data, void __user *argp) {
     struct unmap_data udata;
     unsigned long i = 0;
     unsigned long end = 0;
-    int counter = 0;
+    int j;
 
     printk("[DSM_UNMAP_RANGE]\n");
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
 
-    dsm = find_dsm(udata.id.dsm_id);
+    dsm = find_dsm(udata.dsm_id);
     BUG_ON(!dsm);
     
-    svm = find_svm(dsm, udata.id.svm_ids[0]);
-    if (!svm) {
-        printk("[UNMAP_RANGE] could not find the route element \n");
-        r = -1;
-        printk("[unmap range ] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
-                udata.id.svm_ids[0]);
-        goto out;
-    }
+    for (j = 0; udata.svm_ids[j]; j++) {
+        svm = find_svm(dsm, udata.svm_ids[j]);
+        if (!svm) {
+            printk("[UNMAP_RANGE] could not find the route element \n");
+            r = -1;
+            printk("[unmap range ] dsm_id : %d - vm_id : %d\n", udata.dsm_id,
+                udata.svm_ids[j]);
+            goto out;
+        }
 
-    if (priv_data->svm->id.dsm_id != svm->id.dsm_id) {
-        printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
-        r = -1;
-        goto out;
+        if (priv_data->svm->dsm_id != svm->dsm_id) {
+            printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
+            r = -1;
+            goto out;
+        }
     }
 
     i = udata.addr;
     end = i + udata.sz;
-    counter = 0;
     while (i < end) {
-        r = dsm_flag_page_remote(current->mm, udata.id, i);
+        r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, i);
         if (r)
             break;
 
         i += PAGE_SIZE;
-        counter++;
     }
-    printk("[?] unmapped #pages : %d\n", counter);
+    printk("[?] unmapped #pages : %lu\n", (i-udata.addr)/PAGE_SIZE);
     r = 0;
 
     out: return r;
@@ -322,6 +327,7 @@ static int unmap_range(struct private_data *priv_data, void __user *argp) {
 static int unmap_page(struct private_data *priv_data, void __user *argp) {
 
     int r = -EFAULT;
+    int i;
 
     struct dsm *dsm;
     struct subvirtual_machine *svm = NULL;
@@ -333,28 +339,29 @@ static int unmap_page(struct private_data *priv_data, void __user *argp) {
         goto out;
     }
 
-    dsm = find_dsm(udata.id.dsm_id);
+    dsm = find_dsm(udata.dsm_id);
     BUG_ON(!dsm);
 
-    svm = find_svm(dsm, udata.id.svm_ids[0]);
-    if (!svm) {
-        printk("[UNMAP_PAGE] could not find the route element \n");
-        r = -1;
-        printk("[unmap page 1] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
-                udata.id.svm_ids[0]);
-        goto out;
+    for (i = 0; udata.svm_ids[i]; i++) {
+        svm = find_svm(dsm, udata.svm_ids[i]);
+        if (!svm) {
+            printk("[UNMAP_PAGE] could not find the route element \n");
+            r = -1;
+            printk("[unmap page 1] dsm_id : %d - vm_id : %d\n", udata.dsm_id,
+                    udata.svm_ids[i]);
+            goto out;
+        }
     }
 
-    printk("[unmap page 2] dsm_id : %d - vm_id : %d\n", udata.id.dsm_id,
-            udata.id.svm_ids[0]);
+    printk("[unmap page 2] dsm_id : %d - num svms: %d\n", udata.dsm_id, i);
 
-    if (priv_data->svm->id.dsm_id != svm->id.dsm_id) {
+    if (priv_data->svm->dsm_id != svm->dsm_id) {
         printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
         r = -1;
         goto out;
     }
 
-    r = dsm_flag_page_remote(current->mm, udata.id, udata.addr);
+    r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, udata.addr);
 
     out: return r;
 }
@@ -363,30 +370,24 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
 {
     int r = -EFAULT;
     unsigned long addr;
-
     struct dsm *dsm;
-    struct subvirtual_machine *svm = NULL;
     struct unmap_data udata;
-    printk("[DSM_TRY_PUSH_BACK_PAGE]\n");
 
+    printk("[DSM_TRY_PUSH_BACK_PAGE]\n");
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
 
-    dsm = find_dsm(udata.id.dsm_id);
+    dsm = find_dsm(udata.dsm_id);
     BUG_ON(!dsm);
 
-    svm = find_svm(dsm, udata.id.svm_ids[0]);
-
-    if (!svm)
-        goto out;
-    if (svm == priv_data->svm)
-        goto out;
-
     addr = udata.addr & PAGE_MASK;
-    if (!page_is_in_svm_page_cache(priv_data->svm, addr))
-        r = dsm_request_page_pull(current->mm, svm, priv_data->svm, udata.addr);
-    else
+    if (!page_is_in_svm_page_cache(priv_data->svm, addr)) {
+        r = dsm_request_page_pull(dsm, current->mm, udata.svm_ids, 
+            priv_data->svm, udata.addr);
+    }
+    else {
         r = 0;
+    }
 
     out: return r;
 }

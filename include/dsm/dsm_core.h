@@ -77,15 +77,15 @@ void reg_dsm_functions(
 );
 
 void dereg_dsm_functions(void);
-int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
+int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 *svm_ids,
         unsigned long addr);
 
 // dsm_page_request
 struct page * dsm_extract_page_from_remote(struct dsm_message *);
 
 // dsm_page_fault
-int dsm_try_push_page(struct subvirtual_machine *, struct mm_struct *,
-        struct dsm_vm_id, unsigned long);
+int dsm_try_push_page(struct dsm *, struct subvirtual_machine *, 
+    struct mm_struct *, u32 *, unsigned long);
 
 extern struct dsm_functions *funcs;
 struct page *dsm_trigger_page_pull(struct dsm_message *);

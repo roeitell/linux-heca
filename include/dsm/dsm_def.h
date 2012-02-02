@@ -65,6 +65,7 @@
  * DSM DATA structure
  */
 
+
 struct dsm {
     u32 dsm_id;
 
@@ -81,11 +82,6 @@ struct dsm {
     int nb_local_svm;
 
     u32 **svm_descriptors;
-};
-
-struct dsm_vm_id {
-    u32 dsm_id;
-    u32 *svm_ids;
 };
 
 struct dsm_kobjects {
@@ -209,15 +205,15 @@ struct rdma_info {
 };
 
 struct dsm_message {
+    u32 dsm_id;
+    u32 src_id;
+    u32 dest_id;
 
+    u16 type;
     u32 offset;
-    u64 dest;
-    u64 src;
     u64 req_addr;
     u64 dst_addr;
     u32 rkey;
-    u16 type;
-
 };
 
 /*
@@ -226,11 +222,9 @@ struct dsm_message {
 struct memory_region {
     unsigned long addr;
     unsigned long sz;
-    struct subvirtual_machine *svm;
 
     struct list_head ls;
     struct rb_node rb_node;
-
 };
 
 struct private_data {
@@ -238,11 +232,12 @@ struct private_data {
     unsigned long offset;
     struct dsm * dsm;
     struct subvirtual_machine *svm;
-
 };
 
 struct subvirtual_machine {
-    struct dsm_vm_id id;
+    u32 dsm_id;
+    u32 svm_id;
+
     struct conn_element *ele;
     struct private_data *priv;
     struct list_head svm_ptr;
@@ -251,7 +246,6 @@ struct subvirtual_machine {
 
     struct radix_tree_root page_cache;
     spinlock_t page_cache_spinlock;
-
 };
 
 struct work_request_ele {
@@ -352,7 +346,7 @@ struct dsm_module_state {
 #define DSM_SVM                         _IOW(DSM_IO, 0xA0, struct svm_data)
 #define DSM_CONNECT                     _IOW(DSM_IO, 0xA1, struct svm_data)
 #define DSM_UNMAP_RANGE                 _IOW(DSM_IO, 0xA2, struct unmap_data)
-#define DSM_MR                          _IOW(DSM_IO, 0xA3, struct mr_data)
+#define DSM_MR                          _IOW(DSM_IO, 0xA3, struct unmap_data)
 #define PAGE_SWAP                       _IOW(DSM_IO, 0xA4, struct dsm_message)
 #define UNMAP_PAGE                      _IOW(DSM_IO, 0xA5, struct unmap_data)
 #define DSM_GET_STAT                    _IOW(DSM_IO, 0xA6, struct svm_data)
@@ -369,25 +363,24 @@ struct svm_data {
 
 };
 
-struct mr_data {
-    u32 dsm_id;
-    u32 svm_id;
-    unsigned long start_addr;
-    unsigned long size;
-
-};
-
 struct unmap_data {
+    u32 dsm_id;
+    u32 *svm_ids;
     unsigned long addr;
     size_t sz;
-    struct dsm_vm_id id;
 };
 
-/* dsm_vm_id<->u64 conversions */
+/* dsm_vm_ids<->u64 conversions */
 struct dsm *find_dsm(u32 id);
 
-static inline u32 lookup_svm_ids(u32 **sdsc, u32 *svm_ids) {
+struct dsm_vm_ids {
+    struct dsm *dsm;
+    u32 *svm_ids;
+};
+
+static inline u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
     int i, j;
+    u32 **sdsc = dsm->svm_descriptors;
 
     for (i = 0; sdsc[i]; i++) {
         for (j = 0; sdsc[i][j]; j++) {
@@ -399,56 +392,39 @@ static inline u32 lookup_svm_ids(u32 **sdsc, u32 *svm_ids) {
         next: continue;
     }
 
-    /* TODO: dbl-size arr if needed */
+    if (sdsc[i] < 0) {
+        dsm->svm_descriptors = kmalloc(sizeof(u32 *)*i*2, GFP_KERNEL);
+        memcpy(dsm->svm_descriptors, sdsc, sizeof(u32 *)*i);
+        memset(dsm->svm_descriptors+i, 0, sizeof(u32 *)*i);
+        dsm->svm_descriptors[i*2-1] = (u32 *) -1;
+        kfree(sdsc);
+        sdsc = dsm->svm_descriptors;
+    }
+
     for (j = 0; svm_ids[j]; j++)
         ;
+
     sdsc[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
     memcpy(sdsc[i], svm_ids, sizeof(u32)*(j+1));
-    sdsc[i+1] = NULL;
     return i;
 };
 
-static inline unsigned long dsm_vm_id_to_u64(u32 dsm_id, u32 *svm_ids) {
-    struct dsm *dsm = find_dsm(dsm_id);
-    return (lookup_svm_ids(dsm->svm_descriptors, svm_ids) << 24) | dsm_id;
+static inline swp_entry_t svm_ids_to_swp_entry(struct dsm *dsm, u32 *svm_ids) {
+    u64 val = dsm_get_descriptor(dsm, svm_ids);
+    val = (val << 24) | dsm->dsm_id;
+
+    return val_to_dsm_entry(val);
 };
 
-static inline struct dsm_vm_id u64_to_dsm_vm_id(unsigned long val) {
-    struct dsm_vm_id id;
-    struct dsm *dsm;
+static inline struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
+    u64 val = dsm_entry_to_val(entry);
+    struct dsm_vm_ids id;
 
-    id.dsm_id = val & 0xFFFFFF;
-    dsm = find_dsm(id.dsm_id);
+    id.dsm = find_dsm(val & 0xFFFFFF);
+    BUG_ON(!id.dsm);
 
-    id.svm_ids = dsm->svm_descriptors[val >> 24];
+    id.svm_ids = id.dsm->svm_descriptors[val >> 24];
     return id;
 };
-
-static inline struct dsm_vm_id swp_entry_to_dsm_vm_id(swp_entry_t entry) {
-    return u64_to_dsm_vm_id(dsm_entry_to_val(entry));
-};
-
-static inline swp_entry_t dsm_vm_id_to_swp_entry(u32 dsm_id, u32 *svm_ids) {
-    return val_to_dsm_entry(dsm_vm_id_to_u64(dsm_id, svm_ids));
-};
-
-static inline u32 *alloc_svm_ids(struct dsm *dsm, int n, ...) {
-    va_list ap;
-    u32 *svm_ids, index;
-    int i;
- 
-    va_start(ap, n);
-    svm_ids = kmalloc(sizeof(u32)*(n+1), GFP_KERNEL);
-    for (i = 0; i < n; i++) {
-        svm_ids[i] = va_arg(ap, u32);
-    }
-    svm_ids[n] = 0;
-    va_end(ap);
-
-    index = lookup_svm_ids(dsm->svm_descriptors, svm_ids);
-    kfree(svm_ids);
-
-    return dsm->svm_descriptors[index];
-}
 
 #endif /* DSM_DEF_H_ */

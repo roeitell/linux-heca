@@ -46,7 +46,8 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
         spin_unlock(&tx->request_queue_lock);
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
-            create_page_pull_request(ele, tx_e, fault_svm->id, svm->id, addr);
+            create_page_pull_request(ele, tx_e, fault_svm->dsm_id, 
+                fault_svm->svm_id, svm->svm_id, addr);
             tx_e->callback.func = NULL;
             ret = tx_dsm_send(ele, tx_e);
             return ret;
@@ -92,11 +93,12 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         if (tx_e) {
 
             if (tag != TRY_TAG)
-                create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
-                        page, REQUEST_PAGE);
+                create_page_request(ele, tx_e, fault_svm->dsm_id, 
+                    fault_svm->svm_id, svm->svm_id, addr, page, REQUEST_PAGE);
             else
-                create_page_request(ele, tx_e, fault_svm->id, svm->id, addr,
-                        page, TRY_REQUEST_PAGE);
+                create_page_request(ele, tx_e, fault_svm->dsm_id,
+                    fault_svm->svm_id, svm->svm_id, addr, page, 
+                    TRY_REQUEST_PAGE);
 
             tx_e->callback.func = func;
 
@@ -407,17 +409,25 @@ int dsm_recv_info(struct conn_element *ele) {
     return ib_post_recv(ele->cm_id->qp, &rid->recv_wr, &rid->recv_bad_wr);
 }
 
-int dsm_request_page_pull(struct mm_struct *mm, struct subvirtual_machine *svm,
+int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm, u32 *svm_ids,
         struct subvirtual_machine *fault_svm, unsigned long request_addr) {
     int ret = -1;
     unsigned long addr = request_addr & PAGE_MASK;
+
     down_read(&mm->mmap_sem);
-    ret = dsm_try_push_page(fault_svm, mm, svm->id, addr);
+    ret = dsm_try_push_page(dsm, fault_svm, mm, svm_ids, addr);
     up_read(&mm->mmap_sem);
 
-    if (!ret)
-        send_request_dsm_page_pull(svm, fault_svm,
+    if (!ret) {
+        int i;
+
+        for (i = 0; svm_ids[i]; i++) {
+            struct subvirtual_machine *svm = find_svm(dsm, svm_ids[i]);
+
+            send_request_dsm_page_pull(svm, fault_svm,
                 (uint64_t) (addr - fault_svm->priv->offset));
+        }
+    }
 
     return ret;
 }

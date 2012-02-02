@@ -7,8 +7,9 @@
 
 #include <dsm/dsm_module.h>
 
-static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
-        struct dsm_vm_id remote_id, struct mm_struct *mm, unsigned long addr) {
+static struct page *_dsm_extract_page(struct dsm *dsm, 
+        struct subvirtual_machine *local_svm, u32 remote_id, 
+        struct mm_struct *mm, unsigned long addr) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
@@ -20,6 +21,7 @@ static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     int extract = 0;
+    u32 svm_ids[2];
 
     printk("[_dsm_extract_page] faulting for page %p  \n ", (void*) addr);
     retry:
@@ -185,10 +187,10 @@ static struct page *_dsm_extract_page(struct subvirtual_machine *local_svm,
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
 
-    set_pte_at(mm, addr, pte, 
-        swp_entry_to_pte(dsm_vm_id_to_swp_entry(
-        remote_id.dsm_id, alloc_svm_ids(funcs->_find_dsm(remote_id.dsm_id), 1, 
-        remote_id.svm_ids[0]))));
+    svm_ids[0] = remote_id;
+    svm_ids[1] = 0;
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm, 
+        svm_ids))); 
 
     page_remove_rmap(page);
 
@@ -308,7 +310,7 @@ static struct page *_try_dsm_extract_page(struct subvirtual_machine *local_svm,
 
 }
 
-static struct page *dsm_extract_page(struct dsm_vm_id id,
+static struct page *dsm_extract_page(struct dsm *dsm, u32 remote_id,
         struct subvirtual_machine *local_svm, unsigned long addr) {
 
     struct mm_struct *mm;
@@ -317,7 +319,7 @@ static struct page *dsm_extract_page(struct dsm_vm_id id,
 
     use_mm(mm);
     down_read(&mm->mmap_sem);
-    page = _dsm_extract_page(local_svm, id, mm, addr);
+    page = _dsm_extract_page(dsm, local_svm, remote_id, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 
@@ -341,8 +343,6 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
 }
 
 struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
-    struct dsm_vm_id remote_id;
-    struct dsm_vm_id local_id;
     struct dsm *dsm;
     struct subvirtual_machine *local_svm;
     struct page *page = NULL;
@@ -352,13 +352,11 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
         printk("[dsm_extract_page_from_remote] no message ! %p  \n", msg);
         return NULL;
     }
-    remote_id = u64_to_dsm_vm_id(msg->dest);
-    local_id = u64_to_dsm_vm_id(msg->src);
 
-    dsm = funcs->_find_dsm(local_id.dsm_id);
+    dsm = funcs->_find_dsm(msg->dsm_id);
     BUG_ON(!dsm);
 
-    local_svm = funcs->_find_svm(dsm, local_id.svm_ids[0]);
+    local_svm = funcs->_find_svm(dsm, msg->src_id);
     BUG_ON(!local_svm);
     BUG_ON(!local_svm->priv->mm);
 
@@ -366,7 +364,7 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
     if (msg->type == TRY_REQUEST_PAGE)
         page = try_dsm_extract_page(local_svm, norm_addr);
     else
-        page = dsm_extract_page(remote_id, local_svm, norm_addr);
+        page = dsm_extract_page(dsm, msg->dest_id, local_svm, norm_addr);
 
     return page;
 }
@@ -392,7 +390,6 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     pte_t *pte;
     int r = 0;
     struct vm_area_struct *vma;
-    struct dsm_vm_id id;
     pgd_t *pgd;
     pud_t *pud;
     pmd_t *pmd;
@@ -401,12 +398,13 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     struct subvirtual_machine *svm;
     swp_entry_t swp_e;
     struct mm_struct *mm;
+    u32 svm_id;
 
-    id = u64_to_dsm_vm_id(msg->dest);
-    dsm = funcs->_find_dsm(id.dsm_id);
+    svm_id = msg->dest_id;
+    dsm = funcs->_find_dsm(msg->dsm_id);
     BUG_ON(!dsm);
 
-    svm = funcs->_find_svm(dsm, id.svm_ids[0]);
+    svm = funcs->_find_svm(dsm, svm_id);
     BUG_ON(!svm);
 
     mm = svm->priv->mm;
@@ -434,23 +432,24 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     pte_entry = *pte;
 
     if (!pte_present(pte_entry)) {
+        u32 svm_ids[2] = {svm_id, 0};
+
         if (pte_none(pte_entry)) {
             set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
-                dsm_vm_id_to_swp_entry(id.dsm_id, alloc_svm_ids(dsm, 1, 
-                id.svm_ids[0]))));
+                svm_ids_to_swp_entry(dsm, svm_ids)));
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (!non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
                     // store old dest
-                    struct dsm_vm_id old = swp_entry_to_dsm_vm_id(
+                    struct dsm_vm_ids old = swp_entry_to_svm_ids(
                         pte_to_swp_entry(pte_entry));
 
-                    if (old.dsm_id != id.dsm_id && 
-                            old.svm_ids[0] != id.svm_ids[0]) {
+                    if (old.dsm->dsm_id != dsm->dsm_id && 
+                            old.svm_ids[0] != svm_id) {
                         // update pte
                         set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
-                            dsm_vm_id_to_swp_entry(id.dsm_id, id.svm_ids)));
+                            svm_ids_to_swp_entry(dsm, svm_ids)));
 
                         // forward msg
                         // DSM1: fwd message RDMA function call.

@@ -31,11 +31,12 @@ void dereg_dsm_functions(void) {
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 
-int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
+int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 *svm_ids,
         unsigned long request_addr) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
+    int i;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -43,8 +44,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
     pmd_t *pmd;
     pte_t pte_entry;
     swp_entry_t swp_e;
-    struct dsm *dsm;
-    struct subvirtual_machine *svm;
     unsigned long addr = request_addr & PAGE_MASK;
 
     down_read(&mm->mmap_sem);
@@ -94,19 +93,17 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
     }
 
     // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
-    dsm = funcs->_find_dsm(id.dsm_id);
-    BUG_ON(!dsm);
-
-    svm = funcs->_find_svm(dsm, id.svm_ids[0]);
-    BUG_ON(!svm);
+    for (i = 0; svm_ids[i]; i++) {
+        BUG_ON(!funcs->_find_svm(dsm, svm_ids[i]));
+    }
 
     pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
     pte_entry = *pte;
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, addr, pte, swp_entry_to_pte(dsm_vm_id_to_swp_entry(
-                id.dsm_id, alloc_svm_ids(dsm, 1, id.svm_ids[0]))));
+            set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm,
+                svm_ids)));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -168,8 +165,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(dsm_vm_id_to_swp_entry(
-        id.dsm_id, alloc_svm_ids(dsm, 1, id.svm_ids[0]))));
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm, 
+        svm_ids)));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
@@ -188,8 +185,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm_vm_id id,
 }
 EXPORT_SYMBOL(dsm_flag_page_remote);
 
-int dsm_try_push_page(struct subvirtual_machine *local_svm,
-        struct mm_struct *mm, struct dsm_vm_id remote_id, unsigned long addr) {
+int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
+        struct mm_struct *mm, u32 *remote_ids, unsigned long addr) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
@@ -311,9 +308,9 @@ int dsm_try_push_page(struct subvirtual_machine *local_svm,
     get_page(page);
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(dsm_vm_id_to_swp_entry(
-        remote_id.dsm_id, alloc_svm_ids(funcs->_find_dsm(remote_id.dsm_id), 1, 
-        remote_id.svm_ids[0]))));
+
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm, 
+        remote_ids)));
 
     page_remove_rmap(page);
 

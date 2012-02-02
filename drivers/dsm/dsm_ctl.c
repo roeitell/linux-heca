@@ -112,7 +112,6 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->priv = priv_data;
             priv_data->svm = new_svm;
             priv_data->offset = svm_info.offset;
-            new_svm->dsm_id = svm_info.dsm_id;
             new_svm->svm_id = svm_info.svm_id;
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
@@ -174,7 +173,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
         radix_tree_preload_end();
 
         if (likely(!r)) {
-            new_svm->dsm_id = svm_info.dsm_id;
             new_svm->svm_id = svm_info.svm_id;
             new_svm->priv = NULL;
             new_svm->dsm = priv_data->dsm;
@@ -184,7 +182,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
 
             // Check for connection
             cele = search_rb_conn(ip_addr);
-
             if (!cele) {
                 r = create_connection(dsm_state->rcm, &svm_info);
                 if (r)
@@ -302,7 +299,7 @@ static int unmap_range(struct private_data *priv_data, void __user *argp) {
             goto out;
         }
 
-        if (priv_data->svm->dsm_id != svm->dsm_id) {
+        if (priv_data->svm->dsm->dsm_id != svm->dsm->dsm_id) {
             printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
             r = -1;
             goto out;
@@ -355,7 +352,7 @@ static int unmap_page(struct private_data *priv_data, void __user *argp) {
 
     printk("[unmap page 2] dsm_id : %d - num svms: %d\n", udata.dsm_id, i);
 
-    if (priv_data->svm->dsm_id != svm->dsm_id) {
+    if (priv_data->svm->dsm->dsm_id != svm->dsm->dsm_id) {
         printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
         r = -1;
         goto out;

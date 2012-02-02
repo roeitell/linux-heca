@@ -46,7 +46,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
         spin_unlock(&tx->request_queue_lock);
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
-            create_page_pull_request(ele, tx_e, fault_svm->dsm_id, 
+            create_page_pull_request(ele, tx_e, fault_svm->dsm->dsm_id, 
                 fault_svm->svm_id, svm->svm_id, addr);
             tx_e->callback.func = NULL;
             ret = tx_dsm_send(ele, tx_e);
@@ -93,10 +93,10 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         if (tx_e) {
 
             if (tag != TRY_TAG)
-                create_page_request(ele, tx_e, fault_svm->dsm_id, 
+                create_page_request(ele, tx_e, fault_svm->dsm->dsm_id, 
                     fault_svm->svm_id, svm->svm_id, addr, page, REQUEST_PAGE);
             else
-                create_page_request(ele, tx_e, fault_svm->dsm_id,
+                create_page_request(ele, tx_e, fault_svm->dsm->dsm_id,
                     fault_svm->svm_id, svm->svm_id, addr, page, 
                     TRY_REQUEST_PAGE);
 

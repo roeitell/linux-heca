@@ -235,13 +235,12 @@ struct private_data {
 };
 
 struct subvirtual_machine {
-    u32 dsm_id;
     u32 svm_id;
 
+    struct dsm * dsm;
     struct conn_element *ele;
     struct private_data *priv;
     struct list_head svm_ptr;
-    struct dsm * dsm;
     struct list_head mr_list;
 
     struct radix_tree_root page_cache;
@@ -370,61 +369,9 @@ struct unmap_data {
     size_t sz;
 };
 
-/* dsm_vm_ids<->u64 conversions */
-struct dsm *find_dsm(u32 id);
-
 struct dsm_vm_ids {
     struct dsm *dsm;
     u32 *svm_ids;
-};
-
-static inline u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
-    int i, j;
-    u32 **sdsc = dsm->svm_descriptors;
-
-    for (i = 0; sdsc[i]; i++) {
-        for (j = 0; sdsc[i][j]; j++) {
-            if (sdsc[i][j] != svm_ids[j]) {
-                goto next;
-            }
-        }
-        return i;
-        next: continue;
-    }
-
-    if (sdsc[i] < 0) {
-        dsm->svm_descriptors = kmalloc(sizeof(u32 *)*i*2, GFP_KERNEL);
-        memcpy(dsm->svm_descriptors, sdsc, sizeof(u32 *)*i);
-        memset(dsm->svm_descriptors+i, 0, sizeof(u32 *)*i);
-        dsm->svm_descriptors[i*2-1] = (u32 *) -1;
-        kfree(sdsc);
-        sdsc = dsm->svm_descriptors;
-    }
-
-    for (j = 0; svm_ids[j]; j++)
-        ;
-
-    sdsc[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
-    memcpy(sdsc[i], svm_ids, sizeof(u32)*(j+1));
-    return i;
-};
-
-static inline swp_entry_t svm_ids_to_swp_entry(struct dsm *dsm, u32 *svm_ids) {
-    u64 val = dsm_get_descriptor(dsm, svm_ids);
-    val = (val << 24) | dsm->dsm_id;
-
-    return val_to_dsm_entry(val);
-};
-
-static inline struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
-    u64 val = dsm_entry_to_val(entry);
-    struct dsm_vm_ids id;
-
-    id.dsm = find_dsm(val & 0xFFFFFF);
-    BUG_ON(!id.dsm);
-
-    id.svm_ids = id.dsm->svm_descriptors[val >> 24];
-    return id;
 };
 
 #endif /* DSM_DEF_H_ */

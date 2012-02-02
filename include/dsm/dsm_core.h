@@ -90,4 +90,8 @@ int dsm_try_push_page(struct dsm *, struct subvirtual_machine *,
 extern struct dsm_functions *funcs;
 struct page *dsm_trigger_page_pull(struct dsm_message *);
 
+// svm_descriptors
+swp_entry_t svm_ids_to_swp_entry(struct dsm *, u32 *);
+struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t);
+
 #endif /* DSM_PAGE_FAULT_H_ */

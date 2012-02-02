@@ -51,68 +51,6 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
     }
 }
 
-void remove_svm(struct subvirtual_machine *svm) {
-
-    struct dsm * dsm = svm->dsm;
-    struct memory_region *mr = NULL;
-
-    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm->dsm_id,
-            svm->svm_id);
-    mutex_lock(&dsm->dsm_mutex);
-    list_del(&svm->svm_ptr);
-    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
-    if (svm->priv) {
-        printk("[remove_svm] we have private data before decreasing %d \n",
-                dsm->nb_local_svm);
-        dsm->nb_local_svm--;
-        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
-    }
-    write_seqlock(&dsm->mr_seq_lock);
-    while (!list_empty(&svm->mr_list)) {
-        mr = list_first_entry(&svm->mr_list, struct memory_region, ls );
-        printk("[remove_svm] removing MR: addr %p, size %lu  \n",
-                (void*) mr->addr, mr->sz);
-        list_del(&mr->ls);
-        rb_erase(&mr->rb_node, &dsm->mr_tree_root);
-        //TODO need to be solved at some point ... what do we do if we have floatign page / request during crash ?
-        //clean_up_page_cache(svm, mr);
-        kfree(mr);
-
-    }
-    write_sequnlock(&dsm->mr_seq_lock);
-    mutex_unlock(&dsm->dsm_mutex);
-    synchronize_rcu();
-    kfree(svm);
-
-}
-EXPORT_SYMBOL(remove_svm);
-
-void remove_dsm(struct dsm * dsm) {
-
-    struct subvirtual_machine *svm;
-    struct dsm_module_state *dsm_state = get_dsm_module_state();
-    int i;
-
-    printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
-    mutex_lock(&dsm_state->dsm_state_mutex);
-    list_del(&dsm->dsm_ptr);
-    radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);
-    mutex_unlock(&dsm_state->dsm_state_mutex);
-    synchronize_rcu();
-
-    while (!list_empty(&dsm->svm_list)) {
-        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr );
-        remove_svm(svm);
-    }
-
-    for (i = 0; dsm->svm_descriptors[i]; i++) {
-        kfree(dsm->svm_descriptors[i]);
-    }
-
-    kfree(dsm);
-}
-EXPORT_SYMBOL(remove_dsm);
-
 struct dsm *find_dsm(u32 id) {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct dsm *dsm;

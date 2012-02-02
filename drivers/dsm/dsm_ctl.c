@@ -65,7 +65,7 @@ static void remove_svm(struct subvirtual_machine *svm) {
     struct dsm *dsm = svm->dsm;
     struct memory_region *mr = NULL;
 
-    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm_id,
+    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm->dsm_id,
             svm->svm_id);
     mutex_lock(&dsm->dsm_mutex);
     list_del(&svm->svm_ptr);

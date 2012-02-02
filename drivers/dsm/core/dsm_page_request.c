@@ -367,7 +367,7 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
         else
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
     } else {
-        page = dsm_extract_page(remote_id, local_svm, norm_addr);
+        page = dsm_extract_page(dsm, msg->dest_id, local_svm, norm_addr);
         if (page)
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else

@@ -318,11 +318,11 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
                     goto connect_fail;
                 }
                 wait_for_completion(&cele->completion);
-            }
+            } 
             new_svm->ele = cele;
 
             printk(
-                    "[DSM_SVM]\n\t connecting svm \n\tdsm_id : %u\n\tsvm_id : %u\n\tres : %d\n",
+                    "[DSM_CONNECT] connecting svm \n\tdsm_id : %u\n\tsvm_id : %u\n\tres : %d\n",
                     svm_info.dsm_id, svm_info.svm_id, r);
             goto exit;
         }

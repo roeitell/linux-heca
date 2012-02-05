@@ -144,23 +144,21 @@ EXPORT_SYMBOL(insert_rb_conn);
 // Return NULL if no element contained within tree.
 struct conn_element* search_rb_conn(int node_ip) {
     struct rb_root *root = &(get_dsm_module_state()->rcm->root_conn);
-    struct rb_node *node = root->rb_node;
+    struct rb_node *node;
     struct conn_element *this = 0;
 
-    while (node) {
+    for (node = root->rb_node; node; this = 0) {
         this = rb_entry(node, struct conn_element, rb_node);
-
+ 
         if (node_ip < this->remote_node_ip)
             node = node->rb_left;
         else if (node_ip > this->remote_node_ip)
             node = node->rb_right;
         else
             break;
-
     }
 
     return this;
-
 }
 EXPORT_SYMBOL(search_rb_conn);
 

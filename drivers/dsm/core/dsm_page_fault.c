@@ -13,23 +13,27 @@ DEFINE_SPINLOCK(dsm_lock);
 unsigned long zero_dsm_pfn __read_mostly;
 
 static int __init init_dsm_zero_pfn(void)
- {
-         zero_dsm_pfn = page_to_pfn(ZERO_PAGE(0));
-         return 0;
- }
+{
+    zero_dsm_pfn = page_to_pfn(ZERO_PAGE(0));
+    return 0;
+}
 core_initcall(init_dsm_zero_pfn);
 
+static inline void signal_completion_process_ppe(struct page_pool_ele *ppe) {
+    if (!PageUptodate(ppe->mem_page)) {
+       put_page(ppe->mem_page);
+       set_page_private(ppe->mem_page, 0);
+       SetPageUptodate(ppe->mem_page);
+       unlock_page(ppe->mem_page);
+       ppe->mem_page = NULL;
+    }
+}
+
 void signal_completion_page_request(struct tx_buf_ele * tx_e) {
-    struct page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
+    struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
     BUG_ON(!ppe);
     BUG_ON(!ppe->mem_page);
-    put_page(ppe->mem_page);
-    set_page_private(ppe->mem_page, 0);
-    SetPageUptodate(ppe->mem_page);
-    unlock_page(ppe->mem_page);
-    ppe->mem_page = NULL;
-
-    return;
+    signal_completion_process_ppe(ppe);
 }
 
 void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
@@ -39,7 +43,7 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     struct subvirtual_machine *local_svm;
     unsigned long addr;
 
-    struct page_pool_ele * ppe = tx_e->wrk_req->dst_addr;
+    struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
     BUG_ON(!ppe);
     BUG_ON(!ppe->mem_page);
 
@@ -57,20 +61,17 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
         return;
-    } else {
-        put_page(ppe->mem_page);
-        set_page_private(ppe->mem_page, 0);
-        SetPageUptodate(ppe->mem_page);
-        unlock_page(ppe->mem_page);
-        ppe->mem_page = NULL;
-        mm = local_svm->priv->mm;
-        use_mm(mm);
-        down_read(&mm->mmap_sem);
-        get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-        up_read(&mm->mmap_sem);
-        unuse_mm(mm);
-    }
+    } 
 
+    signal_completion_process_ppe(ppe);
+
+    /* FIXME: why is this here? page uninitialized */
+    mm = local_svm->priv->mm;
+    use_mm(mm);
+    down_read(&mm->mmap_sem);
+    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);     
+    up_read(&mm->mmap_sem);
+    unuse_mm(mm);
 }
 
 int delete_from_dsm_cache(struct subvirtual_machine *svm, struct page *page,
@@ -115,13 +116,14 @@ static int __add_to_dsm_cache(struct subvirtual_machine *svm, struct page *page,
     return error;
 }
 
-static void dsm_readpage(struct page* page, unsigned long addr,
-        struct subvirtual_machine *svm, struct subvirtual_machine *fault_svm,
-        int tag) {
+static void dsm_readpage(struct page* page, unsigned long addr, struct dsm *dsm,
+        u32 *svm_ids, struct subvirtual_machine *fault_svm, int tag) {
     void (*func)(struct tx_buf_ele *) = NULL;
+    int i;
 
     VM_BUG_ON(!PageLocked(page));
     VM_BUG_ON(PageUptodate(page));
+
     if (tag != TRY_TAG) {
         atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
         func = signal_completion_page_request;
@@ -129,13 +131,18 @@ static void dsm_readpage(struct page* page, unsigned long addr,
         atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
         func = signal_completion_try_page_request;
     }
-    funcs->request_dsm_page(page, svm, fault_svm,
+
+    for (i = 0; svm_ids[i]; i++) {
+        struct subvirtual_machine *svm = funcs->_find_svm(dsm, svm_ids[i]);
+        BUG_ON(!svm);
+        funcs->request_dsm_page(page, svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag);
+    }
 }
 
-static struct page * get_remote_dsm_page(gfp_t gfp_mask,
-        struct vm_area_struct *vma, unsigned long addr,
-        struct subvirtual_machine *svm, struct subvirtual_machine *fault_svm,
+static struct page * get_remote_dsm_page(gfp_t gfp_mask, 
+        struct vm_area_struct *vma, unsigned long addr, struct dsm *dsm, 
+        u32 *svm_ids, struct subvirtual_machine *fault_svm, 
         unsigned long private, int tag) {
 
     struct page *found_page, *new_page = NULL;
@@ -165,7 +172,7 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
             mem_cgroup_reset_owner(new_page);
             lru_cache_add_anon(new_page);
 
-            dsm_readpage(new_page, addr, svm, fault_svm, tag);
+            dsm_readpage(new_page, addr, dsm, svm_ids, fault_svm, tag);
 
             return new_page;
         }
@@ -175,8 +182,7 @@ static struct page * get_remote_dsm_page(gfp_t gfp_mask,
 
     if (new_page)
         page_cache_release(new_page);
-    if (tag == TRY_TAG
-    )
+    if (tag == TRY_TAG)
         return NULL;
     else
         return found_page;
@@ -471,14 +477,10 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 swp_e = pte_to_swp_entry(pte_entry);
                 if (non_swap_entry(swp_e)) {
                     if (is_dsm_entry(swp_e)) {
-                        struct dsm_vm_ids id;
-                        struct subvirtual_machine *svm;
-
-                        id = swp_entry_to_svm_ids(swp_e);
-                        svm = funcs->_find_svm(id.dsm, id.svm_ids[0]);
-                        BUG_ON(!svm);
+                        struct dsm_vm_ids id = swp_entry_to_svm_ids(swp_e);
                         page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,
-                            norm_addr, svm, fault_svm, private, tag);
+                            norm_addr, id.dsm, id.svm_ids, fault_svm, private, 
+                            tag);
                         atomic64_inc(
                             &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
                     }
@@ -496,7 +498,6 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned int flags, pte_t orig_pte, swp_entry_t entry) {
 
     struct dsm_vm_ids id;
-    struct subvirtual_machine *svm;
     struct subvirtual_machine *fault_svm;
 //we need to use the page addr and not the fault address in order to have a unique reference
     unsigned long norm_addr = address & PAGE_MASK;
@@ -510,23 +511,19 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
 
 //    printk("[request_page_insert] faulting for page %p , norm %p \n ",
 //            (void*) address, (void*) norm_addr);
-    retry:
+    id = swp_entry_to_svm_ids(entry);
 
+    retry:
     if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
         goto out;
-
-    id = swp_entry_to_svm_ids(entry);
 
     fault_svm = funcs->_find_local_svm(id.dsm, mm);
     BUG_ON(!fault_svm);
 
-    svm = funcs->_find_svm(id.dsm, id.svm_ids[0]);
-    BUG_ON(!svm);
-
     page = find_get_dsm_page(fault_svm, norm_addr);
     if (!page) {
-        page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr, svm,
-                fault_svm, 0, DEFAULT_TAG);
+        page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr, 
+            id.dsm, id.svm_ids, fault_svm, 0, DEFAULT_TAG);
 
         if (!page) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
@@ -535,9 +532,10 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
             goto unlock;
         }
         ret = VM_FAULT_MAJOR;
-        for (i = 1; i < 40; i++)
-            get_dsm_page(mm, address + i * PAGE_SIZE
-            , fault_svm, 0, PREFETCH_TAG);
+        for (i = 1; i < 40; i++) {
+            get_dsm_page(mm, address + i * PAGE_SIZE, fault_svm, 0, 
+                PREFETCH_TAG);
+        }
     }
 
     locked = lock_page_or_retry(page, mm, flags);
@@ -614,6 +612,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         page_cache_release(swapcache);
     }
     return ret;
+
     rebelote: unlock_page(page);
     page_cache_release(page);
     goto retry;

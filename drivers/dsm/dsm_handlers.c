@@ -246,7 +246,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
 
             default: {
                 print_work_completion(&wc,
-                        "[dsm_recv_poll] unkown completion status ");
+                        "[dsm_recv_poll] unknown completion status ");
                 goto err;
             }
         }

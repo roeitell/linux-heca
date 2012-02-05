@@ -82,6 +82,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     struct tx_buf_ele *tx_e;
     int ret = 0;
     struct dsm_request *req;
+    int req_tag = (tag == TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
 
 //    printk("[request_dsm_page]svm %p, ele %p txbuff %p , addr %p, try %d\n",
 //            svm, svm->ele, tx, (void *) addr, try);
@@ -92,17 +93,10 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
-
-            if (tag != TRY_TAG)
-                create_page_request(ele, tx_e, fault_svm->dsm->dsm_id, 
-                    fault_svm->svm_id, svm->svm_id, addr, page, REQUEST_PAGE);
-            else
-                create_page_request(ele, tx_e, fault_svm->dsm->dsm_id,
-                    fault_svm->svm_id, svm->svm_id, addr, page, 
-                    TRY_REQUEST_PAGE);
+            create_page_request(ele, tx_e, fault_svm->dsm->dsm_id, 
+                fault_svm->svm_id, svm->svm_id, addr, page, req_tag);
 
             tx_e->callback.func = func;
-
             ret = tx_dsm_send(ele, tx_e);
             return ret;
         }
@@ -110,13 +104,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         spin_unlock(&tx->request_queue_lock);
 
     req = get_dsm_request();
-
-    if (tag != TRY_TAG
-    )
-        req->type = REQUEST_PAGE;
-    else
-        req->type = TRY_REQUEST_PAGE;
-
+    req->type = req_tag;
     req->addr = addr;
     req->fault_svm = fault_svm;
     req->func = func;

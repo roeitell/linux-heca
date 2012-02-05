@@ -247,7 +247,6 @@ static u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
 
     for (j = 0; svm_ids[j]; j++)
         ;
-
     sdsc[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
     memcpy(sdsc[i], svm_ids, sizeof(u32)*(j+1));
     return i;

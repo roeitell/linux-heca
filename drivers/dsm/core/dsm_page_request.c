@@ -362,16 +362,16 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
     norm_addr = msg->req_addr + local_svm->priv->offset;
     if (msg->type == TRY_REQUEST_PAGE) {
         page = try_dsm_extract_page(local_svm, norm_addr);
-        if (page)
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
-        else
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
+// SYSFS__        if (page)
+//            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
+//        else
+//            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
     } else {
         page = dsm_extract_page(dsm, msg->dest_id, local_svm, norm_addr);
-        if (page)
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
-        else
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_err);
+// SYSFS__       if (page)
+//            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
+//        else
+//            atomic64_inc(&local_svm->svm_sysfs.stats.nb_err);
     }
     return page;
 }

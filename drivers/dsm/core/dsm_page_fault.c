@@ -56,7 +56,7 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
         printk(
                 "[signal_completion_try_page_request] request failed we release everything \n ");
-        atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
+// SYSFS__        atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
         delete_from_dsm_cache(local_svm, ppe->mem_page, addr);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
@@ -125,10 +125,10 @@ static void dsm_readpage(struct page* page, unsigned long addr, struct dsm *dsm,
     VM_BUG_ON(PageUptodate(page));
 
     if (tag != TRY_TAG) {
-        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
+// SYSFS__        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
         func = signal_completion_page_request;
     } else {
-        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
+// SYSFS__        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
         func = signal_completion_try_page_request;
     }
 
@@ -481,8 +481,8 @@ static struct page * get_dsm_page(struct mm_struct *mm, unsigned long addr,
                         page = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,
                             norm_addr, id.dsm, id.svm_ids, fault_svm, private, 
                             tag);
-                        atomic64_inc(
-                            &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
+// SYSFS__                       atomic64_inc(
+//                            &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
                     }
                 }
             }
@@ -600,7 +600,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     }
     update_mmu_cache(vma, address, page_table);
     // printk("[request_page_insert] page fault success \n ");
-    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
+// SYSFS__    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
     unlock: pte_unmap_unlock(pte, ptl);
     out: return ret;
 

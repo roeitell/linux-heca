@@ -75,7 +75,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
     switch (rx_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
+// SYSFS__            atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
             process_response(ele, tx_e); // client got its response
             break;
         }
@@ -83,23 +83,23 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
             tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
             process_response(ele, tx_e);
-            atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
+// SYSFS__            atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
             break;
         }
         case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
             rx_tx_message_transfer(ele, rx_e); // server got a request
-            atomic64_inc(&ele->sysfs.rx_stats.request_page);
+// SYSFS__            atomic64_inc(&ele->sysfs.rx_stats.request_page);
             break;
         }
         case REQUEST_PAGE_PULL: {
             dsm_trigger_page_pull(rx_e->dsm_msg);
-            atomic64_inc(&ele->sysfs.rx_stats.request_page_pull);
+// SYSFS__            atomic64_inc(&ele->sysfs.rx_stats.request_page_pull);
             break;
         }
 
         default: {
-            atomic64_inc(&ele->sysfs.rx_stats.err);
+// SYSFS__            atomic64_inc(&ele->sysfs.rx_stats.err);
             printk(
                     "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
                     rx_e, rx_e->dsm_msg->type, rx_e->id);
@@ -121,29 +121,29 @@ static int dsm_send_message_handler(struct conn_element *ele,
         case PAGE_REQUEST_REPLY: {
             release_page(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
-            atomic64_inc(&ele->sysfs.tx_stats.page_request_reply);
+// SYSFS__            atomic64_inc(&ele->sysfs.tx_stats.page_request_reply);
             break;
         }
         case REQUEST_PAGE: {
-            atomic64_inc(&ele->sysfs.tx_stats.request_page);
+// SYSFS__            atomic64_inc(&ele->sysfs.tx_stats.request_page);
             break;
         }
         case TRY_REQUEST_PAGE: {
-            atomic64_inc(&ele->sysfs.tx_stats.try_request_page);
+// SYSFS__            atomic64_inc(&ele->sysfs.tx_stats.try_request_page);
             break;
         }
         case REQUEST_PAGE_PULL: {
             release_tx_element(ele, tx_buf_e);
-            atomic64_inc(&ele->sysfs.tx_stats.request_page_pull);
+// SYSFS__            atomic64_inc(&ele->sysfs.tx_stats.request_page_pull);
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             release_tx_element(ele, tx_buf_e);
-            atomic64_inc(&ele->sysfs.tx_stats.try_request_page_fail);
+// SYSFS__            atomic64_inc(&ele->sysfs.tx_stats.try_request_page_fail);
             break;
         }
         default: {
-            atomic64_inc(&ele->sysfs.tx_stats.err);
+// SYSFS__            atomic64_inc(&ele->sysfs.tx_stats.err);
             printk(
                     "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
                     tx_buf_e, tx_buf_e->dsm_msg->type, tx_buf_e->id);
@@ -472,8 +472,8 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
             init_completion(&ele->completion);
             //TODO catch error
             scnprintf(ip, 32, "%p", id);
-            create_connection_sysfs_entry(&ele->sysfs,
-                    dsm_state->dsm_kobjects.rdma_kobject, ip);
+// SYSFS__           create_connection_sysfs_entry(&ele->sysfs,
+//                    dsm_state->dsm_kobjects.rdma_kobject, ip);
 
             rcm = id->context;
 

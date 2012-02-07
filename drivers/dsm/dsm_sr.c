@@ -40,7 +40,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
 
     printk("[send_request_dsm_page_pull]requesting page pull  addr %p\n",
             (void *) addr);
-    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
+// SYSFS__    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
 
     spin_lock(&tx->request_queue_lock);
     if (list_empty(&tx->request_queue)) {
@@ -319,7 +319,7 @@ int exchange_info(struct conn_element *ele, int id) {
                 arr[3] = (ele->remote_node_ip >> 24) & 0x000000ff;
                 scnprintf(charid, 20, "%u.%u.%u.%u", arr[0], arr[1], arr[2],
                         arr[3]);
-                kobject_rename(&ele->sysfs.connection_kobject, charid);
+// SYSFS__                kobject_rename(&ele->sysfs.connection_kobject, charid);
                 printk(
                         ">[exchange_info] inserted conn_element to rb_tree :  %d\n",
                         ele->remote_node_ip);

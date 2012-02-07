@@ -709,8 +709,8 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
         goto err;
     init_completion(&ele->completion);
     //TODO catch error
-// SYSFS__    create_connection_sysfs_entry(&ele->sysfs,
-//            dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip);
+    create_connection_sysfs_entry(&ele->sysfs,
+        dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip);
     ele->remote_node_ip = inet_addr(conn_data->ip);
 
     insert_rb_conn(ele);
@@ -948,7 +948,7 @@ int setup_connection(struct conn_element *ele, int type) {
     if (!ele->mr)
         goto err2;
 
-// SYSFS__    reset_dsm_connection_stats(&ele->sysfs);
+    reset_dsm_connection_stats(&ele->sysfs);
 
     if (setup_qp(ele))
         goto err4;

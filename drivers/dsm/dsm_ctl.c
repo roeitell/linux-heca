@@ -23,7 +23,7 @@ static void reset_dsm_page_stats(struct dsm_page_stats * stats) {
 
 }
 static void reset_svm_stats(struct svm_sysfs *sysfs) {
-// SYSFS__    reset_dsm_page_stats(&sysfs->stats);    
+    reset_dsm_page_stats(&sysfs->stats);    
 }
 
 static void reset_msg_stats(struct msg_stats *stats) {
@@ -39,8 +39,8 @@ static void reset_msg_stats(struct msg_stats *stats) {
 }
 
 void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
-// SYSFS__    reset_msg_stats(&sysfs->rx_stats);
-// SYSFS__    reset_msg_stats(&sysfs->tx_stats);
+    reset_msg_stats(&sysfs->rx_stats);
+    reset_msg_stats(&sysfs->tx_stats);
 }
 
 static void clean_up_page_cache(struct subvirtual_machine *svm,
@@ -91,7 +91,7 @@ static void remove_svm(struct subvirtual_machine *svm) {
     write_sequnlock(&dsm->mr_seq_lock);
     mutex_unlock(&dsm->dsm_mutex);
     synchronize_rcu();
-// SYSFS__    delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
+    delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
     kfree(svm);
 
 }
@@ -110,7 +110,7 @@ static void remove_dsm(struct dsm * dsm) {
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr);
         remove_svm(svm);
     }
-// SYSFS__    delete_dsm_sysfs_entry(&dsm->dsm_kobject);
+    delete_dsm_sysfs_entry(&dsm->dsm_kobject);
     kfree(dsm);
 
 }
@@ -163,8 +163,8 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
             scnprintf(id, 11, "%x", new_dsm->dsm_id);
             priv_data->dsm = new_dsm;
             //TODO catch error
-// SYSFS__            create_dsm_sysfs_entry(&new_dsm->dsm_kobject,
-//                    dsm_state->dsm_kobjects.domains_kobject, id);
+            create_dsm_sysfs_entry(&new_dsm->dsm_kobject,
+                dsm_state->dsm_kobjects.domains_kobject, id);
             list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
             printk("[DSM_DSM]\n registered dsm %p,  dsm_id : %u, res: %d \n",
                     new_dsm, svm_info.dsm_id, r);
@@ -227,11 +227,11 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
-// SYSFS__            reset_svm_stats(&new_svm->svm_sysfs);
+            reset_svm_stats(&new_svm->svm_sysfs);
             scnprintf(charid, 11, "%x", new_svm->svm_id);
             //TODO catch error
-// SYSFS__           create_svm_sysfs_entry(&new_svm->svm_sysfs,
-//                    &new_svm->dsm->dsm_kobject, charid, "local");
+            create_svm_sysfs_entry(&new_svm->svm_sysfs,
+                &new_svm->dsm->dsm_kobject, charid, "local");
 
             spin_lock_init(&new_svm->page_cache_spinlock);
             INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
@@ -298,8 +298,8 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             spin_lock_init(&new_svm->page_cache_spinlock);
             scnprintf(charid, 11, "%x", new_svm->svm_id);
             //TODO catch error
-// SYSFS__           create_svm_sysfs_entry(&new_svm->svm_sysfs,
-//                    &new_svm->dsm->dsm_kobject, charid, svm_info.ip);
+            create_svm_sysfs_entry(&new_svm->svm_sysfs,
+                &new_svm->dsm->dsm_kobject, charid, svm_info.ip);
             INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
             ip_addr = inet_addr(svm_info.ip);
@@ -596,7 +596,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
             cele = search_rb_conn(ip_addr);
 
             if (likely(cele)) {
-// SYSFS__                reset_dsm_connection_stats(&cele->sysfs);
+                reset_dsm_connection_stats(&cele->sysfs);
             }
             break;
         }

@@ -394,7 +394,7 @@ struct svm_data {
     unsigned long offset;
     char *ip;
     int port;
-
+    int local_port;
 };
 
 struct unmap_data {

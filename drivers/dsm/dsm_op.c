@@ -702,7 +702,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
 
     src.sin_family = AF_INET;
     src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
-    src.sin_port = htons(5001);
+    src.sin_port = htons(conn_data->local_port);
 
     ele = vzalloc(sizeof(struct conn_element));
     if (unlikely(!ele))

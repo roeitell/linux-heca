@@ -353,11 +353,12 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
     }
 
     dsm = funcs->_find_dsm(msg->dsm_id);
-    BUG_ON(!dsm);
+    if (!dsm)
+        goto out;
 
     local_svm = funcs->_find_svm(dsm, msg->src_id);
-    BUG_ON(!local_svm);
-    BUG_ON(!local_svm->priv->mm);
+    if (!local_svm || !local_svm->priv || !local_svm->priv->mm)
+        goto out;
 
     norm_addr = msg->req_addr + local_svm->priv->offset;
     if (msg->type == TRY_REQUEST_PAGE) {
@@ -373,7 +374,7 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
         else
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_err);
     }
-    return page;
+    out: return page;
 }
 EXPORT_SYMBOL(dsm_extract_page_from_remote);
 

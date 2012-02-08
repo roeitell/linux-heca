@@ -80,7 +80,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     struct conn_element * ele = svm->ele;
     struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e;
-    int ret = 0;
+    int ret = 0, emp;
     struct dsm_request *req;
     int req_tag = (tag == TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
 
@@ -88,9 +88,10 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 //            svm, svm->ele, tx, (void *) addr, try);
 
     spin_lock(&tx->request_queue_lock);
-    if (list_empty(&tx->request_queue)) {
-        spin_unlock(&tx->request_queue_lock);
+    emp = list_empty(&tx->request_queue);
+    spin_unlock(&tx->request_queue_lock);
 
+    if (emp) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
             create_page_request(ele, tx_e, fault_svm->dsm->dsm_id, 
@@ -100,8 +101,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
             ret = tx_dsm_send(ele, tx_e);
             return ret;
         }
-    } else
-        spin_unlock(&tx->request_queue_lock);
+    }
 
     req = get_dsm_request();
     req->type = req_tag;

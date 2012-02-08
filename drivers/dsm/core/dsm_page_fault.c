@@ -20,17 +20,15 @@ static int __init init_dsm_zero_pfn(void)
 core_initcall(init_dsm_zero_pfn);
 
 static inline void signal_completion_process_ppe(struct page_pool_ele *ppe) {
-    printk("[signal_completion_process_ppe] received page [%p] ... ", 
-            ppe->mem_page);
+    printk("[signal_completion_process_ppe] received page [%p]\n", ppe->mem_page);
     if (!PageUptodate(ppe->mem_page)) {
-        printk("store\n");
+        printk("[signal_completion_process_ppe] store page [%p]\n", 
+                ppe->mem_page);
         put_page(ppe->mem_page);
         set_page_private(ppe->mem_page, 0);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
-    } else {
-        printk("discard\n");
-    }
+    } 
     ppe->mem_page = NULL;
 }
 
@@ -540,10 +538,10 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
             goto unlock;
         }
         ret = VM_FAULT_MAJOR;
-//        for (i = 1; i < 40; i++) {
-//            get_dsm_page(mm, address + i * PAGE_SIZE, fault_svm, 0, 
-//                PREFETCH_TAG);
-//        }
+        for (i = 1; i < 40; i++) {
+            get_dsm_page(mm, address + i * PAGE_SIZE, fault_svm, 0, 
+                PREFETCH_TAG);
+        }
     }
 
     locked = lock_page_or_retry(page, mm, flags);

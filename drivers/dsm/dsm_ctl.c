@@ -380,9 +380,10 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     }
 
     r = 0;
-    end = i + udata.sz - 1;
-    for (i = udata.addr; i < end; i += PAGE_SIZE) {
+    i = udata.addr;
+    for (end = i + udata.sz - 1; i < end; i += PAGE_SIZE) {
         r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, i);
+        printk(" %d", r);
         if (r)
             break;
     }

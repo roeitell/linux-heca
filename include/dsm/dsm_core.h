@@ -93,5 +93,6 @@ struct page *dsm_trigger_page_pull(struct dsm_message *);
 // svm_descriptors
 swp_entry_t svm_ids_to_swp_entry(struct dsm *, u32 *);
 struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t);
+u32 dsm_get_descriptor(struct dsm *, u32 *);
 
 #endif /* DSM_PAGE_FAULT_H_ */

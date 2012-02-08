@@ -220,7 +220,7 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
 EXPORT_SYMBOL(search_mr);
 
 /* svm_descriptors */
-static u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
+u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
     int i, j;
     u32 **sdsc = dsm->svm_descriptors;
 
@@ -249,15 +249,16 @@ static u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
     memcpy(sdsc[i], svm_ids, sizeof(u32)*(j+1));
     return i;
 };
+EXPORT_SYMBOL(dsm_get_descriptor);
 
-swp_entry_t svm_ids_to_swp_entry(struct dsm *dsm, u32 *svm_ids) {
+inline swp_entry_t svm_ids_to_swp_entry(struct dsm *dsm, u32 *svm_ids) {
     u64 val = dsm_get_descriptor(dsm, svm_ids);
     val = (val << 24) | dsm->dsm_id;
     return val_to_dsm_entry(val);
 };
 EXPORT_SYMBOL(svm_ids_to_swp_entry);
 
-struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
+inline struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
     u64 val = dsm_entry_to_val(entry);
     struct dsm_vm_ids id;
 

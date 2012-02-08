@@ -260,9 +260,10 @@ struct dsm_message {
 struct memory_region {
     unsigned long addr;
     unsigned long sz;
+    u32 descriptor;
 
-    struct list_head ls;
     struct rb_node rb_node;
+    struct subvirtual_machine *svm;
 };
 
 struct private_data {

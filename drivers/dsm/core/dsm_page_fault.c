@@ -20,13 +20,18 @@ static int __init init_dsm_zero_pfn(void)
 core_initcall(init_dsm_zero_pfn);
 
 static inline void signal_completion_process_ppe(struct page_pool_ele *ppe) {
+    printk("[signal_completion_process_ppe] received page [%p] ... ", 
+            ppe->mem_page);
     if (!PageUptodate(ppe->mem_page)) {
-       put_page(ppe->mem_page);
-       set_page_private(ppe->mem_page, 0);
-       SetPageUptodate(ppe->mem_page);
-       unlock_page(ppe->mem_page);
-       ppe->mem_page = NULL;
+        printk("store\n");
+        put_page(ppe->mem_page);
+        set_page_private(ppe->mem_page, 0);
+        SetPageUptodate(ppe->mem_page);
+        unlock_page(ppe->mem_page);
+    } else {
+        printk("discard\n");
     }
+    ppe->mem_page = NULL;
 }
 
 void signal_completion_page_request(struct tx_buf_ele * tx_e) {
@@ -55,7 +60,7 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     addr = tx_e->dsm_msg->req_addr + local_svm->priv->offset;
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
         printk(
-                "[signal_completion_try_page_request] request failed we release everything \n ");
+                "[signal_completion_try_page_request] request failed we release everything \n");
         atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
         delete_from_dsm_cache(local_svm, ppe->mem_page, addr);
         SetPageUptodate(ppe->mem_page);
@@ -64,7 +69,7 @@ void signal_completion_try_page_request(struct tx_buf_ele * tx_e) {
     } 
 
     signal_completion_process_ppe(ppe);
-
+    
     /* FIXME: why is this here? page uninitialized */
     mm = local_svm->priv->mm;
     use_mm(mm);
@@ -135,6 +140,9 @@ static void dsm_readpage(struct page* page, unsigned long addr, struct dsm *dsm,
     for (i = 0; svm_ids[i]; i++) {
         struct subvirtual_machine *svm = funcs->_find_svm(dsm, svm_ids[i]);
         BUG_ON(!svm);
+
+        printk("[dsm_readpage] remote page fault [%d], addr [%lu]\n",
+            svm->svm_id, (int32_t) addr - fault_svm->priv->offset);
         funcs->request_dsm_page(page, svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag);
     }
@@ -509,8 +517,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
     pte_t pte;
     int locked;
 
-//    printk("[request_page_insert] faulting for page %p , norm %p \n ",
-//            (void*) address, (void*) norm_addr);
+    printk("[request_page_insert] faulting for page %p , norm %p \n",
+            (void*) address, (void*) norm_addr);
     id = swp_entry_to_svm_ids(entry);
 
     retry:
@@ -532,10 +540,10 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
             goto unlock;
         }
         ret = VM_FAULT_MAJOR;
-        for (i = 1; i < 40; i++) {
-            get_dsm_page(mm, address + i * PAGE_SIZE, fault_svm, 0, 
-                PREFETCH_TAG);
-        }
+//        for (i = 1; i < 40; i++) {
+//            get_dsm_page(mm, address + i * PAGE_SIZE, fault_svm, 0, 
+//                PREFETCH_TAG);
+//        }
     }
 
     locked = lock_page_or_retry(page, mm, flags);
@@ -548,7 +556,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
             goto rebelote;
         else if (page_is_tagged_in_dsm_cache(fault_svm, norm_addr, PULL_TAG)) {
             printk(
-                    "[request_page_insert] page pull tag we decrement the ref count \n ");
+                    "[request_page_insert] page pull tag we decrement the ref count \n");
             put_page(page);
         }
     }

@@ -61,9 +61,7 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
 }
 
 static void remove_svm(struct subvirtual_machine *svm) {
-
     struct dsm *dsm = svm->dsm;
-    struct memory_region *mr = NULL;
 
     printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm->dsm_id,
             svm->svm_id);
@@ -76,43 +74,43 @@ static void remove_svm(struct subvirtual_machine *svm) {
         dsm->nb_local_svm--;
         radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
     }
-    write_seqlock(&dsm->mr_seq_lock);
-    while (!list_empty(&svm->mr_list)) {
-        mr = list_first_entry(&svm->mr_list, struct memory_region, ls );
-        printk("[remove_svm] removing MR: addr %p, size %lu  \n",
-                (void*) mr->addr, mr->sz);
-        list_del(&mr->ls);
-        rb_erase(&mr->rb_node, &dsm->mr_tree_root);
-        //TODO need to be solved at some point ... what do we do if we have floatign page / request during crash ?
-        //clean_up_page_cache(svm, mr);
-        kfree(mr);
-
-    }
-    write_sequnlock(&dsm->mr_seq_lock);
     mutex_unlock(&dsm->dsm_mutex);
     synchronize_rcu();
+    /* TODO: modify descriptor table */
+    /* TODO: remove unneeded mrs? */
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
     kfree(svm);
-
 }
 
 static void remove_dsm(struct dsm * dsm) {
-
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
+    struct rb_node *node;
+
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
     mutex_lock(&dsm_state->dsm_state_mutex);
     list_del(&dsm->dsm_ptr);
     radix_tree_delete(&dsm_state->dsm_tree_root, (unsigned long) dsm->dsm_id);
     mutex_unlock(&dsm_state->dsm_state_mutex);
     synchronize_rcu();
+
     while (!list_empty(&dsm->svm_list)) {
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr);
         remove_svm(svm);
     }
+
+    write_seqlock(&dsm->mr_seq_lock);
+    for (node = rb_first(&dsm->mr_tree_root); node; node = rb_next(node)) {
+        struct memory_region *mr;
+       
+        mr = rb_entry(node, struct memory_region, rb_node);
+        rb_erase(&mr->rb_node, &dsm->mr_tree_root);
+        kfree(mr);
+    }
+    write_sequnlock(&dsm->mr_seq_lock);
+
     delete_dsm_sysfs_entry(&dsm->dsm_kobject);
     kfree(dsm);
-
 }
 
 static int register_dsm(struct private_data *priv_data, void __user *argp) {
@@ -342,56 +340,53 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
 }
 
 static int register_mr(struct private_data *priv_data, void __user *argp) {
-    int r = -EFAULT;
-    struct memory_region *mr;
+    int r = -EFAULT, j;
     struct dsm *dsm;
+    struct memory_region *mr;
     struct unmap_data udata;
     unsigned long i, end;
-    int j;
-
-    printk("[DSM_MR]\n");
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
+
+    printk("[DSM_MR] addr [%lu] sz [%zu]\n", udata.addr, udata.sz);
 
     dsm = find_dsm(udata.dsm_id);
     BUG_ON(!dsm);
 
 //     Make sure specific MR not already created.
-    mr = search_mr(dsm, udata.addr);
-    if (mr)
+    if (search_mr(dsm, udata.addr))
         goto out;
 
-    mr = kzalloc(sizeof(*mr), GFP_KERNEL);
+    mr = kzalloc(sizeof(struct memory_region), GFP_KERNEL);
     if (!mr)
         goto out;
-
+ 
     mr->addr = udata.addr;
     mr->sz = udata.sz;
-//    mr->svm = svm;
+    mr->descriptor = dsm_get_descriptor(dsm, udata.svm_ids);
 
     insert_mr(dsm, mr);
     for (j = 0; udata.svm_ids[j]; j++) {
-        struct subvirtual_machine *svm;
-
-        svm = find_svm(dsm, udata.svm_ids[j]);
+        struct subvirtual_machine *svm = find_svm(dsm, udata.svm_ids[j]);
         if (!svm)
             goto out;
-        list_add(&mr->ls, &svm->mr_list);
+
+        if (svm->priv && svm->priv->mm == current->mm) {
+            if (j == 0)
+                r = 0;
+            goto out;
+        }
     }
 
     r = 0;
-//    if (!svm->priv || (svm->priv->mm != current->mm)) {
-        i = mr->addr;
-        end = i + mr->sz - 1;
-        while (i < end) {
-            r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, i);
-            if (r)
-                break;
-            i += PAGE_SIZE;
+    end = i + udata.sz - 1;
+    for (i = udata.addr; i < end; i += PAGE_SIZE) {
+        r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, i);
+        if (r)
+            break;
+    }
 
-        }
-//    }
     out: return r;
 }
 

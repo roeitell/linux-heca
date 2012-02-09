@@ -86,6 +86,7 @@ static void remove_dsm(struct dsm * dsm) {
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct rb_node *node;
+    int i;
 
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
     mutex_lock(&dsm_state->dsm_state_mutex);
@@ -108,6 +109,12 @@ static void remove_dsm(struct dsm * dsm) {
         kfree(mr);
     }
     write_sequnlock(&dsm->mr_seq_lock);
+
+    write_lock(&dsm->sdsc_lock);
+    for (i = 0; dsm->svm_descriptors[i]; i++)
+        kfree(dsm->svm_descriptors[i]);
+    kfree(dsm->svm_descriptors);
+    write_unlock(&dsm->sdsc_lock);
 
     delete_dsm_sysfs_entry(&dsm->dsm_kobject);
     kfree(dsm);
@@ -142,6 +149,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         new_dsm->dsm_id = svm_info.dsm_id;
         mutex_init(&new_dsm->dsm_mutex);
         seqlock_init(&new_dsm->mr_seq_lock);
+        rwlock_init(&new_dsm->sdsc_lock);
         INIT_RADIX_TREE(&new_dsm->svm_tree_root, GFP_KERNEL);
         INIT_RADIX_TREE(&new_dsm->svm_mm_tree_root, GFP_KERNEL);
         INIT_LIST_HEAD(&new_dsm->svm_list);

@@ -120,6 +120,7 @@ struct dsm {
     int nb_local_svm;
 
     u32 **svm_descriptors;
+    rwlock_t sdsc_lock;
 };
 
 struct dsm_kobjects {

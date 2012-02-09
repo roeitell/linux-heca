@@ -220,33 +220,39 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
 EXPORT_SYMBOL(search_mr);
 
 /* svm_descriptors */
+static inline void dsm_expand_dsc(struct dsm *dsm, u32 i, u32 ***sdsc) {
+    dsm->svm_descriptors = kmalloc(sizeof(u32 *)*i*2, GFP_KERNEL);
+    memcpy(dsm->svm_descriptors, *sdsc, sizeof(u32 *)*i);
+    memset(dsm->svm_descriptors, 0, sizeof(u32 *)*i);
+    dsm->svm_descriptors[i*2-1] = (u32 *) -1;
+    kfree(*sdsc);
+    *sdsc = dsm->svm_descriptors;
+}
+
 u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
     int i, j;
-    u32 **sdsc = dsm->svm_descriptors;
+    u32 **sdsc;
 
+    write_lock(&dsm->sdsc_lock);
+    sdsc = dsm->svm_descriptors;
     for (i = 0; sdsc[i]; i++) {
         for (j = 0; sdsc[i][j]; j++) {
-            if (sdsc[i][j] != svm_ids[j]) {
+            if (sdsc[i][j] != svm_ids[j])
                 goto next;
-            }
         }
-        return i;
+        goto finish;
     next: continue;
     }
 
-    if (sdsc[i] < 0) {
-        dsm->svm_descriptors = kmalloc(sizeof(u32 *)*i*2, GFP_KERNEL);
-        memcpy(dsm->svm_descriptors, sdsc, sizeof(u32 *)*i);
-        memset(dsm->svm_descriptors+i, 0, sizeof(u32 *)*i);
-        dsm->svm_descriptors[i*2-1] = (u32 *) -1;
-        kfree(sdsc);
-        sdsc = dsm->svm_descriptors;
-    }
+    if (sdsc[i] < 0) 
+        dsm_expand_dsc(dsm, i, &sdsc);
 
     for (j = 0; svm_ids[j]; j++)
         ;
     sdsc[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
     memcpy(sdsc[i], svm_ids, sizeof(u32)*(j+1));
+
+    finish: write_unlock(&dsm->sdsc_lock);
     return i;
 };
 EXPORT_SYMBOL(dsm_get_descriptor);
@@ -259,13 +265,16 @@ inline swp_entry_t svm_ids_to_swp_entry(struct dsm *dsm, u32 *svm_ids) {
 EXPORT_SYMBOL(svm_ids_to_swp_entry);
 
 inline struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
-    u64 val = dsm_entry_to_val(entry);
     struct dsm_vm_ids id;
+    u64 val = dsm_entry_to_val(entry);
 
     id.dsm = find_dsm(val & 0xFFFFFF);
-    BUG_ON(!id.dsm);
+    if (id.dsm) {
+        read_lock(&id.dsm->sdsc_lock);
+        id.svm_ids = id.dsm->svm_descriptors[val >> 24];
+        read_unlock(&id.dsm->sdsc_lock);
+    }
 
-    id.svm_ids = id.dsm->svm_descriptors[val >> 24];
     return id;
 };
 EXPORT_SYMBOL(swp_entry_to_svm_ids);

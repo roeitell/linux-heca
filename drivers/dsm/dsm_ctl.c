@@ -66,9 +66,6 @@ static void remove_svm(struct subvirtual_machine *svm) {
     printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm->dsm_id,
             svm->svm_id);
 
-    if (svm->ele && svm->ele->cm_id)
-        rdma_disconnect(svm->ele->cm_id);
-
     mutex_lock(&dsm->dsm_mutex);
     list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
@@ -81,7 +78,6 @@ static void remove_svm(struct subvirtual_machine *svm) {
     mutex_unlock(&dsm->dsm_mutex);
     synchronize_rcu();
     /* TODO: modify descriptor table */
-    /* TODO: remove unneeded mrs? */
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
     kfree(svm);
 }

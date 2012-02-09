@@ -242,22 +242,18 @@ int create_svm_sysfs_entry(struct svm_sysfs *sysfs, struct kobject *root_kobj,
         if (r) {
             kobject_put(kobj);
             kobject_del(kobj);
-
-        }
-        if (!r) {
+        } else {
             kobj_ip = &sysfs->local;
             r = kobject_init_and_add(kobj_ip, &dsm_kobject_type, kobj, ip);
 
             if (r) {
                 kobject_put(kobj_ip);
                 kobject_del(kobj_ip);
-
             }
         }
     }
 
     return r;
-
 }
 
 void delete_svm_sysfs_entry(struct kobject *obj) {
@@ -269,7 +265,6 @@ int create_dsm_sysfs_entry(struct kobject* kobj, struct kobject *root_kobj,
         char* name) {
 
     return kobject_init_and_add(kobj, &dsm_kobject_type, root_kobj, name);
-
 }
 
 void delete_dsm_sysfs_entry(struct kobject *obj) {
@@ -279,18 +274,14 @@ void delete_dsm_sysfs_entry(struct kobject *obj) {
 
 int create_connection_sysfs_entry(struct con_element_sysfs *sysfs,
         struct kobject *root_kobj, char* name) {
-printk("[create_connection_sysfs_entry] %p, %p, %p, %s\n", &sysfs->connection_kobject, &dsm_kobject_type, root_kobj, name);
 
     int r = kobject_init_and_add(&sysfs->connection_kobject, &dsm_kobject_type,
             root_kobj, name);
-printk("\tres: %d\n", r);
 
     if (!r) {
-printk("[create_connection_sysfs_entry] %p, %p, %p, %s\n", &sysfs->connection_tx_kobject, &dsm_kobject_type, &sysfs->connection_kobject, "tx");
-r = kobject_init_and_add(&sysfs->connection_tx_kobject,
+        r = kobject_init_and_add(&sysfs->connection_tx_kobject,
                 &dsm_kobject_type, &sysfs->connection_kobject, "tx");
-printk("\tres: %d\n", r);
-if (!r) {
+        if (!r) {
             r = sysfs_create_group(&sysfs->connection_tx_kobject,
                     &tx_connection_attr_group);
             if (r) {
@@ -299,11 +290,9 @@ if (!r) {
 
             }
             if (!r) {
-printk("[create_connection_sysfs_entry] %p, %p, %p, %s\n", &sysfs->connection_rx_kobject, &dsm_kobject_type, &sysfs->connection_kobject, "rx");
-r = kobject_init_and_add(&sysfs->connection_rx_kobject,
+                r = kobject_init_and_add(&sysfs->connection_rx_kobject,
                         &dsm_kobject_type, &sysfs->connection_kobject, "rx");
-printk("\tres: %d\n", r);
-if (!r)
+                if (!r)
                     r = sysfs_create_group(&sysfs->connection_rx_kobject,
                             &rx_connection_attr_group);
                 if (r) {
@@ -314,9 +303,7 @@ if (!r)
             }
         }
     }
-printk("\tfinal_res: %d\n", r);
-return r;
-
+    return r;
 }
 
 void delete_connection_entry(struct con_element_sysfs *sysfs) {

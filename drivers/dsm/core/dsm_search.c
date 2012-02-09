@@ -31,26 +31,6 @@ struct dsm_module_state * get_dsm_module_state(void) {
 }
 EXPORT_SYMBOL(get_dsm_module_state);
 
-static void clean_up_page_cache(struct subvirtual_machine *svm,
-        struct memory_region *mr) {
-    unsigned long addr;
-    struct page *page = NULL;
-
-    for (addr = mr->addr; addr < (addr + mr->sz); addr += PAGE_SIZE) {
-        page = page_is_in_svm_page_cache(svm, addr);
-        printk(
-                "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                svm->dsm->dsm_id, svm->svm_id, (void *) addr, page);
-        if (page) {
-            printk(
-                    "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                    svm->dsm->dsm_id, svm->svm_id, (void *) addr, page);
-            delete_from_dsm_cache(svm, page, addr);
-            synchronize_rcu();
-        }
-    }
-}
-
 struct dsm *find_dsm(u32 id) {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct dsm *dsm;

@@ -46,15 +46,15 @@ void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
 static void clean_up_page_cache(struct subvirtual_machine *svm,
         struct memory_region *mr) {
     unsigned long addr;
-    struct page *page = NULL;
+    struct dsm_page_cache *pc;
 
     for (addr = mr->addr; addr < (addr + mr->sz); addr += PAGE_SIZE) {
-        page = page_is_in_svm_page_cache(svm, addr);
-        if (page) {
+        pc = page_is_in_svm_page_cache(svm, addr);
+        if (pc) {
             printk(
                     "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                    svm->dsm->dsm_id, svm->svm_id, (void *) addr, page);
-            delete_from_dsm_cache(svm, page, addr);
+                    svm->dsm->dsm_id, svm->svm_id, (void *) addr, pc->page);
+            delete_from_dsm_cache(svm, pc->page, addr);
             synchronize_rcu();
         }
     }

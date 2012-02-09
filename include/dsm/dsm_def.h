@@ -63,7 +63,6 @@
  * DSM DATA structure
  */
 
-
 struct msg_stats {
     atomic64_t request_page;
     atomic64_t request_page_pull;
@@ -373,6 +372,11 @@ struct dsm_module_state {
 
     struct dsm_kobjects dsm_kobjects;
     struct workqueue_struct * dsm_wq;
+};
+
+struct dsm_page_cache {
+    struct page *page;
+    int nproc;
 };
 
 /*

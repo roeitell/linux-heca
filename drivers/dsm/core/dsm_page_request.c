@@ -13,6 +13,7 @@ static struct page *_dsm_extract_page(struct dsm *dsm,
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
+    struct dsm_page_cache *pc = NULL;
     struct page *page = NULL;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -81,8 +82,9 @@ static struct page *_dsm_extract_page(struct dsm *dsm,
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
-                    page = find_get_dsm_page(local_svm, addr);
-                    if (page) {
+                    pc = find_page_in_svm_cache(local_svm, addr);
+                    if (pc && pc->page) {
+                        page = pc->page;
                         if (trylock_page(page)) {
 
                             if (page_is_tagged_in_dsm_cache(local_svm, addr,
@@ -221,6 +223,7 @@ static struct page *_try_dsm_extract_page(struct subvirtual_machine *local_svm,
 
     pte_t *pte;
     struct page *page = NULL;
+    struct dsm_page_cache *pc = NULL;
     struct vm_area_struct *vma;
     pgd_t *pgd;
     pud_t *pud;
@@ -278,35 +281,26 @@ static struct page *_try_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_entry = *pte;
 
     if (likely(!pte_present(pte_entry))) {
-        if (pte_none(pte_entry)) {
-            return NULL;
+        if (pte_none(pte_entry))
+            goto out;
+  
+        swp_e = pte_to_swp_entry(pte_entry);
+        if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
+            pc = find_page_in_svm_cache(local_svm, addr);
+            if (pc) 
+                page = pc->page;
 
-        } else {
-            swp_e = pte_to_swp_entry(pte_entry);
-            if (non_swap_entry(swp_e)) {
-                if (is_dsm_entry(swp_e)) {
-                    page = find_get_dsm_page(local_svm, addr);
-                    if (page) {
-                        if (trylock_page(page)) {
-                            if (page_is_tagged_in_dsm_cache(local_svm, addr,
-                                    PULL_TAG)) {
-
-                                if (delete_from_dsm_cache(local_svm, page,
-                                        addr)) {
-                                    set_page_private(page, 0);
-                                    unlock_page(page);
-                                    return page;
-                                }
-                            }
-                            unlock_page(page);
-                        }
+            if (page && trylock_page(page)) {
+                if (page_is_tagged_in_dsm_cache(local_svm, addr, PULL_TAG)) {
+                    if (!--pc->nproc && delete_from_dsm_cache(local_svm, page, addr)) {
+                        set_page_private(page, 0);
                     }
                 }
+                unlock_page(page);
             }
         }
     }
-    out: return NULL;
-
+    out: return page;
 }
 
 static struct page *dsm_extract_page(struct dsm *dsm, u32 remote_id,
@@ -363,7 +357,7 @@ struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
     norm_addr = msg->req_addr + local_svm->priv->offset;
     if (msg->type == TRY_REQUEST_PAGE) {
         page = try_dsm_extract_page(local_svm, norm_addr);
-    if (page)
+        if (page)
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);

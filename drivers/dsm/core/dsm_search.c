@@ -264,16 +264,25 @@ inline swp_entry_t svm_ids_to_swp_entry(struct dsm *dsm, u32 *svm_ids) {
 };
 EXPORT_SYMBOL(svm_ids_to_swp_entry);
 
+inline u32 *dsm_descriptor_to_svm_ids(struct dsm *dsm, u32 dsc) {
+    u32 *svm_ids;
+
+    read_lock(&dsm->sdsc_lock);
+    svm_ids = dsm->svm_descriptors[dsc];
+    read_unlock(&dsm->sdsc_lock);
+    return svm_ids;
+}
+EXPORT_SYMBOL(dsm_descriptor_to_svm_ids);
+
 inline struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
     struct dsm_vm_ids id;
     u64 val = dsm_entry_to_val(entry);
 
     id.dsm = find_dsm(val & 0xFFFFFF);
-    if (id.dsm) {
-        read_lock(&id.dsm->sdsc_lock);
-        id.svm_ids = id.dsm->svm_descriptors[val >> 24];
-        read_unlock(&id.dsm->sdsc_lock);
-    }
+    if (id.dsm)
+        id.svm_ids = dsm_descriptor_to_svm_ids(id.dsm, val >> 24);
+    else
+        id.svm_ids[0] = 0;
 
     return id;
 };

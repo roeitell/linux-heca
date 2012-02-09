@@ -189,8 +189,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         struct mm_struct *mm, u32 *remote_ids, unsigned long addr) {
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0;
-    int ret = 0;
+    int r = 0, ret = 0, i;
     struct page *page = NULL;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -199,43 +198,39 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
 
-    printk("[dsm_extract_page_from_remote] trying to push back page %p \n ",
-            (void*) addr);
+    printk("[dsm_try_push_page] trying to push back page %p \n ", (void*) addr);
 
-    retry:
-
-    vma = find_vma(mm, addr);
+    retry: vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
-        printk("[dsm_extract_page_from_remote] no VMA or bad VMA \n");
+        printk("[dsm_try_push_page] no VMA or bad VMA \n");
         goto out;
     }
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
-        printk("[dsm_extract_page_from_remote] no pgd \n");
+        printk("[dsm_try_push_page] no pgd \n");
         goto out;
     }
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        printk("[dsm_extract_page_from_remote] no pud \n");
+        printk("[dsm_try_push_page] no pud \n");
         goto out;
     }
 
     pmd = pmd_offset(pud, addr);
-
     if (unlikely(pmd_none(*pmd))) {
-        printk("[dsm_extract_page_from_remote] no pmd error \n");
-
+        printk("[dsm_try_push_page] no pmd error \n");
         goto out;
     }
+
     if (unlikely(pmd_bad(*pmd))) {
         pmd_clear_bad(pmd);
-        printk("[dsm_extract_page_from_remote] bad pmd \n");
+        printk("[dsm_try_push_page] bad pmd \n");
         goto out;
     }
     if (unlikely(pmd_trans_huge(*pmd))) {
-        printk("[dsm_extract_page_from_remote] we have a huge pmd \n");
+        printk("[dsm_try_push_page] we have a huge pmd \n");
         spin_lock(&mm->page_table_lock);
         if (unlikely(pmd_trans_splitting(*pmd))) {
             spin_unlock(&mm->page_table_lock);
@@ -249,9 +244,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
 
     // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
     pte = pte_offset_map(pmd, addr);
-
     pte_entry = *pte;
-
     if (unlikely(!pte_present(pte_entry))) {
         if (!pte_none(pte_entry)) {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -263,7 +256,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
             }
         }
         printk(
-                "[dsm_extract_page_from_remote] the pte is not present in the first place.. we exit \n");
+                "[dsm_try_push_page] the pte is not present in the first place.. we exit \n");
         goto out;
     }
 
@@ -281,28 +274,28 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     }
 
     if (unlikely(PageTransHuge(page))) {
-        printk("[dsm_extract_page_from_remote] we have a huge page \n");
+        printk("[dsm_try_push_page] we have a huge page \n");
         if (!PageHuge(page) && PageAnon(page)) {
             if (unlikely(split_huge_page(page))) {
                 printk(
-                        "[dsm_extract_page_from_remote] failed at splitting page \n");
+                        "[dsm_try_push_page] failed at splitting page \n");
                 goto bad_page;
             }
         }
     }
     if (unlikely(PageKsm(page))) {
-        printk("[dsm_extract_page_from_remote] KSM page\n");
+        printk("[dsm_try_push_page] KSM page\n");
         r = ksm_madvise(vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE
                 , &vma->vm_flags);
         if (r) {
-            printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
+            printk("[dsm_try_push_page] ksm_madvise ret : %d\n", r);
             // DSM1 : better ksm error handling required.
             goto bad_page;
         }
     }
 
     if (unlikely(!trylock_page(page))) {
-        printk("[[EXTRACT_PAGE]] cannot lock page\n");
+        printk("[dsm_try_push_page] cannot lock page\n");
         goto bad_page;
     }
     get_page(page);
@@ -320,13 +313,15 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         try_to_free_swap(page);
 //DSM1 do we need a put_page???/
 
-    add_page_pull_to_dsm_cache(local_svm, page, addr, GFP_HIGHUSER_MOVABLE);
+    for (i = 0; remote_ids[i]; i++)
+        ;
+    add_page_pull_to_dsm_cache(local_svm, page, addr, GFP_HIGHUSER_MOVABLE, i);
     unlock_page(page);
 
     pte_unmap_unlock(pte, ptl);
 
     printk(
-            "[dsm_extract_page_from_remote] extracted page and added it to swap %p  \n ",
+            "[dsm_try_push_page] extracted page and added it to swap %p  \n ",
             (void*) page);
 
     return ret;

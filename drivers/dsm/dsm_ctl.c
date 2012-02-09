@@ -506,8 +506,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
 
     addr = udata.addr & PAGE_MASK;
     if (!page_is_in_svm_page_cache(priv_data->svm, addr)) {
-        r = dsm_request_page_pull(dsm, current->mm, udata.svm_ids, 
-            priv_data->svm, udata.addr);
+        r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr);
     }
     else {
         r = 0;

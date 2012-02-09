@@ -38,7 +38,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
     int ret = 0;
     struct dsm_request *req;
 
-    printk("[send_request_dsm_page_pull]requesting page pull  addr %p\n",
+    printk("[send_request_dsm_page_pull]requesting page pull addr [%p]\n",
             (void *) addr);
     atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
 
@@ -406,10 +406,15 @@ int dsm_recv_info(struct conn_element *ele) {
     return ib_post_recv(ele->cm_id->qp, &rid->recv_wr, &rid->recv_bad_wr);
 }
 
-int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm, u32 *svm_ids,
+int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *fault_svm, unsigned long request_addr) {
     int ret = -1;
     unsigned long addr = request_addr & PAGE_MASK;
+    struct memory_region *mr;
+    u32 *svm_ids;
+
+    mr = search_mr(dsm, addr); /* unsure if should be masked right now */
+    svm_ids = dsm_descriptor_to_svm_ids(dsm, mr->descriptor);
 
     down_read(&mm->mmap_sem);
     ret = dsm_try_push_page(dsm, fault_svm, mm, svm_ids, addr);

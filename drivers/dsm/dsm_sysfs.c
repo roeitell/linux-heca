@@ -6,7 +6,7 @@
 
 static void dsm_kobject_type_release(struct kobject * kobj) {
     //kfree(kobj);
-    printk("Releasing kobject %p", kobj);
+    printk("Releasing kobject %p\n", kobj);
 }
 
 /* default kobject attribute operations */

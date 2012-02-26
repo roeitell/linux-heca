@@ -203,7 +203,7 @@ EXPORT_SYMBOL(search_mr);
 static inline void dsm_expand_dsc(struct dsm *dsm, u32 i, u32 ***sdsc) {
     dsm->svm_descriptors = kmalloc(sizeof(u32 *)*i*2, GFP_KERNEL);
     memcpy(dsm->svm_descriptors, *sdsc, sizeof(u32 *)*i);
-    memset(dsm->svm_descriptors, 0, sizeof(u32 *)*i);
+    memset(dsm->svm_descriptors + sizeof(u32 *)*i, 0, sizeof(u32 *)*i);
     dsm->svm_descriptors[i*2-1] = (u32 *) -1;
     kfree(*sdsc);
     *sdsc = dsm->svm_descriptors;

@@ -19,7 +19,7 @@ void destroy_kmem_request_cache(void) {
     kmem_cache_destroy(kmem_request_cache);
 }
 
-static struct dsm_request * get_dsm_request(void) {
+static struct dsm_request *get_dsm_request(void) {
     struct dsm_request * req = NULL;
     req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
     BUG_ON(!req);
@@ -120,13 +120,30 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     return ret;
 }
 
+int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
+    struct subvirtual_machine *svm;
+    struct dsm *dsm;
+
+    dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
+    if (!dsm)
+        goto out;
+
+    svm = find_svm(dsm, rx_buf_e->dsm_msg->src_id);
+    if (!svm)
+        goto out;
+
+    remove_svm(svm);
+
+    out: return 0;
+}
+
 /**
  * Read the message received in the wc, to get the offset and then find where the page has been written
  *
  * RETURN 0 if a page exists in the buffer at this offset
  *               -1 if the page cannot be found
  */
-int process_response(struct conn_element *ele, struct tx_buf_ele * tx_buf_e) {
+int process_page_response(struct conn_element *ele, struct tx_buf_ele * tx_buf_e) {
 
     if (tx_buf_e->callback.func)
         tx_buf_e->callback.func(tx_buf_e);
@@ -137,23 +154,59 @@ int process_response(struct conn_element *ele, struct tx_buf_ele * tx_buf_e) {
     return 0;
 }
 
-int rx_tx_message_transfer(struct conn_element * ele,
+int process_page_request(struct conn_element * ele,
         struct rx_buf_ele * rx_buf_e) {
     struct page_pool_ele * ppe;
     struct tx_buf_ele *tx_e = NULL;
     struct page * page;
-    int ret = 0;
+    int ret = 0, emp;
     struct dsm_request *req;
     struct tx_buffer *tx;
+    struct dsm *dsm;
 
     page = dsm_extract_page_from_remote(rx_buf_e->dsm_msg);
     if (unlikely(!page)) {
+        ret = -1;
+        printk("[process_page_request] - Couldn't grab the page\n");
+
+        dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
+        if (!find_svm(dsm, rx_buf_e->dsm_msg->src_id)) {
+            tx = &ele->tx_buffer;
+            spin_lock(&tx->request_queue_lock);
+            emp = list_empty(&tx->request_queue);
+            spin_unlock(&tx->request_queue_lock);
+
+            if (emp) {
+                tx_e = try_get_next_empty_tx_ele(ele);
+                if (tx_e) {
+                    memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
+                            sizeof(struct dsm_message));
+                    tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
+                }
+                ret = tx_dsm_send(ele, tx_e);
+            } else {
+                req = get_dsm_request();
+                req->type = SVM_STATUS_UPDATE;
+                req->func = NULL;
+                memcpy(&req->dsm_msg, rx_buf_e->dsm_msg,
+                        sizeof(struct dsm_message));
+                spin_lock(&tx->request_queue_lock);
+                list_add_tail(&req->queue, &tx->request_queue);
+                spin_unlock(&tx->request_queue_lock);
+                queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
+                ret = 0;
+            }
+
+            return ret;
+        }
+        
         if (rx_buf_e->dsm_msg->type == TRY_REQUEST_PAGE) {
             tx = &ele->tx_buffer;
             spin_lock(&tx->request_queue_lock);
-            if (list_empty(&tx->request_queue)) {
-                spin_unlock(&tx->request_queue_lock);
+            emp = list_empty(&tx->request_queue);
+            spin_unlock(&tx->request_queue_lock);
 
+            if (emp) {
                 tx_e = try_get_next_empty_tx_ele(ele);
                 if (tx_e) {
                     memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
@@ -162,29 +215,22 @@ int rx_tx_message_transfer(struct conn_element * ele,
                     tx_e->wrk_req->dst_addr = NULL;
                     tx_e->callback.func = NULL;
                     ret = tx_dsm_send(ele, tx_e);
-
-                    return ret;
                 }
             } else {
-                spin_unlock(&tx->request_queue_lock);
-            }
-
-            req = get_dsm_request();
-            req->type = TRY_REQUEST_PAGE_FAIL;
-            req->func = NULL;
-            memcpy(&req->dsm_msg, rx_buf_e->dsm_msg,
+                req = get_dsm_request();
+                req->type = TRY_REQUEST_PAGE_FAIL;
+                req->func = NULL;
+                memcpy(&req->dsm_msg, rx_buf_e->dsm_msg,
                     sizeof(struct dsm_message));
-            spin_lock(&tx->request_queue_lock);
-            list_add_tail(&req->queue, &tx->request_queue);
-            spin_unlock(&tx->request_queue_lock);
-            queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
-            return ret;
-
-        } else {
-            printk(
-                    "[rx_tx_message_transfer][FATAL_ERROR] - Couldn't grab a the page\n");
-            return -1;
+                spin_lock(&tx->request_queue_lock);
+                list_add_tail(&req->queue, &tx->request_queue);
+                spin_unlock(&tx->request_queue_lock);
+                queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
+                ret = 0;
+            }
         }
+
+        return ret;
     }
 
     tx_e = try_get_next_empty_tx_reply_ele(ele);
@@ -210,26 +256,11 @@ int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
     int ret = 0;
 
     switch (tx_e->dsm_msg->type) {
-        case REQUEST_PAGE: {
-
-            ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
-                    &tx_e->wrk_req->wr_ele->bad_wr);
-            break;
-        }
-        case REQUEST_PAGE_PULL: {
-
-            ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
-                    &tx_e->wrk_req->wr_ele->bad_wr);
-            break;
-        }
-        case TRY_REQUEST_PAGE: {
-
-            ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
-                    &tx_e->wrk_req->wr_ele->bad_wr);
-            break;
-        }
+        case REQUEST_PAGE: 
+        case REQUEST_PAGE_PULL: 
+        case TRY_REQUEST_PAGE: 
+        case SVM_STATUS_UPDATE:
         case TRY_REQUEST_PAGE_FAIL: {
-
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);
             break;
@@ -239,7 +270,6 @@ int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
                     &tx_e->reply_work_req->wr_ele->bad_wr);
             break;
         }
-
         default: {
             printk(">[tx_flush_queue][ERROR] - wrong message status\n");
             ret = 1;

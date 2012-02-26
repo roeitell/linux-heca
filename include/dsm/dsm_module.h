@@ -70,6 +70,7 @@ void reg_rem_info(struct conn_element *);
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
 void reset_dsm_connection_stats(struct con_element_sysfs *);
+void remove_svm(struct subvirtual_machine *);
 
 /*
  * search
@@ -104,8 +105,9 @@ void recv_cq_handle_work(struct work_struct *);
 
 void init_kmem_request_cache(void);
 void destroy_kmem_request_cache(void);
-int process_response(struct conn_element *, struct tx_buf_ele *);
-int rx_tx_message_transfer(struct conn_element *, struct rx_buf_ele *);
+int process_page_response(struct conn_element *, struct tx_buf_ele *);
+int process_page_request(struct conn_element *, struct rx_buf_ele *);
+int process_svm_status(struct conn_element *, struct rx_buf_ele *);
 int exchange_info(struct conn_element *, int);
 int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);

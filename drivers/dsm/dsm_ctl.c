@@ -60,8 +60,10 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
     }
 }
 
-static void remove_svm(struct subvirtual_machine *svm) {
+void remove_svm(struct subvirtual_machine *svm) {
     struct dsm *dsm = svm->dsm;
+    struct tx_buf_ele *tx_buf;
+    int i;
 
     printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm->dsm_id,
             svm->svm_id);
@@ -76,6 +78,19 @@ static void remove_svm(struct subvirtual_machine *svm) {
         radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
     }
     mutex_unlock(&dsm->dsm_mutex);
+
+    if (svm->ele) {
+        tx_buf = svm->ele->tx_buffer.tx_buf;
+        for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
+            if (tx_buf[i].dsm_msg && tx_buf[i].dsm_msg->src_id == svm->svm_id) {
+                release_tx_element(svm->ele, &tx_buf[i]);
+                if (tx_buf[i].dsm_msg->type == REQUEST_PAGE ||
+                        tx_buf[i].dsm_msg->type == TRY_REQUEST_PAGE)
+                    release_page(svm->ele, &tx_buf[i]);
+            }
+        }
+    }
+
     synchronize_rcu();
     /* TODO: modify descriptor table */
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);

@@ -58,6 +58,7 @@
 #define PAGE_INFO_UPDATE                0x0008 // We send an update of the page location
 #define TRY_REQUEST_PAGE                0x0010 // We try to pull the page
 #define TRY_REQUEST_PAGE_FAIL           0x0020 // We try to get the page failed
+#define SVM_STATUS_UPDATE               0x0030 // The svm is down
 #define DSM_MSG_ERR                     0x8000 // ERROR
 /*
  * DSM DATA structure
@@ -276,7 +277,7 @@ struct private_data {
 struct subvirtual_machine {
     u32 svm_id;
 
-    struct dsm * dsm;
+    struct dsm *dsm;
     struct conn_element *ele;
     struct private_data *priv;
     struct list_head svm_ptr;

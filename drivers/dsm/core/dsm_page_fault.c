@@ -7,9 +7,6 @@
 
 #include <dsm/dsm_module.h>
 
-RADIX_TREE(dsm_tree, GFP_ATOMIC);
-DEFINE_SPINLOCK(dsm_lock);
-
 unsigned long zero_dsm_pfn __read_mostly;
 
 static int __init init_dsm_zero_pfn(void)

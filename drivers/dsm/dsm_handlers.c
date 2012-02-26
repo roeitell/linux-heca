@@ -54,6 +54,9 @@ static int flush_dsm_request(struct conn_element *ele) {
                 tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                 break;
             }
+            case SVM_STATUS_UPDATE: {
+                break;
+            }
 
             default: {
                 printk("[flush_dsm_request] unrecognised request type %d \n",
@@ -76,19 +79,19 @@ static int dsm_recv_message_handler(struct conn_element *ele,
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
             atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
-            process_response(ele, tx_e); // client got its response
+            process_page_response(ele, tx_e); // client got its response
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
             tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
-            process_response(ele, tx_e);
+            process_page_response(ele, tx_e);
             atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
             break;
         }
         case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
-            rx_tx_message_transfer(ele, rx_e); // server got a request
+            process_page_request(ele, rx_e); // server got a request
             atomic64_inc(&ele->sysfs.rx_stats.request_page);
             break;
         }
@@ -96,6 +99,9 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             dsm_trigger_page_pull(rx_e->dsm_msg);
             atomic64_inc(&ele->sysfs.rx_stats.request_page_pull);
             break;
+        }
+        case SVM_STATUS_UPDATE: {
+            process_svm_status(ele, rx_e);
         }
 
         default: {
@@ -141,6 +147,9 @@ static int dsm_send_message_handler(struct conn_element *ele,
             release_tx_element(ele, tx_buf_e);
             atomic64_inc(&ele->sysfs.tx_stats.try_request_page_fail);
             break;
+        }
+        case SVM_STATUS_UPDATE: {
+            //
         }
         default: {
             atomic64_inc(&ele->sysfs.tx_stats.err);

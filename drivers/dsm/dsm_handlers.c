@@ -102,6 +102,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
         }
         case SVM_STATUS_UPDATE: {
             process_svm_status(ele, rx_e);
+            break;
         }
 
         default: {
@@ -149,7 +150,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
             break;
         }
         case SVM_STATUS_UPDATE: {
-            //
+            break; 
         }
         default: {
             atomic64_inc(&ele->sysfs.tx_stats.err);

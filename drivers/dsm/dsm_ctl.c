@@ -60,24 +60,32 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
     }
 }
 
-void remove_svm(struct subvirtual_machine *svm) {
-    struct dsm *dsm = svm->dsm;
+void remove_svm(struct dsm *dsm, u32 svm_id) {
+    struct subvirtual_machine *svm;
     struct tx_buf_ele *tx_buf;
     int i;
 
-    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", svm->dsm->dsm_id,
-            svm->svm_id);
-
+    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", dsm->dsm_id,
+            svm_id);
+    printk("[remove_svm] trying to enter critical section\n");
     mutex_lock(&dsm->dsm_mutex);
+    printk("[remove_svm] entered critical section\n");
+    svm = find_svm(dsm, svm_id);
+    printk("[remove_svm] found %p\n", svm);
+    if (!svm)   // protect against concurrent calls to remove_svm
+        goto out;
+
     list_del(&svm->svm_ptr);
-    radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
+    radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
+    printk("[remove_svm] removed from dsm\n");
     if (svm->priv) {
         printk("[remove_svm] we have private data before decreasing %d \n",
                 dsm->nb_local_svm);
         dsm->nb_local_svm--;
-        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
+        radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
     }
-    mutex_unlock(&dsm->dsm_mutex);
+
+    remove_svm_from_dsc(svm);
 
     if (svm->ele) {
         tx_buf = svm->ele->tx_buffer.tx_buf;
@@ -86,11 +94,14 @@ void remove_svm(struct subvirtual_machine *svm) {
                 release_tx_element(svm->ele, &tx_buf[i]);
         }
     }
-
+printk("[remove_svm] wrap up\n");
     synchronize_rcu();
-    /* TODO: modify descriptor table */
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
     kfree(svm);
+
+    out: 
+    printk("[remove_svm] exit critical section\n");
+    mutex_unlock(&dsm->dsm_mutex);
 }
 
 static void remove_dsm(struct dsm * dsm) {
@@ -108,7 +119,7 @@ static void remove_dsm(struct dsm * dsm) {
 
     while (!list_empty(&dsm->svm_list)) {
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr);
-        remove_svm(svm);
+        remove_svm(dsm, svm->svm_id);
     }
 
     write_seqlock(&dsm->mr_seq_lock);
@@ -550,7 +561,7 @@ static int release(struct inode *inode, struct file *f) {
 
     if (!data->svm)
         return 1;
-    remove_svm(data->svm);
+    remove_svm(data->dsm, data->svm->svm_id);
     if (data->dsm->nb_local_svm == 0) {
         remove_dsm(data->dsm);
         printk("[Release ] last local svm , freeing the dsm\n");

@@ -97,5 +97,6 @@ swp_entry_t svm_ids_to_swp_entry(struct dsm *, u32 *);
 u32 *dsm_descriptor_to_svm_ids(struct dsm *, u32);
 struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t);
 u32 dsm_get_descriptor(struct dsm *, u32 *);
+void remove_svm_from_dsc(struct subvirtual_machine *);
 
 #endif /* DSM_PAGE_FAULT_H_ */

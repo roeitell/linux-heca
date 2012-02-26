@@ -121,20 +121,14 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 }
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
-    struct subvirtual_machine *svm;
     struct dsm *dsm;
-
+    printk("[dsm_process_svm_status]\n");
     dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
-    if (!dsm)
-        goto out;
-
-    svm = find_svm(dsm, rx_buf_e->dsm_msg->src_id);
-    if (!svm)
-        goto out;
-
-    remove_svm(svm);
-
-    out: return 0;
+    printk("[dsm_process_svm_status] dsm %p\n", dsm);
+    if (dsm)
+        remove_svm(dsm, rx_buf_e->dsm_msg->src_id);
+    printk("[dsm_process_svm_status] returning %d\n", !!dsm);
+    return !!dsm;
 }
 
 /**
@@ -170,7 +164,7 @@ int process_page_request(struct conn_element * ele,
         printk("[process_page_request] - Couldn't grab the page\n");
 
         dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
-        if (!find_svm(dsm, rx_buf_e->dsm_msg->src_id)) {
+        if (!dsm || !find_svm(dsm, rx_buf_e->dsm_msg->src_id)) {
             tx = &ele->tx_buffer;
             spin_lock(&tx->request_queue_lock);
             emp = list_empty(&tx->request_queue);
@@ -182,8 +176,8 @@ int process_page_request(struct conn_element * ele,
                     memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
                             sizeof(struct dsm_message));
                     tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
+                    ret = tx_dsm_send(ele, tx_e);
                 }
-                ret = tx_dsm_send(ele, tx_e);
             } else {
                 req = get_dsm_request();
                 req->type = SVM_STATUS_UPDATE;

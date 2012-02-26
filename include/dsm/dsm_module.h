@@ -70,7 +70,7 @@ void reg_rem_info(struct conn_element *);
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
 void reset_dsm_connection_stats(struct con_element_sysfs *);
-void remove_svm(struct subvirtual_machine *);
+void remove_svm(struct dsm *dsm, u32 svm_id);
 
 /*
  * search

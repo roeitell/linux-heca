@@ -609,7 +609,7 @@ void release_tx_element(struct conn_element * ele, struct tx_buf_ele * tx_e) {
     spin_lock(&tx->tx_free_elements_list_lock);
     list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
     spin_unlock(&tx->tx_free_elements_list_lock);
-
+    tx_e->used = 0;
 }
 void release_tx_element_reply(struct conn_element * ele,
         struct tx_buf_ele * tx_e) {
@@ -618,7 +618,7 @@ void release_tx_element_reply(struct conn_element * ele,
     spin_lock(&tx->tx_free_elements_list_reply_lock);
     list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
     spin_unlock(&tx->tx_free_elements_list_reply_lock);
-
+    tx_e->used = 0;
 }
 
 int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
@@ -999,41 +999,35 @@ int setup_connection(struct conn_element *ele, int type) {
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
 
     struct tx_buf_ele *tx_e = NULL;
-    struct tx_buffer * tx = &ele->tx_buffer;
+    struct tx_buffer *tx = &ele->tx_buffer;
 
     spin_lock(&tx->tx_free_elements_list_lock);
     if (!list_empty(&tx->tx_free_elements_list)) {
-
-        tx_e= list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, tx_buf_ele_ptr);
+        tx_e = list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, 
+                tx_buf_ele_ptr);
         list_del(&tx_e->tx_buf_ele_ptr);
-
+        tx_e->used = 1;
     }
     spin_unlock(&tx->tx_free_elements_list_lock);
 
     return tx_e;
-
 }
 
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
 
-    struct tx_buf_ele *tx_e;
-    struct tx_buffer * tx = &ele->tx_buffer;
+    struct tx_buf_ele *tx_e = NULL;
+    struct tx_buffer *tx = &ele->tx_buffer;
 
     spin_lock(&tx->tx_free_elements_list_reply_lock);
-
-    if (list_empty(&tx->tx_free_elements_list_reply)) {
-
-        spin_unlock(&tx->tx_free_elements_list_reply_lock);
-
-        return NULL;
+    if (!list_empty(&tx->tx_free_elements_list_reply)) {
+        tx_e = list_first_entry(&tx->tx_free_elements_list_reply, 
+                struct tx_buf_ele, tx_buf_ele_ptr);
+        list_del(&tx_e->tx_buf_ele_ptr);
+        tx_e->used = 1;
     }
-
-    tx_e= list_first_entry(&tx->tx_free_elements_list_reply, struct tx_buf_ele, tx_buf_ele_ptr);
-    list_del(&tx_e->tx_buf_ele_ptr);
     spin_unlock(&tx->tx_free_elements_list_reply_lock);
 
     return tx_e;
-
 }
 
 int destroy_rcm(struct dsm_module_state *dsm_state) {

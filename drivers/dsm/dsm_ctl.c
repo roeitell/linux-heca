@@ -82,12 +82,8 @@ void remove_svm(struct subvirtual_machine *svm) {
     if (svm->ele) {
         tx_buf = svm->ele->tx_buffer.tx_buf;
         for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
-            if (tx_buf[i].dsm_msg && tx_buf[i].dsm_msg->src_id == svm->svm_id) {
+            if (tx_buf[i].used && tx_buf[i].dsm_msg->src_id == svm->svm_id)
                 release_tx_element(svm->ele, &tx_buf[i]);
-                if (tx_buf[i].dsm_msg->type == REQUEST_PAGE ||
-                        tx_buf[i].dsm_msg->type == TRY_REQUEST_PAGE)
-                    release_page(svm->ele, &tx_buf[i]);
-            }
         }
     }
 

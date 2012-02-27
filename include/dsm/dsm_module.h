@@ -108,6 +108,7 @@ void destroy_kmem_request_cache(void);
 int process_page_response(struct conn_element *, struct tx_buf_ele *);
 int process_page_request(struct conn_element *, struct rx_buf_ele *);
 int process_svm_status(struct conn_element *, struct rx_buf_ele *);
+int process_pull_request(struct conn_element *, struct rx_buf_ele *);
 int exchange_info(struct conn_element *, int);
 int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);

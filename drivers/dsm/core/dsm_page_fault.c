@@ -723,21 +723,10 @@ struct dsm_page_cache *page_is_in_svm_page_cache(struct subvirtual_machine *svm,
 }
 EXPORT_SYMBOL(page_is_in_svm_page_cache);
 
-struct page *dsm_trigger_page_pull(struct dsm_message *msg) {
-
-    struct dsm *dsm;
-    struct subvirtual_machine *local_svm = NULL;
+struct page *dsm_trigger_page_pull(struct dsm *dsm, 
+        struct subvirtual_machine *local_svm, unsigned long norm_add) {
     struct page *page = NULL;
-    unsigned long norm_addr;
     struct mm_struct *mm;
-
-    dsm = funcs->_find_dsm(msg->dsm_id);
-    BUG_ON(!dsm);
-
-    local_svm = funcs->_find_svm(dsm, msg->src_id);
-    BUG_ON(!local_svm);
-
-    norm_addr = msg->req_addr + local_svm->priv->offset;
 
     mm = local_svm->priv->mm;
     use_mm(mm);
@@ -745,6 +734,7 @@ struct page *dsm_trigger_page_pull(struct dsm_message *msg) {
     page = get_dsm_page(mm, norm_addr, local_svm, ULONG_MAX, TRY_TAG);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
+
     return page;
 }
 EXPORT_SYMBOL(dsm_trigger_page_pull);

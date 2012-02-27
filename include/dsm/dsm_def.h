@@ -38,6 +38,8 @@
 
 #define PAGE_POOL_SIZE (MAX_CAP_SCQ + MAX_CAP_RCQ)*2
 
+#define MAX_CONSECUTIVE_SVM_FAILURES 5
+
 /**
  * RDMA_INFO
  */
@@ -276,6 +278,7 @@ struct private_data {
 
 struct subvirtual_machine {
     u32 svm_id;
+    u8 status;
 
     struct dsm *dsm;
     struct conn_element *ele;

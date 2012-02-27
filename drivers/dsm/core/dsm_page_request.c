@@ -337,34 +337,18 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     return page;
 }
 
-struct page *dsm_extract_page_from_remote(struct dsm_message *msg) {
-    struct dsm *dsm;
-    struct subvirtual_machine *local_svm;
+struct page *dsm_extract_page_from_remote(struct dsm *dsm, 
+        struct subvirtual_machine *local_svm, unsigned long addr, u16 tag) {
     struct page *page = NULL;
-    unsigned long norm_addr;
 
-    if (!msg) {
-        printk("[dsm_extract_page_from_remote] no message ! %p  \n", msg);
-        return NULL;
-    }
-
-    dsm = funcs->_find_dsm(msg->dsm_id);
-    if (!dsm)
-        goto out;
-
-    local_svm = funcs->_find_svm(dsm, msg->src_id);
-    if (!local_svm || !local_svm->priv || !local_svm->priv->mm)
-        goto out;
-
-    norm_addr = msg->req_addr + local_svm->priv->offset;
-    if (msg->type == TRY_REQUEST_PAGE) {
-        page = try_dsm_extract_page(local_svm, norm_addr);
+    if (tag == TRY_REQUEST_PAGE) {
+        page = try_dsm_extract_page(local_svm, addr);
         if (page)
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
     } else {
-        page = dsm_extract_page(dsm, msg->dest_id, local_svm, norm_addr);
+        page = dsm_extract_page(dsm, msg->dest_id, local_svm, addr);
         if (page)
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else

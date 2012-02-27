@@ -248,6 +248,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
+            new_svm->status = 0;
             reset_svm_stats(&new_svm->svm_sysfs);
             scnprintf(charid, 11, "%x", new_svm->svm_id);
             //TODO catch error

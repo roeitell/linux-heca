@@ -84,7 +84,7 @@ int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32 *,
 
 // dsm_page_request
 struct page * dsm_extract_page_from_remote(struct dsm *, 
-        struct subvirtual_machine *, unsigned long, u16);
+        struct subvirtual_machine *, u32, unsigned long, u16);
 
 // dsm_page_fault
 int dsm_try_push_page(struct dsm *, struct subvirtual_machine *, 

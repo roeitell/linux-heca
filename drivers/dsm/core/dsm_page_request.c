@@ -338,7 +338,8 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
 }
 
 struct page *dsm_extract_page_from_remote(struct dsm *dsm, 
-        struct subvirtual_machine *local_svm, unsigned long addr, u16 tag) {
+        struct subvirtual_machine *local_svm, u32 remote_id, unsigned long addr,
+        u16 tag) {
     struct page *page = NULL;
 
     if (tag == TRY_REQUEST_PAGE) {
@@ -348,7 +349,7 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
         else
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
     } else {
-        page = dsm_extract_page(dsm, msg->dest_id, local_svm, addr);
+        page = dsm_extract_page(dsm, remote_id, local_svm, addr);
         if (page)
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else

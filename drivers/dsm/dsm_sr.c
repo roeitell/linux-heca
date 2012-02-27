@@ -99,7 +99,7 @@ static int send_svm_status_update(struct conn_element *ele,
         req->type = SVM_STATUS_UPDATE;
         req->func = NULL;
         memcpy(&req->dsm_msg, rx_buf_e->dsm_msg,
-                sizeof(stuct dsm_message));
+                sizeof(struct dsm_message));
         spin_lock(&tx->request_queue_lock);
         list_add_tail(&req->queue, &tx->request_queue);
         spin_unlock(&tx->request_queue_lock);
@@ -165,12 +165,12 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) 
     if (!dsm)
         goto fail;
     
-    local_svm = find_svm(dsm, msg->src_id);
+    local_svm = find_svm(dsm, rx_buf_e->dsm_msg->src_id);
     if (!local_svm)
         goto fail;
 
-    norm_addr = msg->req_addr + local_svm->priv->offset;
-    return dsm_trigger_page_pull(dsm, local_svm, norm_addr);
+    norm_addr = rx_buf_e->dsm_msg->req_addr + local_svm->priv->offset;
+    return !!dsm_trigger_page_pull(dsm, local_svm, norm_addr);
 
     fail: return send_svm_status_update(ele, rx_buf_e);
 }
@@ -210,6 +210,7 @@ int process_page_request(struct conn_element * ele,
     struct dsm *dsm;
     struct subvirtual_machine *local_svm;
     unsigned long norm_addr;
+    struct dsm_message *msg = rx_buf_e->dsm_msg;
 
     dsm = find_dsm(msg->dsm_id);
     if (!dsm)
@@ -220,7 +221,8 @@ int process_page_request(struct conn_element * ele,
         goto fail;
 
     norm_addr = msg->req_addr + local_svm->priv->offset;
-    page = dsm_extract_page_from_remote(dsm, local_svm, norm_addr, msg->type);
+    page = dsm_extract_page_from_remote(dsm, local_svm, msg->dest_id, norm_addr,
+            msg->type);
 
     if (unlikely(!page)) {
         ret = -1;
@@ -228,7 +230,7 @@ int process_page_request(struct conn_element * ele,
         if (++local_svm->status > MAX_CONSECUTIVE_SVM_FAILURES)
             goto fail; /* should we also forcibly remove the svm? */
 
-        if (rx_buf_e->dsm_msg->type == TRY_REQUEST_PAGE) {
+        if (msg->type == TRY_REQUEST_PAGE) {
             tx = &ele->tx_buffer;
             spin_lock(&tx->request_queue_lock);
             emp = list_empty(&tx->request_queue);
@@ -237,8 +239,7 @@ int process_page_request(struct conn_element * ele,
             if (emp) {
                 tx_e = try_get_next_empty_tx_ele(ele);
                 if (tx_e) {
-                    memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
-                            sizeof(struct dsm_message));
+                    memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
                     tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                     tx_e->wrk_req->dst_addr = NULL;
                     tx_e->callback.func = NULL;
@@ -248,8 +249,7 @@ int process_page_request(struct conn_element * ele,
                 req = get_dsm_request();
                 req->type = TRY_REQUEST_PAGE_FAIL;
                 req->func = NULL;
-                memcpy(&req->dsm_msg, rx_buf_e->dsm_msg,
-                    sizeof(struct dsm_message));
+                memcpy(&req->dsm_msg, msg, sizeof(struct dsm_message));
                 spin_lock(&tx->request_queue_lock);
                 list_add_tail(&req->queue, &tx->request_queue);
                 spin_unlock(&tx->request_queue_lock);
@@ -269,7 +269,7 @@ int process_page_request(struct conn_element * ele,
     ppe = create_new_page_pool_element_from_page(ele, page);
     BUG_ON(!ppe);
 
-    memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg, sizeof(struct dsm_message));
+    memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
     tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;

@@ -99,7 +99,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             break;
         }
         case REQUEST_PAGE_PULL: {
-            dsm_trigger_page_pull(rx_e->dsm_msg);
+            process_pull_request(ele, rx_e); // server is requested to pull
             atomic64_inc(&ele->sysfs.rx_stats.request_page_pull);
             break;
         }

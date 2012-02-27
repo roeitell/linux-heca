@@ -724,7 +724,7 @@ struct dsm_page_cache *page_is_in_svm_page_cache(struct subvirtual_machine *svm,
 EXPORT_SYMBOL(page_is_in_svm_page_cache);
 
 struct page *dsm_trigger_page_pull(struct dsm *dsm, 
-        struct subvirtual_machine *local_svm, unsigned long norm_add) {
+        struct subvirtual_machine *local_svm, unsigned long norm_addr) {
     struct page *page = NULL;
     struct mm_struct *mm;
 

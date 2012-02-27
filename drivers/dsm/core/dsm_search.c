@@ -262,7 +262,7 @@ inline struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
     if (id.dsm)
         id.svm_ids = dsm_descriptor_to_svm_ids(id.dsm, val >> 24);
     else
-        id.svm_ids[0] = 0;
+        id.svm_ids = 0;
 
     return id;
 };

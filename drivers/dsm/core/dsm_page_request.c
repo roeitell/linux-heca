@@ -292,7 +292,9 @@ static struct page *_try_dsm_extract_page(struct subvirtual_machine *local_svm,
 
             if (page && trylock_page(page)) {
                 if (page_is_tagged_in_dsm_cache(local_svm, addr, PULL_TAG)) {
-                    if (!--pc->nproc && delete_from_dsm_cache(local_svm, page, addr)) {
+                    if (!--pc->nproc) {
+                        if(!delete_from_dsm_cache(local_svm, page, addr))
+                            BUG();
                         set_page_private(page, 0);
                     }
                 }

@@ -557,9 +557,8 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
         if (page_is_tagged_in_dsm_cache(fault_svm, norm_addr, TRY_TAG))
             goto rebelote;
         else if (page_is_tagged_in_dsm_cache(fault_svm, norm_addr, PULL_TAG)) {
-            printk(
-                    "[request_page_insert] page pull tag we decrement the ref count \n");
             put_page(page);
+            __add_to_dsm_cache(fault_svm, page, norm_addr, 0, DEFAULT_TAG, 1);
         }
     }
 

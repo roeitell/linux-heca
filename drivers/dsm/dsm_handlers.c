@@ -70,6 +70,7 @@ static int flush_dsm_request(struct conn_element *ele) {
         }
         tx_e->callback.func = req->func;
         tx_dsm_send(ele, tx_e);
+        release_dsm_request(req);
     }
     out: spin_unlock(&tx->request_queue_lock);
     return ret;

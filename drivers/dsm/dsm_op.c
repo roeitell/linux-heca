@@ -1034,7 +1034,6 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
 
     int ret = 0;
     struct rcm *rcm = dsm_state->rcm;
-    dsm_state->rcm = NULL;
     if (rcm) {
         if ((ret = destroy_connections(rcm)))
             printk(">[destroy_rcm] - Cannot destroy connections\n");
@@ -1060,10 +1059,11 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
             printk(">[destroy_rcm] - no cm_id\n");
 
         mutex_destroy(&rcm->rcm_mutex);
+        dsm_state->rcm = NULL;
         kfree(rcm);
-
-    } else
+    } else {
         printk(">[destroy_rcm] - no rcm\n");
+    }
     destroy_kmem_request_cache();
     return ret;
 

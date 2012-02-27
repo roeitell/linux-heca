@@ -105,6 +105,7 @@ void recv_cq_handle_work(struct work_struct *);
 
 void init_kmem_request_cache(void);
 void destroy_kmem_request_cache(void);
+void release_dsm_request(struct dsm_request *);
 int process_page_response(struct conn_element *, struct tx_buf_ele *);
 int process_page_request(struct conn_element *, struct rx_buf_ele *);
 int process_svm_status(struct conn_element *, struct rx_buf_ele *);

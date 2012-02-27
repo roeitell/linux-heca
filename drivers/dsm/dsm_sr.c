@@ -25,7 +25,7 @@ static struct dsm_request *get_dsm_request(void) {
     BUG_ON(!req);
     return req;
 }
-static void release_dsm_request(struct dsm_request *req) {
+void release_dsm_request(struct dsm_request *req) {
     kmem_cache_free(kmem_request_cache, req);
 }
 

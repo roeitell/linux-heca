@@ -355,7 +355,7 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
         else
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_err);
     }
-    out: return page;
+    return page;
 }
 EXPORT_SYMBOL(dsm_extract_page_from_remote);
 

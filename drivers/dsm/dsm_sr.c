@@ -121,13 +121,9 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 }
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
-    struct dsm *dsm;
-    printk("[dsm_process_svm_status]\n");
-    dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
-    printk("[dsm_process_svm_status] dsm %p\n", dsm);
+    struct dsm *dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
     if (dsm)
         remove_svm(dsm, rx_buf_e->dsm_msg->src_id);
-    printk("[dsm_process_svm_status] returning %d\n", !!dsm);
     return !!dsm;
 }
 

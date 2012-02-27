@@ -33,18 +33,18 @@ static int flush_dsm_request(struct conn_element *ele) {
         switch (req->type) {
             case REQUEST_PAGE: {
                 create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id, 
-                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, req->page, 
-                    req->type);
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, 
+                    req->page, req->type);
                 break;
             }
             case TRY_REQUEST_PAGE: {
                 create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id, 
-                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, req->page, 
-                    req->type);
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, 
+                    req->page, req->type);
                 break;
             }
             case REQUEST_PAGE_PULL: {
-                create_page_pull_request(ele, tx_e, req->fault_svm->dsm->dsm_id, 
+                create_page_pull_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
                     req->fault_svm->svm_id, req->svm->svm_id, req->addr);
                 break;
             }
@@ -55,6 +55,9 @@ static int flush_dsm_request(struct conn_element *ele) {
                 break;
             }
             case SVM_STATUS_UPDATE: {
+                memcpy(tx_e->dsm_msg, &req->dsm_msg,
+                        sizeof(struct dsm_message));
+                tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
                 break;
             }
 
@@ -150,6 +153,8 @@ static int dsm_send_message_handler(struct conn_element *ele,
             break;
         }
         case SVM_STATUS_UPDATE: {
+            release_tx_element_reply(ele, tx_buf_e);
+            atomic64_inc(&ele->sysfs.tx_stats.page_request_reply);
             break; 
         }
         default: {

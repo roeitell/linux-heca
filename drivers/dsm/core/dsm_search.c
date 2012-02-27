@@ -270,18 +270,18 @@ EXPORT_SYMBOL(swp_entry_to_svm_ids);
 
 void remove_svm_from_dsc(struct subvirtual_machine *svm) {
     u32 **sdsc;
-    int i, j;
+    int i;
 
     write_lock(&svm->dsm->sdsc_lock);
     sdsc = svm->dsm->svm_descriptors;
     for (i = 0; sdsc[i]; i++) {
-        int mod = 0;
-        for (j = 0; sdsc[i][j]; j++) {
+        int mod = 0, j = 0;
+        do {
             if (mod)
                 sdsc[i][j-1] = sdsc[i][j];
             if (sdsc[i][j] == svm->svm_id)
                 mod = 1;
-        }
+        } while (sdsc[i][j++]);
     }
     write_unlock(&svm->dsm->sdsc_lock);
 }

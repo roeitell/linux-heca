@@ -65,42 +65,35 @@ void remove_svm(struct dsm *dsm, u32 svm_id) {
     struct tx_buf_ele *tx_buf;
     int i;
 
-    printk("[remove_svm] removing SVM : dsm %d svm %d  \n", dsm->dsm_id,
-            svm_id);
-    printk("[remove_svm] trying to enter critical section\n");
     mutex_lock(&dsm->dsm_mutex);
-    printk("[remove_svm] entered critical section\n");
     svm = find_svm(dsm, svm_id);
-    printk("[remove_svm] found %p\n", svm);
     if (!svm)   // protect against concurrent calls to remove_svm
         goto out;
 
     list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
-    printk("[remove_svm] removed from dsm\n");
     if (svm->priv) {
-        printk("[remove_svm] we have private data before decreasing %d \n",
-                dsm->nb_local_svm);
         dsm->nb_local_svm--;
         radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
     }
 
     remove_svm_from_dsc(svm);
-
     if (svm->ele) {
         tx_buf = svm->ele->tx_buffer.tx_buf;
         for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
-            if (tx_buf[i].used && tx_buf[i].dsm_msg->src_id == svm->svm_id)
+            if (tx_buf[i].used && tx_buf[i].dsm_msg->dsm_id == dsm->dsm_id &&
+                    (tx_buf[i].dsm_msg->src_id == svm->svm_id ||
+                     tx_buf[i].dsm_msg->dest_id == svm->svm_id)) {
                 release_tx_element(svm->ele, &tx_buf[i]);
+            }
         }
     }
-printk("[remove_svm] wrap up\n");
+
     synchronize_rcu();
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
     kfree(svm);
 
     out: 
-    printk("[remove_svm] exit critical section\n");
     mutex_unlock(&dsm->dsm_mutex);
 }
 

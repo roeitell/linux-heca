@@ -7,6 +7,11 @@
 
 #include <dsm/dsm_module.h>
 
+struct dsm_conn_list {
+    struct conn_element *ele;
+    struct list_head list;
+};
+
 static void destroy_tx_buffer(struct conn_element *ele) {
     int i;
     struct tx_buf_ele * tx_buf = ele->tx_buffer.tx_buf;
@@ -75,21 +80,24 @@ static void free_rdma_info(struct conn_element *ele) {
     memset(&ele->rid, 0, sizeof(struct rdma_info_data));
 }
 
-static int destroy_connections(struct rcm *rcm) {
+static int rcm_disconnect(struct rcm *rcm) {
     struct rb_root *root = &get_dsm_module_state()->rcm->root_conn;
     struct rb_node *node;
-    struct conn_element *ele;
-    int ret;
+    struct dsm_conn_list *it, *next;
+    LIST_HEAD(conns);
 
-    while ((node = rb_first(root))) {
-        ele = rb_entry(node, struct conn_element, rb_node);
-        ret = ele->remote_node_ip;
-        if (destroy_connection(&ele, rcm))
-            goto err;
+    for (node = rb_first(root); node; node = rb_next(node)) {
+        it = kmalloc(sizeof(struct dsm_conn_list), GFP_KERNEL);
+        it->ele = rb_entry(node, struct conn_element, rb_node);
+        list_add_tail(&it->list, &conns);
     }
-    ret = 0;
 
-    err: return ret;
+    list_for_each_entry_safe (it, next, &conns, list) {
+        rdma_disconnect(it->ele->cm_id);
+        kfree(it);
+    }
+
+    return 0;
 }
 
 static void try_recycle_empty_page_pool_element(struct conn_element *ele,
@@ -988,7 +996,7 @@ int setup_connection(struct conn_element *ele, int type) {
     err6: err++;
     err5: err++;
     err4: err++;
-    err3: err++;
+    /*err3: -unused-*/ err++;
     err2: err++;
     err1: err++;
     printk(
@@ -1036,7 +1044,7 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
     int ret = 0;
     struct rcm *rcm = dsm_state->rcm;
     if (rcm) {
-        if ((ret = destroy_connections(rcm)))
+        if ((ret = rcm_disconnect(rcm)))
             printk(">[destroy_rcm] - Cannot destroy connections\n");
 
         if (likely(rcm->cm_id)) {
@@ -1053,7 +1061,6 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
                     printk(">[destroy_rcm] -Cannot dealloc pd\n");
 
             if (rcm->cm_id)
-
                 rdma_destroy_id(rcm->cm_id);
 
         } else
@@ -1080,11 +1087,11 @@ int destroy_connection(struct conn_element **ele, struct rcm *rcm) {
                     printk(">[destroy_connection] - Cannot destroy qp\n");
 
             if ((*ele)->mr)
-                if ((ret = (*ele)->cm_id->device->dereg_mr((*ele)->mr)))
+                if ((ret = ib_dereg_mr((*ele)->mr)))
                     printk(">[destroy_connection] - Cannot dereg mr\n");
 
             if ((*ele)->pd)
-                if ((ret = (*ele)->cm_id->device->dealloc_pd((*ele)->pd)))
+                if ((ret = ib_dealloc_pd((*ele)->pd)))
                     printk(">[destroy_connection] -Cannot dealloc pd\n");
 
             rdma_destroy_id((*ele)->cm_id);

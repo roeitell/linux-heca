@@ -76,19 +76,20 @@ static void free_rdma_info(struct conn_element *ele) {
 }
 
 static int destroy_connections(struct rcm *rcm) {
+    struct rb_root *root = &get_dsm_module_state()->rcm->root_conn;
+    struct rb_node *node;
     struct conn_element *ele;
-    int i = 0;
+    int ret;
 
-    // DSM3: Temporarily using i - this doesn't make sense - what if nodes = 1, 3, 4?  We only free first!
-    while ((ele = search_rb_conn(i))) {
-
+    while ((node = rb_first(root))) {
+        ele = rb_entry(node, struct conn_element, rb_node);
+        ret = ele->remote_node_ip;
         if (destroy_connection(&ele, rcm))
             goto err;
-        ++i;
     }
+    ret = 0;
 
-    i = 0;
-    err: return i; //returns which connection failed
+    err: return ret;
 }
 
 static void try_recycle_empty_page_pool_element(struct conn_element *ele,

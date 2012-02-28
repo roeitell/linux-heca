@@ -100,7 +100,6 @@ void remove_svm(struct dsm *dsm, u32 svm_id) {
 static void remove_dsm(struct dsm * dsm) {
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
-    struct rb_node *node;
     int i;
 
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
@@ -111,19 +110,12 @@ static void remove_dsm(struct dsm * dsm) {
     synchronize_rcu();
 
     while (!list_empty(&dsm->svm_list)) {
-        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr);
+        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, 
+                svm_ptr);
         remove_svm(dsm, svm->svm_id);
     }
 
-    write_seqlock(&dsm->mr_seq_lock);
-    for (node = rb_first(&dsm->mr_tree_root); node; node = rb_next(node)) {
-        struct memory_region *mr;
-       
-        mr = rb_entry(node, struct memory_region, rb_node);
-        rb_erase(&mr->rb_node, &dsm->mr_tree_root);
-        kfree(mr);
-    }
-    write_sequnlock(&dsm->mr_seq_lock);
+    destroy_mrs(dsm, 1);
 
     write_lock(&dsm->sdsc_lock);
     for (i = 0; dsm->svm_descriptors[i]; i++)

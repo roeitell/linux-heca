@@ -35,7 +35,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
     struct conn_element * ele = svm->ele;
     struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e;
-    int ret = 0;
+    int ret = 0, emp;
     struct dsm_request *req;
 
     printk("[send_request_dsm_page_pull]requesting page pull addr [%p]\n",
@@ -43,32 +43,33 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
     atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
 
     spin_lock(&tx->request_queue_lock);
-    if (list_empty(&tx->request_queue)) {
-        spin_unlock(&tx->request_queue_lock);
+    emp = list_empty(&tx->request_queue);
+    spin_unlock(&tx->request_queue_lock);
+
+    if (emp) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
             create_page_pull_request(ele, tx_e, fault_svm->dsm->dsm_id, 
                 fault_svm->svm_id, svm->svm_id, addr);
             tx_e->callback.func = NULL;
             ret = tx_dsm_send(ele, tx_e);
-            return ret;
         }
-    } else {
-        spin_unlock(&tx->request_queue_lock);
     }
 
-    req = get_dsm_request();
-    req->type = REQUEST_PAGE_PULL;
-    req->addr = addr;
-    req->fault_svm = fault_svm;
-    req->func = NULL;
-    req->svm = svm;
+    if (!ret) {
+        req = get_dsm_request();
+        req->type = REQUEST_PAGE_PULL;
+        req->addr = addr;
+        req->fault_svm = fault_svm;
+        req->func = NULL;
+        req->svm = svm;
 
-    spin_lock(&tx->request_queue_lock);
-    list_add_tail(&req->queue, &tx->request_queue);
-    spin_unlock(&tx->request_queue_lock);
+        spin_lock(&tx->request_queue_lock);
+        list_add_tail(&req->queue, &tx->request_queue);
+        spin_unlock(&tx->request_queue_lock);
 
-    queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
+        queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
+    }
 
     return ret;
 }

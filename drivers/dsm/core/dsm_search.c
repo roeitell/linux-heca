@@ -199,6 +199,30 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
 }
 EXPORT_SYMBOL(search_mr);
 
+int destroy_mrs(struct dsm *dsm, int force) {
+    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_node *node;
+    struct memory_region *mr;
+    u32 *svm_ids;
+    int ret = 0;
+
+    write_seqlock(&dsm->mr_seq_lock);
+    for (node = rb_first(root); node; node = rb_next(node)) {
+        mr = rb_entry(node, struct memory_region, rb_node);
+        svm_ids = dsm_descriptor_to_svm_ids(dsm, mr->descriptor);
+        if (force || !svm_ids || !svm_ids[0]) {
+            printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr+mr->sz);
+            rb_erase(&mr->rb_node, root);
+            kfree(mr);
+            ret++;
+        }
+    }
+    write_sequnlock(&dsm->mr_seq_lock);
+
+    return ret;
+}
+EXPORT_SYMBOL(destroy_mrs);
+
 /* svm_descriptors */
 static inline void dsm_expand_dsc(struct dsm *dsm, u32 i, u32 ***sdsc) {
     dsm->svm_descriptors = kmalloc(sizeof(u32 *)*i*2, GFP_KERNEL);
@@ -284,6 +308,8 @@ void remove_svm_from_dsc(struct subvirtual_machine *svm) {
         } while (sdsc[i][j++]);
     }
     write_unlock(&svm->dsm->sdsc_lock);
+
+    destroy_mrs(svm->dsm, 0);
 }
 EXPORT_SYMBOL(remove_svm_from_dsc);
 

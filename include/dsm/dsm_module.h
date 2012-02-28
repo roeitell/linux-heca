@@ -77,15 +77,16 @@ void remove_svm(struct dsm *dsm, u32 svm_id);
  */
 void insert_rb_conn(struct conn_element *);
 struct conn_element* search_rb_conn(int);
-void erase_rb_conn(struct rb_root *, struct conn_element*);
+void erase_rb_conn(struct rb_root *, struct conn_element *);
 struct dsm_module_state * get_dsm_module_state(void);
 struct dsm_module_state * create_dsm_module_state(void);
 void destroy_dsm_module_state(void);
 struct dsm *find_dsm(u32);
 struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
 struct subvirtual_machine *find_svm(struct dsm *, u32);
-void insert_mr(struct dsm *dsm, struct memory_region *);
-struct memory_region * search_mr(struct dsm *, unsigned long);
+void insert_mr(struct dsm *, struct memory_region *);
+struct memory_region *search_mr(struct dsm *, unsigned long);
+int destroy_mrs(struct dsm *, int);
 
 /*
  * handler

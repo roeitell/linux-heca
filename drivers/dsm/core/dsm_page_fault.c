@@ -25,7 +25,7 @@ static inline void signal_completion_process_ppe(struct page_pool_ele *ppe) {
         set_page_private(ppe->mem_page, 0);
         SetPageUptodate(ppe->mem_page);
         unlock_page(ppe->mem_page);
-    } 
+    }
     ppe->mem_page = NULL;
 }
 

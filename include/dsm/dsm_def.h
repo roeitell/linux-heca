@@ -208,6 +208,7 @@ struct tx_buffer {
 
 struct conn_element {
     struct rcm *rcm;
+    int alive;
 
     int remote_node_ip;
     struct rdma_info_data rid;

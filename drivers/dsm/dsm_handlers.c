@@ -248,13 +248,16 @@ static void dsm_send_poll(struct ib_cq *cq) {
 
 static void dsm_recv_poll(struct ib_cq *cq) {
     struct ib_wc wc;
-    struct conn_element *ele = (struct conn_element *) cq->cq_context;
+    struct conn_element *ele = NULL;
+   
+    if (cq)
+        ele = (struct conn_element *) cq->cq_context;
+    if (!ele)
+        goto err;
 
-    while (ib_poll_cq(cq, 1, &wc) > 0) {
+    while (ele->alive && ib_poll_cq(cq, 1, &wc) > 0) {
         switch (wc.status) {
             case IB_WC_WR_FLUSH_ERR: {
-                print_work_completion(&wc,
-                        "[dsm_recv_poll] B_WC_WR_FLUSH_ERR ");
                 goto err;
             }
             case IB_WC_SUCCESS:
@@ -351,15 +354,20 @@ static void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
 }
 
 void send_cq_handle_work(struct work_struct *work) {
-
     struct conn_element *ele;
-    ele= container_of(work, struct conn_element ,send_work );
-    _send_cq_handle(ele->send_cq, NULL);
+   
+    if (module_is_live(THIS_MODULE)) {
+        ele = container_of(work, struct conn_element, send_work);
+        _send_cq_handle(ele->send_cq, NULL);
+    }
 }
 void recv_cq_handle_work(struct work_struct *work) {
     struct conn_element *ele;
-    ele= container_of(work, struct conn_element ,recv_work );
-    _recv_cq_handle(ele->recv_cq, NULL);
+
+    if (module_is_live(THIS_MODULE)) {
+        ele = container_of(work, struct conn_element, recv_work);
+        _recv_cq_handle(ele->recv_cq, NULL);
+    }
 }
 
 void send_cq_handle(struct ib_cq *cq, void *cq_context) {
@@ -416,12 +424,9 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
             break;
 
         case RDMA_CM_EVENT_DISCONNECTED:
-
-            printk(
-                    ">>>>[connection_event_handler] - disconnection from remote node\n");
+            printk("[connection_event_handler] disconnect received\n");
             ele = id->context;
             ret = destroy_connection(&ele, ele->rcm);
-
             break;
 
         case RDMA_CM_EVENT_DEVICE_REMOVAL:
@@ -474,10 +479,8 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
     int ret = 0;
     struct conn_element *ele = 0;
     struct rcm *rcm;
-    struct dsm_module_state *dsm_state = get_dsm_module_state();
     switch (event->event) {
         case RDMA_CM_EVENT_ADDR_RESOLVED:
-
             break;
 
         case RDMA_CM_EVENT_CONNECT_REQUEST:
@@ -489,7 +492,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
             //TODO catch error
             scnprintf(ip, 32, "%p", id);
             create_connection_sysfs_entry(&ele->sysfs,
-                dsm_state->dsm_kobjects.rdma_kobject, ip);
+                get_dsm_module_state()->dsm_kobjects.rdma_kobject, ip);
 
             rcm = id->context;
 
@@ -503,19 +506,15 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                 printk("Connection could not be accepted\n");
                 goto err;
             }
-
             break;
 
         case RDMA_CM_EVENT_ESTABLISHED:
-
             break;
 
         case RDMA_CM_EVENT_DISCONNECTED:
-
+            printk("[server_event_handler] disconnect received\n");
             ele = id->context;
-
-            destroy_connection(&ele, ele->rcm);
-
+            ret = destroy_connection(&ele, ele->rcm);
             break;
 
         case RDMA_CM_EVENT_CONNECT_ERROR:
@@ -526,14 +525,12 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
         case RDMA_CM_EVENT_ADDR_CHANGE:
-
             printk("[server_event_handler] - Unexpected event: %d\n",
                     event->event);
 
             ret = rdma_disconnect(id);
             if (unlikely(ret))
                 goto disconnect_err;
-
             break;
 
         default:

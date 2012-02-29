@@ -142,11 +142,9 @@ struct conn_element* search_rb_conn(int node_ip) {
 }
 EXPORT_SYMBOL(search_rb_conn);
 
-// Function will free the element
 void erase_rb_conn(struct rb_root *root, struct conn_element *ele) {
     BUG_ON(!ele);
     rb_erase(&ele->rb_node, root);
-    kfree(ele);
 }
 EXPORT_SYMBOL(erase_rb_conn);
 

@@ -1054,20 +1054,19 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
                 if ((r = ib_destroy_qp(rcm->cm_id->qp)))
                     printk(">[destroy_rcm] - Cannot destroy qp %d\n", r);
 
-            if (rcm->mr)
-                if ((r = rcm->cm_id->device->dereg_mr(rcm->mr)))
-                    printk(">[destroy_rcm] - Cannot dereg mr %d\n", r);
-
             if (rcm->listen_cq)
                 if ((r = ib_destroy_cq(rcm->listen_cq)))
                     printk(">[destroy_rcm] - Cannot destroy cq %d\n", r);
+
+            if (rcm->mr)
+                if ((r = ib_dereg_mr(rcm->mr)))
+                    printk(">[destroy_rcm] - Cannot dereg mr %d\n", r);
 
             if (rcm->pd)
                 if ((r = ib_dealloc_pd(rcm->pd)))
                     printk(">[destroy_rcm] - Cannot dealloc pd %d\n", r);
 
-            if (rcm->cm_id)
-                rdma_destroy_id(rcm->cm_id);
+            rdma_destroy_id(rcm->cm_id);
 
         } else {
             printk(">[destroy_rcm] - no cm_id\n");
@@ -1094,6 +1093,14 @@ int destroy_connection(struct conn_element **ele, struct rcm *rcm) {
                 if ((ret = ib_destroy_qp((*ele)->cm_id->qp)))
                     printk(">[destroy_connection] - Cannot destroy qp\n");
  
+            if ((*ele)->send_cq)
+                if ((ret = ib_destroy_cq((*ele)->send_cq)))
+                    printk(">[destroy_connection] - Cannot destroy send cq\n");
+
+            if ((*ele)->recv_cq)
+                if ((ret = ib_destroy_cq((*ele)->recv_cq)))
+                    printk(">[destroy_connection] - Cannot destroy recv cq\n");
+
             if ((*ele)->mr)
                 if ((ret = ib_dereg_mr((*ele)->mr)))
                     printk(">[destroy_connection] - Cannot dereg mr\n");
@@ -1101,23 +1108,14 @@ int destroy_connection(struct conn_element **ele, struct rcm *rcm) {
             if ((*ele)->pd)
                 if ((ret = ib_dealloc_pd((*ele)->pd)))
                     printk(">[destroy_connection] -Cannot dealloc pd\n");
-        }
 
-        if ((*ele)->send_cq)
-            if ((ret = ib_destroy_cq((*ele)->send_cq)))
-                printk(">[destroy_connection] - Cannot destroy send cq\n");
+            destroy_rx_buffer((*ele));
+            destroy_tx_buffer((*ele));
 
-        if ((*ele)->recv_cq)
-            if ((ret = ib_destroy_cq((*ele)->recv_cq)))
-                printk(">[destroy_connection] - Cannot destroy recv cq\n");
+            free_rdma_info(*ele);
 
-        destroy_rx_buffer((*ele));
-        destroy_tx_buffer((*ele));
-
-        free_rdma_info(*ele);
-
-        if ((*ele)->cm_id)
             rdma_destroy_id((*ele)->cm_id);
+        }
 
         erase_rb_conn(&rcm->root_conn, *ele);
 

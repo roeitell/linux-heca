@@ -989,7 +989,10 @@ int setup_connection(struct conn_element *ele, int type) {
             goto err10;
     }
 
+    ele->alive = 1;
+
     return ret;
+
     err10: err++;
     err9: err++;
     err8: err++;

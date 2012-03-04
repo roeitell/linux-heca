@@ -79,26 +79,26 @@ void reg_dsm_functions(
 );
 
 void dereg_dsm_functions(void);
-int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32 *,
+int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32,
         unsigned long);
 
 // dsm_page_request
 struct page * dsm_extract_page_from_remote(struct dsm *, 
-        struct subvirtual_machine *, u32, unsigned long, u16);
+        struct subvirtual_machine *, struct subvirtual_machine *, unsigned long,
+        u16);
 
 // dsm_page_fault
 int dsm_try_push_page(struct dsm *, struct subvirtual_machine *, 
-    struct mm_struct *, u32 *, unsigned long);
+    struct mm_struct *, u32, u32 *, unsigned long);
 
 extern struct dsm_functions *funcs;
 struct page *dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
 
 // svm_descriptors
-swp_entry_t svm_ids_to_swp_entry(struct dsm *, u32 *);
+swp_entry_t dsm_descriptor_to_swp_entry(struct dsm *, u32);
 u32 *dsm_descriptor_to_svm_ids(struct dsm *, u32);
 struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t);
 u32 dsm_get_descriptor(struct dsm *, u32 *);
-void remove_svm_from_dsc(struct subvirtual_machine *);
 
 #endif /* DSM_PAGE_FAULT_H_ */

@@ -209,7 +209,7 @@ int process_page_request(struct conn_element * ele,
     struct dsm_request *req;
     struct tx_buffer *tx;
     struct dsm *dsm;
-    struct subvirtual_machine *local_svm;
+    struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
     struct dsm_message *msg = rx_buf_e->dsm_msg;
 
@@ -221,8 +221,12 @@ int process_page_request(struct conn_element * ele,
     if (!local_svm)
         goto fail;
 
+    remote_svm = find_svm(dsm, msg->dest_id);
+    if (!remote_svm)
+        goto fail;
+
     norm_addr = msg->req_addr + local_svm->priv->offset;
-    page = dsm_extract_page_from_remote(dsm, local_svm, msg->dest_id, norm_addr,
+    page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
             msg->type);
 
     if (unlikely(!page)) {
@@ -480,7 +484,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
     svm_ids = dsm_descriptor_to_svm_ids(dsm, mr->descriptor);
 
     down_read(&mm->mmap_sem);
-    ret = dsm_try_push_page(dsm, fault_svm, mm, svm_ids, addr);
+    ret = dsm_try_push_page(dsm, fault_svm, mm, mr->descriptor, svm_ids, addr);
     up_read(&mm->mmap_sem);
 
     if (!ret) {

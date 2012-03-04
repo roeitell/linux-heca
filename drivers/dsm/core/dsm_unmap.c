@@ -31,12 +31,11 @@ void dereg_dsm_functions(void) {
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 
-int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 *svm_ids,
+int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         unsigned long request_addr) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
-    int i;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -93,17 +92,13 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 *svm_ids,
     }
 
     // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
-    for (i = 0; svm_ids[i]; i++) {
-        BUG_ON(!funcs->_find_svm(dsm, svm_ids[i]));
-    }
-
     pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
     pte_entry = *pte;
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm,
-                svm_ids)));
+            set_pte_at(mm, addr, pte, swp_entry_to_pte(
+                dsm_descriptor_to_swp_entry(dsm, descriptor)));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -165,8 +160,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 *svm_ids,
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm, 
-        svm_ids)));
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(dsm_descriptor_to_swp_entry(dsm, 
+        descriptor)));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
@@ -186,7 +181,9 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 *svm_ids,
 EXPORT_SYMBOL(dsm_flag_page_remote);
 
 int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
-        struct mm_struct *mm, u32 *remote_ids, unsigned long addr) {
+        struct mm_struct *mm, u32 descriptor, u32 *remote_ids, 
+        unsigned long addr) {
+
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0, ret = 0, i;
@@ -302,8 +299,8 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
 
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm, 
-        remote_ids)));
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(
+            dsm_descriptor_to_swp_entry(dsm, descriptor)));
 
     page_remove_rmap(page);
 

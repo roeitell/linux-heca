@@ -197,6 +197,48 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
 }
 EXPORT_SYMBOL(search_mr);
 
+static u32 *remove_svm_from_ids(u32 *svm_ids, u32 svm_id) {
+    u32 *new_svm_ids;
+    int i, j;
+
+    for (i = 0; svm_ids[i]; i++)
+        ;
+    new_svm_ids = kmalloc(sizeof(u32)*i, GFP_KERNEL);
+
+    for (i = 0; svm_ids[i]; i++)
+        if (svm_ids[i] != svm_id)
+            new_svm_ids[j++] = svm_ids[i];
+    new_svm_ids[j] = 0;
+    return new_svm_ids;
+}
+
+int remove_svm_from_mrs(struct dsm *dsm, u32 svm_id) {
+    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_node *node;
+    struct memory_region *mr;
+    u32 *svm_ids;
+    int ret = 0, i;
+
+    write_seqlock(&dsm->mr_seq_lock);
+    for (node = rb_first(root); node; node = rb_next(node)) {
+        mr = rb_entry(node, struct memory_region, rb_node);
+        svm_ids = dsm_descriptor_to_svm_ids(dsm, mr->descriptor);
+        for (i = 0; svm_ids[i]; i++) {
+            if (svm_ids[i] == svm_id)
+                break;
+        }
+        if (svm_ids[i]) {
+            mr->descriptor = dsm_get_descriptor(dsm, 
+                    remove_svm_from_ids(svm_ids, svm_id));
+            ret++;
+        }
+    }
+    write_sequnlock(&dsm->mr_seq_lock);
+
+    return ret;
+}
+EXPORT_SYMBOL(remove_svm_from_mrs);
+
 int destroy_mrs(struct dsm *dsm, int force) {
     struct rb_root *root = &dsm->mr_tree_root;
     struct rb_node *node;
@@ -222,56 +264,68 @@ int destroy_mrs(struct dsm *dsm, int force) {
 EXPORT_SYMBOL(destroy_mrs);
 
 /* svm_descriptors */
-static inline void dsm_expand_dsc(struct dsm *dsm, u32 i, u32 ***sdsc) {
-    dsm->svm_descriptors = kmalloc(sizeof(u32 *)*i*2, GFP_KERNEL);
-    memcpy(dsm->svm_descriptors, *sdsc, sizeof(u32 *)*i);
-    memset(dsm->svm_descriptors + sizeof(u32 *)*i, 0, sizeof(u32 *)*i);
-    dsm->svm_descriptors[i*2-1] = (u32 *) -1;
-    kfree(*sdsc);
-    *sdsc = dsm->svm_descriptors;
+static inline u32 **dsm_sdsc_expand(u32 **sdsc, u32 size) {
+    u32 **nsdsc = kmalloc(sizeof(u32 *)*size*2, GFP_KERNEL);
+    memcpy(nsdsc, sdsc, sizeof(u32 *)*size);
+    memset(nsdsc + sizeof(u32 *)*size, 0, sizeof(u32 *)*size);
+    nsdsc[size*2-1] = (u32 *) -1;
+    return nsdsc;
 }
 
-u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
-    int i, j;
-    u32 **sdsc;
+static inline u32 dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
+    u32 j, **sdsc, **nsdsc;
 
-    write_lock(&dsm->sdsc_lock);
-    sdsc = dsm->svm_descriptors;
-    for (i = 0; sdsc[i]; i++) {
-        for (j = 0; sdsc[i][j]; j++) {
-            if (sdsc[i][j] != svm_ids[j])
-                goto next;
-        }
-        goto finish;
-    next: continue;
-    }
-
-    if (sdsc[i] < 0) 
-        dsm_expand_dsc(dsm, i, &sdsc);
+    sdsc = nsdsc = dsm->svm_descriptors;
+    if (nsdsc[i] < 0)
+        nsdsc = dsm_sdsc_expand(nsdsc, i);
 
     for (j = 0; svm_ids[j]; j++)
         ;
-    sdsc[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
-    memcpy(sdsc[i], svm_ids, sizeof(u32)*(j+1));
+    nsdsc[i] = kmalloc(sizeof(u32)*(j+1), GFP_KERNEL);
+    memcpy(nsdsc[i], svm_ids, sizeof(u32)*(j+1));
+    dsm->svm_descriptors = nsdsc;
 
-    finish: write_unlock(&dsm->sdsc_lock);
+    synchronize_rcu();
+    if (sdsc != nsdsc)
+        kfree(sdsc);
+
+    return i;
+}
+
+u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
+    u32 i, j;
+    u32 **sdsc = dsm->svm_descriptors;
+
+    spin_lock(&dsm->sdsc_lock);
+    for (i = 0; sdsc[i] > 0; i++) {
+        for (j = 0; sdsc[i][j]; j++)
+            if (!svm_ids[j] || sdsc[i][j] != svm_ids[j])
+                break;
+        if (!sdsc[i][j])
+            break;
+    }
+
+    if (sdsc[i] <= 0)
+        dsm_add_descriptor(dsm, i, svm_ids);
+
+    spin_unlock(&dsm->sdsc_lock);
     return i;
 };
 EXPORT_SYMBOL(dsm_get_descriptor);
 
-inline swp_entry_t svm_ids_to_swp_entry(struct dsm *dsm, u32 *svm_ids) {
-    u64 val = dsm_get_descriptor(dsm, svm_ids);
+inline swp_entry_t dsm_descriptor_to_swp_entry(struct dsm *dsm, u32 dsc) {
+    u64 val = dsc;
     val = (val << 24) | dsm->dsm_id;
     return val_to_dsm_entry(val);
 };
-EXPORT_SYMBOL(svm_ids_to_swp_entry);
+EXPORT_SYMBOL(dsm_descriptor_to_swp_entry);
 
 inline u32 *dsm_descriptor_to_svm_ids(struct dsm *dsm, u32 dsc) {
     u32 *svm_ids;
 
-    read_lock(&dsm->sdsc_lock);
+    rcu_read_lock();
     svm_ids = dsm->svm_descriptors[dsc];
-    read_unlock(&dsm->sdsc_lock);
+    rcu_read_unlock();
     return svm_ids;
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svm_ids);
@@ -281,33 +335,10 @@ inline struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t entry) {
     u64 val = dsm_entry_to_val(entry);
 
     id.dsm = find_dsm(val & 0xFFFFFF);
-    if (id.dsm)
-        id.svm_ids = dsm_descriptor_to_svm_ids(id.dsm, val >> 24);
-    else
-        id.svm_ids = 0;
+    id.svm_ids = (id.dsm) ?
+        dsm_descriptor_to_svm_ids(id.dsm, val >> 24) : NULL;
 
     return id;
 };
 EXPORT_SYMBOL(swp_entry_to_svm_ids);
-
-void remove_svm_from_dsc(struct subvirtual_machine *svm) {
-    u32 **sdsc;
-    int i;
-
-    write_lock(&svm->dsm->sdsc_lock);
-    sdsc = svm->dsm->svm_descriptors;
-    for (i = 0; sdsc[i]; i++) {
-        int mod = 0, j = 0;
-        do {
-            if (mod)
-                sdsc[i][j-1] = sdsc[i][j];
-            if (sdsc[i][j] == svm->svm_id)
-                mod = 1;
-        } while (sdsc[i][j++]);
-    }
-    write_unlock(&svm->dsm->sdsc_lock);
-
-    destroy_mrs(svm->dsm, 0);
-}
-EXPORT_SYMBOL(remove_svm_from_dsc);
 

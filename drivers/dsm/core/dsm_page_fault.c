@@ -558,7 +558,7 @@ static int request_page_insert(struct mm_struct *mm, struct vm_area_struct *vma,
             goto rebelote;
         else if (page_is_tagged_in_dsm_cache(fault_svm, norm_addr, PULL_TAG)) {
             put_page(page);
-            __add_to_dsm_cache(fault_svm, page, norm_addr, 0, DEFAULT_TAG, 1);
+            radix_tree_tag_set(&fault_svm->page_cache, norm_addr, DEFAULT_TAG);
         }
     }
 

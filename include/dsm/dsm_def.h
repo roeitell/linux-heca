@@ -122,7 +122,7 @@ struct dsm {
     int nb_local_svm;
 
     u32 **svm_descriptors;
-    rwlock_t sdsc_lock;
+    spinlock_t sdsc_lock;
 };
 
 struct dsm_kobjects {
@@ -284,6 +284,7 @@ struct subvirtual_machine {
     struct dsm *dsm;
     struct conn_element *ele;
     struct private_data *priv;
+    u32 descriptor;
     struct list_head svm_ptr;
     struct list_head mr_list;
 

@@ -87,6 +87,7 @@ struct subvirtual_machine *find_svm(struct dsm *, u32);
 void insert_mr(struct dsm *, struct memory_region *);
 struct memory_region *search_mr(struct dsm *, unsigned long);
 int destroy_mrs(struct dsm *, int);
+int remove_svm_from_mrs(struct dsm *, u32);
 
 /*
  * handler

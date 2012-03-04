@@ -77,7 +77,7 @@ void remove_svm(struct dsm *dsm, u32 svm_id) {
         radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
     }
 
-    remove_svm_from_dsc(svm);
+    remove_svm_from_mrs(dsm, svm->svm_id);
     if (svm->ele) {
         tx_buf = svm->ele->tx_buffer.tx_buf;
         for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
@@ -101,6 +101,7 @@ static void remove_dsm(struct dsm * dsm) {
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int i;
+    u32 **sdsc;
 
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
     mutex_lock(&dsm_state->dsm_state_mutex);
@@ -117,11 +118,14 @@ static void remove_dsm(struct dsm * dsm) {
 
     destroy_mrs(dsm, 1);
 
-    write_lock(&dsm->sdsc_lock);
-    for (i = 0; dsm->svm_descriptors[i]; i++)
-        kfree(dsm->svm_descriptors[i]);
-    kfree(dsm->svm_descriptors);
-    write_unlock(&dsm->sdsc_lock);
+    spin_lock(&dsm->sdsc_lock);
+    sdsc = dsm->svm_descriptors;
+    dsm->svm_descriptors = NULL;
+    spin_unlock(&dsm->sdsc_lock);
+    synchronize_rcu();
+    for (i = 0; sdsc[i]; i++)
+        kfree(sdsc[i]);
+    kfree(sdsc);
 
     delete_dsm_sysfs_entry(&dsm->dsm_kobject);
     kfree(dsm);
@@ -156,7 +160,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         new_dsm->dsm_id = svm_info.dsm_id;
         mutex_init(&new_dsm->dsm_mutex);
         seqlock_init(&new_dsm->mr_seq_lock);
-        rwlock_init(&new_dsm->sdsc_lock);
+        spin_lock_init(&new_dsm->sdsc_lock);
         INIT_RADIX_TREE(&new_dsm->svm_tree_root, GFP_KERNEL);
         INIT_RADIX_TREE(&new_dsm->svm_mm_tree_root, GFP_KERNEL);
         INIT_LIST_HEAD(&new_dsm->svm_list);
@@ -305,9 +309,13 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
         radix_tree_preload_end();
 
         if (likely(!r)) {
+            u32 svm_id[2] = {svm_info.svm_id, 0};
+
             new_svm->svm_id = svm_info.svm_id;
             new_svm->priv = NULL;
             new_svm->dsm = priv_data->dsm;
+            new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
+
             reset_svm_stats(&new_svm->svm_sysfs);
             spin_lock_init(&new_svm->page_cache_spinlock);
             scnprintf(charid, 11, "%x", new_svm->svm_id);
@@ -398,7 +406,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     r = 0;
     i = udata.addr;
     for (end = i + udata.sz - 1; i < end; i += PAGE_SIZE) {
-        r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, i);
+        r = dsm_flag_page_remote(current->mm, dsm, mr->descriptor, i);
         printk(" %d", r);
         if (r)
             break;
@@ -409,14 +417,13 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
 
 static int unmap_range(struct private_data *priv_data, void __user *argp) {
 
-    int r = -EFAULT;
+    int r = -EFAULT, j;
 
     struct dsm *dsm;
     struct subvirtual_machine *svm = NULL;
     struct unmap_data udata;
-    unsigned long i = 0;
-    unsigned long end = 0;
-    int j;
+    unsigned long i = 0, end = 0;
+    u32 descriptor;
 
     printk("[DSM_UNMAP_RANGE]\n");
 
@@ -443,10 +450,12 @@ static int unmap_range(struct private_data *priv_data, void __user *argp) {
         }
     }
 
+    descriptor = dsm_get_descriptor(dsm, udata.svm_ids);
+
     i = udata.addr;
     end = i + udata.sz;
     while (i < end) {
-        r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, i);
+        r = dsm_flag_page_remote(current->mm, dsm, descriptor, i);
         if (r)
             break;
 
@@ -460,8 +469,8 @@ static int unmap_range(struct private_data *priv_data, void __user *argp) {
 
 static int unmap_page(struct private_data *priv_data, void __user *argp) {
 
-    int r = -EFAULT;
-    int i;
+    int r = -EFAULT, i;
+    u32 descriptor;
 
     struct dsm *dsm;
     struct subvirtual_machine *svm = NULL;
@@ -493,7 +502,9 @@ static int unmap_page(struct private_data *priv_data, void __user *argp) {
         goto out;
     }
 
-    r = dsm_flag_page_remote(current->mm, dsm, udata.svm_ids, udata.addr);
+    descriptor = dsm_get_descriptor(dsm, udata.svm_ids);
+
+    r = dsm_flag_page_remote(current->mm, dsm, descriptor, udata.addr);
 
     out: return r;
 }

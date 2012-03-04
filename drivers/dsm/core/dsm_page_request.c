@@ -8,8 +8,9 @@
 #include <dsm/dsm_module.h>
 
 static struct page *_dsm_extract_page(struct dsm *dsm, 
-        struct subvirtual_machine *local_svm, u32 remote_id, 
-        struct mm_struct *mm, unsigned long addr) {
+        struct subvirtual_machine *local_svm, 
+        struct subvirtual_machine *remote_svm, struct mm_struct *mm, 
+        unsigned long addr) {
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
@@ -22,7 +23,6 @@ static struct page *_dsm_extract_page(struct dsm *dsm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     int extract = 0;
-    u32 svm_ids[2];
 
     printk("[_dsm_extract_page] faulting for page %p  \n ", (void*) addr);
     retry:
@@ -189,10 +189,8 @@ static struct page *_dsm_extract_page(struct dsm *dsm,
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
 
-    svm_ids[0] = remote_id;
-    svm_ids[1] = 0;
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(svm_ids_to_swp_entry(dsm, 
-        svm_ids))); 
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(
+                dsm_descriptor_to_swp_entry(dsm, remote_svm->descriptor)));
 
     page_remove_rmap(page);
 
@@ -305,8 +303,9 @@ static struct page *_try_dsm_extract_page(struct subvirtual_machine *local_svm,
     out: return page;
 }
 
-static struct page *dsm_extract_page(struct dsm *dsm, u32 remote_id,
-        struct subvirtual_machine *local_svm, unsigned long addr) {
+static struct page *dsm_extract_page(struct dsm *dsm,
+        struct subvirtual_machine *local_svm, 
+        struct subvirtual_machine *remote_svm, unsigned long addr) {
 
     struct mm_struct *mm;
     struct page * page;
@@ -314,7 +313,7 @@ static struct page *dsm_extract_page(struct dsm *dsm, u32 remote_id,
 
     use_mm(mm);
     down_read(&mm->mmap_sem);
-    page = _dsm_extract_page(dsm, local_svm, remote_id, mm, addr);
+    page = _dsm_extract_page(dsm, local_svm, remote_svm, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 
@@ -338,8 +337,8 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
 }
 
 struct page *dsm_extract_page_from_remote(struct dsm *dsm, 
-        struct subvirtual_machine *local_svm, u32 remote_id, unsigned long addr,
-        u16 tag) {
+        struct subvirtual_machine *local_svm, 
+        struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag) {
     struct page *page = NULL;
 
     if (tag == TRY_REQUEST_PAGE) {
@@ -349,7 +348,7 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
         else
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
     } else {
-        page = dsm_extract_page(dsm, remote_id, local_svm, addr);
+        page = dsm_extract_page(dsm, local_svm, remote_svm, addr);
         if (page)
             atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else
@@ -421,11 +420,9 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     pte_entry = *pte;
 
     if (!pte_present(pte_entry)) {
-        u32 svm_ids[2] = {svm_id, 0};
-
         if (pte_none(pte_entry)) {
             set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
-                svm_ids_to_swp_entry(dsm, svm_ids)));
+                dsm_descriptor_to_swp_entry(dsm, svm->descriptor)));
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (!non_swap_entry(swp_e)) {
@@ -438,7 +435,7 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                             old.svm_ids[0] != svm_id) {
                         // update pte
                         set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
-                            svm_ids_to_swp_entry(dsm, svm_ids)));
+                            dsm_descriptor_to_swp_entry(dsm, svm->descriptor)));
 
                         // forward msg
                         // DSM1: fwd message RDMA function call.

@@ -299,9 +299,9 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
     spin_lock(&dsm->sdsc_lock);
     for (i = 0; sdsc[i] > 0; i++) {
         for (j = 0; sdsc[i][j]; j++)
-            if (!svm_ids[j] || sdsc[i][j] != svm_ids[j])
+            if (!svm_ids[j] || !sdsc[i][j] || sdsc[i][j] != svm_ids[j])
                 break;
-        if (!sdsc[i][j])
+        if (!sdsc[i][j] && !svm_ids[j])
             break;
     }
 

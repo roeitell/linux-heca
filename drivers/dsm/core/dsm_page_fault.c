@@ -386,7 +386,6 @@ static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
     struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
     struct dsm_page_cache *pc = tx_e->wrk_req->pc;
     struct dsm *dsm;
-    struct page *page;
     struct mm_struct *mm;
     struct subvirtual_machine *local_svm;
     unsigned long addr;
@@ -443,7 +442,7 @@ static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
         mm = local_svm->priv->mm;
         use_mm(mm);
         down_read(&mm->mmap_sem);
-        get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+        get_user_pages(current, mm, addr, 1, 1, 0, &pc->pages[0], NULL);
         up_read(&mm->mmap_sem);
         unuse_mm(mm);
     }
@@ -569,8 +568,9 @@ static struct page *get_dsm_page(struct mm_struct *mm, unsigned long addr,
                         struct dsm_vm_ids id = swp_entry_to_svm_ids(swp_e);
 
                         /*
-                         * Fault_data NULLified, signals the callback that it
-                         * doesn't need to set the pte, just store the page.
+                         * Fault_data NULLified - the callback doesn't need to 
+                         * set the pte, just store the page; happens on prefetch
+                         * or on pull request (pushing to us).
                          *
                          */
                         get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,

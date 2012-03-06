@@ -111,19 +111,34 @@ static int send_svm_status_update(struct conn_element *ele,
     return ret;
 }
 
-int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
+int request_dsm_page(struct page * page, u32 remote_svm_id,
         struct subvirtual_machine *fault_svm, uint64_t addr,
-        void(*func)(struct tx_buf_ele *), int tag) {
+        void(*func)(struct tx_buf_ele *), int tag, 
+        struct dsm_fault_data *fault_data) {
 
-    struct conn_element * ele = svm->ele;
-    struct tx_buffer *tx = &ele->tx_buffer;
+    struct conn_element *ele;
+    struct tx_buffer *tx;
     struct tx_buf_ele *tx_e;
     int ret = 0, emp;
     struct dsm_request *req;
+    struct subvirtual_machine *remote_svm;
     int req_tag = (tag == TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
 
 //    printk("[request_dsm_page]svm %p, ele %p txbuff %p , addr %p, try %d\n",
 //            svm, svm->ele, tx, (void *) addr, try);
+
+    remote_svm = find_svm(fault_svm->dsm, remote_svm_id);
+
+    /*
+     * Svm has been fenced out; fail silently (another svm should answer, if
+     * available).
+     *
+     */
+    if (!remote_svm)
+        goto out;
+
+    ele = remote_svm->ele;
+    tx = &ele->tx_buffer;
 
     spin_lock(&tx->request_queue_lock);
     emp = list_empty(&tx->request_queue);
@@ -133,7 +148,8 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
             create_page_request(ele, tx_e, fault_svm->dsm->dsm_id, 
-                fault_svm->svm_id, svm->svm_id, addr, page, req_tag);
+                fault_svm->svm_id, remote_svm_id, addr, page, req_tag,
+                fault_data);
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
@@ -147,7 +163,8 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
     req->fault_svm = fault_svm;
     req->func = func;
     req->page = page;
-    req->svm = svm;
+    req->svm = remote_svm;
+    req->fault_data = fault_data;
 
     spin_lock(&tx->request_queue_lock);
     list_add_tail(&req->queue, &tx->request_queue);
@@ -155,7 +172,7 @@ int request_dsm_page(struct page * page, struct subvirtual_machine *svm,
 
     queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
 
-    return ret;
+    out: return ret;
 }
 
 int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
@@ -178,6 +195,7 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) 
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
     struct dsm *dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
+    printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_msg->src_id);
     if (dsm)
         remove_svm(dsm, rx_buf_e->dsm_msg->src_id);
     return !!dsm;
@@ -189,13 +207,13 @@ int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
  * RETURN 0 if a page exists in the buffer at this offset
  *               -1 if the page cannot be found
  */
-int process_page_response(struct conn_element *ele, struct tx_buf_ele * tx_buf_e) {
+int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e) {
 
-    if (tx_buf_e->callback.func)
-        tx_buf_e->callback.func(tx_buf_e);
+    if (tx_e->callback.func)
+        tx_e->callback.func(tx_e);
 
-    release_page(ele, tx_buf_e);
-    release_tx_element(ele, tx_buf_e);
+    release_page(ele, tx_e);
+    release_tx_element(ele, tx_e);
 
     return 0;
 }
@@ -232,8 +250,14 @@ int process_page_request(struct conn_element * ele,
     if (unlikely(!page)) {
         ret = -1;
 
+        /*
+         * Too many consecutive failures to grab pages; seems that svm is 
+         *  offline. Send a status update message to client.
+         * TODO: Should we also forcibly remove the svm?
+         *
+         */
         if (++local_svm->status > MAX_CONSECUTIVE_SVM_FAILURES)
-            goto fail; /* should we also forcibly remove the svm? */
+            goto fail;
 
         if (msg->type == TRY_REQUEST_PAGE) {
             tx = &ele->tx_buffer;
@@ -266,6 +290,9 @@ int process_page_request(struct conn_element * ele,
         return ret;
     }
 
+    /*
+     * Page grabbed successfully, seems that the local svm is still online.
+     */ 
     local_svm->status = 0;
 
     tx_e = try_get_next_empty_tx_reply_ele(ele);

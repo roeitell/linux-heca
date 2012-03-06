@@ -639,6 +639,7 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     BUG_ON(!(rcm));
     memset(rcm, 0, sizeof(struct rcm));
     init_kmem_request_cache();
+    init_dsm_cache_kmem();
     mutex_init(&rcm->rcm_mutex);
 
     rcm->node_ip = inet_addr(ip);
@@ -851,12 +852,14 @@ unsigned int inet_addr(char *addr) {
 
 void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
         u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr, 
-        struct page *page, u16 type) {
+        struct page *page, u16 type, struct dsm_fault_data *fault_data) {
     struct dsm_message *msg = tx_e->dsm_msg;
     struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
             page);
 
     tx_e->wrk_req->dst_addr = ppe;
+    tx_e->wrk_req->fault_data = fault_data;
+
     //we need to reset the offset just in case if we actually use the element for reply as an error
     msg->offset = tx_e->id;
     msg->dsm_id = dsm_id;
@@ -1080,6 +1083,7 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
         kfree(rcm);
     }
 
+    destroy_dsm_cache_kmem();
     destroy_kmem_request_cache();
 
     return 0;

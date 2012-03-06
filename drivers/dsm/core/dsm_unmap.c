@@ -14,9 +14,9 @@ void reg_dsm_functions(
         struct subvirtual_machine *(*_find_svm)(struct dsm* dsm, u32 svm_id),
         struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
                 struct mm_struct *),
-        int(*request_dsm_page)(struct page *, struct subvirtual_machine *,
-                struct subvirtual_machine *, uint64_t,
-                void(*func)(struct tx_buf_ele *), int)) {
+        int(*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
+                uint64_t, void(*func)(struct tx_buf_ele *), int, 
+                struct dsm_fault_data *)) {
 
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
     funcs->_find_dsm = _find_dsm;
@@ -194,6 +194,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     pmd_t *pmd;
     pte_t pte_entry;
     swp_entry_t swp_e;
+    struct dsm_page_cache *pc;
 
     printk("[dsm_try_push_page] trying to push back page %p \n ", (void*) addr);
 
@@ -295,7 +296,14 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         printk("[dsm_try_push_page] cannot lock page\n");
         goto bad_page;
     }
-    get_page(page);
+
+    for (i = 0; remote_ids[i]; i++)
+        ;
+    pc = dsm_cache_add(local_svm, addr, 1, i, PUSH_TAG);
+    if (!pc)
+        goto bad_page;
+
+    page_cache_get(page);
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
 
@@ -310,11 +318,10 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         try_to_free_swap(page);
 //DSM1 do we need a put_page???/
 
-    for (i = 0; remote_ids[i]; i++)
-        ;
-    add_page_pull_to_dsm_cache(local_svm, page, addr, GFP_HIGHUSER_MOVABLE, i);
+    page_cache_get(page);
+    pc->pages[0] = page;
+    set_page_private(page, ULONG_MAX);
     unlock_page(page);
-
     pte_unmap_unlock(pte, ptl);
 
     printk(

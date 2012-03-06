@@ -34,13 +34,13 @@ static int flush_dsm_request(struct conn_element *ele) {
             case REQUEST_PAGE: {
                 create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id, 
                     req->fault_svm->svm_id, req->svm->svm_id, req->addr, 
-                    req->page, req->type);
+                    req->page, req->type, req->fault_data);
                 break;
             }
             case TRY_REQUEST_PAGE: {
                 create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id, 
                     req->fault_svm->svm_id, req->svm->svm_id, req->addr, 
-                    req->page, req->type);
+                    req->page, req->type, req->fault_data);
                 break;
             }
             case REQUEST_PAGE_PULL: {

@@ -35,21 +35,25 @@
 
 #include <dsm/dsm_def.h>
 
-#define PREFETCH_TAG    0
-#define TRY_TAG         1
-#define PULL_TAG        2               /* pages that we try to get pulled */
-#define DEFAULT_TAG    RADIX_TREE_MAX_TAGS
+#define DSM_PAGE_CACHE_DEFAULT  4 /* default alloc of pages in cache */
 
-struct dsm_page_cache *page_is_in_svm_page_cache(struct subvirtual_machine *,
+#define PULL_TAG        0  /* pulling the page */
+#define PREFETCH_TAG    1  /* pulling the page for prefetch */
+#define PUSH_TAG        2  /* pushing the page */
+#define TRY_TAG         4
+
+
+/* dsm_cache.c */
+void init_dsm_cache_kmem(void);
+void destroy_dsm_cache_kmem(void);
+struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *, unsigned long,
+       int, int, int);
+struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine*, unsigned long);
+struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *, 
         unsigned long);
-int page_is_tagged_in_dsm_cache(struct subvirtual_machine *, unsigned long, 
-        int);
-int add_page_pull_to_dsm_cache(struct subvirtual_machine *, struct page *,
-        unsigned long, gfp_t, int);
-int delete_from_dsm_cache(struct subvirtual_machine *, struct page *,
-        unsigned long);
-struct dsm_page_cache *find_page_in_svm_cache(struct subvirtual_machine *, 
-        unsigned long);
+struct dsm_page_cache *dsm_alloc_pc(int, int, int);
+void dsm_dealloc_pc(struct dsm_page_cache **);
+
 
 struct dsm_functions {
     struct dsm *(*_find_dsm)(u32 dsm_id);
@@ -59,9 +63,9 @@ struct dsm_functions {
     struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
             struct mm_struct *);
 
-    int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
-            struct subvirtual_machine *, uint64_t,
-            void(*func)(struct tx_buf_ele *), int);
+    int (*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
+            uint64_t, void(*func)(struct tx_buf_ele *), int, 
+            struct dsm_fault_data *);
 };
 
 // dsm_unmap
@@ -73,9 +77,8 @@ void reg_dsm_functions(
     struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
                 struct mm_struct *),
 
-    int(*request_dsm_page)(struct page *, struct subvirtual_machine *,
-                struct subvirtual_machine *, uint64_t,
-                void(*func)(struct tx_buf_ele *), int)
+    int(*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
+        uint64_t, void(*func)(struct tx_buf_ele *), int, struct dsm_fault_data*)
 );
 
 void dereg_dsm_functions(void);

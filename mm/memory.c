@@ -809,8 +809,10 @@ struct page *vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 			goto check_pfn;
 		if (vma->vm_flags & (VM_PFNMAP | VM_MIXEDMAP))
 			return NULL;
-		if (!is_zero_pfn(pfn))
+		if (!is_zero_pfn(pfn)) {
+            printk("[vm_normal_page] iz_zero_pfn err\n");
 			print_bad_pte(vma, addr, pte, NULL);
+        }
 		return NULL;
 	}
 
@@ -835,6 +837,7 @@ struct page *vm_normal_page(struct vm_area_struct *vma, unsigned long addr,
 		return NULL;
 check_pfn:
 	if (unlikely(pfn > highest_memmap_pfn)) {
+        printk("[vm_normal_page] pfn > highest_memmap_pfn\n");
 		print_bad_pte(vma, addr, pte, NULL);
 		return NULL;
 	}
@@ -1181,8 +1184,10 @@ again:
 				rss[MM_FILEPAGES]--;
 			}
 			page_remove_rmap(page);
-			if (unlikely(page_mapcount(page) < 0))
+			if (unlikely(page_mapcount(page) < 0)) {
+                printk("[zap_pte_range] mapcount < 0\n");
 				print_bad_pte(vma, addr, ptent, page);
+            }
 			force_flush = !__tlb_remove_page(tlb, page);
 			if (force_flush)
 				break;
@@ -1195,8 +1200,10 @@ again:
 		if (unlikely(details))
 			continue;
 		if (pte_file(ptent)) {
-			if (unlikely(!(vma->vm_flags & VM_NONLINEAR)))
+			if (unlikely(!(vma->vm_flags & VM_NONLINEAR))) {
+                printk("[zap_pte_range] ! vma->vm_flags & VM_NONLINEAR\n");
 				print_bad_pte(vma, addr, ptent, NULL);
+            }
 		} else {
 			swp_entry_t entry = pte_to_swp_entry(ptent);
 
@@ -1212,8 +1219,10 @@ again:
 				else
 					rss[MM_FILEPAGES]--;
 			}
-			if (unlikely(!free_swap_and_cache(entry)))
+			if (unlikely(!free_swap_and_cache(entry))) {
+                printk("[zap_pte_range] !free_swap_and_cache\n");
 				print_bad_pte(vma, addr, ptent, NULL);
+            }
 		}
 		pte_clear_not_present_full(mm, addr, pte, tlb->fullmm);
 	} while (pte++, addr += PAGE_SIZE, addr != end);

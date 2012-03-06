@@ -62,6 +62,7 @@
 #define TRY_REQUEST_PAGE_FAIL           0x0020 // We try to get the page failed
 #define SVM_STATUS_UPDATE               0x0030 // The svm is down
 #define DSM_MSG_ERR                     0x8000 // ERROR
+
 /*
  * DSM DATA structure
  */
@@ -305,9 +306,22 @@ struct work_request_ele {
 
 };
 
+struct dsm_fault_data {
+    struct dsm_page_cache *pc;
+    struct subvirtual_machine *fault_svm;
+    struct vm_area_struct *vma;
+    unsigned long address;
+    pte_t *page_table;
+    pmd_t *pmd;
+    unsigned int flags;
+    pte_t orig_pte;
+
+};
+
 struct msg_work_request {
     struct work_request_ele *wr_ele;
-    struct page_pool_ele * dst_addr;
+    struct page_pool_ele *dst_addr;
+    struct dsm_fault_data *fault_data;
 
 };
 
@@ -368,6 +382,7 @@ struct dsm_request {
     void(*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
     struct list_head queue;
+    struct dsm_fault_data *fault_data;
 };
 
 struct dsm_module_state {
@@ -382,8 +397,18 @@ struct dsm_module_state {
 };
 
 struct dsm_page_cache {
-    struct page *page;
+    struct page **pages;
+    int tag;
+    int npages;
     int nproc;
+
+    int fault_state;
+    unsigned long flags;
+#define DSM_CACHE_ACTIVE    0
+#define DSM_CACHE_DISCARD   1
+
+    struct list_head list;
+    spinlock_t lock;
 };
 
 /*

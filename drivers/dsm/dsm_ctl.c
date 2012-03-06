@@ -49,12 +49,11 @@ static void clean_up_page_cache(struct subvirtual_machine *svm,
     struct dsm_page_cache *pc;
 
     for (addr = mr->addr; addr < (addr + mr->sz); addr += PAGE_SIZE) {
-        pc = page_is_in_svm_page_cache(svm, addr);
+        pc = dsm_cache_release(svm, addr);
         if (pc) {
             printk(
-                    "[clean_up_page_cache] trying to remove page from dsm page cache dsm/svm/addr/page_ptr  %d / %d / %p / %p\n",
-                    svm->dsm->dsm_id, svm->svm_id, (void *) addr, pc->page);
-            delete_from_dsm_cache(svm, pc->page, addr);
+                "[clean_up_page_cache] remove page from cache %d/%d/%p/\n",
+                svm->dsm->dsm_id, svm->svm_id, (void *) addr);
             synchronize_rcu();
         }
     }
@@ -407,7 +406,6 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     i = udata.addr;
     for (end = i + udata.sz - 1; i < end; i += PAGE_SIZE) {
         r = dsm_flag_page_remote(current->mm, dsm, mr->descriptor, i);
-        printk(" %d", r);
         if (r)
             break;
     }
@@ -524,7 +522,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
     BUG_ON(!dsm);
 
     addr = udata.addr & PAGE_MASK;
-    if (!page_is_in_svm_page_cache(priv_data->svm, addr)) {
+    if (!dsm_cache_get(priv_data->svm, addr)) {
         r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr);
     }
     else {

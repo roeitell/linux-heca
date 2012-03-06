@@ -31,7 +31,6 @@ static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
     count = page_mapcount(page);
     if (count == 0 && !PageWriteback(page)) {
         set_page_private(page, 0);
-        page_cache_release(page);
         if (!PageSwapBacked(page))
             SetPageDirty(page);
     }
@@ -130,7 +129,7 @@ static int do_wp_dsm_page(struct subvirtual_machine *fault_svm,
             page_mkwrite = 1;
         }
         dirty_page = old_page;
-        get_page(dirty_page);
+        page_cache_get(dirty_page);
 
         reuse: flush_cache_page(vma, address, pte_pfn(orig_pte));
         entry = pte_mkyoung(orig_pte);
@@ -296,8 +295,8 @@ static int dsm_page_fault_success(struct page *page,
             ret &= VM_FAULT_ERROR;
         goto out;
     }
+
     update_mmu_cache(fd->vma, fd->address, fd->page_table);
-    // printk("[request_page_insert] page fault success \n ");
     atomic64_inc(&fd->fault_svm->svm_sysfs.stats.nb_page_request_success);
     pte_unmap_unlock(pte, ptl);
     goto out;
@@ -309,6 +308,7 @@ static int dsm_page_fault_success(struct page *page,
         unlock_page(swapcache);
         page_cache_release(swapcache);
     }
+
     out: return ret;
 }
 
@@ -443,7 +443,7 @@ static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
 static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask, 
         struct vm_area_struct *vma, unsigned long addr, struct dsm *dsm, 
         u32 *svm_ids, struct subvirtual_machine *fault_svm, 
-        unsigned long private, int tag, struct dsm_fault_data *fault_data) {
+        unsigned long private, int tag, struct dsm_fault_data *fd) {
 
     struct dsm_page_cache *pc;
     struct page *new_page = NULL;
@@ -479,11 +479,10 @@ static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask,
 
         pc->pages[i] = new_page;
 
-        if (fault_data)
-            fault_data->pc = pc;
+        if (fd)
+            fd->pc = pc;
         funcs->request_dsm_page(new_page, svm_ids[i], fault_svm,
-                (uint64_t) (addr - fault_svm->priv->offset), func, tag,
-                fault_data);
+               (uint64_t) (addr - fault_svm->priv->offset), func, tag, fd);
     }
 
     fail: return pc;
@@ -573,8 +572,8 @@ static struct page *get_dsm_page(struct mm_struct *mm, unsigned long addr,
     return page;
 }
 
-static struct dsm_fault_data *pack_fault_data(struct subvirtual_machine *svm, 
-        struct vm_area_struct *vma, unsigned long address, pte_t *page_table, 
+static struct dsm_fault_data *pack_fault_data(struct subvirtual_machine *svm,
+        struct vm_area_struct *vma, unsigned long address, pte_t *page_table,
         pmd_t *pmd, unsigned int flags, pte_t orig_pte) {
     struct dsm_fault_data *fd = kmalloc(sizeof(struct dsm_fault_data), 
             GFP_KERNEL);    /* TODO: Use a slab allocator */
@@ -613,7 +612,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         goto out;
 
     id = swp_entry_to_svm_ids(entry);
-    fault_svm = funcs->_find_local_svm(id.dsm, mm);
+    fault_svm = find_local_svm(id.dsm, mm);
     BUG_ON(!fault_svm);
 
     fault_data = pack_fault_data(fault_svm, vma, address, page_table, pmd,
@@ -658,6 +657,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         if (page) {
             fault_data->pc = pc;
             dsm_page_fault_success(page, fault_data);
+            page_cache_release(page);
             goto prefetch;
         }
 

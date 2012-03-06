@@ -315,13 +315,14 @@ struct dsm_fault_data {
     pmd_t *pmd;
     unsigned int flags;
     pte_t orig_pte;
+    int fault_state;
 
 };
 
 struct msg_work_request {
     struct work_request_ele *wr_ele;
     struct page_pool_ele *dst_addr;
-    struct dsm_fault_data *fault_data;
+    struct dsm_page_cache *pc;
 
 };
 
@@ -375,14 +376,14 @@ struct rx_buf_ele {
 
 struct dsm_request {
     u16 type;
-    struct page * page;
+    struct page *page;
     struct subvirtual_machine *svm;
     struct subvirtual_machine *fault_svm;
     uint64_t addr;
     void(*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
     struct list_head queue;
-    struct dsm_fault_data *fault_data;
+    struct dsm_page_cache *pc;
 };
 
 struct dsm_module_state {
@@ -402,7 +403,7 @@ struct dsm_page_cache {
     int npages;
     int nproc;
 
-    int fault_state;
+    struct dsm_fault_data fd;
     unsigned long flags;
 #define DSM_CACHE_ACTIVE    0
 #define DSM_CACHE_DISCARD   1

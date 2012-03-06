@@ -282,7 +282,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
                         page_cache_release(page);
                         set_page_private(page, 0);
                         dsm_cache_release(local_svm, addr);
-                        dsm_dealloc_pc(&pc);
+                        set_bit(DSM_CACHE_DISCARD, &pc->flags);
                     }
                     unlock_page(page);
                 }
@@ -361,10 +361,10 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     u32 svm_id;
 
     svm_id = msg->dest_id;
-    dsm = funcs->_find_dsm(msg->dsm_id);
+    dsm = find_dsm(msg->dsm_id);
     BUG_ON(!dsm);
 
-    svm = funcs->_find_svm(dsm, svm_id);
+    svm = find_svm(dsm, svm_id);
     BUG_ON(!svm);
 
     mm = svm->priv->mm;

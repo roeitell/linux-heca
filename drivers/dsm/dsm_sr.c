@@ -114,7 +114,7 @@ static int send_svm_status_update(struct conn_element *ele,
 int request_dsm_page(struct page * page, u32 remote_svm_id,
         struct subvirtual_machine *fault_svm, uint64_t addr,
         void(*func)(struct tx_buf_ele *), int tag, 
-        struct dsm_fault_data *fault_data) {
+        struct dsm_page_cache *pc) {
 
     struct conn_element *ele;
     struct tx_buffer *tx;
@@ -148,8 +148,7 @@ int request_dsm_page(struct page * page, u32 remote_svm_id,
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
             create_page_request(ele, tx_e, fault_svm->dsm->dsm_id, 
-                fault_svm->svm_id, remote_svm_id, addr, page, req_tag,
-                fault_data);
+                fault_svm->svm_id, remote_svm_id, addr, page, req_tag, pc);
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
@@ -164,7 +163,7 @@ int request_dsm_page(struct page * page, u32 remote_svm_id,
     req->func = func;
     req->page = page;
     req->svm = remote_svm;
-    req->fault_data = fault_data;
+    req->pc = pc;
 
     spin_lock(&tx->request_queue_lock);
     list_add_tail(&req->queue, &tx->request_queue);

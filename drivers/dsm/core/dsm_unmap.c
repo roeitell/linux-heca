@@ -16,7 +16,7 @@ void reg_dsm_functions(
                 struct mm_struct *),
         int(*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
                 uint64_t, void(*func)(struct tx_buf_ele *), int, 
-                struct dsm_fault_data *)) {
+                struct dsm_page_cache *)) {
 
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
     funcs->_find_dsm = _find_dsm;

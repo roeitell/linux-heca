@@ -12,6 +12,37 @@ static struct delayed_work dsm_cache_gc_work;
 static struct list_head dsm_cache_alloced;
 static struct list_head dsm_cache_to_remove;
 
+static inline struct dsm_page_cache *dsm_alloc_pc(int npages, int nproc, 
+        int tag) {
+    struct dsm_page_cache *pc;
+
+    pc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
+    pc->flags = 0;
+    set_bit(DSM_CACHE_ACTIVE, &pc->flags);
+    pc->npages = npages;
+    pc->nproc = nproc;
+    pc->tag = tag;
+    pc->fd.fault_state = VM_FAULT_MAJOR;
+    if (npages > DSM_PAGE_CACHE_DEFAULT) {
+        kfree(pc->pages);
+        pc->pages = kzalloc(sizeof(struct page *)*npages, GFP_KERNEL);
+    } else {
+        memset(pc->pages, 0, sizeof(struct page *)*npages);
+    }
+
+    list_add_tail(&pc->list, &dsm_cache_alloced);
+    return pc;
+};
+
+static inline void dsm_dealloc_pc(struct dsm_page_cache **pc) {
+    if (*pc) {
+        list_del(&((*pc)->list));
+        kfree((*pc)->pages);
+        kmem_cache_free(dsm_cache_kmem, *pc);
+        *pc = NULL;
+    }
+};
+
 /*
  * TODO: Locking on gc
  *  pc-wise (use existing lock)
@@ -77,36 +108,6 @@ void destroy_dsm_cache_kmem(void) {
     cancel_delayed_work(&dsm_cache_gc_work);
 }
 EXPORT_SYMBOL(destroy_dsm_cache_kmem);
-
-inline struct dsm_page_cache *dsm_alloc_pc(int npages, int nproc, int tag) {
-    struct dsm_page_cache *pc;
-
-    pc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
-    pc->flags = 0;
-    set_bit(DSM_CACHE_ACTIVE, &pc->flags);
-    pc->npages = npages;
-    pc->nproc = nproc;
-    pc->tag = tag;
-    pc->fault_state = VM_FAULT_MAJOR;
-    if (npages > DSM_PAGE_CACHE_DEFAULT) {
-        kfree(pc->pages);
-        pc->pages = kzalloc(sizeof(struct page *)*npages, GFP_KERNEL);
-    } else {
-        memset(pc->pages, 0, sizeof(struct page *)*npages);
-    }
-
-    list_add_tail(&pc->list, &dsm_cache_alloced);
-    return pc;
-};
-
-inline void dsm_dealloc_pc(struct dsm_page_cache **pc) {
-    if (*pc) {
-        list_del(&((*pc)->list));
-        kfree((*pc)->pages);
-        kmem_cache_free(dsm_cache_kmem, *pc);
-        *pc = NULL;
-    }
-};
 
 struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *svm, 
         unsigned long addr, int npages, int nproc, int tag) {

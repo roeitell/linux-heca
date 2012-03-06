@@ -51,8 +51,6 @@ struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *, unsigned long,
 struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine*, unsigned long);
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *, 
         unsigned long);
-struct dsm_page_cache *dsm_alloc_pc(int, int, int);
-void dsm_dealloc_pc(struct dsm_page_cache **);
 
 
 struct dsm_functions {
@@ -65,7 +63,7 @@ struct dsm_functions {
 
     int (*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
             uint64_t, void(*func)(struct tx_buf_ele *), int, 
-            struct dsm_fault_data *);
+            struct dsm_page_cache *);
 };
 
 // dsm_unmap
@@ -78,7 +76,7 @@ void reg_dsm_functions(
                 struct mm_struct *),
 
     int(*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
-        uint64_t, void(*func)(struct tx_buf_ele *), int, struct dsm_fault_data*)
+        uint64_t, void(*func)(struct tx_buf_ele *), int, struct dsm_page_cache*)
 );
 
 void dereg_dsm_functions(void);

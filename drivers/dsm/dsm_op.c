@@ -852,13 +852,13 @@ unsigned int inet_addr(char *addr) {
 
 void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
         u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr, 
-        struct page *page, u16 type, struct dsm_fault_data *fault_data) {
+        struct page *page, u16 type, struct dsm_page_cache *pc) {
     struct dsm_message *msg = tx_e->dsm_msg;
     struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
             page);
 
     tx_e->wrk_req->dst_addr = ppe;
-    tx_e->wrk_req->fault_data = fault_data;
+    tx_e->wrk_req->pc = pc;
 
     //we need to reset the offset just in case if we actually use the element for reply as an error
     msg->offset = tx_e->id;

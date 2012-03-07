@@ -111,23 +111,20 @@ static int send_svm_status_update(struct conn_element *ele,
     return ret;
 }
 
-int request_dsm_page(struct page * page, u32 remote_svm_id,
+int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         struct subvirtual_machine *fault_svm, uint64_t addr,
         void(*func)(struct tx_buf_ele *), int tag, 
-        struct dsm_page_cache *pc) {
+        struct dsm_page_cache *dpc) {
 
     struct conn_element *ele;
     struct tx_buffer *tx;
     struct tx_buf_ele *tx_e;
     int ret = 0, emp;
     struct dsm_request *req;
-    struct subvirtual_machine *remote_svm;
     int req_tag = (tag == TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
 
 //    printk("[request_dsm_page]svm %p, ele %p txbuff %p , addr %p, try %d\n",
 //            svm, svm->ele, tx, (void *) addr, try);
-
-    remote_svm = find_svm(fault_svm->dsm, remote_svm_id);
 
     /*
      * Svm has been fenced out; fail silently (another svm should answer, if
@@ -147,8 +144,8 @@ int request_dsm_page(struct page * page, u32 remote_svm_id,
     if (emp) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
-            create_page_request(ele, tx_e, fault_svm->dsm->dsm_id, 
-                fault_svm->svm_id, remote_svm_id, addr, page, req_tag, pc);
+            create_page_request(ele, tx_e, fault_svm->dsm->dsm_id,
+               fault_svm->svm_id, remote_svm->svm_id, addr, page, req_tag, dpc);
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
@@ -163,7 +160,7 @@ int request_dsm_page(struct page * page, u32 remote_svm_id,
     req->func = func;
     req->page = page;
     req->svm = remote_svm;
-    req->pc = pc;
+    req->dpc = dpc;
 
     spin_lock(&tx->request_queue_lock);
     list_add_tail(&req->queue, &tx->request_queue);
@@ -501,25 +498,21 @@ int dsm_recv_info(struct conn_element *ele) {
 
 int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *fault_svm, unsigned long request_addr) {
-    int ret = -1;
+    int ret = -1, i;
     unsigned long addr = request_addr & PAGE_MASK;
     struct memory_region *mr;
-    u32 *svm_ids;
+    struct subvirtual_machine **svms;
 
-    mr = search_mr(dsm, addr); /* unsure if should be masked right now */
-    svm_ids = dsm_descriptor_to_svm_ids(dsm, mr->descriptor);
+    mr = search_mr(dsm, addr); /* TODO: unsure if should be masked right now */
+    svms = dsm_descriptor_to_svms(mr->descriptor);
 
     down_read(&mm->mmap_sem);
-    ret = dsm_try_push_page(dsm, fault_svm, mm, mr->descriptor, svm_ids, addr);
+    ret = dsm_try_push_page(dsm, fault_svm, mm, mr->descriptor, svms, addr);
     up_read(&mm->mmap_sem);
 
     if (!ret) {
-        int i;
-
-        for (i = 0; svm_ids[i]; i++) {
-            struct subvirtual_machine *svm = find_svm(dsm, svm_ids[i]);
-
-            send_request_dsm_page_pull(svm, fault_svm,
+        for (i = 0; svms[i]; i++) {
+            send_request_dsm_page_pull(svms[i], fault_svm,
                 (uint64_t) (addr - fault_svm->priv->offset));
         }
     }

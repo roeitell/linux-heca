@@ -46,11 +46,11 @@ void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
 static void clean_up_page_cache(struct subvirtual_machine *svm,
         struct memory_region *mr) {
     unsigned long addr;
-    struct dsm_page_cache *pc;
+    struct dsm_page_cache *dpc;
 
     for (addr = mr->addr; addr < (addr + mr->sz); addr += PAGE_SIZE) {
-        pc = dsm_cache_release(svm, addr);
-        if (pc) {
+        dpc = dsm_cache_release(svm, addr);
+        if (dpc) {
             printk(
                 "[clean_up_page_cache] remove page from cache %d/%d/%p/\n",
                 svm->dsm->dsm_id, svm->svm_id, (void *) addr);
@@ -99,8 +99,6 @@ void remove_svm(struct dsm *dsm, u32 svm_id) {
 static void remove_dsm(struct dsm * dsm) {
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
-    int i;
-    u32 **sdsc;
 
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
     mutex_lock(&dsm_state->dsm_state_mutex);
@@ -116,15 +114,6 @@ static void remove_dsm(struct dsm * dsm) {
     }
 
     destroy_mrs(dsm, 1);
-
-    spin_lock(&dsm->sdsc_lock);
-    sdsc = dsm->svm_descriptors;
-    dsm->svm_descriptors = NULL;
-    spin_unlock(&dsm->sdsc_lock);
-    synchronize_rcu();
-    for (i = 0; sdsc[i]; i++)
-        kfree(sdsc[i]);
-    kfree(sdsc);
 
     delete_dsm_sysfs_entry(&dsm->dsm_kobject);
     kfree(dsm);
@@ -159,15 +148,11 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         new_dsm->dsm_id = svm_info.dsm_id;
         mutex_init(&new_dsm->dsm_mutex);
         seqlock_init(&new_dsm->mr_seq_lock);
-        spin_lock_init(&new_dsm->sdsc_lock);
         INIT_RADIX_TREE(&new_dsm->svm_tree_root, GFP_KERNEL);
         INIT_RADIX_TREE(&new_dsm->svm_mm_tree_root, GFP_KERNEL);
         INIT_LIST_HEAD(&new_dsm->svm_list);
         new_dsm->mr_tree_root = RB_ROOT;
         new_dsm->nb_local_svm = 0;
-        new_dsm->svm_descriptors = kmalloc(sizeof(u32 *)*256, GFP_KERNEL);
-        memset(new_dsm->svm_descriptors, 0, (sizeof(u32 *)*256));
-        new_dsm->svm_descriptors[255] = (u32 *) -1;
 
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (r)

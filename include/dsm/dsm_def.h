@@ -121,9 +121,6 @@ struct dsm {
 
     struct kobject dsm_kobject;
     int nb_local_svm;
-
-    u32 **svm_descriptors;
-    spinlock_t sdsc_lock;
 };
 
 struct dsm_kobjects {
@@ -307,7 +304,7 @@ struct work_request_ele {
 };
 
 struct dsm_fault_data {
-    struct dsm_page_cache *pc;
+    struct dsm_page_cache *dpc;
     struct subvirtual_machine *fault_svm;
     struct vm_area_struct *vma;
     unsigned long address;
@@ -322,7 +319,7 @@ struct dsm_fault_data {
 struct msg_work_request {
     struct work_request_ele *wr_ele;
     struct page_pool_ele *dst_addr;
-    struct dsm_page_cache *pc;
+    struct dsm_page_cache *dpc;
 
 };
 
@@ -383,7 +380,7 @@ struct dsm_request {
     void(*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
     struct list_head queue;
-    struct dsm_page_cache *pc;
+    struct dsm_page_cache *dpc;
 };
 
 struct dsm_module_state {
@@ -443,9 +440,10 @@ struct unmap_data {
     size_t sz;
 };
 
-struct dsm_vm_ids {
+struct dsm_swp_data {
     struct dsm *dsm;
-    u32 *svm_ids;
+    struct subvirtual_machine **svms;
+    u32 flags;
 };
 
 #endif /* DSM_DEF_H_ */

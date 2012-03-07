@@ -14,8 +14,9 @@ void reg_dsm_functions(
         struct subvirtual_machine *(*_find_svm)(struct dsm* dsm, u32 svm_id),
         struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
                 struct mm_struct *),
-        int(*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
-                uint64_t, void(*func)(struct tx_buf_ele *), int, 
+        int(*request_dsm_page)(struct page *, struct subvirtual_machine *, 
+                struct subvirtual_machine *, uint64_t, 
+                void(*func)(struct tx_buf_ele *), int, 
                 struct dsm_page_cache *)) {
 
     funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
@@ -98,7 +99,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
             set_pte_at(mm, addr, pte, swp_entry_to_pte(
-                dsm_descriptor_to_swp_entry(dsm, descriptor)));
+                dsm_descriptor_to_swp_entry(descriptor, 0)));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -160,8 +161,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(dsm_descriptor_to_swp_entry(dsm, 
-        descriptor)));
+    set_pte_at(mm, addr, pte, swp_entry_to_pte(dsm_descriptor_to_swp_entry( 
+            descriptor, 0)));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
@@ -181,8 +182,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 EXPORT_SYMBOL(dsm_flag_page_remote);
 
 int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
-        struct mm_struct *mm, u32 descriptor, u32 *remote_ids, 
-        unsigned long addr) {
+        struct mm_struct *mm, u32 descriptor, 
+        struct subvirtual_machine **remote_svms, unsigned long addr) {
 
     spinlock_t *ptl;
     pte_t *pte;
@@ -194,7 +195,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     pmd_t *pmd;
     pte_t pte_entry;
     swp_entry_t swp_e;
-    struct dsm_page_cache *pc;
+    struct dsm_page_cache *dpc;
 
     printk("[dsm_try_push_page] trying to push back page %p \n ", (void*) addr);
 
@@ -297,10 +298,10 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         goto bad_page;
     }
 
-    for (i = 0; remote_ids[i]; i++)
+    for (i = 0; remote_svms[i]; i++)
         ;
-    pc = dsm_cache_add(local_svm, addr, 1, i, PUSH_TAG);
-    if (!pc)
+    dpc = dsm_cache_add(local_svm, addr, 1, i, PUSH_TAG);
+    if (!dpc)
         goto bad_page;
 
     page_cache_get(page);
@@ -308,7 +309,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     ptep_clear_flush_notify(vma, addr, pte);
 
     set_pte_at(mm, addr, pte, swp_entry_to_pte(
-            dsm_descriptor_to_swp_entry(dsm, descriptor)));
+            dsm_descriptor_to_swp_entry(descriptor, 0)));
 
     page_remove_rmap(page);
 
@@ -319,7 +320,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
 //DSM1 do we need a put_page???/
 
     page_cache_get(page);
-    pc->pages[0] = page;
+    dpc->pages[0] = page;
     set_page_private(page, ULONG_MAX);
     unlock_page(page);
     pte_unmap_unlock(pte, ptl);

@@ -331,20 +331,20 @@ static void dsm_page_fetch_complete(struct tx_buf_ele *tx_e) {
 
 static void dsm_page_fault_complete(struct tx_buf_ele *tx_e) {
     struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
-    struct dsm_page_cache *pc = tx_e->wrk_req->pc;
-    struct dsm_fault_data *fd = &pc->fd;
+    struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+    struct dsm_fault_data *fd = &dpc->fd;
     int i;
 
     /*
-     * First response to arrive resets the flag, and removes the struct pc
+     * First response to arrive resets the flag, and removes the struct dpc
      *  from the dsm cache, to signal that action is over. We can also
      *  discard all the redundant pages we alloced.
      *
      *  TODO: Need a cheaper way to assert the flag than a spinlock here.
      *
      */
-    spin_lock(&pc->lock);
-    if (test_bit(DSM_CACHE_ACTIVE, &pc->flags)) {
+    spin_lock(&dpc->lock);
+    if (test_bit(DSM_CACHE_ACTIVE, &dpc->flags)) {
 
         page_cache_release(ppe->mem_page);
         set_page_private(ppe->mem_page, 0);
@@ -357,34 +357,34 @@ static void dsm_page_fault_complete(struct tx_buf_ele *tx_e) {
          * Release all the redundant pages, they are now irrelevant.
          *
          */
-        for (i = 0; i < pc->npages; i++) {
-            if (pc->pages[i] && pc->pages[i] != ppe->mem_page) {
-                page_cache_release(pc->pages[i]);
-                set_page_private(pc->pages[i], 0);
-                SetPageUptodate(pc->pages[i]);
+        for (i = 0; i < dpc->npages; i++) {
+            if (dpc->pages[i] && dpc->pages[i] != ppe->mem_page) {
+                page_cache_release(dpc->pages[i]);
+                set_page_private(dpc->pages[i], 0);
+                SetPageUptodate(dpc->pages[i]);
 
-                unlock_page(pc->pages[i]);
-                pc->pages[i] = NULL;
+                unlock_page(dpc->pages[i]);
+                dpc->pages[i] = NULL;
             }
         }
 
-        clear_bit(DSM_CACHE_ACTIVE, &pc->flags);
+        clear_bit(DSM_CACHE_ACTIVE, &dpc->flags);
     }
-    spin_unlock(&pc->lock);
+    spin_unlock(&dpc->lock);
 
     /*
-     * All pull requests returned, we can de-alloc the pc.
+     * All pull requests returned, we can de-alloc the dpc.
      *
      */
-    if (!--pc->nproc)
-        set_bit(DSM_CACHE_DISCARD, &pc->flags);
+    if (!--dpc->nproc)
+        set_bit(DSM_CACHE_DISCARD, &dpc->flags);
 
     ppe->mem_page = NULL;
 }
 
 static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
     struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
-    struct dsm_page_cache *pc = tx_e->wrk_req->pc;
+    struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct dsm *dsm;
     struct mm_struct *mm;
     struct subvirtual_machine *local_svm;
@@ -393,7 +393,7 @@ static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
 
     /*
      * Pull try failed, no worries; release the page, and if all the requests
-     * returned, release the pc.
+     * returned, release the dpc.
      *
      */
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
@@ -404,27 +404,27 @@ static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
          * may never succeed.
          *
          */
-        spin_lock(&pc->lock);
-        if (test_bit(DSM_CACHE_ACTIVE, &pc->flags)) {
-            for (i = 0; i < pc->npages; i++) {
-                if (pc->pages[i] == ppe->mem_page) {
-                    SetPageUptodate(pc->pages[i]);
-                    unlock_page(pc->pages[i]);
-                    page_cache_release(pc->pages[i]);
-                    pc->pages[i] = NULL;
+        spin_lock(&dpc->lock);
+        if (test_bit(DSM_CACHE_ACTIVE, &dpc->flags)) {
+            for (i = 0; i < dpc->npages; i++) {
+                if (dpc->pages[i] == ppe->mem_page) {
+                    SetPageUptodate(dpc->pages[i]);
+                    unlock_page(dpc->pages[i]);
+                    page_cache_release(dpc->pages[i]);
+                    dpc->pages[i] = NULL;
                     break;
                 }
             }
         }
 
         /*
-         * All pull requests returned, we can de-alloc the pc.
+         * All pull requests returned, we can de-alloc the dpc.
          *
          */
-        if (!--pc->nproc)
-            set_bit(DSM_CACHE_DISCARD, &pc->flags);
+        if (!--dpc->nproc)
+            set_bit(DSM_CACHE_DISCARD, &dpc->flags);
 
-        spin_unlock(&pc->lock);
+        spin_unlock(&dpc->lock);
         atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
 
     } else {
@@ -442,7 +442,7 @@ static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
         mm = local_svm->priv->mm;
         use_mm(mm);
         down_read(&mm->mmap_sem);
-        get_user_pages(current, mm, addr, 1, 1, 0, &pc->pages[0], NULL);
+        get_user_pages(current, mm, addr, 1, 1, 0, &dpc->pages[0], NULL);
         up_read(&mm->mmap_sem);
         unuse_mm(mm);
     }
@@ -450,22 +450,22 @@ static void dsm_try_page_fault_complete(struct tx_buf_ele *tx_e) {
 
 static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask, 
         struct vm_area_struct *vma, unsigned long addr, struct dsm *dsm, 
-        u32 *svm_ids, struct subvirtual_machine *fault_svm, 
+        struct subvirtual_machine **svms, struct subvirtual_machine *fault_svm,
         unsigned long private, int tag, struct dsm_fault_data *fd) {
 
-    struct dsm_page_cache *pc;
+    struct dsm_page_cache *dpc;
     struct page *new_page = NULL;
     int i;
     void (*func)(struct tx_buf_ele *) = NULL;
 
-    for (i = 0; svm_ids[i]; i++)
+    for (i = 0; svms[i]; i++)
         ;
-    pc = dsm_cache_add(fault_svm, addr, i, i, tag);
-    if (!pc)
+    dpc = dsm_cache_add(fault_svm, addr, i, i, tag);
+    if (!dpc)
         goto fail;
 
     if (fd)
-        memcpy(&pc->fd, fd, sizeof(struct dsm_fault_data));
+        memcpy(&dpc->fd, fd, sizeof(struct dsm_fault_data));
 
     switch (tag) {
         case PULL_TAG:
@@ -482,7 +482,7 @@ static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask,
             break;
     }
 
-    for (i = 0; svm_ids[i]; i++) {
+    for (i = 0; svms[i]; i++) {
         new_page = alloc_page_vma(gfp_mask, vma, addr);
         if (!new_page)
             goto fail; /* Out of memory */
@@ -495,13 +495,13 @@ static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask,
         mem_cgroup_reset_owner(new_page);
         lru_cache_add_anon(new_page);
 
-        pc->pages[i] = new_page;
+        dpc->pages[i] = new_page;
 
-        funcs->request_dsm_page(new_page, svm_ids[i], fault_svm,
-               (uint64_t) (addr - fault_svm->priv->offset), func, tag, pc);
+        funcs->request_dsm_page(new_page, svms[i], fault_svm,
+               (uint64_t) (addr - fault_svm->priv->offset), func, tag, dpc);
     }
 
-    fail: return pc;
+    fail: return dpc;
 }
 
 static inline int pte_unmap_dsm_same(struct mm_struct *mm, pmd_t *pmd,
@@ -565,7 +565,7 @@ static struct page *get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 swp_e = pte_to_swp_entry(pte_entry);
                 if (non_swap_entry(swp_e)) {
                     if (is_dsm_entry(swp_e)) {
-                        struct dsm_vm_ids id = swp_entry_to_svm_ids(swp_e);
+                        struct dsm_swp_data dsd = swp_entry_to_dsm_data(swp_e);
 
                         /*
                          * Fault_data NULLified - the callback doesn't need to 
@@ -573,10 +573,9 @@ static struct page *get_dsm_page(struct mm_struct *mm, unsigned long addr,
                          * or on pull request (pushing to us).
                          *
                          */
-                        get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,
-                            norm_addr, id.dsm, id.svm_ids, fault_svm, private, 
-                            tag, NULL);
-                       atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
+                        get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,norm_addr,
+                            dsd.dsm, dsd.svms, fault_svm, private, tag, NULL);
+                        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
                     }
                 }
             }
@@ -609,13 +608,13 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned long address, pte_t *page_table, pmd_t *pmd,
         unsigned int flags, pte_t orig_pte, swp_entry_t entry) {
 
-    struct dsm_vm_ids id;
+    struct dsm_swp_data dsd;
     struct subvirtual_machine *fault_svm;
 //we need to use the page addr and not the fault address in order to have a unique reference
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
     int ret = 0, i;
-    struct dsm_page_cache *pc;
+    struct dsm_page_cache *dpc;
     struct dsm_fault_data fd;
 
     printk("[do_dsm_page_fault] faulting for page %p , norm %p \n",
@@ -624,8 +623,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
         goto out;
 
-    id = swp_entry_to_svm_ids(entry);
-    fault_svm = find_local_svm(id.dsm, mm);
+    dsd = swp_entry_to_dsm_data(entry);
+    fault_svm = find_local_svm(dsd.dsm, mm);
     BUG_ON(!fault_svm);
 
     pack_fault_data(&fd, fault_svm, vma, address, page_table, pmd, flags, 
@@ -636,26 +635,26 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
      * be a push or a prefetch, since we could not fault twice.
      *
      */ 
-    pc = dsm_cache_get(fault_svm, norm_addr);
-    if (pc && test_bit(DSM_CACHE_ACTIVE, &pc->flags)) {
+    dpc = dsm_cache_get(fault_svm, norm_addr);
+    if (dpc && test_bit(DSM_CACHE_ACTIVE, &dpc->flags)) {
         struct page *page = NULL;
 
         /*
          * Unfinished push, means page is still up to date.
          *
          */
-        if (pc->tag == PUSH_TAG)
-            page = pc->pages[0];
+        if (dpc->tag == PUSH_TAG)
+            page = dpc->pages[0];
 
         /*
          * Tried to prefetch this page before; see if one of the requests
          * has already returned.
          *
          */
-        else if (pc->tag == PREFETCH_TAG) {
-            for (i = 0; i < pc->npages; i++) {
-                if (pc->pages[i]) {
-                    page = pc->pages[i];
+        else if (dpc->tag == PREFETCH_TAG) {
+            for (i = 0; i < dpc->npages; i++) {
+                if (dpc->pages[i]) {
+                    page = dpc->pages[i];
                     break;
                 }
             }
@@ -676,10 +675,10 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         /* Fallback ... */
     }
 
-    pc = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr,
-        id.dsm, id.svm_ids, fault_svm, 0, PULL_TAG, &fd);
+    dpc = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr,
+        dsd.dsm, dsd.svms, fault_svm, 0, PULL_TAG, &fd);
 
-    if (!pc) {
+    if (!dpc) {
         page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
         ret = (likely(pte_same(*page_table, orig_pte))) ?
             VM_FAULT_OOM : VM_FAULT_MAJOR;
@@ -697,12 +696,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     /*
      * Wait until first pull arrives successfully; then resolve page fault.
-     * Note: pc cannot be de-alloced while we're waiting, since gc will reset
+     * Note: dpc cannot be de-alloced while we're waiting, since gc will reset
      * the flags and have another full iteration before de-allocing it.
      *
      */
-    wait_on_bit(&pc->flags, DSM_CACHE_ACTIVE, dsm_wait, TASK_RUNNING);
-    ret = pc->fd.fault_state;
+    wait_on_bit(&dpc->flags, DSM_CACHE_ACTIVE, dsm_wait, TASK_RUNNING);
+    ret = dpc->fd.fault_state;
 
     out: return ret;
 }

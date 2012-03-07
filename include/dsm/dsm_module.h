@@ -115,8 +115,9 @@ int process_pull_request(struct conn_element *, struct rx_buf_ele *);
 int exchange_info(struct conn_element *, int);
 int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);
-int request_dsm_page(struct page *, u32, struct subvirtual_machine *, uint64_t,
-        void(*func)(struct tx_buf_ele *), int, struct dsm_page_cache *);
+int request_dsm_page(struct page *, struct subvirtual_machine *, 
+        struct subvirtual_machine *, uint64_t, void(*func)(struct tx_buf_ele *),
+        int, struct dsm_page_cache *);
 int dsm_request_page_pull(struct dsm *, struct mm_struct *, 
         struct subvirtual_machine *, unsigned long);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);

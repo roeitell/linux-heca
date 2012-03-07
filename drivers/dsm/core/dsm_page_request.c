@@ -73,7 +73,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
         unsigned long addr) {
     spinlock_t *ptl;
     int r = 0, i;
-    struct dsm_page_cache *pc = NULL;
+    struct dsm_page_cache *dpc = NULL;
     struct page *page = NULL;
     struct dsm_pte_data pd;
     pte_t pte_entry;
@@ -98,8 +98,8 @@ static struct page *dsm_extract_page(struct dsm *dsm,
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
-                    pc = dsm_cache_get(local_svm, addr);
-                    if (pc) {
+                    dpc = dsm_cache_get(local_svm, addr);
+                    if (dpc) {
 
                         /*
                          * Several situations can occur here:
@@ -111,7 +111,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          * pull from each other.
                          *
                          */
-                        if (pc->tag == PULL_TAG) {
+                        if (dpc->tag == PULL_TAG) {
                             /* if not deadlock: */
                             goto retry;
                         
@@ -124,8 +124,8 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          * else; need to re-set the pte.
                          *
                          */
-                        } else if (pc->tag == PUSH_TAG || pc->tag == TRY_TAG) {
-                            page = pc->pages[0];
+                        } else if (dpc->tag == PUSH_TAG || dpc->tag == TRY_TAG) {
+                            page = dpc->pages[0];
                             if (page && trylock_page(page)) {
                                 BUG_ON(page_mapcount(page));
                                 dsm_cache_release(local_svm, addr);
@@ -140,11 +140,11 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          *    accessed.
                          *
                          */
-                        } else if (pc->tag == PREFETCH_TAG) {
-                            for (i = 0; i < pc->npages; i++) {
-                                if (pc->pages[i]) {
-                                    page = pc->pages[i];
-                                    pc->pages[i] = NULL;
+                        } else if (dpc->tag == PREFETCH_TAG) {
+                            for (i = 0; i < dpc->npages; i++) {
+                                if (dpc->pages[i]) {
+                                    page = dpc->pages[i];
+                                    dpc->pages[i] = NULL;
                                     break;
                                 }
                             }
@@ -221,7 +221,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
     ptep_clear_flush_notify(pd.vma, addr, pd.pte);
 
     set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
-                dsm_descriptor_to_swp_entry(dsm, remote_svm->descriptor)));
+                dsm_descriptor_to_swp_entry(remote_svm->descriptor, 0)));
 
     page_remove_rmap(page);
 
@@ -250,7 +250,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
 static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         struct mm_struct *mm, unsigned long addr) {
     struct page *page = NULL;
-    struct dsm_page_cache *pc = NULL;
+    struct dsm_page_cache *dpc = NULL;
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
@@ -273,16 +273,16 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
   
         swp_e = pte_to_swp_entry(pte_entry);
         if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
-            pc = dsm_cache_get(local_svm, addr);
+            dpc = dsm_cache_get(local_svm, addr);
 
-            if (pc && pc->tag == PUSH_TAG) {
-                page = pc->pages[0];
+            if (dpc && dpc->tag == PUSH_TAG) {
+                page = dpc->pages[0];
                 if (page && trylock_page(page)) {
-                    if (!--pc->nproc) {
+                    if (!--dpc->nproc) {
                         page_cache_release(page);
                         set_page_private(page, 0);
                         dsm_cache_release(local_svm, addr);
-                        set_bit(DSM_CACHE_DISCARD, &pc->flags);
+                        set_bit(DSM_CACHE_DISCARD, &dpc->flags);
                     }
                     unlock_page(page);
                 }
@@ -394,20 +394,20 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
             set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
-                dsm_descriptor_to_swp_entry(dsm, svm->descriptor)));
+                dsm_descriptor_to_swp_entry(svm->descriptor, 0)));
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (!non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
                     // store old dest
-                    struct dsm_vm_ids old = swp_entry_to_svm_ids(
+                    struct dsm_swp_data old = swp_entry_to_dsm_data(
                         pte_to_swp_entry(pte_entry));
 
                     if (old.dsm->dsm_id != dsm->dsm_id && 
-                            old.svm_ids[0] != svm_id) {
+                            old.svms[0]->svm_id != svm_id) {
                         // update pte
                         set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
-                            dsm_descriptor_to_swp_entry(dsm, svm->descriptor)));
+                            dsm_descriptor_to_swp_entry(svm->descriptor, 0)));
 
                         // forward msg
                         // DSM1: fwd message RDMA function call.

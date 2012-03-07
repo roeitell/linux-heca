@@ -61,9 +61,9 @@ struct dsm_functions {
     struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
             struct mm_struct *);
 
-    int (*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
-            uint64_t, void(*func)(struct tx_buf_ele *), int, 
-            struct dsm_page_cache *);
+    int (*request_dsm_page)(struct page *, struct subvirtual_machine *, 
+            struct subvirtual_machine *, uint64_t, 
+            void(*func)(struct tx_buf_ele *), int, struct dsm_page_cache *);
 };
 
 // dsm_unmap
@@ -75,8 +75,9 @@ void reg_dsm_functions(
     struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
                 struct mm_struct *),
 
-    int(*request_dsm_page)(struct page *, u32, struct subvirtual_machine *, 
-        uint64_t, void(*func)(struct tx_buf_ele *), int, struct dsm_page_cache*)
+    int(*request_dsm_page)(struct page *, struct subvirtual_machine *, 
+        struct subvirtual_machine *, uint64_t, 
+        void(*func)(struct tx_buf_ele *), int, struct dsm_page_cache*)
 );
 
 void dereg_dsm_functions(void);
@@ -90,16 +91,18 @@ struct page * dsm_extract_page_from_remote(struct dsm *,
 
 // dsm_page_fault
 int dsm_try_push_page(struct dsm *, struct subvirtual_machine *, 
-    struct mm_struct *, u32, u32 *, unsigned long);
+    struct mm_struct *, u32, struct subvirtual_machine **, unsigned long);
 
 extern struct dsm_functions *funcs;
 struct page *dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
 
 // svm_descriptors
-swp_entry_t dsm_descriptor_to_swp_entry(struct dsm *, u32);
-u32 *dsm_descriptor_to_svm_ids(struct dsm *, u32);
-struct dsm_vm_ids swp_entry_to_svm_ids(swp_entry_t);
+void dsm_init_descriptors(void);
+void dsm_destroy_descriptors(void);
+swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
+struct subvirtual_machine **dsm_descriptor_to_svms(u32);
+struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t);
 u32 dsm_get_descriptor(struct dsm *, u32 *);
 
 #endif /* DSM_PAGE_FAULT_H_ */

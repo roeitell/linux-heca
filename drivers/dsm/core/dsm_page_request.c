@@ -229,7 +229,16 @@ static struct page *dsm_extract_page(struct dsm *dsm,
         printk("[dsm_extract_page] cannot lock page\n");
         goto bad_page;
     }
+
+    /*
+     * We increase the refcount of the page at this point, and will decrease it
+     * again once we've sent the push requests, received all the subsequent pull
+     * requests, and mapped the page to rdma. We don't want it to be freed until
+     * we are finished sending it to everyone.
+     *
+     */
     page_cache_get(page);
+
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
     ptep_clear_flush_notify(pd.vma, addr, pd.pte);
 
@@ -242,7 +251,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
 // this is a page flagging without data exchange so we can free the page
     if (likely(!page_mapped(page)))
         try_to_free_swap(page);
-//DSM1 do we need a put_page???/
+
     unlock_page(page);
 
     pte_unmap_unlock(pd.pte, ptl);

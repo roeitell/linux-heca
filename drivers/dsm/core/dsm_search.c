@@ -306,7 +306,7 @@ static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
     sdsc[i] = kmalloc(sizeof(struct subvirtual_machine *)*(j+1), GFP_KERNEL);
     for (j = 0; svm_ids[j]; j++)
         sdsc[i][j] = find_svm(dsm, svm_ids[j]);
-    sdsc[j] = (struct subvirtual_machine **) NULL;
+    sdsc[i][j] = (struct subvirtual_machine *) NULL;
 }
 
 /*
@@ -318,8 +318,8 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
 
     spin_lock(&sdsc_lock);
     for (i = 0; i < sdsc_n && sdsc[i]; i++) {
-        for (j = 0; sdsc[i][j]; j++)
-            if (!svm_ids[j] || !sdsc[i][j] || sdsc[i][j]->svm_id != svm_ids[j])
+        for (j = 0; sdsc[i][j] && svm_ids[j]; j++)
+            if (sdsc[i][j]->svm_id != svm_ids[j])
                 break;
         if (!sdsc[i][j] && !svm_ids[j])
             break;

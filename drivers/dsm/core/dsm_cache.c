@@ -71,7 +71,7 @@ static void dsm_cache_gc(struct work_struct *work) {
         if (test_bit(DSM_CACHE_DISCARD, &dpc->flags)) {
             list_del(cur);
             list_add(cur, &dsm_cache_to_remove);
-        } else {
+        } else if (dpc->tag != PREFETCH_TAG) {
             dpc->flags = 0;
             set_bit(DSM_CACHE_DISCARD, &dpc->flags);
         }

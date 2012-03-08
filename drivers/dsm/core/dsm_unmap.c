@@ -182,12 +182,11 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 EXPORT_SYMBOL(dsm_flag_page_remote);
 
 int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
-        struct mm_struct *mm, u32 descriptor, 
-        struct subvirtual_machine **remote_svms, unsigned long addr) {
+        struct mm_struct *mm, u32 descriptor, int req_num, unsigned long addr) {
 
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0, ret = 0, i;
+    int r = 0, ret = 0;
     struct page *page = NULL;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -298,9 +297,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         goto bad_page;
     }
 
-    for (i = 0; remote_svms[i]; i++)
-        ;
-    dpc = dsm_cache_add(local_svm, addr, 1, i, PUSH_TAG);
+    dpc = dsm_cache_add(local_svm, addr, 1, req_num, PUSH_TAG);
     if (!dpc)
         goto bad_page;
 

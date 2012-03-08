@@ -124,7 +124,8 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          * else; need to re-set the pte.
                          *
                          */
-                        } else if (dpc->tag == PUSH_TAG || dpc->tag == TRY_TAG) {
+                        } else if (dpc->tag == PUSH_TAG || 
+                                dpc->tag == PULL_TRY_TAG) {
                             page = dpc->pages[0];
                             if (page && trylock_page(page)) {
                                 BUG_ON(page_mapcount(page));
@@ -278,7 +279,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
             if (dpc && dpc->tag == PUSH_TAG) {
                 page = dpc->pages[0];
                 if (page && trylock_page(page)) {
-                    if (!--dpc->nproc) {
+                    if (atomic_dec_and_test(&dpc->nproc)) {
                         page_cache_release(page);
                         set_page_private(page, 0);
                         dsm_cache_release(local_svm, addr);
@@ -404,7 +405,7 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                         pte_to_swp_entry(pte_entry));
 
                     if (old.dsm->dsm_id != dsm->dsm_id && 
-                            old.svms[0]->svm_id != svm_id) {
+                            old.svms.pp[0]->svm_id != svm_id) {
                         // update pte
                         set_pte_at(mm, msg->req_addr, pte, swp_entry_to_pte(
                             dsm_descriptor_to_swp_entry(svm->descriptor, 0)));

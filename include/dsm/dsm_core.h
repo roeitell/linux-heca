@@ -37,10 +37,10 @@
 
 #define DSM_PAGE_CACHE_DEFAULT  4 /* default alloc of pages in cache */
 
-#define PULL_TAG        0  /* pulling the page */
-#define PREFETCH_TAG    1  /* pulling the page for prefetch */
-#define PUSH_TAG        2  /* pushing the page */
-#define TRY_TAG         4
+#define PULL_TAG        1  /* pulling the page */
+#define PREFETCH_TAG    2  /* pulling the page for prefetch */
+#define PUSH_TAG        4  /* pushing the page */
+#define PULL_TRY_TAG    8  /* pulling the page by request (pushing to us) */
 
 
 /* dsm_cache.c */
@@ -91,17 +91,17 @@ struct page * dsm_extract_page_from_remote(struct dsm *,
 
 // dsm_page_fault
 int dsm_try_push_page(struct dsm *, struct subvirtual_machine *, 
-    struct mm_struct *, u32, struct subvirtual_machine **, unsigned long);
+    struct mm_struct *, u32, int, unsigned long);
 
 extern struct dsm_functions *funcs;
-struct page *dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
-        unsigned long);
+struct dsm_page_cache *dsm_trigger_page_pull(struct dsm *, 
+        struct subvirtual_machine *, unsigned long);
 
 // svm_descriptors
 void dsm_init_descriptors(void);
 void dsm_destroy_descriptors(void);
 swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
-struct subvirtual_machine **dsm_descriptor_to_svms(u32);
+struct svm_list dsm_descriptor_to_svms(u32);
 struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t);
 u32 dsm_get_descriptor(struct dsm *, u32 *);
 

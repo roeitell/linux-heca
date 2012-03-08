@@ -121,7 +121,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
     struct tx_buf_ele *tx_e;
     int ret = 0, emp;
     struct dsm_request *req;
-    int req_tag = (tag == TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
+    int req_tag = (tag == PULL_TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
 
 //    printk("[request_dsm_page]svm %p, ele %p txbuff %p , addr %p, try %d\n",
 //            svm, svm->ele, tx, (void *) addr, try);
@@ -501,19 +501,21 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
     int ret = -1, i;
     unsigned long addr = request_addr & PAGE_MASK;
     struct memory_region *mr;
-    struct subvirtual_machine **svms;
+    struct svm_list svms;
 
     mr = search_mr(dsm, addr); /* TODO: unsure if should be masked right now */
     svms = dsm_descriptor_to_svms(mr->descriptor);
 
     down_read(&mm->mmap_sem);
-    ret = dsm_try_push_page(dsm, fault_svm, mm, mr->descriptor, svms, addr);
+    ret = dsm_try_push_page(dsm, fault_svm, mm, mr->descriptor, svms.num, addr);
     up_read(&mm->mmap_sem);
 
     if (!ret) {
-        for (i = 0; svms[i]; i++) {
-            send_request_dsm_page_pull(svms[i], fault_svm,
-                (uint64_t) (addr - fault_svm->priv->offset));
+        for (i = 0; i < svms.num; i++) {
+            if (svms.pp[i]) {
+                send_request_dsm_page_pull(svms.pp[i], fault_svm,
+                    (uint64_t) (addr - fault_svm->priv->offset));
+            }
         }
     }
 

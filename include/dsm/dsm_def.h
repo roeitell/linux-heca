@@ -303,19 +303,6 @@ struct work_request_ele {
 
 };
 
-struct dsm_fault_data {
-    struct dsm_page_cache *dpc;
-    struct subvirtual_machine *fault_svm;
-    struct vm_area_struct *vma;
-    unsigned long address;
-    pte_t *page_table;
-    pmd_t *pmd;
-    unsigned int flags;
-    pte_t orig_pte;
-    int fault_state;
-
-};
-
 struct msg_work_request {
     struct work_request_ele *wr_ele;
     struct page_pool_ele *dst_addr;
@@ -395,18 +382,18 @@ struct dsm_module_state {
 };
 
 struct dsm_page_cache {
-    struct page **pages;
     int tag;
-    int npages;
-    int nproc;
-
-    struct dsm_fault_data fd;
     unsigned long flags;
-#define DSM_CACHE_ACTIVE    0
+#define DSM_CACHE_COMPLETE  0
 #define DSM_CACHE_DISCARD   1
 
+    struct page **pages;
+    int npages;
+    int found;
+
+    struct subvirtual_machine *svm;
+    atomic_t nproc;
     struct list_head list;
-    spinlock_t lock;
 };
 
 /*
@@ -440,9 +427,14 @@ struct unmap_data {
     size_t sz;
 };
 
+struct svm_list {
+    struct subvirtual_machine **pp;
+    int num;
+};
+
 struct dsm_swp_data {
     struct dsm *dsm;
-    struct subvirtual_machine **svms;
+    struct svm_list svms;
     u32 flags;
 };
 

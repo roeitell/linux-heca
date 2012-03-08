@@ -92,8 +92,7 @@ void remove_svm(struct dsm *dsm, u32 svm_id) {
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
     kfree(svm);
 
-    out: 
-    mutex_unlock(&dsm->dsm_mutex);
+    out: mutex_unlock(&dsm->dsm_mutex);
 }
 
 static void remove_dsm(struct dsm * dsm) {

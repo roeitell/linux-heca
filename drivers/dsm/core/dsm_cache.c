@@ -13,16 +13,16 @@ static struct list_head dsm_cache_alloced;
 static struct list_head dsm_cache_to_remove;
 
 static inline struct dsm_page_cache *dsm_alloc_dpc(int npages, int nproc, 
-        int tag) {
+        int tag, struct subvirtual_machine *svm) {
     struct dsm_page_cache *dpc;
 
     dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
     dpc->flags = 0;
-    set_bit(DSM_CACHE_ACTIVE, &dpc->flags);
+    clear_bit(DSM_CACHE_COMPLETE, &dpc->flags);
     dpc->npages = npages;
-    dpc->nproc = nproc;
+    atomic_set(&dpc->nproc, nproc);
     dpc->tag = tag;
-    dpc->fd.fault_state = VM_FAULT_MAJOR;
+    dpc->svm = svm;
 
     if (npages > DSM_PAGE_CACHE_DEFAULT) {
         kfree(dpc->pages);
@@ -87,7 +87,6 @@ static void dsm_cache_gc(struct work_struct *work) {
 static void init_dsm_cache_elm(void *obj) {
     struct dsm_page_cache *dpc = (struct dsm_page_cache *) obj;
 
-    spin_lock_init(&dpc->lock);
     dpc->pages = kzalloc(sizeof(struct page *)*DSM_PAGE_CACHE_DEFAULT,
             GFP_KERNEL);
 };
@@ -116,7 +115,7 @@ struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *svm,
     struct dsm_page_cache *dpc;
     int r;
 
-    dpc = dsm_alloc_dpc(npages, nproc, tag);
+    dpc = dsm_alloc_dpc(npages, nproc, tag, svm);
     if (!dpc)
         goto out;
 

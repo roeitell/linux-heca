@@ -33,7 +33,7 @@ static inline struct dsm_page_cache *dsm_alloc_dpc(int npages, int nproc,
     return dpc;
 };
 
-static inline void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
+inline void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
     int i;
 
     if (*dpc) {

@@ -543,37 +543,29 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     printk("[do_dsm_page_fault] faulting for page %p , norm %p \n",
             (void*) address, (void*) norm_addr);
 
-    /*
-     * Has another fault for this pte already occured?
-     *
-     */
-    if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
-        goto out;
-
     dsd = swp_entry_to_dsm_data(entry);
     fault_svm = find_local_svm(dsd.dsm, mm);
     BUG_ON(!fault_svm);
 
     /*
-     * Faulting for a page which is already in midst action. An unidentified
-     * edge case here is faulting for a page which has just finished a full
-     * fault, and released from dsm_cache after this thread has started
-     * faulting. In which case, we will re-send the rdma requests.
+     * Order here is crucial: another fault for this page might be racing us.
+     * If there is such a fault, and it hasn't completed, we find a dsm_cache
+     * entry; if it has completed, we see that pte has changed.
      *
-     * TODO: Handle this edge case.
-     *
-     */ 
+     */
     dpc = dsm_cache_get(fault_svm, norm_addr);
+    if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
+        goto out;
+
     if (dpc) {
+
+        dpc->tag = PULL_TAG;
 
         /*
          * We already sent rdma requests for this page. This can be the second
          * attempt of our thread to fault; another thread may have already
          * faulted for it; and the might have been pre-fetched, or try-pulled
          * (pushed to us). In all cases, rdma requests have already been sent.
-         *
-         * TODO: Protect on PULL_TRY / PREFETCH - what happens if they failed?
-         * Regular fault should still be executed again.
          *
          */
         if (likely(dpc->tag & (PULL_TAG | PULL_TRY_TAG | PREFETCH_TAG))) {
@@ -588,7 +580,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
          *
          */
         else if (dpc->tag == PUSH_TAG) {
-            dpc->tag = PULL_TAG;
             found_page = dpc->pages[0];
             goto found;
         }

@@ -51,7 +51,7 @@ static void dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
     }
 
     if (unlikely(pmd_trans_huge(*(pd->pmd)))) {
-        printk("[_dsm_extract_page] we have a huge pmd \n");
+        printk("[_dsm_extract_pte] we have a huge pmd \n");
         spin_lock(&mm->page_table_lock);
         if (unlikely(pmd_trans_splitting(*(pd->pmd)))) {
             spin_unlock(&mm->page_table_lock);
@@ -124,8 +124,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          * else; need to re-set the pte.
                          *
                          */
-                        } else if (dpc->tag == PUSH_TAG || 
-                                dpc->tag == PULL_TRY_TAG) {
+                        } else if (dpc->tag == PUSH_TAG) {
                             page = dpc->pages[0];
                             if (page && trylock_page(page)) {
                                 BUG_ON(page_mapcount(page));
@@ -141,7 +140,9 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          *    accessed.
                          *
                          */
-                        } else if (dpc->tag == PREFETCH_TAG) {
+                        } else if (dpc->tag == PREFETCH_TAG 
+                                || dpc->tag == PULL_TRY_TAG) {
+
                             for (i = 0; i < dpc->npages; i++) {
                                 if (dpc->pages[i]) {
                                     page = dpc->pages[i];
@@ -149,6 +150,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                                     break;
                                 }
                             }
+
                             if (page && trylock_page(page)) {
                                 page_cache_release(page);
                                 unlock_page(page);
@@ -156,10 +158,10 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                             }
                         }
 
-                        printk("[_dsm_extract_page] trying to grab a page which we are currently pulling\n");
+                        printk("[dsm_extract_page] trying to grab a page which we are currently pulling\n");
                         goto chain_fault;
                     } else {
-                        printk("[[_dsm_extract_page]] page not present or swapped out, or somewhere else, not handled yet\n");
+                        printk("[dsm_extract_page] page not present or swapped out, or somewhere else, not handled yet\n");
                         BUG();
                     }
                 } else if (is_migration_entry(swp_e)) {
@@ -190,23 +192,23 @@ static struct page *dsm_extract_page(struct dsm *dsm,
     }
 
     if (unlikely(PageTransHuge(page))) {
-        printk("[_dsm_extract_page] we have a huge page \n");
+        printk("[dsm_extract_page] we have a huge page \n");
         if (!PageHuge(page) && PageAnon(page)) {
             if (unlikely(split_huge_page(page))) {
-                printk("[_dsm_extract_page] failed at splitting page \n");
+                printk("[dsm_extract_page] failed at splitting page \n");
                 goto bad_page;
             }
 
         }
     }
     if (unlikely(PageKsm(page))) {
-        printk("[_dsm_extract_page] KSM page\n");
+        printk("[dsm_extract_page] KSM page\n");
 
         r = ksm_madvise(pd.vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE, 
                 &(pd.vma->vm_flags));
 
         if (r) {
-            printk("[_dsm_extract_page] ksm_madvise ret : %d\n", r);
+            printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
 
             // DSM1 : better ksm error handling required.
             goto bad_page;
@@ -214,7 +216,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
     }
 
     if (unlikely(!trylock_page(page))) {
-        printk("[[_dsm_extract_page]] cannot lock page\n");
+        printk("[dsm_extract_page] cannot lock page\n");
         goto bad_page;
     }
     page_cache_get(page);
@@ -236,7 +238,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
     pte_unmap_unlock(pd.pte, ptl);
 // if local
 
-    out: printk("[_dsm_extract_page] got page %p  \n ", page);
+    out: printk("[dsm_extract_page] got page %p  \n ", page);
     return page;
 
     bad_page:
@@ -283,7 +285,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
                         page_cache_release(page);
                         set_page_private(page, 0);
                         dsm_cache_release(local_svm, addr);
-                        set_bit(DSM_CACHE_DISCARD, &dpc->flags);
+                        dsm_dealloc_dpc(&dpc);
                     }
                     unlock_page(page);
                 }

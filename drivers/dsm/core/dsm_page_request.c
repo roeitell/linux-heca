@@ -72,12 +72,13 @@ static struct page *dsm_extract_page(struct dsm *dsm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm, 
         unsigned long addr) {
     spinlock_t *ptl;
-    int r = 0, i;
+    int r = 0, i, attempts = 0;
     struct dsm_page_cache *dpc = NULL;
     struct page *page = NULL;
     struct dsm_pte_data pd;
     pte_t pte_entry;
     swp_entry_t swp_e;
+    struct dsm_swp_data dsd;
 
     retry: dsm_extract_pte_data(&pd, mm, addr);
     if (!pd.pte)
@@ -105,15 +106,24 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          * Several situations can occur here:
                          *
                          * 1. We're pulling the page right now. We'll just have
-                         *    to wait for finish.
-                         *
-                         * TODO: Avoid deadlock, if both machines are trying to
-                         * pull from each other.
+                         *    to wait for finish. We need to make sure we're not
+                         *    deadlocked: trying to pull from same machine who's
+                         *    pulling from us.
+                         *    Note: a deadlock between more than two machines is
+                         *    harder to detect; hence the attempts counter.
                          *
                          */
-                        if (dpc->tag == PULL_TAG) {
-                            /* if not deadlock: */
-                            goto retry;
+                        if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
+                            dsd = swp_entry_to_dsm_data(swp_e);
+                            if (attempts++ > 10)
+                                goto out;
+
+                            for (i = 0; i < dsd.svms.num; i++) {
+                                if (dsd.svms.pp[i] != remote_svm) {
+                                    goto retry;
+                                }
+                            }
+                            goto out;
                         
                         /*
                          * 2. We're in midst of pushing the page somewhere. We
@@ -133,6 +143,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                                 unlock_page(page);
                                 goto out;
                             }
+
                         /*
                          * 3. Page has been brought as prefetch, and exists, 
                          *    waiting to be faulted in. We need to fault it in,
@@ -140,8 +151,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          *    accessed.
                          *
                          */
-                        } else if (dpc->tag == PREFETCH_TAG 
-                                || dpc->tag == PULL_TRY_TAG) {
+                        } else if (dpc->tag == PREFETCH_TAG) {
 
                             for (i = 0; i < dpc->npages; i++) {
                                 if (dpc->pages[i]) {

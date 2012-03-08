@@ -561,7 +561,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     if (!dpc) {   /* entry already exists in dsm_cache */
 
         dpc = dsm_cache_get(fault_svm, norm_addr);
-        dpc->tag = PULL_TAG;
 
         /*
          * We already sent rdma requests for this page. This can be the second
@@ -571,6 +570,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
          *
          */
         if (likely(dpc->tag & (PULL_TAG | PULL_TRY_TAG | PREFETCH_TAG))) {
+            dpc->tag = PULL_TAG;
             if (dpc->tag == PULL_TRY_TAG)
                 goto prefetch;
             goto wait;
@@ -582,6 +582,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
          *
          */
         else if (dpc->tag == PUSH_TAG) {
+            dpc->tag = PULL_TAG;
             found_page = dpc->pages[0];
             goto found;
         }

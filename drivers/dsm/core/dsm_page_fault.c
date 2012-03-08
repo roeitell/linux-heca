@@ -364,6 +364,7 @@ static void dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 }
 
 static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
+    struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct mm_struct *mm;
     unsigned long addr;
@@ -389,7 +390,7 @@ static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
     mm = dpc->svm->priv->mm;
     use_mm(mm);
     down_read(&mm->mmap_sem);
-    get_user_pages(current, mm, addr, 1, 1, 0, &dpc->pages[0], NULL);
+    get_user_pages(current, mm, addr, 1, 1, 0, &ppe->mem_page, NULL);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 }
@@ -401,7 +402,7 @@ static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask,
 
     struct dsm_page_cache *dpc;
     struct page *new_page = NULL;
-    int i;
+    int i, j;
     void (*func)(struct tx_buf_ele *) = NULL;
 
     /*
@@ -421,13 +422,13 @@ static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask,
         atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
     }
 
-    for (i = 0; i < svms.num; i++) {
+    for (i = 0, j = 0; i < svms.num; i++) {
         if (!svms.pp[i])
             continue;
 
         new_page = alloc_page_vma(gfp_mask, vma, addr);
         if (!new_page) {
-            dpc->npages = i;
+            dpc->npages = j;
             goto fail; /* Out of Memory, send less rdma requests for page */
         }
 
@@ -439,7 +440,7 @@ static struct dsm_page_cache *get_remote_dsm_page(gfp_t gfp_mask,
         mem_cgroup_reset_owner(new_page);
         lru_cache_add_anon(new_page);
 
-        dpc->pages[i] = new_page;
+        dpc->pages[j++] = new_page;
 
         funcs->request_dsm_page(new_page, svms.pp[i], fault_svm,
                (uint64_t) (addr - fault_svm->priv->offset), func, tag, dpc);

@@ -379,12 +379,19 @@ EXPORT_SYMBOL(dsm_descriptor_to_svms);
 inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry) {
     struct dsm_swp_data dsd;
     u64 val = dsm_entry_to_val(entry);
+    int i;
 
     dsd.flags = val & 0xFFFFFF;
     dsd.svms = dsm_descriptor_to_svms(val >> 24);
-    dsd.dsm = (dsd.svms.num) ? dsd.svms.pp[0]->dsm : NULL;
-        
-    return dsd;
+    for (i = 0; i < dsd.svms.num; i++) {
+        if (dsd.svms.pp[i]) {
+            dsd.dsm = dsd.svms.pp[i]->dsm;
+            goto out;
+        }
+    }
+    dsd.dsm = NULL;
+
+    out: return dsd;
 };
 EXPORT_SYMBOL(swp_entry_to_dsm_data);
 

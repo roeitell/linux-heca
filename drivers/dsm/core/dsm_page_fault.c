@@ -611,12 +611,10 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     }
 
     prefetch:
-    /*
     for (i = 1; i < 40; i++) {
         get_dsm_page(mm, address + i * PAGE_SIZE, fault_svm, 0,
             PREFETCH_TAG);
     }
-    */
 
     /*
      * This is a major logical intersection. If one of the rdma requests has

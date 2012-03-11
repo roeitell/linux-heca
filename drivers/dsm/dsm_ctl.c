@@ -554,12 +554,16 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
     struct private_data *priv_data = (struct private_data *) f->private_data;
     void __user *argp = (void __user *) arg;
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     int r = -1;
     struct conn_element *cele;
     int ip_addr;
     struct svm_data svm_info;
  
+    if (!dsm_state->rcm)
+        goto out;
+
     switch (ioctl) {
         case DSM_DSM: {
             r = register_dsm(priv_data, argp);

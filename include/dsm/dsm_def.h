@@ -382,16 +382,13 @@ struct dsm_module_state {
 };
 
 struct dsm_page_cache {
+    struct subvirtual_machine *svm;
     int tag;
-    unsigned long flags;
-#define DSM_CACHE_COMPLETE  0
-#define DSM_CACHE_DISCARD   1
 
     struct page **pages;
     int npages;
-    int found;
 
-    struct subvirtual_machine *svm;
+    atomic_t found;
     atomic_t nproc;
     struct list_head list;
 };

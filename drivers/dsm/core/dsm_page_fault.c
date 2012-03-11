@@ -327,12 +327,17 @@ static void dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     struct page *page;
     int i;
 
+    for (i = 0; i < dpc->npages && dpc->pages[i] != ppe->mem_page; i++)
+        ;
+    if (i == dpc->npages)
+        goto out;
+
     /*
      * First response to arrive releases everyone; and unlocks first page, to
      * signal a faulter thread it can now set the pte.
      * 
      */
-    if (!test_and_set_bit_lock(DSM_CACHE_COMPLETE, &dpc->flags)) {
+    if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
 
         /*
          * Order is important: first inc refcount for right page, then release
@@ -348,28 +353,13 @@ static void dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
                 page_cache_release(page);
                 set_page_private(page, 0);
                 SetPageUptodate(page);
-
-                if (page == ppe->mem_page)
-                    dpc->found = i;
             }
         }
 
         unlock_page(dpc->pages[0]);
     }
 
-    /*
-     * All rdma requests returned; if we are page faulting (and not
-     * pre-fetching or responding to a push), we can discard the dsm_cache
-     * entry. Otherwise, we still need it to signal future faults that page
-     * has already been brought.
-     *
-     */
-    if (dpc->tag == PULL_TAG) {
-        if (atomic_dec_and_test(&dpc->nproc))
-            set_bit(DSM_CACHE_DISCARD, &dpc->flags);
-    }
-
-    ppe->mem_page = NULL;
+    out: ppe->mem_page = NULL;
 }
 
 static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
@@ -379,12 +369,17 @@ static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
     unsigned long addr;
 
     /*
-     * Pull try failed, no-op. Page will be released on gc, same as when
-     * regular pull doesn't respond.
+     * Pull try only happens when pushing to us - meaning we're only trying to
+     * pull from a single svm. If fail, we can discard the whole operation.
      *
      */
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
+        page_cache_release(ppe->mem_page);
+        set_page_private(ppe->mem_page, 0);
+        SetPageUptodate(ppe->mem_page);
+        unlock_page(ppe->mem_page);
         atomic64_inc(&dpc->svm->svm_sysfs.stats.nb_page_pull_fail);
+        dsm_dealloc_dpc(&dpc);
         return;
     } 
 
@@ -415,7 +410,7 @@ static int get_remote_dsm_page(gfp_t gfp_mask, struct vm_area_struct *vma,
     if (tag == PULL_TRY_TAG) {
         func = dsm_try_pull_req_complete;
         atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
-    } else {
+    } else {    /* prefetch or pull */
         func = dsm_pull_req_complete;
         atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
     }
@@ -542,9 +537,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct dsm_page_cache *dpc;
     struct page *found_page;
 
-    printk("[do_dsm_page_fault] faulting for page %p , norm %p \n",
-            (void*) address, (void*) norm_addr);
-
     dsd = swp_entry_to_dsm_data(entry);
     fault_svm = find_local_svm(dsd.dsm, mm);
     BUG_ON(!fault_svm);
@@ -561,6 +553,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     do {
         dpc = dsm_cache_get(fault_svm, norm_addr);
         if (dpc) {
+            atomic_inc(&dpc->nproc);
             exists = 1;
             break;
         }
@@ -570,8 +563,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
          * and already added the entry.
          *
          */
-        dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num, dsd.svms.num, 
-                PULL_TAG);
+        dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num, 1, PULL_TAG);
 
     } while (!dpc);
 
@@ -592,8 +584,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
          */
         if (likely(dpc->tag & (PULL_TAG | PULL_TRY_TAG | PREFETCH_TAG))) {
             dpc->tag = PULL_TAG;
-            if (dpc->tag == PULL_TRY_TAG)
-                goto prefetch;
             goto wait;
         }
 
@@ -655,21 +645,27 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         goto out;
     }
 
+    i = atomic_read(&dpc->found);
+
     /*
      * Second attempt, yet no rdma request has yet returned.
      *
      */
-    if (!dpc->found) {
+    if (i < 0) {
         ret |= VM_FAULT_ERROR;
         goto out;
     }
-    found_page = dpc->pages[dpc->found-1];
+    found_page = dpc->pages[i];
 
     found: ret = dsm_page_fault_success(found_page, fault_svm, vma, address,
-                page_table, pmd, flags, orig_pte);
+               page_table, pmd, flags, orig_pte);
     dsm_cache_release(fault_svm, address);
 
-    out: return ret;
+    out: 
+    if (atomic_dec_and_test(&dpc->nproc) && !(ret & VM_FAULT_RETRY))
+        dsm_dealloc_dpc(&dpc);
+    
+    return ret;
 }
 
 #ifdef CONFIG_DSM_CORE

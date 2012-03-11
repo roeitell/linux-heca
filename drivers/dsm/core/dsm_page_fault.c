@@ -31,6 +31,7 @@ static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
     count = page_mapcount(page);
     if (count == 0 && !PageWriteback(page)) {
         set_page_private(page, 0);
+        page_cache_release(page);
         if (!PageSwapBacked(page))
             SetPageDirty(page);
     }
@@ -347,8 +348,8 @@ static void dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
         mem_cgroup_reset_owner(ppe->mem_page);
         lru_cache_add_anon(ppe->mem_page);
 
-        for (i = dpc->npages; i; --i) {
-            page = dpc->pages[i-1];
+        for (i = 0; i < dpc->npages; i++) {
+            page = dpc->pages[i];
             if (page) {
                 page_cache_release(page);
                 set_page_private(page, 0);
@@ -614,7 +615,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         goto out;
     }
 
-    prefetch:
     for (i = 1; i < 40; i++) {
         get_dsm_page(mm, address + i * PAGE_SIZE, fault_svm, 0,
             PREFETCH_TAG);
@@ -656,6 +656,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         goto out;
     }
     found_page = dpc->pages[i];
+    page_cache_get(found_page);
 
     found: ret = dsm_page_fault_success(found_page, fault_svm, vma, address,
                page_table, pmd, flags, orig_pte);

@@ -9,7 +9,6 @@
 static struct kmem_cache *dsm_cache_kmem;
 
 static struct list_head dsm_cache_alloced;
-static struct list_head dsm_cache_to_remove;
 
 static inline struct dsm_page_cache *dsm_alloc_dpc(int npages, int nproc, 
         int tag, struct subvirtual_machine *svm) {
@@ -59,7 +58,6 @@ void init_dsm_cache_kmem(void) {
         init_dsm_cache_elm);
 
     INIT_LIST_HEAD(&dsm_cache_alloced);
-    INIT_LIST_HEAD(&dsm_cache_to_remove);
 }
 EXPORT_SYMBOL(init_dsm_cache_kmem);
 

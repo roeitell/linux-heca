@@ -230,13 +230,6 @@ static struct page *dsm_extract_page(struct dsm *dsm,
         goto bad_page;
     }
 
-    /*
-     * We increase the refcount of the page at this point, and will decrease it
-     * again once we've sent the push requests, received all the subsequent pull
-     * requests, and mapped the page to rdma. We don't want it to be freed until
-     * we are finished sending it to everyone.
-     *
-     */
     page_cache_get(page);
 
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
@@ -246,6 +239,8 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                 dsm_descriptor_to_swp_entry(remote_svm->descriptor, 0)));
 
     page_remove_rmap(page);
+
+    page_cache_release(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
 // this is a page flagging without data exchange so we can free the page

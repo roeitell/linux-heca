@@ -297,14 +297,6 @@ int process_page_request(struct conn_element * ele,
     ppe = create_new_page_pool_element_from_page(ele, page);
     BUG_ON(!ppe);
 
-    /*
-     * FIXME: In case of a push sequence, if this is the last of the pull
-     * requests, we need to decrement the page count by one. We incremented it
-     * when setting the pte, so it won't be freed until we are finished.
-     *
-     * -- page_cache_release(page);
-     */
-
     memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
     tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;

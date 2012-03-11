@@ -328,11 +328,20 @@ static void dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     int i;
 
     /*
-     * First response to arrive unlocks all the pages (in reverse order),
-     * to signal a faulter thread it can now set the pte. 
+     * First response to arrive releases everyone; and unlocks first page, to
+     * signal a faulter thread it can now set the pte.
      * 
      */
     if (!test_and_set_bit_lock(DSM_CACHE_COMPLETE, &dpc->flags)) {
+
+        /*
+         * Order is important: first inc refcount for right page, then release
+         * everyone.
+         *
+         */
+        mem_cgroup_reset_owner(ppe->mem_page);
+        lru_cache_add_anon(ppe->mem_page);
+
         for (i = dpc->npages; i; --i) {
             page = dpc->pages[i-1];
             if (page) {
@@ -342,10 +351,10 @@ static void dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 
                 if (page == ppe->mem_page)
                     dpc->found = i;
-
-                unlock_page(page);
             }
         }
+
+        unlock_page(dpc->pages[0]);
     }
 
     /*
@@ -421,13 +430,12 @@ static int get_remote_dsm_page(gfp_t gfp_mask, struct vm_area_struct *vma,
             goto finish; /* Out of Memory, send less rdma requests for page */
         }
 
-        __set_page_locked(new_page);
+        if (!j)
+            __set_page_locked(new_page);
+
         page_cache_get(new_page);
         set_page_private(new_page, private);
-
         SetPageSwapBacked(new_page);
-        mem_cgroup_reset_owner(new_page);
-        lru_cache_add_anon(new_page);
 
         dpc->pages[j++] = new_page;
 
@@ -530,7 +538,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 //we need to use the page addr and not the fault address in order to have a unique reference
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
-    int ret = 0, i, rethrow, sent;
+    int ret = 0, i, rethrow, sent, exists = 0;
     struct dsm_page_cache *dpc;
     struct page *found_page;
 
@@ -543,24 +551,37 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     /*
      * Order here is crucial: another fault for this page might be racing us.
-     * If next two statements are reversed, another thread could set the pte
-     * and release the dsm_cache entry between them.
+     * If next two blocks are reversed, another thread could set the pte and
+     * release the dsm_cache entry between them.
      * 
      * dsm_cache_add is protected by a spin lock (same as __add_to_swap_cache),
      * therefore threads cannot race into next block.
      *
      */
-    dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num, dsd.svms.num, 
-            PULL_TAG);
+    do {
+        dpc = dsm_cache_get(fault_svm, norm_addr);
+        if (dpc) {
+            exists = 1;
+            break;
+        }
+
+        /*
+         * Fails if we couldn't alloc, or if someone has raced us to the cache
+         * and already added the entry.
+         *
+         */
+        dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num, dsd.svms.num, 
+                PULL_TAG);
+
+    } while (!dpc);
+
     if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte)) {
-        if (dpc) /* it's our entry, we need to release it */
+        if (!exists) /* it's our entry, we need to release it */
             dsm_cache_release(fault_svm, norm_addr);
         goto out;
     }
 
-    if (!dpc) {   /* entry already exists in dsm_cache */
-
-        dpc = dsm_cache_get(fault_svm, norm_addr);
+    if (exists) {
 
         /*
          * We already sent rdma requests for this page. This can be the second
@@ -599,6 +620,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         ret = (likely(pte_same(*page_table, orig_pte))) ?
             VM_FAULT_OOM : VM_FAULT_MAJOR;
         pte_unmap_unlock(*page_table, ptl);
+        dsm_cache_release(fault_svm, norm_addr);
         goto out;
     }
 

@@ -49,6 +49,8 @@ void destroy_dsm_cache_kmem(void);
 struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *, unsigned long,
        int, int, int);
 struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine*, unsigned long);
+struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine*,
+        unsigned long);
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *, 
         unsigned long);
 void dsm_dealloc_dpc(struct dsm_page_cache **);

@@ -121,6 +121,7 @@ struct dsm {
 
     struct kobject dsm_kobject;
     int nb_local_svm;
+    atomic_t dtor;
 };
 
 struct dsm_kobjects {
@@ -290,6 +291,7 @@ struct subvirtual_machine {
     spinlock_t page_cache_spinlock;
 
     struct svm_sysfs svm_sysfs;
+    struct work_struct dtor;
 };
 
 struct work_request_ele {

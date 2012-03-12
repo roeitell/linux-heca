@@ -139,6 +139,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                             if (page && trylock_page(page)) {
                                 BUG_ON(page_mapcount(page));
                                 dsm_cache_release(local_svm, addr);
+                                dsm_dealloc_dpc(&dpc);
                                 page_cache_release(page);
                                 unlock_page(page);
                                 goto out;

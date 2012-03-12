@@ -114,6 +114,33 @@ struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
 };
 EXPORT_SYMBOL(dsm_cache_get);
 
+struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
+        unsigned long addr) {
+    void **ppc;
+    struct dsm_page_cache *dpc;
+
+    rcu_read_lock();
+    repeat: dpc = NULL;
+    ppc = radix_tree_lookup_slot(&svm->page_cache, addr);
+    if (ppc) {
+        dpc = radix_tree_deref_slot(ppc);
+        if (unlikely(!dpc))
+            goto out;
+        if (radix_tree_exception(dpc)) {
+            if (radix_tree_deref_retry(dpc))
+                goto repeat;
+            goto out;
+        }
+        if (!atomic_inc_not_zero(&dpc->nproc))
+            goto repeat;
+        if (unlikely(dpc != *ppc))
+            goto repeat;
+    }
+    out: rcu_read_unlock();
+
+    return dpc;
+}
+
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm, 
         unsigned long addr) {
     struct dsm_page_cache *dpc;

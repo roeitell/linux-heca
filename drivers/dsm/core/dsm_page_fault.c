@@ -367,7 +367,7 @@ static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
     struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct mm_struct *mm;
-    unsigned long addr;
+    unsigned long addr = tx_e->dsm_msg->req_addr + dpc->svm->priv->offset;
 
     /*
      * Pull try only happens when pushing to us - meaning we're only trying to
@@ -376,13 +376,21 @@ static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
      */
     if (tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL) {
         page_cache_release(ppe->mem_page);
-        set_page_private(ppe->mem_page, 0);
         SetPageUptodate(ppe->mem_page);
-        unlock_page(ppe->mem_page);
+
+        unlock_page(dpc->pages[0]);
         atomic64_inc(&dpc->svm->svm_sysfs.stats.nb_page_pull_fail);
-        dsm_dealloc_dpc(&dpc);
+
+        /*
+         * A page fault for this addr might have concurrently happened.
+         *
+         */
+        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+            dsm_cache_release(dpc->svm, addr);
+            dsm_dealloc_dpc(&dpc);
+        }
         return;
-    } 
+    }
 
     dsm_pull_req_complete(tx_e);
 
@@ -391,7 +399,6 @@ static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
      * will find the updated page and set the pte.
      *
      */
-    addr = tx_e->dsm_msg->req_addr + dpc->svm->priv->offset;
     mm = dpc->svm->priv->mm;
     use_mm(mm);
     down_read(&mm->mmap_sem);
@@ -400,8 +407,8 @@ static void dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
     unuse_mm(mm);
 }
 
-static int get_remote_dsm_page(gfp_t gfp_mask, struct vm_area_struct *vma,
-        unsigned long addr, struct dsm_page_cache *dpc, struct svm_list svms,
+static int get_remote_dsm_page(struct vm_area_struct *vma, unsigned long addr,
+        struct dsm_page_cache *dpc, struct svm_list svms,
         struct subvirtual_machine *fault_svm, unsigned long private, int tag) {
 
     struct page *new_page = NULL;
@@ -420,7 +427,7 @@ static int get_remote_dsm_page(gfp_t gfp_mask, struct vm_area_struct *vma,
         if (!svms.pp[i])
             continue;
 
-        new_page = alloc_page_vma(gfp_mask, vma, addr);
+        new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
         if (!new_page) {
             dpc->npages = j;
             goto finish; /* Out of Memory, send less rdma requests for page */
@@ -457,8 +464,9 @@ static inline int pte_unmap_dsm_same(struct mm_struct *mm, pmd_t *pmd,
     return same;
 }
 
-static struct dsm_page_cache *get_dsm_page(struct mm_struct *mm, unsigned long addr,
-        struct subvirtual_machine *fault_svm, unsigned long private, int tag) {
+static struct dsm_page_cache *get_dsm_page(struct mm_struct *mm,
+        unsigned long addr, struct subvirtual_machine *fault_svm,
+        unsigned long private, int tag) {
 
     pte_t *pte;
     pgd_t *pgd;
@@ -508,11 +516,10 @@ static struct dsm_page_cache *get_dsm_page(struct mm_struct *mm, unsigned long a
                         dsd = swp_entry_to_dsm_data(swp_e);
 
                         dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num,
-                                dsd.svms.num, tag);
+                                1, tag);
                         if (dpc) {
-                            get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma,
-                                    norm_addr, dpc, dsd.svms, fault_svm,
-                                    private, tag);
+                            get_remote_dsm_page(vma, norm_addr, dpc, dsd.svms,
+                                    fault_svm, private, tag);
                             atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
                         }
                     }
@@ -542,6 +549,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     fault_svm = find_local_svm(dsd.dsm, mm);
     BUG_ON(!fault_svm);
 
+    retry:
     /*
      * Order here is crucial: another fault for this page might be racing us.
      * If next two blocks are reversed, another thread could set the pte and
@@ -552,9 +560,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
      *
      */
     do {
-        dpc = dsm_cache_get(fault_svm, norm_addr);
+        dpc = dsm_cache_get_hold(fault_svm, norm_addr);
         if (dpc) {
-            atomic_inc(&dpc->nproc);
             exists = 1;
             break;
         }
@@ -564,15 +571,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
          * and already added the entry.
          *
          */
-        dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num, 1, PULL_TAG);
+        dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num, 2, PULL_TAG);
 
     } while (!dpc);
 
-    if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte)) {
-        if (!exists) /* it's our entry, we need to release it */
-            dsm_cache_release(fault_svm, norm_addr);
+    if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
         goto out;
-    }
 
     if (exists) {
 
@@ -603,15 +607,14 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         BUG();
     }
 
-    sent = get_remote_dsm_page(GFP_HIGHUSER_MOVABLE, vma, norm_addr, dpc,
-            dsd.svms, fault_svm, 0, PULL_TAG);
+    sent = get_remote_dsm_page(vma, norm_addr, dpc, dsd.svms, fault_svm, 0,
+            PULL_TAG);
 
     if (!sent) {
         page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
         ret = (likely(pte_same(*page_table, orig_pte))) ?
             VM_FAULT_OOM : VM_FAULT_MAJOR;
         pte_unmap_unlock(*page_table, ptl);
-        dsm_cache_release(fault_svm, norm_addr);
         goto out;
     }
 
@@ -645,6 +648,17 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         goto out;
     }
 
+    /*
+     * A try pull request (response to push) failed: it unlocked the page, yet
+     * did not zero the private. We should go again without the try tag.
+     *
+     */
+    if (unlikely(page_private(dpc->pages[0]) == ULONG_MAX)) {
+        unlock_page(dpc->pages[0]);
+        atomic_dec(&dpc->nproc);
+        goto retry;
+    }
+
     i = atomic_read(&dpc->found);
 
     /*
@@ -658,14 +672,16 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     found_page = dpc->pages[i];
     page_cache_get(found_page);
 
-    found: ret = dsm_page_fault_success(found_page, fault_svm, vma, address,
-               page_table, pmd, flags, orig_pte);
-    dsm_cache_release(fault_svm, address);
+    found:
+    ret = dsm_page_fault_success(found_page, fault_svm, vma, address,
+            page_table, pmd, flags, orig_pte);
 
-    out: 
-    if (atomic_dec_and_test(&dpc->nproc) && !(ret & VM_FAULT_RETRY))
+    out: atomic_dec(&dpc->nproc);
+    if (!(ret & VM_FAULT_RETRY) && atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        dsm_cache_release(fault_svm, address);
         dsm_dealloc_dpc(&dpc);
-    
+    }
+
     return ret;
 }
 

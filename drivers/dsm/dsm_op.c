@@ -1135,3 +1135,102 @@ int destroy_connection(struct conn_element **ele, struct rcm *rcm) {
     return 0;
 }
 
+static inline u32 *svm_ids_without_svm(struct svm_list svms, u32 svm_id) {
+    u32 *svm_ids;
+    int i, j;
+
+    svm_ids = kmalloc(sizeof(u32)*svms.num-1, GFP_KERNEL);
+    for (i = 0; i < svms.num; i++)
+        if (svms.pp[i] && svms.pp[i]->svm_id != svm_id)
+            svm_ids[j++] = svms.pp[i]->svm_id;
+    svm_ids[j] = 0;
+    return svm_ids;
+}
+
+/*
+ * TODO: Currently unused, insanely expensive (spin_lock_irq every call to
+ * dsm_cache_release). We have to iterate the radix_tree explicitly.
+ *
+ */
+static inline void clean_svm_page_cache(struct dsm *dsm,
+        struct subvirtual_machine *svm) {
+    unsigned long addr;
+    struct dsm_page_cache *dpc;
+    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_node *node;
+    struct memory_region *mr;
+
+    for (node = rb_first(root); node; node = rb_next(node)) {
+        mr = rb_entry(node, struct memory_region, rb_node);
+        for (addr = mr->addr; addr < (addr + mr->sz); addr += PAGE_SIZE) {
+            dpc = dsm_cache_release(svm, addr);
+            if (dpc) {
+                synchronize_rcu();
+                /* perhaps we need to release pages in there! */
+                dsm_dealloc_dpc(&dpc);
+            }
+        }
+    }
+}
+
+static void clean_svm_from_mrs(struct dsm *dsm, struct subvirtual_machine *svm){
+    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_node *node;
+    struct memory_region *mr;
+    struct svm_list svms;
+    int i;
+    u32 *svm_ids;
+
+    write_seqlock(&dsm->mr_seq_lock);
+    for (node = rb_first(root); node; node = rb_next(node)) {
+        mr = rb_entry(node, struct memory_region, rb_node);
+        svms = dsm_descriptor_to_svms(mr->descriptor);
+
+        for (i = 0; i < svms.num; i++) {
+            if (svms.pp[i] && svms.pp[i]->svm_id == svm->svm_id) {
+
+                svm_ids = svm_ids_without_svm(svms, svm->svm_id);
+                if (svm_ids[0]) {
+                    mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
+                } else {
+                    rb_erase(&mr->rb_node, root);
+                    kfree(mr);
+                }
+                kfree(svm_ids);
+
+                /*
+                 * We can either walk the entire page table, removing references
+                 * to this descriptor; change the descriptor right now (which
+                 * will require more complicated rcu locking everywhere); or
+                 * hack - leave a "hole" in the arr to signal svm down.
+                 *
+                 */
+                svms.pp[i] = 0;
+                break;
+            }
+        }
+    }
+    write_sequnlock(&dsm->mr_seq_lock);
+}
+
+void clean_svm_data(struct work_struct *work) {
+    struct subvirtual_machine *svm = container_of(work,
+            struct subvirtual_machine, dtor);
+    struct dsm *dsm = svm->dsm;
+
+    /*
+    if (svm->priv)
+        clean_svm_page_cache(svm, mr);
+     */
+    clean_svm_from_mrs(dsm, svm);
+
+    mutex_lock(&dsm->dsm_mutex);
+    list_del(&svm->svm_ptr);
+    mutex_unlock(&dsm->dsm_mutex);
+
+    kfree(svm);
+
+    if (atomic_read(&dsm->dtor) && list_empty(&dsm->svm_list))
+        remove_dsm(dsm);
+}
+

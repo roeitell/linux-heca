@@ -62,6 +62,7 @@ void release_tx_element_reply(struct conn_element *, struct tx_buf_ele *);
 int setup_recv_wr(struct conn_element *);
 int refill_recv_wr(struct conn_element *, struct rx_buf_ele *);
 void reg_rem_info(struct conn_element *);
+void clean_svm_data(struct work_struct *);
 
 /*
  * CTL
@@ -70,7 +71,8 @@ void reg_rem_info(struct conn_element *);
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
 void reset_dsm_connection_stats(struct con_element_sysfs *);
-void remove_svm(struct dsm *dsm, u32 svm_id);
+void remove_svm(struct dsm *, u32);
+void remove_dsm(struct dsm *);
 
 /*
  * search

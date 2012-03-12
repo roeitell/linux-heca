@@ -197,60 +197,6 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
 }
 EXPORT_SYMBOL(search_mr);
 
-static u32 *svm_ids_without_svm(struct svm_list svms, u32 svm_id) {
-    u32 *svm_ids;
-    int i, j;
-
-    svm_ids = kmalloc(sizeof(u32)*svms.num-1, GFP_KERNEL);
-    for (i = 0; i < svms.num; i++)
-        if (svms.pp[i] && svms.pp[i]->svm_id != svm_id)
-            svm_ids[j++] = svms.pp[i]->svm_id;
-    svm_ids[j] = 0;
-    return svm_ids;
-}
-
-int remove_svm_from_mrs(struct dsm *dsm, u32 svm_id) {
-    struct rb_root *root = &dsm->mr_tree_root;
-    struct rb_node *node;
-    struct memory_region *mr;
-    struct svm_list svms;
-    int ret = 0, i;
-    u32 *svm_ids;
-
-    write_seqlock(&dsm->mr_seq_lock);
-    for (node = rb_first(root); node; node = rb_next(node)) {
-        mr = rb_entry(node, struct memory_region, rb_node);
-        svms = dsm_descriptor_to_svms(mr->descriptor);
-
-        for (i = 0; i < svms.num; i++) {
-            if (svms.pp[i] && svms.pp[i]->svm_id == svm_id) {
-                svm_ids = svm_ids_without_svm(svms, svm_id);
-                if (svm_ids[0]) {
-                    mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
-                } else {
-                    rb_erase(&mr->rb_node, root);
-                    kfree(mr);
-                }
-
-                /*
-                 * We can either walk the entire page table, removing references
-                 * to this descriptor; change the descriptor right now (which
-                 * will require more complicated rcu locking everywhere); or
-                 * hack - leave a "hole" in the arr to signal svm down.
-                 *
-                 */
-                svms.pp[i] = 0;
-                ret++;
-                break;
-            }
-        }
-    }
-    write_sequnlock(&dsm->mr_seq_lock);
-
-    return ret;
-}
-EXPORT_SYMBOL(remove_svm_from_mrs);
-
 int destroy_mrs(struct dsm *dsm, int force) {
     struct rb_root *root = &dsm->mr_tree_root;
     struct rb_node *node;

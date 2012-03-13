@@ -244,8 +244,10 @@ static int do_wp_dsm_page(struct subvirtual_machine *fault_svm,
 
 static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc) {
     atomic_dec(&(*dpc)->nproc);
-    if (dealloc && atomic_cmpxchg(&(*dpc)->nproc, 1, 0) == 1)
+    if (dealloc && atomic_cmpxchg(&(*dpc)->nproc, 1, 0) == 1) {
+        page_cache_release((*dpc)->pages[0]);
         dsm_dealloc_dpc(dpc);
+    }
 }
 
 static void dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
@@ -372,6 +374,7 @@ static struct dsm_page_cache *get_dsm_page(struct mm_struct *mm,
     struct vm_area_struct *vma;
     unsigned long norm_addr = addr & PAGE_MASK;
     struct dsm_page_cache *dpc = NULL;
+    struct dsm_page_cache_lookup dpc_l;
     struct dsm_swp_data dsd;
     int i;
 
@@ -411,10 +414,13 @@ static struct dsm_page_cache *get_dsm_page(struct mm_struct *mm,
                     if (is_dsm_entry(swp_e)) {
                         dsd = swp_entry_to_dsm_data(swp_e);
 
-                        dpc = dsm_cache_add(fault_svm, norm_addr, dsd.svms.num,
-                                dsd.svms.num + 2, tag);
-                        if (dpc) {
-                            for (i = 0; i < dpc->npages; i++) {
+                        dpc_l = dsm_cache_add_page(fault_svm, norm_addr,
+                                dsd.svms.num, dsd.svms.num + 2, tag, vma);
+                        if (dpc_l.created) {
+                            dpc = dpc_l.dpc;
+                            get_remote_dsm_page(vma, norm_addr, dpc, fault_svm,
+                                dsd.svms.pp[0], private, tag, dpc->pages[0]);
+                            for (i = 1; i < dpc->npages; i++) {
                                 dpc->pages[i] = get_remote_dsm_page(vma,
                                         norm_addr, dpc, fault_svm,
                                         dsd.svms.pp[i], private, tag, NULL);
@@ -458,9 +464,11 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     if (dpc_l.created) {
         ret = VM_FAULT_MAJOR;
-        for (i = 0; i < dpc->npages; i++) {
+        get_remote_dsm_page(vma, norm_addr, dpc, fault_svm, dsd.svms.pp[0],
+                0, PULL_TAG, dpc->pages[0]);
+        for (i = 1; i < dpc->npages; i++) {
             dpc->pages[i] = get_remote_dsm_page(vma, norm_addr, dpc, fault_svm,
-                    dsd.svms.pp[i], 0, PULL_TAG, dpc->pages[i]);
+                    dsd.svms.pp[i], 0, PULL_TAG, NULL);
         }
         goto try_read;
     }

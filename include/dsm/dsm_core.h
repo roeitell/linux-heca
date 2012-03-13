@@ -48,6 +48,8 @@ void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);
 struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *, unsigned long,
        int, int, int);
+struct dsm_page_cache_lookup dsm_cache_add_page(struct subvirtual_machine *,
+        unsigned long, int, int, int, struct vm_area_struct *);
 struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine*, unsigned long);
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine*,
         unsigned long);

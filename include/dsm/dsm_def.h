@@ -389,10 +389,13 @@ struct dsm_page_cache {
 
     struct page **pages;
     int npages;
-
     atomic_t found;
     atomic_t nproc;
-    struct list_head list;
+};
+
+struct dsm_page_cache_lookup {
+    struct dsm_page_cache *dpc;
+    u8 created;
 };
 
 /*

@@ -265,7 +265,10 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     dsm = find_dsm(svm_info.dsm_id);
     BUG_ON(!dsm);
 
-    mutex_lock(&priv_data->dsm->dsm_mutex);
+    printk("[DSM_CONNECT] connecting svm \ndsm_id : %u\nsvm_id : %u\n\n",
+            svm_info.dsm_id, svm_info.svm_id);
+
+    mutex_lock(&dsm->dsm_mutex);
     do {
         found_svm = find_svm(dsm, svm_info.svm_id);
         if (found_svm)
@@ -278,7 +281,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (r)
             break;
-        r = radix_tree_insert(&priv_data->dsm->svm_tree_root,
+        r = radix_tree_insert(&dsm->svm_tree_root,
                 (unsigned long) svm_info.svm_id, new_svm);
         radix_tree_preload_end();
 
@@ -287,7 +290,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
 
             new_svm->svm_id = svm_info.svm_id;
             new_svm->priv = NULL;
-            new_svm->dsm = priv_data->dsm;
+            new_svm->dsm = dsm;
             new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
 
             reset_svm_stats(&new_svm->svm_sysfs);
@@ -295,9 +298,9 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             scnprintf(charid, 11, "%x", new_svm->svm_id);
             //TODO catch error
             create_svm_sysfs_entry(&new_svm->svm_sysfs,
-                &new_svm->dsm->dsm_kobject, charid, svm_info.ip);
+                &dsm->dsm_kobject, charid, svm_info.ip);
             INIT_LIST_HEAD(&new_svm->mr_list);
-            list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
+            list_add(&new_svm->svm_ptr, &dsm->svm_list);
             ip_addr = inet_addr(svm_info.ip);
 
             // Check for connection
@@ -313,27 +316,28 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
                     r = -ENOLINK;
                     goto connect_fail;
                 }
-                wait_for_completion(&cele->completion);
-            } 
-            new_svm->ele = cele;
 
-            printk(
-                    "[DSM_CONNECT] connecting svm \n\tdsm_id : %u\n\tsvm_id : %u\n\tres : %d\n",
-                    svm_info.dsm_id, svm_info.svm_id, r);
-            goto exit;
+                wait_for_completion(&cele->completion);
+                if (!cele->alive) {
+                    r = -ENOLINK;
+                    goto connect_fail;
+                }
+            }
+            new_svm->ele = cele;
+            break;
         }
 
     } while (r != -ENOMEM);
-    if (new_svm) {
-        kfree(new_svm);
-    }
-    exit:
 
-    mutex_unlock(&priv_data->dsm->dsm_mutex);
+    mutex_unlock(&dsm->dsm_mutex);
     return r;
-    connect_fail:
-    //TODO  we need to remove here
-    mutex_unlock(&priv_data->dsm->dsm_mutex);
+
+    connect_fail: list_del(&new_svm->svm_ptr); 
+    radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm_info.svm_id);
+    delete_svm_sysfs_entry(&new_svm->svm_sysfs.svm_kobject);
+
+    kfree(new_svm);
+    mutex_unlock(&dsm->dsm_mutex);
     return r;
 }
 

@@ -733,7 +733,6 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     if (IS_ERR(ele->cm_id))
         goto err1;
 
-    ele->alive = 1;
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
             (struct sockaddr*) &dst, 2000);
 
@@ -993,8 +992,6 @@ int setup_connection(struct conn_element *ele, int type) {
             goto err10;
     }
 
-    ele->alive = 1;
-
     return ret;
 
     err10: err++;
@@ -1094,7 +1091,7 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
 int destroy_connection(struct conn_element **ele, struct rcm *rcm) {
     int ret = 0;
 
-    if (*ele && (*ele)->alive) {
+    if (*ele) {
         (*ele)->alive = 0;
 
         if ((*ele)->cm_id) {

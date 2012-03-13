@@ -385,34 +385,30 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
 int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
     int ret = 0;
     int err = 0;
-    struct conn_element *ele;
+    struct conn_element *ele = id->context;
 
     switch (event->event) {
         case RDMA_CM_EVENT_ADDR_RESOLVED:
-
             ret = rdma_resolve_route(id, 2000);
             if (ret)
                 goto err1;
             break;
 
         case RDMA_CM_EVENT_ROUTE_RESOLVED:
-
-            ele = id->context;
-
             ret = setup_connection(ele, 0);
             if (ret)
                 goto err2;
 
             ret = connect_client(id);
-            if (ret)
+            if (ret) {
+                complete(&ele->completion);
                 goto err3;
+            }
 
+            ele->alive = 1;
             break;
 
         case RDMA_CM_EVENT_ESTABLISHED:
-
-            ele = id->context;
-
             ret = dsm_recv_info(ele);
             if (ret)
                 goto err4;
@@ -424,19 +420,21 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
             break;
 
         case RDMA_CM_EVENT_DISCONNECTED:
-            printk("[connection_event_handler] disconnect received\n");
-            ele = id->context;
             ret = destroy_connection(&ele, ele->rcm);
             break;
 
-        case RDMA_CM_EVENT_DEVICE_REMOVAL:
         case RDMA_CM_EVENT_ADDR_ERROR:
         case RDMA_CM_EVENT_ROUTE_ERROR:
         case RDMA_CM_EVENT_CONNECT_ERROR:
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
-        case RDMA_CM_EVENT_ADDR_CHANGE:
+            printk("[connection_event_handler] Could not connect, %d\n",
+                    event->event);
+            complete(&ele->completion);
+            break;
 
+        case RDMA_CM_EVENT_DEVICE_REMOVAL:
+        case RDMA_CM_EVENT_ADDR_CHANGE:
             printk(">>>>[connection_event_handler] - Unexpected event: %d\n",
                     event->event);
             ret = rdma_disconnect(id);
@@ -506,6 +504,8 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                 printk("Connection could not be accepted\n");
                 goto err;
             }
+
+            ele->alive = 1;
             break;
 
         case RDMA_CM_EVENT_ESTABLISHED:

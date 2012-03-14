@@ -8,7 +8,7 @@
 
 static struct kmem_cache *dsm_cache_kmem;
 
-static inline struct dsm_page_cache *dsm_alloc_dpc(int npages, int nproc, 
+inline struct dsm_page_cache *dsm_alloc_dpc(int npages, int nproc, 
         int tag, struct subvirtual_machine *svm) {
     struct dsm_page_cache *dpc;
 
@@ -96,66 +96,6 @@ struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *svm,
 
     out: return dpc;
 };
-
-struct dsm_page_cache_lookup dsm_cache_add_page(struct subvirtual_machine *svm,
-        unsigned long addr, int npages, int nproc, int tag,
-        struct vm_area_struct *vma) {
-    struct dsm_page_cache_lookup res = { .dpc = NULL, .created = 0 };
-    struct dsm_page_cache *dpc = NULL;
-    struct page *page = NULL;
-    int r;
-
-    do {
-        res.dpc = dsm_cache_get_hold(svm, addr);
-        if (res.dpc)
-            goto fail;
-
-        if (!dpc) {
-            dpc = dsm_alloc_dpc(npages, nproc, tag, svm);
-            if (!dpc)
-                goto fail;
-        }
-
-        if (!page) {
-            page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
-            if (!page)
-                goto fail;
-
-            __set_page_locked(page);
-            page_cache_get(page);
-            set_page_private(page, 0);
-            SetPageSwapBacked(page);
-            dpc->pages[0] = page;
-        }
-
-        r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
-        if (r)
-            goto fail;
-
-        spin_lock_irq(&svm->page_cache_spinlock);
-        r = radix_tree_insert(&svm->page_cache, addr, dpc);
-        spin_unlock_irq(&svm->page_cache_spinlock);
-        radix_tree_preload_end();
-
-        if (!r) {
-            res.created = 1;
-            res.dpc = dpc;
-            goto out;
-        }
-
-    } while (r != -ENOMEM);
-
-    fail:
-    if (dpc) {
-        if (page) {
-            ClearPageSwapBacked(page);
-            unlock_page(page);
-            page_cache_release(page);
-        }
-        dsm_dealloc_dpc(&dpc);
-    }
-    out: return res; 
-}
 
 struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm, 
        unsigned long addr) {

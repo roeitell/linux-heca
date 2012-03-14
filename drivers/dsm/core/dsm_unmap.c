@@ -316,7 +316,6 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         try_to_free_swap(page);
 //DSM1 do we need a put_page???/
 
-    page_cache_get(page);
     dpc->pages[0] = page;
     set_page_private(page, ULONG_MAX);
     unlock_page(page);

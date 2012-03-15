@@ -310,6 +310,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
 
     page_remove_rmap(page);
 
+    page_cache_get(page);
     dec_mm_counter(mm, MM_ANONPAGES);
 // this is a page flagging without data exchange so we can free the page
     if (likely(!page_mapped(page)))

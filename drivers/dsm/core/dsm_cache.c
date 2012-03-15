@@ -142,7 +142,7 @@ struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
             goto out;
         }
 #if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
-        atomic_inc(&dpc->nnproc);
+        atomic_inc(&dpc->nproc);
 #else
         if (!atomic_inc_not_zero(&dpc->nproc))
             goto repeat;

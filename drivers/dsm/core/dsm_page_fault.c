@@ -412,7 +412,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
         if (likely(!r)) {
             for (r = 0; r < svms.num; r++) {
                 get_remote_dsm_page(vma, norm_addr, new_dpc, fault_svm,
-                        svms.pp[r], private, PULL_TAG, r);
+                        svms.pp[r], private, tag, r);
             }
             if (prefetch) {
                 for (r = 1; r < 40; r++) {

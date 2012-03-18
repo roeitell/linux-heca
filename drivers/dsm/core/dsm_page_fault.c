@@ -545,25 +545,24 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         }
     }
 
+    rethrow = !lock_page_or_retry(dpc->pages[0], mm, flags);
+    if (rethrow) {
+        ret |= VM_FAULT_RETRY;
+        goto out;
+    }
+
     i = atomic_read(&dpc->found);
     if (i < 0) {
         if (unlikely(page_private(dpc->pages[0]) == ULONG_MAX)) {
             dpc_nproc_dec(&dpc, 1);
             goto retry;
         }
-
-        rethrow = !lock_page_or_retry(dpc->pages[0], mm, flags);
-        if (rethrow)
-            ret |= VM_FAULT_RETRY;
         goto out;
     }
 
     found_page = dpc->pages[i];
-    if (i) {
+    if (i)
         __set_page_locked(found_page);
-        unlock_page(dpc->pages[0]);
-    }
-
 
     found: page_cache_get(found_page);
     if (ksm_might_need_to_copy(found_page, vma, address)) {
@@ -600,6 +599,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     inc_mm_counter(mm, MM_ANONPAGES);
 
     unlock_page(found_page);
+    if (i)
+        unlock_page(dpc->pages[0]);
 
     if (swapcache) {
         unlock_page(swapcache);

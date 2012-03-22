@@ -43,18 +43,16 @@ void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
     reset_msg_stats(&sysfs->tx_stats);
 }
 
-void remove_svm(struct dsm *dsm, u32 svm_id) {
+void remove_svm(struct dsm *dsm, struct subvirtual_machine *svm) {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
-    struct subvirtual_machine *svm;
     struct rb_root *root;
     struct rb_node *node;
     struct conn_element *ele;
 
-    mutex_lock(&dsm->dsm_mutex);
-    svm = find_svm(dsm, svm_id);
-    if (!svm)   // protect against concurrent calls to remove_svm
-        goto out;
+    if (atomic_xchg(&svm->status, DSM_SVM_OFFLINE) == DSM_SVM_OFFLINE)
+        return;
 
+    mutex_lock(&dsm->dsm_mutex);
     list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
     if (svm->priv) {
@@ -80,7 +78,7 @@ void remove_svm(struct dsm *dsm, u32 svm_id) {
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
 
     kfree(svm);
-    out: mutex_unlock(&dsm->dsm_mutex);
+    mutex_unlock(&dsm->dsm_mutex);
 }
 
 void remove_dsm(struct dsm *dsm) {
@@ -99,7 +97,7 @@ void remove_dsm(struct dsm *dsm) {
 
     list_for_each_safe (pos, n, &dsm->svm_list) {
         svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-        remove_svm(dsm, svm->svm_id);
+        remove_svm(dsm, svm);
     }
 
     destroy_mrs(dsm, 1);
@@ -217,7 +215,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->ele = NULL;
             new_svm->dsm = priv_data->dsm;
             new_svm->dsm->nb_local_svm++;
-            new_svm->status = 0;
+            atomic_set(&new_svm->status, DSM_SVM_ONLINE);
             reset_svm_stats(&new_svm->svm_sysfs);
             scnprintf(charid, 11, "%x", new_svm->svm_id);
             //TODO catch error
@@ -291,6 +289,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             new_svm->priv = NULL;
             new_svm->dsm = dsm;
             new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
+            atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
             reset_svm_stats(&new_svm->svm_sysfs);
             spin_lock_init(&new_svm->page_cache_spinlock);
@@ -534,7 +533,7 @@ static int release(struct inode *inode, struct file *f) {
 
     if (!data->svm)
         return 1;
-    remove_svm(data->dsm, data->svm->svm_id);
+    remove_svm(data->dsm, data->svm);
     if (data->dsm->nb_local_svm == 0) {
         remove_dsm(data->dsm);
         printk("[Release ] last local svm , freeing the dsm\n");

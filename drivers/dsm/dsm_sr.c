@@ -181,9 +181,11 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) 
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
     struct dsm *dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
+    struct subvirtual_machine *svm = find_svm(dsm, rx_buf_e->dsm_msg->src_id);
+
     printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_msg->src_id);
     if (dsm)
-        remove_svm(dsm, rx_buf_e->dsm_msg->src_id);
+        remove_svm(dsm, svm);
     return !!dsm;
 }
 
@@ -240,8 +242,9 @@ int process_page_request(struct conn_element * ele,
          *  offline. Send a status update message to client.
          *
          */
-        if (++local_svm->status > MAX_CONSECUTIVE_SVM_FAILURES) {
-            remove_svm(dsm, local_svm->svm_id);
+        if (__atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) >
+                MAX_CONSECUTIVE_SVM_FAILURES) {
+            remove_svm(dsm, local_svm);
             goto no_svm;
         }
 
@@ -273,7 +276,7 @@ int process_page_request(struct conn_element * ele,
     /*
      * Page grabbed successfully, seems that the local svm is still online.
      */
-    local_svm->status = 0;
+    atomic_set(&local_svm->status, DSM_SVM_ONLINE);
 
     tx_e = try_get_next_empty_tx_reply_ele(ele);
     BUG_ON(!tx_e);

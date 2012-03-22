@@ -275,7 +275,9 @@ struct private_data {
 
 struct subvirtual_machine {
     u32 svm_id;
-    int status;
+    atomic_t status;
+#define DSM_SVM_ONLINE 0
+#define DSM_SVM_OFFLINE -1
 
     struct dsm *dsm;
     struct conn_element *ele;

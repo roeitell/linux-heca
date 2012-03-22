@@ -201,29 +201,26 @@ int destroy_mrs(struct dsm *dsm, int force) {
     struct rb_root *root = &dsm->mr_tree_root;
     struct rb_node *node;
     struct memory_region *mr;
-    int ret = 0, mapped, i;
+    int ret = 0, i;
     struct svm_list svms;
 
     write_seqlock(&dsm->mr_seq_lock);
     for (node = rb_first(root); node; node = rb_next(node)) {
         mr = rb_entry(node, struct memory_region, rb_node);
         svms = dsm_descriptor_to_svms(mr->descriptor);
-        if (force)
-            goto remove;
-
-        for (i = 0; i < svms.num; i++) {
-            if (svms.pp[i]) {
-                mapped = 1;
-                break;
+        if (!force) {
+            for (i = 0; i < svms.num; i++) {
+                if (svms.pp[i])
+                    goto next;
             }
         }
 
-        if (!mapped) {
-            remove: printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr+mr->sz);
-            rb_erase(&mr->rb_node, root);
-            kfree(mr);
-            ret++;
-        }
+        printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr+mr->sz);
+        rb_erase(&mr->rb_node, root);
+        kfree(mr);
+        ret++;
+
+        next: continue;
     }
     write_sequnlock(&dsm->mr_seq_lock);
 

@@ -121,7 +121,6 @@ struct dsm {
 
     struct kobject dsm_kobject;
     int nb_local_svm;
-    atomic_t dtor;
 };
 
 struct dsm_kobjects {
@@ -201,13 +200,11 @@ struct tx_buffer {
     spinlock_t tx_free_elements_list_lock;
     spinlock_t tx_free_elements_list_reply_lock;
 
-    struct completion completion_free_tx_element;
-
 };
 
 struct conn_element {
     struct rcm *rcm;
-    int alive;
+    atomic_t alive;
 
     int remote_node_ip;
     struct rdma_info_data rid;
@@ -278,7 +275,7 @@ struct private_data {
 
 struct subvirtual_machine {
     u32 svm_id;
-    u8 status;
+    int status;
 
     struct dsm *dsm;
     struct conn_element *ele;
@@ -291,7 +288,6 @@ struct subvirtual_machine {
     spinlock_t page_cache_spinlock;
 
     struct svm_sysfs svm_sysfs;
-    struct work_struct dtor;
 };
 
 struct work_request_ele {
@@ -335,13 +331,12 @@ struct reply_work_request {
 };
 
 struct tx_callback {
-
-    void (*func)(struct tx_buf_ele *);
+    int (*func)(struct tx_buf_ele *);
 };
 
 struct tx_buf_ele {
     int id;
-    u8 used;
+    atomic_t used;
 
     void *mem;
     struct dsm_message *dsm_msg;
@@ -366,7 +361,7 @@ struct dsm_request {
     struct subvirtual_machine *svm;
     struct subvirtual_machine *fault_svm;
     uint64_t addr;
-    void(*func)(struct tx_buf_ele *);
+    int (*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
     struct list_head queue;
     struct dsm_page_cache *dpc;
@@ -383,19 +378,20 @@ struct dsm_module_state {
     struct workqueue_struct * dsm_wq;
 };
 
+struct svm_list {
+    struct subvirtual_machine **pp;
+    int num;
+};
+
 struct dsm_page_cache {
     struct subvirtual_machine *svm;
+    unsigned long addr;
     int tag;
 
     struct page **pages;
     int npages;
     atomic_t found;
     atomic_t nproc;
-};
-
-struct dsm_page_cache_lookup {
-    struct dsm_page_cache *dpc;
-    u8 created;
 };
 
 /*
@@ -427,11 +423,6 @@ struct unmap_data {
     u32 *svm_ids;
     unsigned long addr;
     size_t sz;
-};
-
-struct svm_list {
-    struct subvirtual_machine **pp;
-    int num;
 };
 
 struct dsm_swp_data {

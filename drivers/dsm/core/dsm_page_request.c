@@ -67,8 +67,7 @@ static void dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
     out: return;
 };
 
-static struct page *dsm_extract_page(struct dsm *dsm, 
-        struct subvirtual_machine *local_svm, 
+static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm, 
         unsigned long addr) {
     spinlock_t *ptl;
@@ -99,7 +98,7 @@ static struct page *dsm_extract_page(struct dsm *dsm,
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
-                    dpc = dsm_cache_get(local_svm, addr);
+                    dpc = dsm_cache_get_hold(local_svm, addr);
                     if (dpc) {
 
                         /*
@@ -114,14 +113,14 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                          *
                          */
                         if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
+                            atomic_dec(&dpc->nproc);
                             dsd = swp_entry_to_dsm_data(swp_e);
                             if (attempts++ > 10)
                                 goto out;
 
                             for (i = 0; i < dsd.svms.num; i++) {
-                                if (dsd.svms.pp[i] != remote_svm) {
+                                if (dsd.svms.pp[i] != remote_svm)
                                     goto retry;
-                                }
                             }
                             goto out;
                         
@@ -144,29 +143,27 @@ static struct page *dsm_extract_page(struct dsm *dsm,
                                 unlock_page(page);
                                 goto out;
                             }
+                            atomic_dec(&dpc->nproc);
 
                         /*
                          * 3. Page has been brought as prefetch, and exists, 
-                         *    waiting to be faulted in. We need to fault it in,
-                         *    so simply return it and it will be faulted when
-                         *    accessed.
+                         *    waiting to be faulted in.
                          *
                          */
                         } else if (dpc->tag == PREFETCH_TAG) {
-
-                            for (i = 0; i < dpc->npages; i++) {
-                                if (dpc->pages[i]) {
-                                    page = dpc->pages[i];
-                                    dpc->pages[i] = NULL;
-                                    break;
-                                }
+                            i = atomic_read(&dpc->found);
+                            if (i >= 0)
+                                page = dpc->pages[i];
+                            atomic_dec(&dpc->nproc);
+                            if (page) {
+                                use_mm(mm);
+                                down_read(&mm->mmap_sem);
+                                get_user_pages(current, mm, addr, 1, 1, 0, 
+                                        &page, NULL);
+                                up_read(&mm->mmap_sem);
+                                unuse_mm(mm);
                             }
-
-                            if (page && trylock_page(page)) {
-                                page_cache_release(page);
-                                unlock_page(page);
-                                goto out;
-                            }
+                            goto out;
                         }
 
                         printk("[dsm_extract_page] trying to grab a page which we are currently pulling\n");
@@ -253,12 +250,9 @@ static struct page *dsm_extract_page(struct dsm *dsm,
     pte_unmap_unlock(pd.pte, ptl);
 // if local
 
-    out: printk("[dsm_extract_page] got page %p  \n ", page);
-    return page;
+    out: return page;
 
-    bad_page:
-
-    pte_unmap_unlock(pd.pte, ptl);
+    bad_page: pte_unmap_unlock(pd.pte, ptl);
 
 // if local
 
@@ -328,7 +322,7 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE) ?
         try_dsm_extract_page(local_svm, mm, addr) :
-        dsm_extract_page(dsm, local_svm, remote_svm, mm, addr);
+        dsm_extract_page(local_svm, remote_svm, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 

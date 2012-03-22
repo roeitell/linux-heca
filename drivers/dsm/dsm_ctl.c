@@ -44,38 +44,42 @@ void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
 }
 
 void remove_svm(struct dsm *dsm, u32 svm_id) {
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct subvirtual_machine *svm;
-    struct tx_buf_ele *tx_buf;
-    int i;
+    struct rb_root *root;
+    struct rb_node *node;
+    struct conn_element *ele;
 
     mutex_lock(&dsm->dsm_mutex);
     svm = find_svm(dsm, svm_id);
     if (!svm)   // protect against concurrent calls to remove_svm
         goto out;
 
+    list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
     if (svm->priv) {
         dsm->nb_local_svm--;
         radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
     }
 
-    if (svm->ele) {
-        tx_buf = svm->ele->tx_buffer.tx_buf;
-        for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
-            if (tx_buf[i].used && tx_buf[i].dsm_msg->dsm_id == dsm->dsm_id &&
-                    (tx_buf[i].dsm_msg->src_id == svm->svm_id ||
-                     tx_buf[i].dsm_msg->dest_id == svm->svm_id)) {
-                release_tx_element(svm->ele, &tx_buf[i]);
-            }
+    release_svm_from_mr_descriptors(svm);
+    if (svm->priv) {
+        /* TODO: Locking for inserting/removing/iterating conns? */
+        root = &dsm_state->rcm->root_conn;
+        for (node = rb_first(root); node; node = rb_next(node)) {
+            ele = rb_entry(node, struct conn_element, rb_node);
+            release_svm_tx_requests(svm, &ele->tx_buffer);
+            release_svm_tx_elements(svm, ele);
         }
+    } else if (svm->ele) {
+        release_svm_tx_requests(svm, &svm->ele->tx_buffer);
+        release_svm_tx_elements(svm, svm->ele);
     }
 
     synchronize_rcu();
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
 
-    INIT_WORK(&svm->dtor, clean_svm_data);
-    queue_work(get_dsm_module_state()->dsm_wq, &svm->dtor);
-
+    kfree(svm);
     out: mutex_unlock(&dsm->dsm_mutex);
 }
 
@@ -86,26 +90,22 @@ void remove_dsm(struct dsm *dsm) {
 
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
 
-    if (!atomic_cmpxchg(&dsm->dtor, 0, 1)) {
-        mutex_lock(&dsm_state->dsm_state_mutex);
-        list_del(&dsm->dsm_ptr);
-        radix_tree_delete(&dsm_state->dsm_tree_root,
-                (unsigned long) dsm->dsm_id);
-        mutex_unlock(&dsm_state->dsm_state_mutex);
-        synchronize_rcu();
+    mutex_lock(&dsm_state->dsm_state_mutex);
+    list_del(&dsm->dsm_ptr);
+    radix_tree_delete(&dsm_state->dsm_tree_root,
+            (unsigned long) dsm->dsm_id);
+    mutex_unlock(&dsm_state->dsm_state_mutex);
+    synchronize_rcu();
+
+    list_for_each_safe (pos, n, &dsm->svm_list) {
+        svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
+        remove_svm(dsm, svm->svm_id);
     }
 
-    if (!list_empty(&dsm->svm_list)) {
-        list_for_each_safe (pos, n, &dsm->svm_list) {
-            svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-            remove_svm(dsm, svm->svm_id);
-        }
-    } else {
-        destroy_mrs(dsm, 1);
+    destroy_mrs(dsm, 1);
+    delete_dsm_sysfs_entry(&dsm->dsm_kobject);
 
-        delete_dsm_sysfs_entry(&dsm->dsm_kobject);
-        kfree(dsm);
-    }
+    kfree(dsm);
 }
 
 static int register_dsm(struct private_data *priv_data, void __user *argp) {
@@ -142,7 +142,6 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         INIT_LIST_HEAD(&new_dsm->svm_list);
         new_dsm->mr_tree_root = RB_ROOT;
         new_dsm->nb_local_svm = 0;
-        atomic_set(&new_dsm->dtor, 0);
 
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (r)
@@ -318,7 +317,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
                 }
 
                 wait_for_completion(&cele->completion);
-                if (!cele->alive) {
+                if (!atomic_read(&cele->alive)) {
                     r = -ENOLINK;
                     goto connect_fail;
                 }

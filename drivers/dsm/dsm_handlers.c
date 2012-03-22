@@ -82,15 +82,19 @@ static int dsm_recv_message_handler(struct conn_element *ele,
     switch (rx_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
-            process_page_response(ele, tx_e); // client got its response
+            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+                atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
+                process_page_response(ele, tx_e); // client got its response
+            }
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
-            process_page_response(ele, tx_e);
-            atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
+            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+                tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
+                process_page_response(ele, tx_e);
+                atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
+            }
             break;
         }
         case TRY_REQUEST_PAGE:
@@ -208,7 +212,7 @@ static void dsm_send_poll(struct ib_cq *cq) {
     struct ib_wc wc;
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
-    while (ib_poll_cq(cq, 1, &wc) > 0) {
+    while (atomic_read(&ele->alive) && ib_poll_cq(cq, 1, &wc) > 0) {
         if (likely(wc.status == IB_WC_SUCCESS)) {
             switch (wc.opcode) {
                 case IB_WC_SEND: {
@@ -255,7 +259,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
     if (!ele)
         goto err;
 
-    while (ele->alive && ib_poll_cq(cq, 1, &wc) > 0) {
+    while (atomic_read(&ele->alive) && ib_poll_cq(cq, 1, &wc) > 0) {
         switch (wc.status) {
             case IB_WC_WR_FLUSH_ERR: {
                 goto err;
@@ -323,7 +327,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
 /*
  * This one notifies that the sending as been correctly done
  */
-static void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
+static void _send_cq_handle(struct ib_cq *cq) {
     int ret = 0;
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
     dsm_send_poll(cq);
@@ -339,7 +343,7 @@ static void _send_cq_handle(struct ib_cq *cq, void *cq_context) {
 /*
  * This one handles the reception of messages for both client or server purposes
  */
-static void _recv_cq_handle(struct ib_cq *cq, void *cq_context) {
+static void _recv_cq_handle(struct ib_cq *cq) {
     int ret = 0;
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
     dsm_recv_poll(cq);
@@ -358,7 +362,7 @@ void send_cq_handle_work(struct work_struct *work) {
    
     if (module_is_live(THIS_MODULE)) {
         ele = container_of(work, struct conn_element, send_work);
-        _send_cq_handle(ele->send_cq, NULL);
+        _send_cq_handle(ele->send_cq);
     }
 }
 void recv_cq_handle_work(struct work_struct *work) {
@@ -366,7 +370,7 @@ void recv_cq_handle_work(struct work_struct *work) {
 
     if (module_is_live(THIS_MODULE)) {
         ele = container_of(work, struct conn_element, recv_work);
-        _recv_cq_handle(ele->recv_cq, NULL);
+        _recv_cq_handle(ele->recv_cq);
     }
 }
 
@@ -378,6 +382,7 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
     queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
 }
+
 /*
  * This one is specific to the client part
  * It triggers the connection in the first place and handles the reaction of the remote node.
@@ -405,7 +410,7 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
                 goto err3;
             }
 
-            ele->alive = 1;
+            atomic_set(&ele->alive, 1);
             break;
 
         case RDMA_CM_EVENT_ESTABLISHED:
@@ -420,7 +425,7 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
             break;
 
         case RDMA_CM_EVENT_DISCONNECTED:
-            ret = destroy_connection(&ele, ele->rcm);
+            ret = destroy_connection(ele, ele->rcm);
             break;
 
         case RDMA_CM_EVENT_ADDR_ERROR:
@@ -505,7 +510,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                 goto err;
             }
 
-            ele->alive = 1;
+            atomic_set(&ele->alive, 1);
             break;
 
         case RDMA_CM_EVENT_ESTABLISHED:
@@ -514,7 +519,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
         case RDMA_CM_EVENT_DISCONNECTED:
             printk("[server_event_handler] disconnect received\n");
             ele = id->context;
-            ret = destroy_connection(&ele, ele->rcm);
+            ret = destroy_connection(ele, ele->rcm);
             break;
 
         case RDMA_CM_EVENT_CONNECT_ERROR:

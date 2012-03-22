@@ -43,13 +43,24 @@ void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
     reset_msg_stats(&sysfs->tx_stats);
 }
 
-void remove_svm(struct dsm *dsm, struct subvirtual_machine *svm) {
+void remove_svm(u32 dsm_id, u32 svm_id) {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct rb_root *root;
     struct rb_node *node;
     struct conn_element *ele;
+    struct dsm *dsm;
+    struct subvirtual_machine *svm = NULL;
+    int status = 0;
 
-    if (atomic_xchg(&svm->status, DSM_SVM_OFFLINE) == DSM_SVM_OFFLINE)
+    mutex_lock(&dsm_state->dsm_state_mutex);
+    dsm = find_dsm(dsm_id);
+    if (dsm)
+        svm = find_svm(dsm, svm_id);
+    if (svm)
+       status = atomic_xchg(&svm->status, DSM_SVM_OFFLINE);
+    mutex_unlock(&dsm_state->dsm_state_mutex);
+
+    if (!svm || status == DSM_SVM_OFFLINE)
         return;
 
     mutex_lock(&dsm->dsm_mutex);
@@ -97,13 +108,15 @@ void remove_dsm(struct dsm *dsm) {
 
     list_for_each_safe (pos, n, &dsm->svm_list) {
         svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-        remove_svm(dsm, svm);
+        remove_svm(dsm->dsm_id, svm->svm_id);
     }
 
     destroy_mrs(dsm, 1);
     delete_dsm_sysfs_entry(&dsm->dsm_kobject);
 
+    mutex_lock(&dsm_state->dsm_state_mutex);
     kfree(dsm);
+    mutex_unlock(&dsm_state->dsm_state_mutex);
 }
 
 static int register_dsm(struct private_data *priv_data, void __user *argp) {
@@ -533,7 +546,7 @@ static int release(struct inode *inode, struct file *f) {
 
     if (!data->svm)
         return 1;
-    remove_svm(data->dsm, data->svm);
+    remove_svm(data->dsm->dsm_id, data->svm->svm_id);
     if (data->dsm->nb_local_svm == 0) {
         remove_dsm(data->dsm);
         printk("[Release ] last local svm , freeing the dsm\n");

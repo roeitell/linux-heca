@@ -180,13 +180,9 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) 
 }
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
-    struct dsm *dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
-    struct subvirtual_machine *svm = find_svm(dsm, rx_buf_e->dsm_msg->src_id);
-
     printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_msg->src_id);
-    if (dsm)
-        remove_svm(dsm, svm);
-    return !!dsm;
+    remove_svm(rx_buf_e->dsm_msg->dsm_id, rx_buf_e->dsm_msg->src_id);
+    return 1;
 }
 
 /**
@@ -244,7 +240,7 @@ int process_page_request(struct conn_element * ele,
          */
         if (__atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) >
                 MAX_CONSECUTIVE_SVM_FAILURES) {
-            remove_svm(dsm, local_svm);
+            remove_svm(dsm->dsm_id, local_svm->svm_id);
             goto no_svm;
         }
 

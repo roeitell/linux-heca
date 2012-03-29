@@ -1147,27 +1147,24 @@ static void release_dpc_element(struct subvirtual_machine *svm,
         struct dsm_page_cache *dpc, struct tx_buf_ele *tx_e) {
     int i;
 
-    if (dpc->tag != PUSH_TAG) {
-        atomic_dec(&dpc->nproc);
-        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-            if (atomic_cmpxchg(&dpc->found, -1, -2) == -1) {
-                for (i = 0; i < dpc->npages; i++) {
-                    page_cache_release(dpc->pages[i]);
-                    set_page_private(dpc->pages[i], 0);
-                    SetPageUptodate(dpc->pages[i]);
-                }
-                unlock_page(dpc->pages[0]);
-                dsm_cache_release(dpc->svm, dpc->addr);
-            } else {
-                if (dpc->tag != PREFETCH_TAG)
-                    dsm_cache_release(dpc->svm, dpc->addr);
+    atomic_dec(&dpc->nproc);
+    if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        if (atomic_cmpxchg(&dpc->found, -1, -2) == -1) {
+            for (i = 0; i < dpc->npages; i++) {
+                page_cache_release(dpc->pages[i]);
+                set_page_private(dpc->pages[i], 0);
+                SetPageUptodate(dpc->pages[i]);
             }
-            page_cache_release(dpc->pages[0]);
-            dsm_dealloc_dpc(&dpc);
+            unlock_page(dpc->pages[0]);
+            dsm_cache_release(dpc->svm, dpc->addr);
+        } else if (dpc->tag != PREFETCH_TAG) {
+            dsm_cache_release(dpc->svm, dpc->addr);
         }
-        if (tx_e && tx_e->wrk_req->dst_addr)
-            ((struct page_pool_ele * ) tx_e->wrk_req->dst_addr)->mem_page = 0;
+        page_cache_release(dpc->pages[0]);
+        dsm_dealloc_dpc(&dpc);
     }
+    if (tx_e && tx_e->wrk_req->dst_addr)
+        ((struct page_pool_ele * ) tx_e->wrk_req->dst_addr)->mem_page = 0;
 }
 
 void release_svm_tx_elements(struct subvirtual_machine *svm,
@@ -1181,7 +1178,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
 
         if (msg->dsm_id == svm->dsm->dsm_id &&
                 (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) &&
-                atomic_cmpxchg(&tx_buf[i].used, 1, 0) == 1) {
+                atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
             release_dpc_element(svm, tx_buf[i].wrk_req->dpc, &tx_buf[i]);
             release_page(ele, &tx_buf[i]);
             release_tx_element(ele, &tx_buf[i]);

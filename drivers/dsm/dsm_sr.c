@@ -491,7 +491,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
     svms = dsm_descriptor_to_svms(mr->descriptor);
 
     down_read(&mm->mmap_sem);
-    ret = dsm_try_push_page(dsm, fault_svm, mm, mr->descriptor, svms.num, addr);
+    ret = dsm_try_push_page(dsm, fault_svm, mm, mr->descriptor, svms, addr);
     up_read(&mm->mmap_sem);
 
     if (!ret) {

@@ -289,6 +289,9 @@ struct subvirtual_machine {
     struct radix_tree_root page_cache;
     spinlock_t page_cache_spinlock;
 
+    struct rb_root push_cache;
+    seqlock_t push_cache_lock;
+
     struct svm_sysfs svm_sysfs;
 };
 
@@ -365,8 +368,10 @@ struct dsm_request {
     uint64_t addr;
     int (*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
-    struct list_head queue;
     struct dsm_page_cache *dpc;
+    int index;
+
+    struct list_head queue;
 };
 
 struct dsm_module_state {
@@ -391,9 +396,12 @@ struct dsm_page_cache {
     int tag;
 
     struct page **pages;
-    int npages;
+    struct svm_list svms;
     atomic_t found;
     atomic_t nproc;
+    unsigned long bitmap;
+
+    struct rb_node rb_node;
 };
 
 /*

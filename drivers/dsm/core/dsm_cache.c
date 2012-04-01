@@ -9,7 +9,7 @@
 static struct kmem_cache *dsm_cache_kmem;
 
 inline struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
-        unsigned long addr, int npages, int nproc, int tag) {
+        unsigned long addr, struct svm_list svms, int nproc, int tag) {
     struct dsm_page_cache *dpc;
 
     dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
@@ -19,13 +19,13 @@ inline struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
     atomic_set(&dpc->found, -1);
     atomic_set(&dpc->nproc, nproc);
     dpc->addr = addr;
-    dpc->npages = npages;
+    dpc->svms = svms;
     dpc->tag = tag;
     dpc->svm = svm;
 
-    if (npages > DSM_PAGE_CACHE_DEFAULT) {
+    if (svms.num > DSM_PAGE_CACHE_DEFAULT) {
         kfree(dpc->pages);
-        dpc->pages = kzalloc(sizeof(struct page *)*npages, GFP_KERNEL);
+        dpc->pages = kzalloc(sizeof(struct page *)*svms.num, GFP_KERNEL);
     }
 
     out: return dpc;
@@ -35,7 +35,7 @@ inline void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
     int i;
 
     if (*dpc) {
-        for (i = 0; i < (*dpc)->npages; i++)
+        for (i = 0; i < (*dpc)->svms.num; i++)
             (*dpc)->pages[i] = 0;
         kmem_cache_free(dsm_cache_kmem, *dpc);
         *dpc = NULL;
@@ -62,42 +62,31 @@ void destroy_dsm_cache_kmem(void) {
 }
 EXPORT_SYMBOL(destroy_dsm_cache_kmem);
 
-struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *svm, 
-        unsigned long addr, int npages, int nproc, int tag) {
-    struct dsm_page_cache *dpc = NULL, *found_dpc;
-    int r;
+struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
+        unsigned long addr, struct svm_list svms, int nproc) {
+    struct dsm_page_cache *dpc = NULL, *rb_dpc;
+    struct rb_node **new, *parent = NULL;
 
-    do {
-        found_dpc = dsm_cache_get_hold(svm, addr);
-        if (found_dpc)
-            goto fail;
-        
-        if (!dpc) {
-            dpc = dsm_alloc_dpc(svm, addr, npages, nproc, tag);
-            if (!dpc)
-                goto fail;
-        }
-
-        r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
-        if (r)
-            goto fail;
-
-        spin_lock_irq(&svm->page_cache_spinlock);
-        r = radix_tree_insert(&svm->page_cache, addr, dpc);
-        spin_unlock_irq(&svm->page_cache_spinlock);
-        radix_tree_preload_end();
-
-        if (!r)
+    write_seqlock(&svm->push_cache_lock);
+    for (new = &svm->push_cache.rb_node; *new; ) {
+        rb_dpc = rb_entry(*new, struct dsm_page_cache, rb_node);
+        parent = *new;
+        if (addr < rb_dpc->addr)
+            new = &(*new)->rb_left;
+        else if (addr > rb_dpc->addr)
+            new = &(*new)->rb_right;
+        else
             goto out;
+    }
 
-    } while (r != -ENOMEM);
+    dpc = dsm_alloc_dpc(svm, addr, svms, nproc, PUSH_TAG);
+    dpc->bitmap = (1 << nproc)-1;
+    rb_link_node(&dpc->rb_node, parent, new);
+    rb_insert_color(&dpc->rb_node, &svm->push_cache);
 
-    fail:
-    if (dpc)
-        dsm_dealloc_dpc(&dpc);
-
-    out: return dpc;
-};
+    out: write_sequnlock(&svm->push_cache_lock);
+    return dpc;
+}
 
 struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm, 
        unsigned long addr) {
@@ -124,6 +113,31 @@ struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
     return dpc;
 };
 EXPORT_SYMBOL(dsm_cache_get);
+
+struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
+        unsigned long addr) {
+    struct rb_node *node;
+    struct dsm_page_cache *dpc = NULL;
+    unsigned long seq = 0;
+
+    /*
+     * FIXME: Modify to read_seqbegin(); insert rcu_read_lock, to allow
+     * freeing on remove.
+     */
+    write_seqlock(&svm->push_cache_lock);
+    for (node = svm->push_cache.rb_node; node; dpc = 0) {
+        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+        if (addr < dpc->addr)
+            node = node->rb_left;
+        else if (addr > dpc->addr)
+            node = node->rb_right;
+        else
+            break;
+    }
+    write_sequnlock(&svm->push_cache_lock);
+
+    return dpc;
+}
 
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
         unsigned long addr) {
@@ -168,4 +182,11 @@ struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
     return dpc;
 }
 EXPORT_SYMBOL(dsm_cache_release);
+
+void dsm_push_cache_release(struct subvirtual_machine *svm,
+        struct dsm_page_cache *dpc) {
+    write_seqlock(&svm->push_cache_lock);
+    rb_erase(&dpc->rb_node, &svm->push_cache);
+    write_sequnlock(&svm->push_cache_lock);
+}
 

@@ -46,17 +46,21 @@
 /* dsm_cache.c */
 void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);
-struct dsm_page_cache *dsm_cache_add(struct subvirtual_machine *, unsigned long,
-       int, int, int);
-struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine*, unsigned long);
-struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine*,
+struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *,
+        unsigned long);
+struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,
         unsigned long);
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *, 
         unsigned long);
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *, unsigned long,
-        int, int, int);
+        struct svm_list, int, int);
 void dsm_dealloc_dpc(struct dsm_page_cache **);
-
+struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *,
+        unsigned long, struct svm_list, int);
+struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *,
+        unsigned long);
+void dsm_push_cache_release(struct subvirtual_machine *,
+        struct dsm_page_cache *);
 
 struct dsm_functions {
     struct dsm *(*_find_dsm)(u32 dsm_id);
@@ -96,7 +100,7 @@ struct page * dsm_extract_page_from_remote(struct dsm *,
 
 // dsm_page_fault
 int dsm_try_push_page(struct dsm *, struct subvirtual_machine *, 
-    struct mm_struct *, u32, int, unsigned long);
+    struct mm_struct *, u32, struct svm_list, unsigned long);
 
 extern struct dsm_functions *funcs;
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,

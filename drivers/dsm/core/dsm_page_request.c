@@ -260,12 +260,14 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
 }
 
 static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
-        struct mm_struct *mm, unsigned long addr) {
+        struct subvirtual_machine *remote_svm, struct mm_struct *mm,
+        unsigned long addr) {
     struct page *page = NULL;
     struct dsm_page_cache *dpc = NULL;
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
+    int i;
 
     dsm_extract_pte_data(&pd, mm, addr);
     if (!pd.pte)
@@ -285,19 +287,23 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
   
         swp_e = pte_to_swp_entry(pte_entry);
         if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
-            dpc = dsm_cache_get(local_svm, addr);
-
-            if (dpc && dpc->tag == PUSH_TAG) {
-                page = dpc->pages[0];
-                if (page && trylock_page(page)) {
-                    if (atomic_dec_and_test(&dpc->nproc)) {
-                        page_cache_release(page);
-                        set_page_private(page, 0);
-                        dsm_cache_release(local_svm, addr);
-                        dsm_dealloc_dpc(&dpc);
-                    }
-                    unlock_page(page);
+            dpc = dsm_push_cache_get(local_svm, addr);
+            if (dpc) {
+                for (i = 0; i < dpc->svms.num; i++) {
+                    if (dpc->svms.pp[i] == remote_svm)
+                        break;
                 }
+                if (i == dpc->svms.num)
+                    goto out;
+                page = dpc->pages[0];
+                clear_bit_unlock(i, &dpc->bitmap);
+                if (!dpc->bitmap) {
+                    page_cache_release(page);
+                    set_page_private(page, 0);
+                    dsm_push_cache_release(local_svm, dpc);
+                    dsm_dealloc_dpc(&dpc);
+                }
+
                 /*
                  * No need to set pte at remote, since this is done when just
                  * beginning to push.
@@ -312,16 +318,17 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     out: return page;
 }
 
-struct page *dsm_extract_page_from_remote(struct dsm *dsm, 
-        struct subvirtual_machine *local_svm, 
-        struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag) {
+struct page *dsm_extract_page_from_remote(struct dsm *dsm,
+        struct subvirtual_machine *local_svm,
+        struct subvirtual_machine *remote_svm, unsigned long addr,
+        u16 tag) {
     struct mm_struct *mm;
     struct page *page = NULL;
 
     mm = local_svm->priv->mm;
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE) ?
-        try_dsm_extract_page(local_svm, mm, addr) :
+        try_dsm_extract_page(local_svm, remote_svm, mm, addr) :
         dsm_extract_page(local_svm, remote_svm, mm, addr);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);

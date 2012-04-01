@@ -182,7 +182,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 EXPORT_SYMBOL(dsm_flag_page_remote);
 
 int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
-        struct mm_struct *mm, u32 descriptor, int req_num, unsigned long addr) {
+        struct mm_struct *mm, u32 descriptor, struct svm_list svms,
+        unsigned long addr) {
 
     spinlock_t *ptl;
     pte_t *pte;
@@ -196,7 +197,9 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     swp_entry_t swp_e;
     struct dsm_page_cache *dpc;
 
+    /*
     printk("[dsm_try_push_page] trying to push back page %p \n ", (void*) addr);
+    */
 
     retry: vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
@@ -297,7 +300,7 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
         goto bad_page;
     }
 
-    dpc = dsm_cache_add(local_svm, addr, 1, req_num, PUSH_TAG);
+    dpc = dsm_push_cache_add(local_svm, addr, svms, svms.num);
     if (!dpc)
         goto bad_page;
 
@@ -322,9 +325,11 @@ int dsm_try_push_page(struct dsm *dsm, struct subvirtual_machine *local_svm,
     unlock_page(page);
     pte_unmap_unlock(pte, ptl);
 
+    /*
     printk(
             "[dsm_try_push_page] extracted page and added it to swap %p  \n ",
             (void*) page);
+    */
 
     return ret;
 

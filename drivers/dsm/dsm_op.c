@@ -1150,7 +1150,7 @@ static void release_dpc_element(struct subvirtual_machine *svm,
     atomic_dec(&dpc->nproc);
     if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
         if (atomic_cmpxchg(&dpc->found, -1, -2) == -1) {
-            for (i = 0; i < dpc->npages; i++) {
+            for (i = 0; i < dpc->svms.num; i++) {
                 page_cache_release(dpc->pages[i]);
                 set_page_private(dpc->pages[i], 0);
                 SetPageUptodate(dpc->pages[i]);

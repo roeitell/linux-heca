@@ -237,6 +237,8 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
 
             spin_lock_init(&new_svm->page_cache_spinlock);
             INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
+            new_svm->push_cache = RB_ROOT;
+            seqlock_init(&new_svm->push_cache_lock);
             INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
             printk(
@@ -305,7 +307,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
             reset_svm_stats(&new_svm->svm_sysfs);
-            spin_lock_init(&new_svm->page_cache_spinlock);
             scnprintf(charid, 11, "%x", new_svm->svm_id);
             //TODO catch error
             create_svm_sysfs_entry(&new_svm->svm_sysfs,
@@ -504,7 +505,6 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
     struct dsm *dsm;
     struct unmap_data udata;
 
-    printk("[DSM_TRY_PUSH_BACK_PAGE]\n");
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
 
@@ -512,12 +512,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
     BUG_ON(!dsm);
 
     addr = udata.addr & PAGE_MASK;
-    if (!dsm_cache_get(priv_data->svm, addr)) {
-        r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr);
-    }
-    else {
-        r = 0;
-    }
+    r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr);
 
     out: return r;
 }

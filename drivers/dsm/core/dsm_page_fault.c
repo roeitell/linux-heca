@@ -256,9 +256,9 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     struct page *page = ppe->mem_page;
     int i, j, r = 0;
 
-    for (i = 0; i < dpc->npages && dpc->pages[i] != page; i++)
+    for (i = 0; i < dpc->svms.num && dpc->pages[i] != page; i++)
         ;
-    if (unlikely(i == dpc->npages))
+    if (unlikely(i == dpc->svms.num))
         goto out;
 
     r = 1;
@@ -266,7 +266,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
         mem_cgroup_reset_owner(page);
         lru_cache_add_anon(page);
 
-        for (j = 0; j < dpc->npages; j++) {
+        for (j = 0; j < dpc->svms.num; j++) {
             if (dpc->pages[j]) {
                 page_cache_release(dpc->pages[j]);
                 set_page_private(dpc->pages[j], 0);
@@ -294,7 +294,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
      *
      */
     if (unlikely(tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL)) {
-        for (i = 0; i < dpc->npages; i++) {
+        for (i = 0; i < dpc->svms.num; i++) {
             if (dpc->pages[i] == ppe->mem_page) {
                 r = 1;
                 break;
@@ -403,7 +403,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
             goto fail;
 
         if (!new_dpc) {
-            new_dpc = dsm_alloc_dpc(fault_svm, norm_addr, svms.num,
+            new_dpc = dsm_alloc_dpc(fault_svm, norm_addr, svms,
                     svms.num + nproc, tag);
             if (!new_dpc)
                 goto fail;

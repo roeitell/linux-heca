@@ -393,7 +393,7 @@ struct svm_list {
 struct dsm_page_cache {
     struct subvirtual_machine *svm;
     unsigned long addr;
-    int tag;
+    u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
     struct page **pages;
     struct svm_list svms;

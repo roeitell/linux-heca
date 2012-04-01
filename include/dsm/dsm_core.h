@@ -46,8 +46,6 @@
 /* dsm_cache.c */
 void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);
-struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *,
-        unsigned long);
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,
         unsigned long);
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *, 
@@ -55,12 +53,6 @@ struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *,
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *, unsigned long,
         struct svm_list, int, int);
 void dsm_dealloc_dpc(struct dsm_page_cache **);
-struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *,
-        unsigned long, struct svm_list, int);
-struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *,
-        unsigned long);
-void dsm_push_cache_release(struct subvirtual_machine *,
-        struct dsm_page_cache *);
 
 struct dsm_functions {
     struct dsm *(*_find_dsm)(u32 dsm_id);
@@ -89,24 +81,24 @@ void reg_dsm_functions(
         int(*func)(struct tx_buf_ele *), int, struct dsm_page_cache*)
 );
 
+/* dsm_unmap.c */
+extern struct dsm_functions *funcs;
 void dereg_dsm_functions(void);
 int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32,
         unsigned long);
 
-// dsm_page_request
-struct page * dsm_extract_page_from_remote(struct dsm *, 
+/* dsm_page_request.c */
+struct page *dsm_extract_page_from_remote(struct dsm *, 
         struct subvirtual_machine *, struct subvirtual_machine *, unsigned long,
         u16);
+int dsm_prepare_page_for_push(struct subvirtual_machine *, struct svm_list,
+        struct mm_struct *, unsigned long, u32);
 
-// dsm_page_fault
-int dsm_try_push_page(struct dsm *, struct subvirtual_machine *, 
-    struct mm_struct *, u32, struct svm_list, unsigned long);
-
-extern struct dsm_functions *funcs;
+/* dsm_page_fault.c */
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
 
-// svm_descriptors
+/* svm_descriptors */
 void dsm_init_descriptors(void);
 void dsm_destroy_descriptors(void);
 swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);

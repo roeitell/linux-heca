@@ -45,24 +45,25 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
         unsigned long addr, int hold) {
     struct rb_node *node;
     struct dsm_page_cache *dpc = NULL;
+    int seq;
 
-    /*
-     * FIXME: Modify to read_seqbegin(); insert rcu_read_lock, to allow
-     * freeing on remove.
-     */
-    write_seqlock(&svm->push_cache_lock);
-    for (node = svm->push_cache.rb_node; node; dpc = 0) {
-        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
-        if (addr < dpc->addr)
-            node = node->rb_left;
-        else if (addr > dpc->addr)
-            node = node->rb_right;
-        else
-            break;
-    }
-    if (hold && !atomic_inc_not_zero(&dpc->nproc))
+    rcu_read_lock();
+    do {
+        seq = read_seqbegin(&svm->push_cache_lock);
+        for (node = svm->push_cache.rb_node; node; dpc = 0) {
+            dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+            if (addr < dpc->addr)
+                node = node->rb_left;
+            else if (addr > dpc->addr)
+                node = node->rb_right;
+            else
+                break;
+        }
+    } while (read_seqretry(&svm->push_cache_lock, seq));
+
+    if (hold && dpc && !atomic_inc_not_zero(&dpc->nproc))
         dpc = NULL;
-    write_sequnlock(&svm->push_cache_lock);
+    rcu_read_unlock();
 
     return dpc;
 }
@@ -375,6 +376,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         page_cache_release(page);
         set_page_private(page, 0);
         dsm_push_cache_release(local_svm, dpc);
+        synchronize_rcu();
         dsm_dealloc_dpc(&dpc);
     }
     if (dsc >= 0 && !dpc) {

@@ -93,6 +93,8 @@ struct page *dsm_extract_page_from_remote(struct dsm *,
         u16);
 struct page *dsm_prepare_page_for_push(struct subvirtual_machine *,
         struct svm_list, struct mm_struct *, unsigned long, u32);
+struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,
+        unsigned long);
 
 /* dsm_page_fault.c */
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,

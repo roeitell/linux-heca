@@ -413,6 +413,20 @@ static int get_dsm_page(struct mm_struct *mm,
         unsigned long addr, struct subvirtual_machine *fault_svm,
         unsigned long private, int tag);
 
+static int dsm_cache_add_dpc(struct subvirtual_machine *svm, 
+        struct dsm_page_cache *dpc) {
+    int r;
+
+    r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
+    if (likely(!r)) {
+        spin_lock_irq(&svm->page_cache_spinlock);
+        r = radix_tree_insert(&svm->page_cache, dpc->addr, dpc);
+        spin_unlock_irq(&svm->page_cache_spinlock);
+    }
+
+    return r;
+}
+
 static struct dsm_page_cache *dsm_cache_add_send(
         struct subvirtual_machine *fault_svm, struct svm_list svms,
         unsigned long addr, unsigned long norm_addr, int nproc, int tag,
@@ -553,7 +567,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 //we need to use the page addr and not the fault address in order to have a unique reference
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
-    int ret = 0, i, rethrow, exclusive = 0;
+    int ret = 0, i = -1, rethrow, exclusive = 0;
     struct dsm_page_cache *dpc;
     struct page *found_page, *swapcache = NULL;
     pte_t pte;
@@ -564,11 +578,32 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     if (!pte_unmap_dsm_same(mm, pmd, page_table, orig_pte))
         goto out;
 
+    if (unlikely(dsd.flags & DSM_PUSHING)) {
+        dpc = dsm_push_cache_get_remove(fault_svm, norm_addr);
+        if (likely(dpc)) {
+            atomic_set(&dpc->found, 0);
+            atomic_set(&dpc->nproc, 3);
+            dpc->tag = PULL_TAG;
+            if (likely(dsm_cache_add_dpc(fault_svm, dpc))) {
+                for (i = 0; i < dsd.svms.num; i++) {
+                    if (dsd.svms.pp[i]) {
+                        funcs->request_dsm_page(dpc->pages[0], dsd.svms.pp[i],
+                            fault_svm, (uint64_t) (norm_addr -
+                            fault_svm->priv->offset), NULL, PULL_TAG, NULL);
+                    }
+                }
+                goto attempt;
+            } else {
+                dsm_dealloc_dpc(&dpc);
+            }
+        }
+    }
+
     retry: dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,
                 PULL_TAG, vma, mm, 0, flags & FAULT_FLAG_ALLOW_RETRY);
-        if (!dpc) {
+        if (unlikely(!dpc)) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
             if (likely(pte_same(*page_table, orig_pte)))
                 ret = VM_FAULT_OOM;
@@ -580,24 +615,17 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
     }
 
-    if (unlikely(dpc->tag != PULL_TAG)) {
-        i = dpc->tag;
+    if (unlikely(dpc->tag != PULL_TAG))
         dpc->tag = PULL_TAG;
 
-        if (unlikely(i == PUSH_TAG)) {
-            found_page = dpc->pages[0];
-            goto found;
-        }
-    }
-
-    rethrow = !lock_page_or_retry(dpc->pages[0], mm, flags);
+    attempt: rethrow = !lock_page_or_retry(dpc->pages[0], mm, flags);
     if (rethrow) {
         ret |= VM_FAULT_RETRY;
         goto out;
     }
 
     i = atomic_read(&dpc->found);
-    if (i < 0) {
+    if (unlikely(i < 0)) {
         if (unlikely(page_private(dpc->pages[0]) == ULONG_MAX)) {
             dpc_nproc_dec(&dpc, 1);
             goto retry;
@@ -610,7 +638,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     if (i)
         __set_page_locked(found_page);
 
-    found: page_cache_get(found_page);
+    page_cache_get(found_page);
     if (ksm_might_need_to_copy(found_page, vma, address)) {
         swapcache = found_page;
         found_page = ksm_does_need_to_copy(found_page, vma, address);

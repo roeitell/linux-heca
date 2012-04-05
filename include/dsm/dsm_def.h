@@ -439,6 +439,7 @@ struct dsm_swp_data {
     struct dsm *dsm;
     struct svm_list svms;
     u32 flags;
+#define DSM_PUSHING 1
 };
 
 #endif /* DSM_DEF_H_ */

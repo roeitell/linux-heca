@@ -32,7 +32,7 @@ static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
             goto out;
     }
 
-    dpc = dsm_alloc_dpc(svm, addr, svms, nproc, descriptor);
+    dpc = dsm_alloc_dpc(svm, addr, svms, nproc + 1, descriptor);
     dpc->bitmap = (1 << nproc)-1;
     rb_link_node(&dpc->rb_node, parent, new);
     rb_insert_color(&dpc->rb_node, &svm->push_cache);
@@ -42,7 +42,7 @@ static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
 }
 
 static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
-        unsigned long addr) {
+        unsigned long addr, int hold) {
     struct rb_node *node;
     struct dsm_page_cache *dpc = NULL;
 
@@ -60,6 +60,8 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
         else
             break;
     }
+    if (hold && !atomic_inc_not_zero(&dpc->nproc))
+        dpc = NULL;
     write_sequnlock(&svm->push_cache_lock);
 
     return dpc;
@@ -70,6 +72,14 @@ static void dsm_push_cache_release(struct subvirtual_machine *svm,
     write_seqlock(&svm->push_cache_lock);
     rb_erase(&dpc->rb_node, &svm->push_cache);
     write_sequnlock(&svm->push_cache_lock);
+}
+
+struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
+        unsigned long addr) {
+    struct dsm_page_cache *dpc = dsm_push_cache_get(svm, addr, 1);
+    if (likely(dpc))
+        dsm_push_cache_release(svm, dpc);
+    return dpc;
 }
 
 static void dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
@@ -305,63 +315,77 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
-    int i;
+    int i, dsc = -1;
 
     dsm_extract_pte_data(&pd, mm, addr);
     if (!pd.pte)
-        goto fail;
+        goto out;
     pte_entry = *(pd.pte);
 
-    dpc = dsm_push_cache_get(local_svm, addr);
-    if (likely(dpc)) {
-        for (i = 0; i < dpc->svms.num; i++) {
-            if (dpc->svms.pp[i] == remote_svm)
-                break;
-        }
-        if (unlikely(i == dpc->svms.num))
-            goto fail;
-        page = dpc->pages[0];
+    dpc = dsm_push_cache_get(local_svm, addr, 0);
+    if (unlikely(!dpc))
+        goto out;
 
-        if (test_and_clear_bit(i, &dpc->bitmap) && !dpc->bitmap) {
-            page_cache_release(page);
-            set_page_private(page, 0);
-            dsm_push_cache_release(local_svm, dpc);
-            dsm_dealloc_dpc(&dpc);
-        }
+    for (i = 0; i < dpc->svms.num; i++) {
+        if (dpc->svms.pp[i] == remote_svm)
+            goto extract;
     }
+    goto out;
 
+    extract: page = dpc->pages[0];
     if (unlikely(PageActive(page))) {
-        goto fail;
+        goto noop;
 
     } else if (pte_present(pte_entry)) {
         if (likely(trylock_page(page))) {
             flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
             ptep_clear_flush_notify(pd.vma, addr, pd.pte);
             set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
-                    dsm_descriptor_to_swp_entry(dpc->tag, 0)));
+                dsm_descriptor_to_swp_entry(dpc->tag, (dpc->svms.num == 1) ? 0 :
+                    DSM_PUSHING)));
             page_remove_rmap(page);
             dec_mm_counter(mm, MM_ANONPAGES);
             /*
-             * TODO: Doesn't make sense here; original comment was: "this is a page
-             * flagging without data exchange so we can free the page"
+             * TODO: Doesn't make sense here; original comment was: "this is a
+             * page flagging without data exchange so we can free the page"
              */
             if (likely(!page_mapped(page)))
                 try_to_free_swap(page);
             unlock_page(page);
+        } else if (dpc->svms.num> 1) {
+            dsc = dpc->tag;
         }
 
     } else {
-        if (unlikely(pte_none(pte_entry)))
-            goto fail;
+        if (unlikely(pte_none(pte_entry))) {
+            page = NULL;
+            goto noop;
+        }
   
         swp_e = pte_to_swp_entry(pte_entry);
         if (unlikely(!non_swap_entry(swp_e) || !is_dsm_entry(swp_e)))
             BUG_ON(page);
+
+        dsc = dpc->tag;
     }
 
-    return page;
-
-    fail: return NULL;
+    noop: atomic_dec(&dpc->nproc);
+    if (test_and_clear_bit(i, &dpc->bitmap) &&
+            atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        page_cache_release(page);
+        set_page_private(page, 0);
+        dsm_push_cache_release(local_svm, dpc);
+        dsm_dealloc_dpc(&dpc);
+    }
+    if (dsc >= 0 && !dpc) {
+        lock_page(page);
+        flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
+        ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+        set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
+                dsm_descriptor_to_swp_entry(dsc, 0)));
+        unlock_page(page);
+    }
+    out: return page;
 }
 
 struct page *dsm_extract_page_from_remote(struct dsm *dsm,

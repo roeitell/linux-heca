@@ -50,30 +50,31 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
     struct conn_element *ele;
     struct dsm *dsm;
     struct subvirtual_machine *svm = NULL;
-    int status = 0;
 
     mutex_lock(&dsm_state->dsm_state_mutex);
     dsm = find_dsm(dsm_id);
-    if (dsm)
+    if (dsm) {
+        mutex_lock(&dsm->dsm_mutex);
         svm = find_svm(dsm, svm_id);
-    if (svm)
-       status = atomic_xchg(&svm->status, DSM_SVM_OFFLINE);
+    }
     mutex_unlock(&dsm_state->dsm_state_mutex);
 
-    if (!svm || status == DSM_SVM_OFFLINE)
-        return;
+    if (!svm)
+        goto out;
 
-    mutex_lock(&dsm->dsm_mutex);
+    atomic_set(&svm->status, DSM_SVM_OFFLINE);
+
     list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
     if (svm->priv) {
         dsm->nb_local_svm--;
-        radix_tree_delete(&dsm->svm_mm_tree_root, (unsigned long) svm->svm_id);
+        radix_tree_delete(&dsm->svm_mm_tree_root, 
+                (unsigned long) svm->priv->mm);
     }
 
     release_svm_from_mr_descriptors(svm);
     if (svm->priv) {
-        /* TODO: Locking for inserting/removing/iterating conns? */
+        /* FIXME: Locking for inserting/removing/iterating rcm conns! */
         root = &dsm_state->rcm->root_conn;
         for (node = rb_first(root); node; node = rb_next(node)) {
             ele = rb_entry(node, struct conn_element, rb_node);
@@ -89,7 +90,10 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
     delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
 
     kfree(svm);
-    mutex_unlock(&dsm->dsm_mutex);
+
+    out:
+    if (dsm)
+        mutex_unlock(&dsm->dsm_mutex);
 }
 
 void remove_dsm(struct dsm *dsm) {
@@ -99,17 +103,17 @@ void remove_dsm(struct dsm *dsm) {
 
     printk("[remove_dsm] removing dsm %d  \n", dsm->dsm_id);
 
+    list_for_each_safe (pos, n, &dsm->svm_list) {
+        svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
+        remove_svm(dsm->dsm_id, svm->svm_id);
+    }
+
     mutex_lock(&dsm_state->dsm_state_mutex);
     list_del(&dsm->dsm_ptr);
     radix_tree_delete(&dsm_state->dsm_tree_root,
             (unsigned long) dsm->dsm_id);
     mutex_unlock(&dsm_state->dsm_state_mutex);
     synchronize_rcu();
-
-    list_for_each_safe (pos, n, &dsm->svm_list) {
-        svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-        remove_svm(dsm->dsm_id, svm->svm_id);
-    }
 
     destroy_mrs(dsm, 1);
     delete_dsm_sysfs_entry(&dsm->dsm_kobject);
@@ -198,7 +202,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
     dsm = find_dsm(svm_info.dsm_id);
     BUG_ON(!dsm);
 
-    mutex_lock(&priv_data->dsm->dsm_mutex);
+    mutex_lock(&dsm->dsm_mutex);
     do {
         found_svm = find_svm(dsm, svm_info.svm_id);
         if (found_svm)
@@ -212,11 +216,11 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
         if (r)
             break;
 
-        r = radix_tree_insert(&priv_data->dsm->svm_tree_root,
+        r = radix_tree_insert(&dsm->svm_tree_root,
                 (unsigned long) svm_info.svm_id, new_svm);
         if (likely(!r)) {
             //the following should never fail as we locked the dsm and we made sure that we add the ID first
-            r = radix_tree_insert(&priv_data->dsm->svm_mm_tree_root,
+            r = radix_tree_insert(&dsm->svm_mm_tree_root,
                     (unsigned long) priv_data->mm, new_svm);
 
             radix_tree_preload_end();
@@ -226,7 +230,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             priv_data->offset = svm_info.offset;
             new_svm->svm_id = svm_info.svm_id;
             new_svm->ele = NULL;
-            new_svm->dsm = priv_data->dsm;
+            new_svm->dsm = dsm;
             new_svm->dsm->nb_local_svm++;
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
             reset_svm_stats(&new_svm->svm_sysfs);
@@ -240,22 +244,20 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->push_cache = RB_ROOT;
             seqlock_init(&new_svm->push_cache_lock);
             INIT_LIST_HEAD(&new_svm->mr_list);
-            list_add(&new_svm->svm_ptr, &priv_data->dsm->svm_list);
-            printk(
-                    "[DSM_SVM]\n\t registered svm %p , res : %d\n\tdsm_id : %u\n\tsvm_id : %u\n",
+            list_add(&new_svm->svm_ptr, &dsm->svm_list);
+            printk("[DSM_SVM] reg svm %p, res %d, dsm_id %u, svm_id: %u\n",
                     new_svm, r, svm_info.dsm_id, svm_info.svm_id);
-            goto exit;
+            goto out;
 
         }
         radix_tree_preload_end();
 
     } while (r != -ENOMEM);
-    if (new_svm) {
-        kfree(new_svm);
-    }
-    exit:
 
-    mutex_unlock(&priv_data->dsm->dsm_mutex);
+    if (new_svm)
+        kfree(new_svm);
+
+    out: mutex_unlock(&dsm->dsm_mutex);
     return r;
 
 }
@@ -277,8 +279,8 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     dsm = find_dsm(svm_info.dsm_id);
     BUG_ON(!dsm);
 
-    printk("[DSM_CONNECT] connecting svm \ndsm_id : %u\nsvm_id : %u\n\n",
-            svm_info.dsm_id, svm_info.svm_id);
+    printk("[DSM_CONNECT] dsm_id: %u [%p], svm_id: %u\n", svm_info.dsm_id,
+            dsm, svm_info.svm_id);
 
     mutex_lock(&dsm->dsm_mutex);
     do {

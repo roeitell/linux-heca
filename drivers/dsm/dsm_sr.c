@@ -482,19 +482,20 @@ int dsm_recv_info(struct conn_element *ele) {
 
 int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *fault_svm, unsigned long request_addr) {
-    int ret = -1, i;
+    int i = 0;
     unsigned long addr = request_addr & PAGE_MASK;
     struct memory_region *mr;
     struct svm_list svms;
+    struct page *page;
 
     mr = search_mr(dsm, addr); /* TODO: unsure if should be masked right now */
     svms = dsm_descriptor_to_svms(mr->descriptor);
 
     down_read(&mm->mmap_sem);
-    ret = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
+    page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
     up_read(&mm->mmap_sem);
 
-    if (!ret) {
+    if (page) {
         for (i = 0; i < svms.num; i++) {
             if (svms.pp[i]) {
                 send_request_dsm_page_pull(svms.pp[i], fault_svm,
@@ -503,6 +504,6 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
         }
     }
 
-    return ret;
+    return !page || !i;
 }
 

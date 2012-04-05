@@ -186,31 +186,7 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
                             goto out;
                         
                         /*
-                         * FIXME: Change the logic here, can't have PUSH_TAG
-                         * inside svm->page_cache
-                         *
-                         * 2. We're in midst of pushing the page somewhere. We
-                         *    cancel the push operation, and answer the pull
-                         *    request instead.
-                         *
-                         * TODO: We might have been trying to push somewhere
-                         * else; need to re-set the pte.
-                         *
-                         *
-                        } else if (dpc->tag == PUSH_TAG) {
-                            page = dpc->pages[0];
-                            if (page && trylock_page(page)) {
-                                BUG_ON(page_mapcount(page));
-                                dsm_cache_release(local_svm, addr);
-                                dsm_dealloc_dpc(&dpc);
-                                page_cache_release(page);
-                                unlock_page(page);
-                                goto out;
-                            }
-                            atomic_dec(&dpc->nproc);
-
-                        *
-                         * 3. Page has been brought as prefetch, and exists, 
+                         * 2. Page has been brought as prefetch, and exists, 
                          *    waiting to be faulted in.
                          *
                          */
@@ -229,13 +205,11 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
                             }
                             goto out;
                         }
-
-                        printk("[dsm_extract_page] trying to grab a page which we are currently pulling\n");
-                        goto chain_fault;
-                    } else {
-                        printk("[dsm_extract_page] page not present or swapped out, or somewhere else, not handled yet\n");
-                        BUG();
                     }
+
+                    printk("[dsm_extract_page] trying to grab a page which"
+                                    " we already pushed\n");
+                    goto chain_fault;
                 } else if (is_migration_entry(swp_e)) {
                     migration_entry_wait(mm, pd.pmd, addr);
                     goto retry;
@@ -335,17 +309,17 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
 
     dsm_extract_pte_data(&pd, mm, addr);
     if (!pd.pte)
-        goto out;
+        goto fail;
     pte_entry = *(pd.pte);
 
     dpc = dsm_push_cache_get(local_svm, addr);
-    if (dpc) {
+    if (likely(dpc)) {
         for (i = 0; i < dpc->svms.num; i++) {
             if (dpc->svms.pp[i] == remote_svm)
                 break;
         }
-        if (i == dpc->svms.num)
-            goto out;
+        if (unlikely(i == dpc->svms.num))
+            goto fail;
         page = dpc->pages[0];
 
         if (test_and_clear_bit(i, &dpc->bitmap) && !dpc->bitmap) {
@@ -357,32 +331,37 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     }
 
     if (unlikely(PageActive(page))) {
-        page = NULL;
+        goto fail;
 
     } else if (pte_present(pte_entry)) {
-        flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-        ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-        set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
-                dsm_descriptor_to_swp_entry(dpc->tag, 0)));
-        page_remove_rmap(page);
-        dec_mm_counter(mm, MM_ANONPAGES);
-        /*
-         * TODO: Doesn't make sense here; original comment was: "this is a page
-         * flagging without data exchange so we can free the page"
-         */
-        if (likely(!page_mapped(page)))
-            try_to_free_swap(page);
+        if (likely(trylock_page(page))) {
+            flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
+            ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+            set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
+                    dsm_descriptor_to_swp_entry(dpc->tag, 0)));
+            page_remove_rmap(page);
+            dec_mm_counter(mm, MM_ANONPAGES);
+            /*
+             * TODO: Doesn't make sense here; original comment was: "this is a page
+             * flagging without data exchange so we can free the page"
+             */
+            if (likely(!page_mapped(page)))
+                try_to_free_swap(page);
+            unlock_page(page);
+        }
 
     } else {
-        if (pte_none(pte_entry))
-            goto out;
+        if (unlikely(pte_none(pte_entry)))
+            goto fail;
   
         swp_e = pte_to_swp_entry(pte_entry);
-        if (!non_swap_entry(swp_e) || !is_dsm_entry(swp_e))
+        if (unlikely(!non_swap_entry(swp_e) || !is_dsm_entry(swp_e)))
             BUG_ON(page);
     }
 
-    out: return page;
+    return page;
+
+    fail: return NULL;
 }
 
 struct page *dsm_extract_page_from_remote(struct dsm *dsm,
@@ -416,7 +395,7 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
 }
 EXPORT_SYMBOL(dsm_extract_page_from_remote);
 
-int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
+struct page *dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
         struct svm_list svms, struct mm_struct *mm, unsigned long addr,
         u32 descriptor)
 {
@@ -428,7 +407,7 @@ int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
     spinlock_t *ptl;
 
     retry: dsm_extract_pte_data(&pd, mm, addr);
-    if (!pd.pte)
+    if (unlikely(!pd.pte))
         goto out;
     pte_entry = *(pd.pte);
 
@@ -479,7 +458,7 @@ int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
         goto bad_page;
 
     dpc = dsm_push_cache_add(local_svm, addr, svms, svms.num, descriptor);
-    if (!dpc)
+    if (unlikely(!dpc))
         goto bad_page;
 
     dpc->pages[0] = page;
@@ -488,10 +467,10 @@ int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
     set_page_private(page, ULONG_MAX);
     unlock_page(page);
     pte_unmap_unlock(pte, ptl);
-    return 0;
+    return page;
 
     bad_page: pte_unmap_unlock(pte, ptl);
-    out: return 1;
+    out: return NULL;
 }
 EXPORT_SYMBOL(dsm_prepare_page_for_push);
 

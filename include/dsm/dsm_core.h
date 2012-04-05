@@ -91,8 +91,8 @@ int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32,
 struct page *dsm_extract_page_from_remote(struct dsm *, 
         struct subvirtual_machine *, struct subvirtual_machine *, unsigned long,
         u16);
-int dsm_prepare_page_for_push(struct subvirtual_machine *, struct svm_list,
-        struct mm_struct *, unsigned long, u32);
+struct page *dsm_prepare_page_for_push(struct subvirtual_machine *,
+        struct svm_list, struct mm_struct *, unsigned long, u32);
 
 /* dsm_page_fault.c */
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,

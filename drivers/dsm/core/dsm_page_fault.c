@@ -288,7 +288,6 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 
     r = 1;
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
-        mem_cgroup_reset_owner(page);
         lru_cache_add_anon(page);
 
         for (j = 0; j < dpc->svms.num; j++) {

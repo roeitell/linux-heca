@@ -27,6 +27,7 @@ obj-$(CONFIG_VIRTIO)		+= virtio/
 obj-$(CONFIG_XEN)		+= xen/
 obj-$(CONFIG_DSM_CORE)  	+= dsm/core/
 obj-$(CONFIG_DSM)               += dsm/
+obj-$(CONFIG_SOFTIWARP)         += softiwarp/
 
 # regulators early, since some subsystems rely on them to initialize
 obj-$(CONFIG_REGULATOR)		+= regulator/

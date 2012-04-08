@@ -1,0 +1,8 @@
+config SOFTIWARP
+	tristate "SOFTIWARP"
+	depends on DSM_CORE && RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET
+	default m
+	help
+	  Enable Softiwarp : provide software Iwarp over soft tcp / ip stack 
+
+	  

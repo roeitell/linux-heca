@@ -63,12 +63,12 @@ static int radeon_process_aux_ch(struct radeon_i2c_chan *chan,
 
 	memset(&args, 0, sizeof(args));
 
-	base = (unsigned char *)rdev->mode_info.atom_context->scratch;
+	base = (unsigned char *)(rdev->mode_info.atom_context->scratch + 1);
 
 	memcpy(base, send, send_bytes);
 
-	args.v1.lpAuxRequest = 0;
-	args.v1.lpDataOut = 16;
+	args.v1.lpAuxRequest = 0 + 4;
+	args.v1.lpDataOut = 16 + 4;
 	args.v1.ucDataOutLen = 0;
 	args.v1.ucChannelID = chan->rec.i2c_id;
 	args.v1.ucDelay = delay / 10;
@@ -405,10 +405,13 @@ static void dp_get_adjust_train(u8 link_status[DP_LINK_STATUS_SIZE],
 /* get bpc from the EDID */
 static int convert_bpc_to_bpp(int bpc)
 {
+#if 0
 	if (bpc == 0)
 		return 24;
 	else
 		return bpc * 3;
+#endif
+	return 24;
 }
 
 /* get the max pix clock supported by the link rate and lane num */
@@ -564,9 +567,21 @@ int radeon_dp_get_panel_mode(struct drm_encoder *encoder,
 	    ENCODER_OBJECT_ID_NUTMEG)
 		panel_mode = DP_PANEL_MODE_INTERNAL_DP1_MODE;
 	else if (radeon_connector_encoder_get_dp_bridge_encoder_id(connector) ==
-		 ENCODER_OBJECT_ID_TRAVIS)
-		panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
-	else if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
+		 ENCODER_OBJECT_ID_TRAVIS) {
+		u8 id[6];
+		int i;
+		for (i = 0; i < 6; i++)
+			id[i] = radeon_read_dpcd_reg(radeon_connector, 0x503 + i);
+		if (id[0] == 0x73 &&
+		    id[1] == 0x69 &&
+		    id[2] == 0x76 &&
+		    id[3] == 0x61 &&
+		    id[4] == 0x72 &&
+		    id[5] == 0x54)
+			panel_mode = DP_PANEL_MODE_INTERNAL_DP1_MODE;
+		else
+			panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
+	} else if (connector->connector_type == DRM_MODE_CONNECTOR_eDP) {
 		u8 tmp = radeon_read_dpcd_reg(radeon_connector, DP_EDP_CONFIGURATION_CAP);
 		if (tmp & 1)
 			panel_mode = DP_PANEL_MODE_INTERNAL_DP2_MODE;
@@ -734,7 +749,8 @@ static int radeon_dp_link_train_init(struct radeon_dp_link_train_info *dp_info)
 
 	/* set the lane count on the sink */
 	tmp = dp_info->dp_lane_count;
-	if (dp_info->dpcd[0] >= 0x11)
+	if (dp_info->dpcd[DP_DPCD_REV] >= 0x11 &&
+	    dp_info->dpcd[DP_MAX_LANE_COUNT] & DP_ENHANCED_FRAME_CAP)
 		tmp |= DP_LANE_COUNT_ENHANCED_FRAME_EN;
 	radeon_write_dpcd_reg(dp_info->radeon_connector, DP_LANE_COUNT_SET, tmp);
 

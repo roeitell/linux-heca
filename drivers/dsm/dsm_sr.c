@@ -238,7 +238,7 @@ int process_page_request(struct conn_element * ele,
          *  offline. Send a status update message to client.
          *
          */
-        if (__atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) >
+        if (atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) >
                 MAX_CONSECUTIVE_SVM_FAILURES) {
             remove_svm(dsm->dsm_id, local_svm->svm_id);
             goto no_svm;

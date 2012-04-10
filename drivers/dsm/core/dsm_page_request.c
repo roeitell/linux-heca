@@ -127,7 +127,7 @@ static void dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         spin_lock(&mm->page_table_lock);
         if (unlikely(pmd_trans_splitting(*(pd->pmd)))) {
             spin_unlock(&mm->page_table_lock);
-            wait_split_huge_page(vma->anon_vma, pd->pmd);
+            wait_split_huge_page(pd->vma->anon_vma, pd->pmd);
         } else {
             spin_unlock(&mm->page_table_lock);
             split_huge_page_pmd(mm, pd->pmd);

@@ -7,30 +7,21 @@
 
 #include <dsm/dsm_module.h>
 
-struct dsm_conn_list {
-    struct conn_element *ele;
-    struct list_head list;
-};
-
 static int rcm_disconnect(struct rcm *rcm) {
     struct rb_root *root = &rcm->root_conn;
-    struct rb_node *node;
-    struct dsm_conn_list *it, *next;
-    LIST_HEAD(conns);
+    struct rb_node *node, *next;
+    struct conn_element *ele;
 
-    for (node = rb_first(root); node; node = rb_next(node)) {
-        it = kmalloc(sizeof(struct dsm_conn_list), GFP_KERNEL);
-        it->ele = rb_entry(node, struct conn_element, rb_node);
-        list_add_tail(&it->list, &conns);
+    write_seqlock(&rcm->conn_lock);
+    for (node = rb_first(root); node; node = next) {
+        ele = rb_entry(node, struct conn_element, rb_node);
+        rdma_disconnect(ele->cm_id);
+        destroy_connection(ele, rcm);
+        next = rb_next(node);
+        erase_rb_conn(root, ele);
+        vfree(ele);
     }
-
-    list_for_each_entry_safe (it, next, &conns, list) {
-        rdma_disconnect(it->ele->cm_id);
-        destroy_connection(it->ele, rcm);
-        erase_rb_conn(&rcm->root_conn, it->ele);
-        vfree(it->ele);
-        kfree(it);
-    }
+    write_sequnlock(&rcm->conn_lock);
 
     return 0;
 }
@@ -633,6 +624,7 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     rcm->node_ip = inet_addr(ip);
 
     rcm->root_conn = RB_ROOT;
+    seqlock_init(&rcm->conn_lock);
 
     rcm->sin.sin_family = AF_INET;
     rcm->sin.sin_addr.s_addr = (__u32) rcm->node_ip;
@@ -723,7 +715,9 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
             (struct sockaddr*) &dst, 2000);
 
-    err1: erase_rb_conn(&rcm->root_conn, ele);
+    err1: write_seqlock(&rcm->conn_lock);
+    erase_rb_conn(&rcm->root_conn, ele);
+    write_sequnlock(&rcm->conn_lock);
     vfree(ele);
     err: return -1;
 }
@@ -1165,6 +1159,46 @@ static void release_dpc_element(struct subvirtual_machine *svm,
     }
     if (tx_e && tx_e->wrk_req->dst_addr)
         ((struct page_pool_ele * ) tx_e->wrk_req->dst_addr)->mem_page = 0;
+}
+
+static inline void release_dpc_push_element(struct subvirtual_machine *svm,
+        unsigned long addr) {
+    struct dsm_page_cache *dpc = dsm_push_cache_get_remove(svm, addr);
+    if (likely(dpc)) {
+        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+            page_cache_release(dpc->pages[0]);
+            set_page_private(dpc->pages[0], 0);
+            synchronize_rcu();
+            dsm_dealloc_dpc(&dpc);
+        }
+    }
+}
+
+void release_push_elements(struct subvirtual_machine *local_svm, 
+        struct subvirtual_machine *remote_svm) {
+    struct rb_node *node;
+    struct dsm_page_cache *dpc;
+    struct svm_list svms;
+    int i;
+    unsigned long addr;
+
+    for (node = rb_first(&local_svm->push_cache); node; node = rb_next(node)) {
+        rcu_read_lock();
+        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+        svms = dpc->svms;
+        addr = dpc->addr;
+        rcu_read_unlock();
+
+        if (!remote_svm)
+            goto release;
+        for (i = 0; i < svms.num; i++) {
+            if (svms.pp[i] == remote_svm)
+                goto release;
+        }
+        continue;
+
+        release: release_dpc_push_element(local_svm, addr);
+    }
 }
 
 void release_svm_tx_elements(struct subvirtual_machine *svm,

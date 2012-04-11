@@ -49,7 +49,8 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
     struct rb_node *node;
     struct conn_element *ele;
     struct dsm *dsm;
-    struct subvirtual_machine *svm = NULL;
+    struct subvirtual_machine *svm = NULL, *local_svm;
+    struct list_head *pos;
 
     mutex_lock(&dsm_state->dsm_state_mutex);
     dsm = find_dsm(dsm_id);
@@ -74,16 +75,22 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
 
     release_svm_from_mr_descriptors(svm);
     if (svm->priv) {
-        /* FIXME: Locking for inserting/removing/iterating rcm conns! */
         root = &dsm_state->rcm->root_conn;
         for (node = rb_first(root); node; node = rb_next(node)) {
             ele = rb_entry(node, struct conn_element, rb_node);
             release_svm_tx_requests(svm, &ele->tx_buffer);
             release_svm_tx_elements(svm, ele);
         }
+        release_push_elements(svm, NULL);
     } else if (svm->ele) {
         release_svm_tx_requests(svm, &svm->ele->tx_buffer);
         release_svm_tx_elements(svm, svm->ele);
+        list_for_each (pos, &svm->dsm->svm_list) {
+            local_svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
+            if (!local_svm->priv)
+                continue;
+            release_push_elements(local_svm, svm);
+        }
     }
 
     synchronize_rcu();

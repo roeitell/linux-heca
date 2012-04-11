@@ -32,7 +32,7 @@ static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
             goto out;
     }
 
-    dpc = dsm_alloc_dpc(svm, addr, svms, nproc + 1, descriptor);
+    dpc = dsm_alloc_dpc(svm, addr, svms, 1, descriptor);
     dpc->bitmap = (1 << nproc)-1;
     rb_link_node(&dpc->rb_node, parent, new);
     rb_insert_color(&dpc->rb_node, &svm->push_cache);
@@ -42,10 +42,10 @@ static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
 }
 
 static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
-        unsigned long addr, int hold) {
+        unsigned long addr, struct subvirtual_machine *remote_svm) {
     struct rb_node *node;
     struct dsm_page_cache *dpc = NULL;
-    int seq;
+    int seq, i;
 
     rcu_read_lock();
     do {
@@ -61,25 +61,54 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
         }
     } while (read_seqretry(&svm->push_cache_lock, seq));
 
-    if (hold && dpc && !atomic_inc_not_zero(&dpc->nproc))
+    if (likely(dpc)) {
+        for (i = 0; i < dpc->svms.num; i++) {
+            if (dpc->svms.pp[i] == remote_svm) {
+                if (likely(test_and_clear_bit(i, &dpc->bitmap) &&
+                        atomic_add_unless(&dpc->nproc, 1, 0))) {
+                    goto out;
+                }
+                break;
+            }
+        }
         dpc = NULL;
-    rcu_read_unlock();
+    }
 
+    out: rcu_read_unlock();
     return dpc;
 }
 
-static void dsm_push_cache_release(struct subvirtual_machine *svm,
-        struct dsm_page_cache *dpc) {
+static inline void dsm_push_cache_release(struct subvirtual_machine *svm,
+        struct dsm_page_cache **dpc) {
     write_seqlock(&svm->push_cache_lock);
-    rb_erase(&dpc->rb_node, &svm->push_cache);
+    rb_erase(&(*dpc)->rb_node, &svm->push_cache);
     write_sequnlock(&svm->push_cache_lock);
+    synchronize_rcu();
+    dsm_dealloc_dpc(dpc);
 }
 
 struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
         unsigned long addr) {
-    struct dsm_page_cache *dpc = dsm_push_cache_get(svm, addr, 1);
-    if (likely(dpc))
-        dsm_push_cache_release(svm, dpc);
+    struct dsm_page_cache *dpc;
+    struct rb_node *node;
+
+    write_seqlock(&svm->push_cache_lock);
+    for (node = svm->push_cache.rb_node; node; dpc = 0) {
+        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+        if (addr < dpc->addr)
+            node = node->rb_left;
+        else if (addr > dpc->addr)
+            node = node->rb_right;
+        else 
+            break;
+    }
+    if (likely(dpc)) {
+        rb_erase(&dpc->rb_node, &svm->push_cache);
+        barrier();
+        dpc->bitmap = 0;
+    }
+    write_sequnlock(&svm->push_cache_lock);
+
     return dpc;
 }
 
@@ -316,24 +345,18 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
-    int i, dsc = -1;
+    int dsc = -1, r;
 
     dsm_extract_pte_data(&pd, mm, addr);
     if (!pd.pte)
         goto out;
     pte_entry = *(pd.pte);
 
-    dpc = dsm_push_cache_get(local_svm, addr, 0);
+    dpc = dsm_push_cache_get(local_svm, addr, remote_svm);
     if (unlikely(!dpc))
         goto out;
 
-    for (i = 0; i < dpc->svms.num; i++) {
-        if (dpc->svms.pp[i] == remote_svm)
-            goto extract;
-    }
-    goto out;
-
-    extract: page = dpc->pages[0];
+    page = dpc->pages[0];
     if (unlikely(PageActive(page))) {
         goto noop;
 
@@ -370,22 +393,25 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         dsc = dpc->tag;
     }
 
-    noop: atomic_dec(&dpc->nproc);
-    if (test_and_clear_bit(i, &dpc->bitmap) &&
-            atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-        page_cache_release(page);
-        set_page_private(page, 0);
-        dsm_push_cache_release(local_svm, dpc);
-        synchronize_rcu();
-        dsm_dealloc_dpc(&dpc);
-    }
-    if (dsc >= 0 && !dpc) {
-        lock_page(page);
-        flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-        ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-        set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
-                dsm_descriptor_to_swp_entry(dsc, 0)));
-        unlock_page(page);
+    noop: rcu_read_lock();
+    atomic_dec(&dpc->nproc);
+    r = (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
+            atomic_cmpxchg(&dpc->nproc, 1, 0) == 1);
+    rcu_read_unlock();
+    if (r) {
+        dsm_push_cache_release(local_svm, &dpc);
+        if (likely(page)) {
+            page_cache_release(page);
+            set_page_private(page, 0);
+            if (likely(dsc >= 0)) {
+                lock_page(page);
+                flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
+                ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+                set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
+                        dsm_descriptor_to_swp_entry(dsc, 0)));
+                unlock_page(page);
+            }
+        }
     }
     out: return page;
 }

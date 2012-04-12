@@ -22,7 +22,8 @@ EXPORT_SYMBOL(create_dsm_module_state);
 
 void destroy_dsm_module_state(void) {
     mutex_destroy(&dsm_state->dsm_state_mutex);
-    destroy_workqueue(dsm_state->dsm_wq);
+    destroy_workqueue(dsm_state->dsm_tx_wq);
+    destroy_workqueue(dsm_state->dsm_rx_wq);
     kfree(dsm_state);
 }
 EXPORT_SYMBOL(destroy_dsm_module_state);

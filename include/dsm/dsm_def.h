@@ -142,6 +142,7 @@ struct rcm {
     struct mutex rcm_mutex;
 
     struct rb_root root_conn;
+    seqlock_t conn_lock;
 
     struct sockaddr_in sin;
 

@@ -103,11 +103,15 @@ struct subvirtual_machine *find_local_svm(struct dsm * dsm,
 EXPORT_SYMBOL(find_local_svm);
 
 void insert_rb_conn(struct conn_element *ele) {
-    struct rb_root *root = &(get_dsm_module_state()->rcm->root_conn);
-    struct rb_node **new = &root->rb_node;
+    struct rcm *rcm = get_dsm_module_state()->rcm;
+    struct rb_root *root;
+    struct rb_node **new;
     struct rb_node *parent = NULL;
     struct conn_element *this;
 
+    write_seqlock(&rcm->conn_lock);
+    root = &rcm->root_conn;
+    new = &root->rb_node;
     while (*new) {
         this = rb_entry(*new, struct conn_element, rb_node);
         parent = *new;
@@ -116,29 +120,35 @@ void insert_rb_conn(struct conn_element *ele) {
         else if (ele->remote_node_ip > this->remote_node_ip)
             new = &((*new)->rb_right);
     }
-
     rb_link_node(&ele->rb_node, parent, new);
     rb_insert_color(&ele->rb_node, root);
+    write_sequnlock(&rcm->conn_lock);
 
 }
 EXPORT_SYMBOL(insert_rb_conn);
 
 // Return NULL if no element contained within tree.
 struct conn_element* search_rb_conn(int node_ip) {
-    struct rb_root *root = &(get_dsm_module_state()->rcm->root_conn);
+    struct rcm *rcm = get_dsm_module_state()->rcm;
+    struct rb_root *root;
     struct rb_node *node;
     struct conn_element *this = 0;
+    unsigned long seq;
 
-    for (node = root->rb_node; node; this = 0) {
-        this = rb_entry(node, struct conn_element, rb_node);
- 
-        if (node_ip < this->remote_node_ip)
-            node = node->rb_left;
-        else if (node_ip > this->remote_node_ip)
-            node = node->rb_right;
-        else
-            break;
-    }
+    do {
+        seq = read_seqbegin(&rcm->conn_lock);
+        root = &rcm->root_conn;
+        for (node = root->rb_node; node; this = 0) {
+            this = rb_entry(node, struct conn_element, rb_node);
+     
+            if (node_ip < this->remote_node_ip)
+                node = node->rb_left;
+            else if (node_ip > this->remote_node_ip)
+                node = node->rb_right;
+            else
+                break;
+        }
+    } while (read_seqretry(&rcm->conn_lock, seq));
 
     return this;
 }

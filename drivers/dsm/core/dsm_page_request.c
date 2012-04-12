@@ -111,6 +111,7 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
 
     return dpc;
 }
+EXPORT_SYMBOL(dsm_push_cache_get_remove);
 
 static void dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         unsigned long addr) {

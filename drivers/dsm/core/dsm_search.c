@@ -14,7 +14,8 @@ struct dsm_module_state * create_dsm_module_state(void) {
     INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
     INIT_LIST_HEAD(&dsm_state->dsm_list);
     mutex_init(&dsm_state->dsm_state_mutex);
-    dsm_state->dsm_wq = alloc_workqueue("dsm_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
+    dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
+    dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
     return dsm_state;
 }
 EXPORT_SYMBOL(create_dsm_module_state);

@@ -382,7 +382,8 @@ struct dsm_module_state {
     struct list_head dsm_list;
 
     struct dsm_kobjects dsm_kobjects;
-    struct workqueue_struct * dsm_wq;
+    struct workqueue_struct * dsm_rx_wq;
+    struct workqueue_struct * dsm_tx_wq;
 };
 
 struct svm_list {

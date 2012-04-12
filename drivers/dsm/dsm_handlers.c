@@ -32,20 +32,20 @@ static int flush_dsm_request(struct conn_element *ele) {
         //populate it with a new message
         switch (req->type) {
             case REQUEST_PAGE: {
-                create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id, 
-                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, 
-                    req->page, req->type, req->dpc);
+                create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
+                        req->fault_svm->svm_id, req->svm->svm_id, req->addr,
+                        req->page, req->type, req->dpc);
                 break;
             }
             case TRY_REQUEST_PAGE: {
-                create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id, 
-                    req->fault_svm->svm_id, req->svm->svm_id, req->addr, 
-                    req->page, req->type, req->dpc);
+                create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
+                        req->fault_svm->svm_id, req->svm->svm_id, req->addr,
+                        req->page, req->type, req->dpc);
                 break;
             }
             case REQUEST_PAGE_PULL: {
                 create_page_pull_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
-                    req->fault_svm->svm_id, req->svm->svm_id, req->addr);
+                        req->fault_svm->svm_id, req->svm->svm_id, req->addr);
                 break;
             }
             case TRY_REQUEST_PAGE_FAIL: {
@@ -160,7 +160,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
         case SVM_STATUS_UPDATE: {
             release_tx_element_reply(ele, tx_buf_e);
             atomic64_inc(&ele->sysfs.tx_stats.page_request_reply);
-            break; 
+            break;
         }
         default: {
             atomic64_inc(&ele->sysfs.tx_stats.err);
@@ -253,7 +253,7 @@ static void dsm_send_poll(struct ib_cq *cq) {
 static void dsm_recv_poll(struct ib_cq *cq) {
     struct ib_wc wc;
     struct conn_element *ele = NULL;
-   
+
     if (cq)
         ele = (struct conn_element *) cq->cq_context;
     if (!ele)
@@ -334,7 +334,7 @@ static void _send_cq_handle(struct ib_cq *cq) {
     ret = ib_req_notify_cq(cq, IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
     dsm_send_poll(cq);
     if (ret > 0)
-        queue_work(get_dsm_module_state()->dsm_wq, &ele->send_work);
+        queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
     else if (ret < 0)
         printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
 
@@ -351,7 +351,7 @@ static void _recv_cq_handle(struct ib_cq *cq) {
     dsm_recv_poll(cq);
     flush_dsm_request(ele);
     if (ret > 0)
-        queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
+        queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
     else if (ret < 0)
         printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
 
@@ -359,7 +359,7 @@ static void _recv_cq_handle(struct ib_cq *cq) {
 
 void send_cq_handle_work(struct work_struct *work) {
     struct conn_element *ele;
-   
+
     if (module_is_live(THIS_MODULE)) {
         ele = container_of(work, struct conn_element, send_work);
         _send_cq_handle(ele->send_cq);
@@ -376,11 +376,11 @@ void recv_cq_handle_work(struct work_struct *work) {
 
 void send_cq_handle(struct ib_cq *cq, void *cq_context) {
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
-    queue_work(get_dsm_module_state()->dsm_wq, &ele->send_work);
+    queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
 }
 void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
-    queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
+    queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
 }
 
 /*
@@ -495,7 +495,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
             //TODO catch error
             scnprintf(ip, 32, "%p", id);
             create_connection_sysfs_entry(&ele->sysfs,
-                get_dsm_module_state()->dsm_kobjects.rdma_kobject, ip);
+                    get_dsm_module_state()->dsm_kobjects.rdma_kobject, ip);
 
             rcm = id->context;
 

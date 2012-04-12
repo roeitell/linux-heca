@@ -28,7 +28,7 @@ static inline void queue_dsm_request(struct tx_buffer *tx,
     spin_lock(&tx->request_queue_lock);
     list_add_tail(&req->queue, &tx->request_queue);
     spin_unlock(&tx->request_queue_lock);
-    queue_work(get_dsm_module_state()->dsm_wq, &ele->recv_work);
+    queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
 }
 
 static inline void add_dsm_request(struct tx_buffer *tx,
@@ -140,9 +140,9 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
     ele = remote_svm->ele;
     tx = &ele->tx_buffer;
 
-    spin_lock(&tx->request_queue_lock);
+    // no need to be too carefull for testing if the list is empty
     emp = list_empty(&tx->request_queue);
-    spin_unlock(&tx->request_queue_lock);
+
 
     if (emp) {
         tx_e = try_get_next_empty_tx_ele(ele);

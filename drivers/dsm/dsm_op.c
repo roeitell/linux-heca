@@ -717,15 +717,14 @@ void release_page_work(struct work_struct *work) {
     struct page_pool_ele * ppe = NULL;
     struct conn_element * ele;
     struct page_pool * pp;
-    struct llist_node *node, *head;
+    struct llist_node *node;
     struct page * page = NULL;
 
     pp= container_of(work, struct page_pool ,page_release_work );
     ele= container_of(pp, struct conn_element ,page_pool );
     pp = &ele->page_pool;
 
-    head = llist_del_all(&pp->page_release_list);
-    node = head;
+    node = llist_del_all(&pp->page_release_list);
 
     while (node) {
         ppe= container_of(node ,struct page_pool_ele , llnode );

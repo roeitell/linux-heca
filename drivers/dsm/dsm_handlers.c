@@ -82,19 +82,19 @@ static int dsm_recv_message_handler(struct conn_element *ele,
     switch (rx_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+
                 atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
                 process_page_response(ele, tx_e); // client got its response
-            }
+
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
-            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+
                 tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                 process_page_response(ele, tx_e);
                 atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
-            }
+
             break;
         }
         case TRY_REQUEST_PAGE:

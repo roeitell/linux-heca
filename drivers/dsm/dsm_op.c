@@ -83,21 +83,6 @@ static void free_rdma_info(struct conn_element *ele) {
     memset(&ele->rid, 0, sizeof(struct rdma_info_data));
 }
 
-static void try_recycle_empty_page_pool_element(struct conn_element *ele,
-        struct page_pool_ele * ppe) {
-
-    struct page_pool * pp = &ele->page_pool;
-    struct page * page = ppe->mem_page;
-
-    if (page)
-        page_cache_release(page);
-
-    spin_lock(&pp->page_pool_empty_list_lock);
-    list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
-    spin_unlock(&pp->page_pool_empty_list_lock);
-
-}
-
 static void init_rx_ele(struct rx_buf_ele *rx_ele, struct conn_element *ele) {
     struct recv_work_req_ele * rwr = rx_ele->recv_wrk_rq_ele;
     struct ib_sge * recv_sge = &rwr->recv_sgl;
@@ -296,9 +281,9 @@ static int create_new_empty_page_pool_element(struct conn_element * ele) {
     if (!ppe)
         return -1;
     memset(ppe, 0, sizeof(struct page_pool_ele));
-    spin_lock(&pp->page_pool_empty_list_lock);
-    list_add_tail(&ppe->page_ptr, &pp->page_empty_pool_list);
-    spin_unlock(&pp->page_pool_empty_list_lock);
+
+    llist_add(&ppe->llnode, &pp->page_empty_pool_list);
+
     return 0;
 
 }
@@ -308,12 +293,11 @@ static int create_page_pool(struct conn_element * ele) {
     int i;
     struct page_pool * pp = &ele->page_pool;
 
-    spin_lock_init(&pp->page_release_lock);
     spin_lock_init(&pp->page_pool_empty_list_lock);
 
     INIT_WORK(&pp->page_release_work, release_page_work);
-    INIT_LIST_HEAD(&pp->page_empty_pool_list);
-    INIT_LIST_HEAD(&pp->page_release_list);
+    init_llist_head(&pp->page_empty_pool_list);
+    init_llist_head(&pp->page_release_list);
 
     for (i = 0; i < PAGE_POOL_SIZE; i++) {
         ret = create_new_empty_page_pool_element(ele);
@@ -397,8 +381,8 @@ static int init_tx_lists(struct conn_element *ele) {
     int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
     int max_tx_reply = TX_BUF_ELEMENTS_NUM;
     INIT_LIST_HEAD(&tx->request_queue);
-    INIT_LIST_HEAD(&tx->tx_free_elements_list);
-    INIT_LIST_HEAD(&tx->tx_free_elements_list_reply);
+    init_llist_head(&tx->tx_free_elements_list);
+    init_llist_head(&tx->tx_free_elements_list_reply);
     spin_lock_init(&tx->tx_free_elements_list_lock);
     spin_lock_init(&tx->tx_free_elements_list_reply_lock);
     spin_lock_init(&tx->request_queue_lock);
@@ -594,19 +578,15 @@ int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele * rx_e) {
 void release_tx_element(struct conn_element * ele, struct tx_buf_ele * tx_e) {
 
     struct tx_buffer * tx = &ele->tx_buffer;
-    spin_lock(&tx->tx_free_elements_list_lock);
-    list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
-    atomic_set(&tx_e->used, 0);
-    spin_unlock(&tx->tx_free_elements_list_lock);
+    llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
+
 }
 void release_tx_element_reply(struct conn_element * ele,
         struct tx_buf_ele * tx_e) {
 
     struct tx_buffer * tx = &ele->tx_buffer;
-    spin_lock(&tx->tx_free_elements_list_reply_lock);
-    list_add_tail(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
-    atomic_set(&tx_e->used, 0);
-    spin_unlock(&tx->tx_free_elements_list_reply_lock);
+    llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
+
 }
 
 int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
@@ -701,7 +681,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     init_completion(&ele->completion);
     //TODO catch error
     create_connection_sysfs_entry(&ele->sysfs,
-        dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip);
+            dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip);
     ele->remote_node_ip = inet_addr(conn_data->ip);
 
     insert_rb_conn(ele);
@@ -737,22 +717,30 @@ void release_page_work(struct work_struct *work) {
     struct page_pool_ele * ppe = NULL;
     struct conn_element * ele;
     struct page_pool * pp;
+    struct llist_node *node, *head;
+    struct page * page = NULL;
 
     pp= container_of(work, struct page_pool ,page_release_work );
     ele= container_of(pp, struct conn_element ,page_pool );
+    pp = &ele->page_pool;
 
-    do {
-        spin_lock(&pp->page_release_lock);
-        if (list_empty(&pp->page_release_list)) {
-            spin_unlock(&pp->page_release_lock);
-            break;
+    head = llist_del_all(&pp->page_release_list);
+    node = head;
+
+    while (node) {
+        ppe= container_of(node ,struct page_pool_ele , llnode );
+        if (ppe->page_buf) {
+            ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
+                    PAGE_SIZE, DMA_BIDIRECTIONAL);
+            ppe->page_buf = NULL;
         }
+        page = ppe->mem_page;
+        if (page)
+            page_cache_release(page);
+        node = node->next;
+        llist_add(&ppe->llnode, &pp->page_empty_pool_list);
 
-        ppe = list_first_entry(&pp->page_release_list, struct page_pool_ele, page_ptr);
-        list_del(&ppe->page_ptr);
-        spin_unlock(&pp->page_release_lock);
-        try_recycle_empty_page_pool_element(ele, ppe);
-    } while (1);
+    }
 
 }
 
@@ -763,16 +751,9 @@ void release_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
 
     if (likely(tx_e->wrk_req->dst_addr)) {
         ppe = (struct page_pool_ele *) tx_e->wrk_req->dst_addr;
-        if (ppe->page_buf) {
-            ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
-                    PAGE_SIZE, DMA_BIDIRECTIONAL);
-            ppe->page_buf = NULL;
-        }
-        spin_lock(&pp->page_release_lock);
-        list_add_tail(&ppe->page_ptr, &pp->page_release_list);
-        spin_unlock(&pp->page_release_lock);
+        llist_add(&ppe->llnode, &pp->page_release_list);
         schedule_work(&pp->page_release_work);
-    } 
+    }
 }
 
 /*
@@ -830,7 +811,7 @@ unsigned int inet_addr(char *addr) {
 }
 
 void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
-        u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr, 
+        u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr,
         struct page *page, u16 type, struct dsm_page_cache *dpc) {
     struct dsm_message *msg = tx_e->dsm_msg;
     struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
@@ -868,21 +849,20 @@ void create_page_pull_request(struct conn_element *ele,
 
 struct page_pool_ele * get_empty_page_ele(struct conn_element * ele) {
     struct page_pool_ele * ppe;
-
     struct page_pool * pp = &ele->page_pool;
+    struct llist_node * llnode = NULL;
 
-    loop: spin_lock(&pp->page_pool_empty_list_lock);
-    if (list_empty(&pp->page_empty_pool_list)) {
-        spin_unlock(&pp->page_pool_empty_list_lock);
+    loop: if (llist_empty(&pp->page_empty_pool_list)) {
         printk("[get_empty_page_ele] forcing a page refill\n");
         release_page_work(&ele->page_pool.page_release_work);
         goto loop;
     }
-
-    ppe =
-    list_first_entry(&pp->page_empty_pool_list , struct page_pool_ele, page_ptr);
-    list_del(&ppe->page_ptr);
+    spin_lock(&pp->page_pool_empty_list_lock);
+    llnode = llist_del_first(&pp->page_empty_pool_list);
     spin_unlock(&pp->page_pool_empty_list_lock);
+    if (!llnode)
+        goto loop;
+    ppe= container_of(llnode ,struct page_pool_ele , llnode );
 
     return ppe;
 
@@ -961,7 +941,8 @@ int setup_connection(struct conn_element *ele, int type) {
     err6: err++;
     err5: err++;
     err4: err++;
-    /*err3: -unused-*/ err++;
+    /*err3: -unused-*/
+    err++;
     err2: err++;
     err1: err++;
     printk(
@@ -973,16 +954,13 @@ int setup_connection(struct conn_element *ele, int type) {
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
 
     struct tx_buf_ele *tx_e = NULL;
-    struct tx_buffer *tx = &ele->tx_buffer;
+    struct llist_node * llnode;
+    spin_lock(&ele->tx_buffer.tx_free_elements_list_lock);
+    llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
+    spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
-    spin_lock(&tx->tx_free_elements_list_lock);
-    if (!list_empty(&tx->tx_free_elements_list)) {
-        tx_e = list_first_entry(&tx->tx_free_elements_list, struct tx_buf_ele, 
-                tx_buf_ele_ptr);
-        list_del(&tx_e->tx_buf_ele_ptr);
-        atomic_set(&tx_e->used, 1);
-    }
-    spin_unlock(&tx->tx_free_elements_list_lock);
+    if (llnode)
+    tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
 
     return tx_e;
 }
@@ -990,17 +968,14 @@ struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
 
     struct tx_buf_ele *tx_e = NULL;
-    struct tx_buffer *tx = &ele->tx_buffer;
 
-    spin_lock(&tx->tx_free_elements_list_reply_lock);
-    if (!list_empty(&tx->tx_free_elements_list_reply)) {
-        tx_e = list_first_entry(&tx->tx_free_elements_list_reply, 
-                struct tx_buf_ele, tx_buf_ele_ptr);
-        list_del(&tx_e->tx_buf_ele_ptr);
-        atomic_set(&tx_e->used, 1);
-    }
-    spin_unlock(&tx->tx_free_elements_list_reply_lock);
+    struct llist_node * llnode;
+    spin_lock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
+    llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list_reply);
+    spin_unlock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
 
+    if (llnode)
+    tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
     return tx_e;
 }
 
@@ -1055,7 +1030,7 @@ int destroy_connection(struct conn_element *ele, struct rcm *rcm) {
             if (ele->cm_id->qp)
                 if ((ret = ib_destroy_qp(ele->cm_id->qp)))
                     printk(">[destroy_connection] - Cannot destroy qp\n");
- 
+
             if (ele->send_cq)
                 if ((ret = ib_destroy_cq(ele->send_cq)))
                     printk(">[destroy_connection] - Cannot destroy send cq\n");
@@ -1088,7 +1063,7 @@ static inline u32 *svm_ids_without_svm(struct svm_list svms, u32 svm_id) {
     u32 *svm_ids;
     int i, j;
 
-    svm_ids = kmalloc(sizeof(u32)*svms.num-1, GFP_KERNEL);
+    svm_ids = kmalloc(sizeof(u32) * svms.num - 1, GFP_KERNEL);
     for (i = 0; i < svms.num; i++)
         if (svms.pp[i] && svms.pp[i]->svm_id != svm_id)
             svm_ids[j++] = svms.pp[i]->svm_id;
@@ -1153,12 +1128,11 @@ static void release_dpc_element(struct subvirtual_machine *svm,
             dsm_cache_release(dpc->svm, dpc->addr);
         } else if (dpc->tag != PREFETCH_TAG) {
             dsm_cache_release(dpc->svm, dpc->addr);
-        }
-        page_cache_release(dpc->pages[0]);
+        }page_cache_release(dpc->pages[0]);
         dsm_dealloc_dpc(&dpc);
     }
     if (tx_e && tx_e->wrk_req->dst_addr)
-        ((struct page_pool_ele * ) tx_e->wrk_req->dst_addr)->mem_page = 0;
+        ((struct page_pool_ele *) tx_e->wrk_req->dst_addr)->mem_page = 0;
 }
 
 static inline void release_dpc_push_element(struct subvirtual_machine *svm,
@@ -1174,7 +1148,7 @@ static inline void release_dpc_push_element(struct subvirtual_machine *svm,
     }
 }
 
-void release_push_elements(struct subvirtual_machine *local_svm, 
+void release_push_elements(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm) {
     struct rb_node *node;
     struct dsm_page_cache *dpc;
@@ -1210,9 +1184,8 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
     for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
         msg = tx_buf[i].dsm_msg;
 
-        if (msg->dsm_id == svm->dsm->dsm_id &&
-                (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) &&
-                atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
+        if (msg->dsm_id == svm->dsm->dsm_id
+                && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)) {
             release_dpc_element(svm, tx_buf[i].wrk_req->dpc, &tx_buf[i]);
             release_page(ele, &tx_buf[i]);
             release_tx_element(ele, &tx_buf[i]);

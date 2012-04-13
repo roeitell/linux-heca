@@ -25,6 +25,7 @@
 #include <linux/swap.h>
 #include <linux/swapops.h>
 #include <asm/atomic.h>
+#include <linux/llist.h>
 
 //#define ULONG_MAX       0xFFFFFFFFFFFFFFFF
 
@@ -62,7 +63,6 @@
 #define TRY_REQUEST_PAGE_FAIL           0x0020 // We try to get the page failed
 #define SVM_STATUS_UPDATE               0x0030 // The svm is down
 #define DSM_MSG_ERR                     0x8000 // ERROR
-
 /*
  * DSM DATA structure
  */
@@ -171,17 +171,16 @@ struct page_pool_ele {
 
     void * page_buf;
     struct page * mem_page;
-    struct list_head page_ptr;
+    struct llist_node llnode;
 
 };
 
 struct page_pool {
 
-    struct list_head page_empty_pool_list;
-    struct list_head page_release_list;
+    struct llist_head page_empty_pool_list;
+    struct llist_head page_release_list;
 
     spinlock_t page_pool_empty_list_lock;
-    spinlock_t page_release_lock;
 
     struct work_struct page_release_work;
 
@@ -194,8 +193,8 @@ struct rx_buffer {
 struct tx_buffer {
     struct tx_buf_ele * tx_buf;
 
-    struct list_head tx_free_elements_list;
-    struct list_head tx_free_elements_list_reply;
+    struct llist_head tx_free_elements_list;
+    struct llist_head tx_free_elements_list_reply;
     struct list_head request_queue;
     spinlock_t request_queue_lock;
     spinlock_t tx_free_elements_list_lock;
@@ -342,13 +341,12 @@ struct tx_callback {
 
 struct tx_buf_ele {
     int id;
-    atomic_t used;
 
     void *mem;
     struct dsm_message *dsm_msg;
     struct msg_work_request *wrk_req;
     struct reply_work_request *reply_work_req;
-    struct list_head tx_buf_ele_ptr;
+    struct llist_node tx_buf_ele_ptr;
 
     struct tx_callback callback;
 };

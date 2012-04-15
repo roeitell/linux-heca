@@ -957,9 +957,10 @@ struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
     llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
-    if (llnode)
+    if (llnode) {
         tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-    atomic_set(&tx_e->used, 1);
+        atomic_set(&tx_e->used, 1);
+    }
 
     return tx_e;
 }
@@ -973,9 +974,10 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
     llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list_reply);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
 
-    if (llnode)
+    if (llnode) {
         tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-    atomic_set(&tx_e->used, 1);
+        atomic_set(&tx_e->used, 1);
+    }
 
     return tx_e;
 }

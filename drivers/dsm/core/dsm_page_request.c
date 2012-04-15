@@ -169,17 +169,25 @@ static void dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
     out: return;
 };
 
+static inline void dsm_extract_do_gup(struct page *page, struct mm_struct *mm,
+        unsigned long addr) {
+    use_mm(mm);
+    down_read(&mm->mmap_sem);
+    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+    up_read(&mm->mmap_sem);
+    unuse_mm(mm);
+}
+
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm, 
         unsigned long addr) {
     spinlock_t *ptl;
-    int r = 0, i, attempts = 0;
+    int r = 0, i;
     struct dsm_page_cache *dpc = NULL;
     struct page *page = NULL;
     struct dsm_pte_data pd;
     pte_t pte_entry;
     swp_entry_t swp_e;
-    struct dsm_swp_data dsd;
 
     retry: dsm_extract_pte_data(&pd, mm, addr);
     if (!pd.pte)
@@ -187,11 +195,6 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
 
     pte_entry = *(pd.pte);
 
-    /*
-     * If we'd been pushing the page, we would have received a try pull;
-     * therefore, this is probably a regular page fault on another machine.
-     *
-     */
     if (unlikely(!pte_present(pte_entry))) {
         if (pte_none(pte_entry))
             goto chain_fault;
@@ -201,64 +204,32 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
             if (non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
                     dpc = dsm_cache_get_hold(local_svm, addr);
-                    if (dpc) {
+                    if (unlikely(!dpc))
+                        goto chain_fault;
 
-                        /*
-                         * Several situations can occur here:
-                         *
-                         * 1. We're pulling the page right now. We'll just have
-                         *    to wait for finish. We need to make sure we're not
-                         *    deadlocked: trying to pull from same machine who's
-                         *    pulling from us.
-                         *    Note: a deadlock between more than two machines is
-                         *    harder to detect; hence the attempts counter.
-                         *
-                         */
-                        if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
-                            atomic_dec(&dpc->nproc);
-                            dsd = swp_entry_to_dsm_data(swp_e);
-                            if (attempts++ > 10)
-                                goto out;
-
-                            for (i = 0; i < dsd.svms.num; i++) {
-                                if (dsd.svms.pp[i] != remote_svm)
-                                    goto retry;
-                            }
-                            goto out;
-                        
-                        /*
-                         * 2. Page has been brought as prefetch, and exists, 
-                         *    waiting to be faulted in.
-                         *
-                         */
-                        } else if (dpc->tag == PREFETCH_TAG) {
-                            i = atomic_read(&dpc->found);
-                            if (i >= 0)
-                                page = dpc->pages[i];
-                            atomic_dec(&dpc->nproc);
-                            if (page) {
-                                use_mm(mm);
-                                down_read(&mm->mmap_sem);
-                                get_user_pages(current, mm, addr, 1, 1, 0, 
-                                        &page, NULL);
-                                up_read(&mm->mmap_sem);
-                                unuse_mm(mm);
-                            }
-                            goto out;
+                    if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
+                        wait_on_page_locked_killable(dpc->pages[0]);
+                    } else if (dpc->tag == PREFETCH_TAG) {
+                        i = atomic_read(&dpc->found);
+                        if (i >= 0) {
+                            page = dpc->pages[i];
+                            if (likely(page))
+                                dsm_extract_do_gup(page, mm, addr);
                         }
                     }
-
-                    printk("[dsm_extract_page] trying to grab a page which"
-                                    " we already pushed\n");
-                    goto chain_fault;
+                    atomic_dec(&dpc->nproc);
+                    if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+                        page_cache_release(dpc->pages[0]);
+                        dsm_dealloc_dpc(&dpc);
+                    }
+                    goto retry;
                 } else if (is_migration_entry(swp_e)) {
                     migration_entry_wait(mm, pd.pmd, addr);
                     goto retry;
                 }
                 BUG();
             } else {
-                chain_fault: get_user_pages(current, mm, addr, 1, 1, 0, &page,
-                        NULL);
+                chain_fault: dsm_extract_do_gup(page, mm, addr);
                 goto retry;
             }
         }

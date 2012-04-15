@@ -134,9 +134,9 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 void dsm_sysf_cleanup(struct dsm_module_state *);
 int dsm_sysf_setup(struct dsm_module_state *);
 void delete_svm_sysfs_entry(struct kobject *);
-int create_dsm_sysfs_entry(struct kobject*, struct kobject *, char*);
+int create_dsm_sysfs_entry(struct dsm *, struct dsm_module_state *);
 void delete_dsm_sysfs_entry(struct kobject *);
-int create_svm_sysfs_entry(struct svm_sysfs *, struct kobject *, char*, char *);
+int create_svm_sysfs_entry(struct subvirtual_machine *, char *);
 int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
         char*);
 void delete_connection_entry(struct con_element_sysfs *);

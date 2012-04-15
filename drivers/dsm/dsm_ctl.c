@@ -132,7 +132,6 @@ void remove_dsm(struct dsm *dsm) {
 
 static int register_dsm(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
-    char id[11];
     struct svm_data svm_info;
     struct dsm * found_dsm, *new_dsm = NULL;
 
@@ -170,28 +169,28 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
             break;
         r = radix_tree_insert(&dsm_state->dsm_tree_root,
                 (unsigned long) svm_info.dsm_id, new_dsm);
+        radix_tree_preload_end();
+
         if (likely(!r)) {
-            radix_tree_preload_end();
-            scnprintf(id, 11, "%x", new_dsm->dsm_id);
+            if (!create_dsm_sysfs_entry(new_dsm, dsm_state)) {
+                radix_tree_delete(&dsm_state->dsm_tree_root, 
+                        (unsigned long) svm_info.dsm_id);
+                continue;
+            }
+
             priv_data->dsm = new_dsm;
-            //TODO catch error
-            create_dsm_sysfs_entry(&new_dsm->dsm_kobject,
-                dsm_state->dsm_kobjects.domains_kobject, id);
             list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
             printk("[DSM_DSM]\n registered dsm %p,  dsm_id : %u, res: %d \n",
                     new_dsm, svm_info.dsm_id, r);
             goto exit;
         }
-        radix_tree_preload_end();
 
     } while (r != -ENOMEM);
-    if (new_dsm) {
+
+    if (new_dsm)
         kfree(new_dsm);
-    }
 
-    exit:
-
-    mutex_unlock(&dsm_state->dsm_state_mutex);
+    exit: mutex_unlock(&dsm_state->dsm_state_mutex);
     return r;
 
 }
@@ -199,7 +198,6 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
 static int register_svm(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
     struct dsm *dsm;
-    char charid[11];
     struct subvirtual_machine *found_svm, *new_svm = NULL;
     struct svm_data svm_info;
 
@@ -240,11 +238,15 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->dsm = dsm;
             new_svm->dsm->nb_local_svm++;
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
+
             reset_svm_stats(&new_svm->svm_sysfs);
-            scnprintf(charid, 11, "%x", new_svm->svm_id);
-            //TODO catch error
-            create_svm_sysfs_entry(&new_svm->svm_sysfs,
-                &new_svm->dsm->dsm_kobject, charid, "local");
+            if (!create_svm_sysfs_entry(new_svm, "local")) {
+                radix_tree_delete(&dsm->svm_tree_root,
+                        (unsigned long) svm_info.svm_id);
+                radix_tree_delete(&dsm->svm_mm_tree_root, 
+                        (unsigned long) priv_data->mm);
+                continue;
+            }
 
             spin_lock_init(&new_svm->page_cache_spinlock);
             INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
@@ -271,7 +273,6 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
 
 static int connect_svm(struct private_data *priv_data, void __user *argp)
 {
-    char charid[11];
     int r = -EFAULT;
     struct dsm *dsm;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
@@ -316,10 +317,12 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
             reset_svm_stats(&new_svm->svm_sysfs);
-            scnprintf(charid, 11, "%x", new_svm->svm_id);
-            //TODO catch error
-            create_svm_sysfs_entry(&new_svm->svm_sysfs,
-                &dsm->dsm_kobject, charid, svm_info.ip);
+            if (!create_svm_sysfs_entry(new_svm, svm_info.ip)) {
+                radix_tree_delete(&dsm->svm_tree_root,
+                        (unsigned long) svm_info.svm_id);
+                continue;
+            }
+
             INIT_LIST_HEAD(&new_svm->mr_list);
             list_add(&new_svm->svm_ptr, &dsm->svm_list);
             ip_addr = inet_addr(svm_info.ip);

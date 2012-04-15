@@ -232,20 +232,23 @@ static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
     return;
 }
 
-int create_svm_sysfs_entry(struct svm_sysfs *sysfs, struct kobject *root_kobj,
-        char* name, char * ip) {
-    struct kobject* kobj = &sysfs->svm_kobject;
-    struct kobject* kobj_ip;
-    int r = kobject_init_and_add(kobj, &dsm_kobject_type, root_kobj, name);
+int create_svm_sysfs_entry(struct subvirtual_machine *svm, char *ip) {
+    struct kobject *kobj = &svm->svm_sysfs.svm_kobject, *kobj_ip;
+    char id[11];
+    int r;
+
+    scnprintf(id, 11, "%x", svm->svm_id);
+    r = kobject_init_and_add(kobj, &dsm_kobject_type, &svm->dsm->dsm_kobject,
+            id, ip);
+
     if (!r) {
         r = sysfs_create_group(kobj, &svm_attr_group);
         if (r) {
             kobject_put(kobj);
             kobject_del(kobj);
         } else {
-            kobj_ip = &sysfs->local;
+            kobj_ip = &svm->svm_sysfs.local;
             r = kobject_init_and_add(kobj_ip, &dsm_kobject_type, kobj, ip);
-
             if (r) {
                 kobject_put(kobj_ip);
                 kobject_del(kobj_ip);
@@ -261,10 +264,13 @@ void delete_svm_sysfs_entry(struct kobject *obj) {
     kobject_del(obj);
 }
 
-int create_dsm_sysfs_entry(struct kobject* kobj, struct kobject *root_kobj,
-        char* name) {
+int create_dsm_sysfs_entry(struct dsm *dsm, 
+        struct dsm_module_state *dsm_state) {
+    char id[11];
 
-    return kobject_init_and_add(kobj, &dsm_kobject_type, root_kobj, name);
+    scnprintf(id, 11, "%x", dsm->dsm_id);
+    return kobject_init_and_add(&dsm->dsm_kobject, &dsm_kobject_type,
+        dsm_state->dsm_kobjects.domains_kobject, id);
 }
 
 void delete_dsm_sysfs_entry(struct kobject *obj) {

@@ -491,17 +491,11 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
             ele = vzalloc(sizeof(struct conn_element));
             if (!ele)
                 goto out;
+
             init_completion(&ele->completion);
-            //TODO catch error
-            scnprintf(ip, 32, "%p", id);
-            create_connection_sysfs_entry(&ele->sysfs,
-                    get_dsm_module_state()->dsm_kobjects.rdma_kobject, ip);
-
             rcm = id->context;
-
             ele->rcm = rcm;
             ele->cm_id = id;
-
             id->context = ele;
 
             ret = setup_connection(ele, 1);
@@ -509,6 +503,12 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                 printk("Connection could not be accepted\n");
                 goto err;
             }
+
+            scnprintf(ip, 32, "%p", id);
+            ret = create_connection_sysfs_entry(&ele->sysfs,
+                    get_dsm_module_state()->dsm_kobjects.rdma_kobject, ip);
+            if (ret)
+                goto err;
 
             atomic_set(&ele->alive, 1);
             break;

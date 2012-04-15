@@ -677,18 +677,19 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     ele = vzalloc(sizeof(struct conn_element));
     if (unlikely(!ele))
         goto err;
-    init_completion(&ele->completion);
-    //TODO catch error
-    create_connection_sysfs_entry(&ele->sysfs,
-            dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip);
-    ele->remote_node_ip = inet_addr(conn_data->ip);
 
+    init_completion(&ele->completion);
+    ele->remote_node_ip = inet_addr(conn_data->ip);
     insert_rb_conn(ele);
 
     ele->rcm = rcm;
     ele->cm_id = rdma_create_id(connection_event_handler, ele, RDMA_PS_TCP,
             IB_QPT_RC);
     if (IS_ERR(ele->cm_id))
+        goto err1;
+
+    if (!create_connection_sysfs_entry(&ele->sysfs,
+            dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip))
         goto err1;
 
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,

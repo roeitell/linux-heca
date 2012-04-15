@@ -688,7 +688,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     if (IS_ERR(ele->cm_id))
         goto err1;
 
-    if (!create_connection_sysfs_entry(&ele->sysfs,
+    if (create_connection_sysfs_entry(&ele->sysfs,
             dsm_state->dsm_kobjects.rdma_kobject, conn_data->ip))
         goto err1;
 

@@ -172,7 +172,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
         radix_tree_preload_end();
 
         if (likely(!r)) {
-            if (!create_dsm_sysfs_entry(new_dsm, dsm_state)) {
+            if (create_dsm_sysfs_entry(new_dsm, dsm_state)) {
                 radix_tree_delete(&dsm_state->dsm_tree_root, 
                         (unsigned long) svm_info.dsm_id);
                 continue;
@@ -240,7 +240,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
             reset_svm_stats(&new_svm->svm_sysfs);
-            if (!create_svm_sysfs_entry(new_svm, "local")) {
+            if (create_svm_sysfs_entry(new_svm, "local")) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
                 radix_tree_delete(&dsm->svm_mm_tree_root, 
@@ -317,7 +317,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
             reset_svm_stats(&new_svm->svm_sysfs);
-            if (!create_svm_sysfs_entry(new_svm, svm_info.ip)) {
+            if (create_svm_sysfs_entry(new_svm, svm_info.ip)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
                 continue;

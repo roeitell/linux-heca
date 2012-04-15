@@ -341,6 +341,7 @@ struct tx_callback {
 
 struct tx_buf_ele {
     int id;
+    atomic_t used;
 
     void *mem;
     struct dsm_message *dsm_msg;

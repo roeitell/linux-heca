@@ -576,17 +576,16 @@ int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele * rx_e) {
 }
 
 void release_tx_element(struct conn_element * ele, struct tx_buf_ele * tx_e) {
-
-    struct tx_buffer * tx = &ele->tx_buffer;
+    struct tx_buffer *tx = &ele->tx_buffer;
+    atomic_set(&tx_e->used, 0);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
-
 }
+
 void release_tx_element_reply(struct conn_element * ele,
         struct tx_buf_ele * tx_e) {
-
-    struct tx_buffer * tx = &ele->tx_buffer;
+    struct tx_buffer *tx = &ele->tx_buffer;
+    atomic_set(&tx_e->used, 0);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
-
 }
 
 int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
@@ -959,7 +958,8 @@ struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
     if (llnode)
-    tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+        tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+    atomic_set(&tx_e->used, 1);
 
     return tx_e;
 }
@@ -974,7 +974,9 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
 
     if (llnode)
-    tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+        tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+    atomic_set(&tx_e->used, 1);
+
     return tx_e;
 }
 
@@ -1184,7 +1186,8 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
         msg = tx_buf[i].dsm_msg;
 
         if (msg->dsm_id == svm->dsm->dsm_id
-                && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)) {
+                && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)
+                && atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
             release_dpc_element(svm, tx_buf[i].wrk_req->dpc, &tx_buf[i]);
             release_page(ele, &tx_buf[i]);
             release_tx_element(ele, &tx_buf[i]);

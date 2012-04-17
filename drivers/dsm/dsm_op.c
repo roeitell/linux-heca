@@ -1139,44 +1139,38 @@ static void release_dpc_element(struct subvirtual_machine *svm,
         ((struct page_pool_ele *) tx_e->wrk_req->dst_addr)->mem_page = 0;
 }
 
-static inline void release_dpc_push_element(struct subvirtual_machine *svm,
-        unsigned long addr) {
-    struct dsm_page_cache *dpc = dsm_push_cache_get_remove(svm, addr);
-    if (likely(dpc)) {
-        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-            page_cache_release(dpc->pages[0]);
-            set_page_private(dpc->pages[0], 0);
-            synchronize_rcu();
-            dsm_dealloc_dpc(&dpc);
-        }
-    }
-}
-
-void release_push_elements(struct subvirtual_machine *local_svm,
-        struct subvirtual_machine *remote_svm) {
+void release_push_elements(struct subvirtual_machine *svm,
+        struct subvirtual_machine *remote_svm) 
+{
     struct rb_node *node;
-    struct dsm_page_cache *dpc;
-    struct svm_list svms;
+    struct dsm_page_cache *dpc; 
     int i;
-    unsigned long addr;
 
-    for (node = rb_first(&local_svm->push_cache); node; node = rb_next(node)) {
-        rcu_read_lock();
+    write_seqlock(&svm->push_cache_lock);
+    for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
-        svms = dpc->svms;
-        addr = dpc->addr;
-        rcu_read_unlock();
-
         if (!remote_svm)
             goto release;
-        for (i = 0; i < svms.num; i++) {
-            if (svms.pp[i] == remote_svm)
-                goto release;
+
+        for (i = 0; i < dpc->svms.num; i++) {
+            if (dpc->svms.pp[i] == remote_svm)
+                goto surrogate;
         }
         continue;
 
-        release: release_dpc_push_element(local_svm, addr);
+        surrogate:
+        if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
+            atomic_dec(&dpc->nproc);
+            release:
+            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+                page_cache_release(dpc->pages[0]);
+                set_page_private(dpc->pages[0], 0);
+                dsm_dealloc_dpc(&dpc);
+                rb_erase(&dpc->rb_node, &svm->push_cache);
+            }
+        }
     }
+    write_sequnlock(&svm->push_cache_lock);
 }
 
 void release_svm_tx_elements(struct subvirtual_machine *svm,

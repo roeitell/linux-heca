@@ -83,7 +83,6 @@ static inline void dsm_push_cache_release(struct subvirtual_machine *svm,
     write_seqlock(&svm->push_cache_lock);
     rb_erase(&(*dpc)->rb_node, &svm->push_cache);
     write_sequnlock(&svm->push_cache_lock);
-    synchronize_rcu();
     dsm_dealloc_dpc(dpc);
 }
 
@@ -104,7 +103,6 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
     }
     if (likely(dpc)) {
         rb_erase(&dpc->rb_node, &svm->push_cache);
-        barrier();
         dpc->bitmap = 0;
     }
     write_sequnlock(&svm->push_cache_lock);
@@ -317,7 +315,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
-    int dsc = -1, r;
+    int dsc = -1;
 
     dsm_extract_pte_data(&pd, mm, addr);
     if (!pd.pte)
@@ -365,12 +363,9 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         dsc = dpc->tag;
     }
 
-    noop: rcu_read_lock();
-    atomic_dec(&dpc->nproc);
-    r = (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
-            atomic_cmpxchg(&dpc->nproc, 1, 0) == 1);
-    rcu_read_unlock();
-    if (r) {
+    noop: atomic_dec(&dpc->nproc);
+    if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
+            atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
         dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
             page_cache_release(page);

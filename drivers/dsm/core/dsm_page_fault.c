@@ -591,10 +591,8 @@ static struct dsm_page_cache *convert_push_dpc(
     if (likely(dpc)) {
         page = dpc->pages[0];
         addr = dpc->addr;
-        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-            synchronize_rcu();
+        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1)
             dsm_dealloc_dpc(&dpc);
-        }
 
         ret = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page);
     }

@@ -95,6 +95,7 @@ struct page *dsm_prepare_page_for_push(struct subvirtual_machine *,
         struct svm_list, struct mm_struct *, unsigned long, u32);
 struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,
         unsigned long);
+int dsm_try_free_disk_swap(struct page *);
 
 /* dsm_page_fault.c */
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,

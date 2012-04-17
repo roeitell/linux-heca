@@ -277,33 +277,19 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
     }
 
     page_cache_get(page);
-
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
     ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-
     set_pte_at(mm, addr, pd.pte, swp_entry_to_pte(
                 dsm_descriptor_to_swp_entry(remote_svm->descriptor, 0)));
-
     page_remove_rmap(page);
-
     page_cache_release(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
-// this is a page flagging without data exchange so we can free the page
-    if (likely(!page_mapped(page)))
-        try_to_free_swap(page);
-
     unlock_page(page);
-
     pte_unmap_unlock(pd.pte, ptl);
-// if local
-
     out: return page;
 
     bad_page: pte_unmap_unlock(pd.pte, ptl);
-
-// if local
-
     return NULL;
 }
 
@@ -339,12 +325,6 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
                     DSM_PUSHING)));
             page_remove_rmap(page);
             dec_mm_counter(mm, MM_ANONPAGES);
-            /*
-             * TODO: Doesn't make sense here; original comment was: "this is a
-             * page flagging without data exchange so we can free the page"
-             */
-            if (likely(!page_mapped(page)))
-                try_to_free_swap(page);
             unlock_page(page);
         } else if (dpc->svms.num> 1) {
             dsc = dpc->tag;
@@ -413,6 +393,19 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
     return page;
 }
 EXPORT_SYMBOL(dsm_extract_page_from_remote);
+
+int dsm_try_free_disk_swap(struct page *page)
+{
+        int r = 0;
+
+        if (likely(!page_mapped(page))) {
+                lock_page(page);
+                r = try_to_free_swap(page);
+                unlock_page(page);
+        }
+        return r;
+}
+EXPORT_SYMBOL(dsm_try_free_disk_swap);
 
 struct page *dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
         struct svm_list svms, struct mm_struct *mm, unsigned long addr,

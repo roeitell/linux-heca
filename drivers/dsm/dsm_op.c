@@ -713,34 +713,35 @@ void reg_rem_info(struct conn_element *ele) {
     ele->rid.remote_info->flag = ele->rid.recv_info->flag;
 }
 
-void release_page_work(struct work_struct *work) {
-    struct page_pool_ele * ppe = NULL;
-    struct conn_element * ele;
-    struct page_pool * pp;
-    struct llist_node *node;
-    struct page * page = NULL;
+void release_page_work(struct work_struct *work)
+{
+        struct page_pool_ele *ppe = NULL;
+        struct conn_element *ele;
+        struct page_pool *pp;
+        struct llist_node *node;
+        struct page *page = NULL;
 
-    pp= container_of(work, struct page_pool ,page_release_work );
-    ele= container_of(pp, struct conn_element ,page_pool );
-    pp = &ele->page_pool;
+        pp = container_of(work, struct page_pool ,page_release_work );
+        ele= container_of(pp, struct conn_element ,page_pool );
+        pp = &ele->page_pool;
 
-    node = llist_del_all(&pp->page_release_list);
+        node = llist_del_all(&pp->page_release_list);
 
-    while (node) {
-        ppe= container_of(node ,struct page_pool_ele , llnode );
-        if (ppe->page_buf) {
-            ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
-                    PAGE_SIZE, DMA_BIDIRECTIONAL);
-            ppe->page_buf = NULL;
+        while (node) {
+                ppe = container_of(node, struct page_pool_ele, llnode);
+                if (ppe->page_buf) {
+                        ib_dma_unmap_page(ele->cm_id->device, 
+                            (u64) ppe->page_buf, PAGE_SIZE, DMA_BIDIRECTIONAL);
+                        ppe->page_buf = NULL;
+                }
+                page = ppe->mem_page;
+                if (page) {
+                        dsm_try_free_disk_swap(page);
+                        page_cache_release(page);
+                }
+                node = node->next;
+                llist_add(&ppe->llnode, &pp->page_empty_pool_list);
         }
-        page = ppe->mem_page;
-        if (page)
-            page_cache_release(page);
-        node = node->next;
-        llist_add(&ppe->llnode, &pp->page_empty_pool_list);
-
-    }
-
 }
 
 void release_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
@@ -1019,6 +1020,7 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
         dsm_state->rcm = NULL;
         kfree(rcm);
     }
+
     destroy_dsm_cache_kmem();
     destroy_kmem_request_cache();
     dsm_destroy_descriptors();

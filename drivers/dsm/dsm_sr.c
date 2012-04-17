@@ -65,13 +65,11 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
         struct conn_element * ele = svm->ele;
         struct tx_buffer *tx = &ele->tx_buffer;
         struct tx_buf_ele *tx_e;
-        int ret = 0, emp;
+        int ret = 0;
 
         printk("[send_request_dsm_page_pull]requesting page pull addr [%p]\n",
                         (void *) addr);
         atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
-
-        emp =;
 
         if (list_empty(&tx->request_queue)) {
                 tx_e = try_get_next_empty_tx_ele(ele);

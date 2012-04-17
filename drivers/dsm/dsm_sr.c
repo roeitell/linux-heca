@@ -23,11 +23,11 @@ void release_dsm_request(struct dsm_request *req) {
         kmem_cache_free(kmem_request_cache, req);
 }
 
-static inline void queue_dsm_request(struct tx_buffer *tx,
-                struct conn_element *ele, struct dsm_request *req) {
-        spin_lock(&tx->request_queue_lock);
-        list_add_tail(&req->queue, &tx->request_queue);
-        spin_unlock(&tx->request_queue_lock);
+static inline void queue_dsm_request(struct conn_element *ele,
+                struct dsm_request *req) {
+        spin_lock(&ele->tx_buffer.request_queue_lock);
+        list_add_tail(&req->queue, &ele->tx_buffer.request_queue);
+        spin_unlock(&ele->tx_buffer.request_queue_lock);
         queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
 }
 
@@ -46,17 +46,17 @@ static inline void add_dsm_request(struct tx_buffer *tx,
         req->func = func;
         req->dpc = dpc;
         req->page = page;
-        queue_dsm_request(tx, ele, req);
+        queue_dsm_request(ele, req);
 }
 
-static inline void add_dsm_request_msg(struct tx_buffer *tx,
-                struct conn_element *ele, u16 type, struct dsm_message *msg) {
+static inline void add_dsm_request_msg(struct conn_element *ele, u16 type,
+                struct dsm_message *msg) {
         struct dsm_request *req = kmem_cache_alloc(kmem_request_cache,
                         GFP_KERNEL);
         req->type = type;
         req->func = NULL;
         memcpy(&req->dsm_msg, msg, sizeof(struct dsm_message));
-        queue_dsm_request(tx, ele, req);
+        queue_dsm_request(ele, req);
 }
 
 static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
@@ -71,7 +71,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
                         (void *) addr);
         atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
 
-        emp = ;
+        emp =;
 
         if (list_empty(&tx->request_queue)) {
                 tx_e = try_get_next_empty_tx_ele(ele);
@@ -94,9 +94,7 @@ static int send_svm_status_update(struct conn_element *ele,
                 struct rx_buf_ele *rx_buf_e) {
         struct tx_buffer *tx = &ele->tx_buffer;
         struct tx_buf_ele *tx_e = NULL;
-        int  ret = 0;
-
-
+        int ret = 0;
 
         if (list_empty(&tx->request_queue)) {
                 tx_e = try_get_next_empty_tx_ele(ele);
@@ -109,8 +107,7 @@ static int send_svm_status_update(struct conn_element *ele,
         }
 
         if (!ret) {
-                add_dsm_request_msg(tx, ele, SVM_STATUS_UPDATE,
-                                rx_buf_e->dsm_msg);
+                add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_msg);
         }
 
         return ret;
@@ -140,8 +137,6 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 
         ele = remote_svm->ele;
         tx = &ele->tx_buffer;
-
-
 
         if (list_empty(&tx->request_queue)) {
                 tx_e = try_get_next_empty_tx_ele(ele);
@@ -248,8 +243,6 @@ int process_page_request(struct conn_element * ele,
                 if (msg->type == TRY_REQUEST_PAGE) {
                         tx = &ele->tx_buffer;
 
-
-
                         if (list_empty(&tx->request_queue)) {
                                 tx_e = try_get_next_empty_tx_ele(ele);
                                 if (tx_e) {
@@ -264,8 +257,7 @@ int process_page_request(struct conn_element * ele,
                                 }
                         }
 
-                        add_dsm_request_msg(tx, ele, TRY_REQUEST_PAGE_FAIL,
-                                        msg);
+                        add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
                         ret = 0;
                 }
 

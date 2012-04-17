@@ -221,10 +221,19 @@ int process_page_request(struct conn_element * ele,
                 goto fail;
 
         norm_addr = msg->req_addr + local_svm->priv->offset;
+
+        tx_e = try_get_next_empty_tx_reply_ele(ele);
+        BUG_ON(!tx_e);
+
+        memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
+        tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
+        tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
+        tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
         page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm,
                         norm_addr, msg->type);
 
         if (unlikely(!page)) {
+                release_tx_element_reply(ele, tx_e);
                 ret = -1;
 
                 /*
@@ -261,22 +270,13 @@ int process_page_request(struct conn_element * ele,
 
                 no_page_out: return ret;
         }
-
         /*
          * Page grabbed successfully, seems that the local svm is still online.
          */
-        //not needed
-        //atomic_set(&local_svm->status, DSM_SVM_ONLINE);
-        tx_e = try_get_next_empty_tx_reply_ele(ele);
-        BUG_ON(!tx_e);
-
+        atomic_set(&local_svm->status, DSM_SVM_ONLINE);
         ppe = create_new_page_pool_element_from_page(ele, page);
         BUG_ON(!ppe);
 
-        memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
-        tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
-        tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
-        tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
         tx_e->wrk_req->dst_addr = ppe;
         tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 

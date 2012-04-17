@@ -205,7 +205,8 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
                 if (is_dsm_entry(swp_e)) {
                     dpc = dsm_cache_get_hold(local_svm, addr);
                     if (unlikely(!dpc))
-                        goto chain_fault;
+
+                            goto chain_fault;
 
                     if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
                         wait_on_page_locked_killable(dpc->pages[0]);

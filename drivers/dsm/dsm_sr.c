@@ -272,7 +272,8 @@ int process_page_request(struct conn_element * ele,
     /*
      * Page grabbed successfully, seems that the local svm is still online.
      */
-    atomic_set(&local_svm->status, DSM_SVM_ONLINE);
+    //not needed
+    //atomic_set(&local_svm->status, DSM_SVM_ONLINE);
 
     tx_e = try_get_next_empty_tx_reply_ele(ele);
     BUG_ON(!tx_e);

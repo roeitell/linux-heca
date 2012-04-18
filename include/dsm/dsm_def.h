@@ -401,7 +401,7 @@ struct dsm_page_cache {
         atomic_t found;
         atomic_t nproc;
         unsigned long bitmap;
-        struct pte_t * pte;
+        pte_t * pte;
 
         struct rb_node rb_node;
 };

@@ -405,7 +405,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
 
 static struct dsm_page_cache *dsm_cache_add_pushed(
                 struct subvirtual_machine *fault_svm, struct svm_list svms,
-                unsigned long addr, struct page *page) {
+                unsigned long addr, struct page *page, pte_t * pte) {
         struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
         int r, i;
 
@@ -416,7 +416,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
 
                 if (!new_dpc) {
                         new_dpc = dsm_alloc_dpc(fault_svm, addr, svms, 3,
-                                        PULL_TAG);
+                                        PULL_TAG, pte);
                         new_dpc->pages[0] = page;
                         atomic_set(&new_dpc->found, 0);
                         if (!new_dpc)
@@ -596,7 +596,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
 
 static struct dsm_page_cache *convert_push_dpc(
                 struct subvirtual_machine *fault_svm, unsigned long norm_addr,
-                struct dsm_swp_data dsd) {
+                struct dsm_swp_data dsd, pte_t *pte) {
         struct dsm_page_cache *dpc, *ret = NULL;
         struct page *page;
         unsigned long addr;
@@ -610,7 +610,8 @@ static struct dsm_page_cache *convert_push_dpc(
                         dsm_dealloc_dpc(&dpc);
                 }
 
-                ret = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page);
+                ret = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page,
+                                pte);
         }
         return ret;
 }
@@ -635,7 +636,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         pte_t pte;
 
         if (unlikely(dsd.flags & DSM_PUSHING)) {
-                dpc = convert_push_dpc(fault_svm, norm_addr, dsd);
+                dpc = convert_push_dpc(fault_svm, norm_addr, dsd, page_table);
                 if (likely(dpc))
                         goto lock;
         }

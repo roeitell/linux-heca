@@ -51,7 +51,7 @@ struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *,
                 unsigned long);
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *, unsigned long,
-                struct svm_list, int, int);
+                struct svm_list, int, int, pte_t *);
 void dsm_dealloc_dpc(struct dsm_page_cache **);
 
 struct dsm_functions {

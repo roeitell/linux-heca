@@ -30,7 +30,7 @@ EXPORT_SYMBOL(destroy_dsm_cache_kmem);
 
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
                 unsigned long addr, struct svm_list svms, int nproc, int tag,
-                pte_t pte) {
+                pte_t *pte) {
         struct dsm_page_cache *dpc;
 
         dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);

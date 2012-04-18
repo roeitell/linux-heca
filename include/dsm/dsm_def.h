@@ -442,7 +442,7 @@ struct dsm_swp_data {
         struct svm_list svms;
         u32 flags;
 #define DSM_INFLIGHT            0x01
-#define DSM_INFLIGHT_BITWAIT    0x0100
+#define DSM_INFLIGHT_BITWAIT    0x0200
 #define DSM_PUSHING             0x02
 
 };

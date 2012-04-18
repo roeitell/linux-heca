@@ -292,8 +292,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
                                 if (ele) {
                                         if (unlikely(
                                                         ele->rid.remote_info->flag)) {
-                                                if (wc.byte_len
-                                                                != sizeof(struct rdma_info)) {
+                                                if (wc.byte_len != sizeof(struct rdma_info)) {
                                                         print_work_completion(
                                                                         &wc,
                                                                         "[dsm_recv_poll] -Received bogus data, size -");
@@ -305,8 +304,7 @@ static void dsm_recv_poll(struct ib_cq *cq) {
                                                 exchange_info(ele, wc.wr_id);
                                         } else {
                                                 if (unlikely(
-                                                                wc.byte_len
-                                                                                != sizeof(struct dsm_message))) {
+                                                                wc.byte_len != sizeof(struct dsm_message))) {
                                                         print_work_completion(
                                                                         &wc,
                                                                         "[dsm_recv_poll] -Received bogus data, size -");
@@ -528,11 +526,9 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                         }
 
                         scnprintf(ip, 32, "%p", id);
-                        ret =
-                                        create_connection_sysfs_entry(
-                                                        &ele->sysfs,
-                                                        get_dsm_module_state()->dsm_kobjects.rdma_kobject,
-                                                        ip);
+                        ret = create_connection_sysfs_entry(&ele->sysfs,
+                                        get_dsm_module_state()->dsm_kobjects.rdma_kobject,
+                                        ip);
                         if (ret)
                                 goto err;
 

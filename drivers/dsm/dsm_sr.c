@@ -241,8 +241,7 @@ int process_page_request(struct conn_element * ele,
                  *  offline. Send a status update message to client.
                  *
                  */
-                if (atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) >
-                MAX_CONSECUTIVE_SVM_FAILURES) {
+                if (atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) > MAX_CONSECUTIVE_SVM_FAILURES) {
                         remove_svm(dsm->dsm_id, local_svm->svm_id);
                         goto no_svm;
                 }
@@ -255,8 +254,7 @@ int process_page_request(struct conn_element * ele,
                                 if (tx_e) {
                                         memcpy(tx_e->dsm_msg, msg,
                                                         sizeof(struct dsm_message));
-                                        tx_e->dsm_msg->type =
-                                                        TRY_REQUEST_PAGE_FAIL;
+                                        tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                                         tx_e->wrk_req->dst_addr = NULL;
                                         tx_e->callback.func = NULL;
                                         ret = tx_dsm_send(ele, tx_e);
@@ -362,18 +360,15 @@ int exchange_info(struct conn_element *ele, int id) {
                         ele->rid.send_info->flag = ele->rid.send_info->flag - 2;
                         ret = setup_recv_wr(ele);
                         refill_recv_wr(ele,
-                                        &ele->rx_buffer.rx_buf[RX_BUF_ELEMENTS_NUM
-                                                        - 1]);
+                                        &ele->rx_buffer.rx_buf[RX_BUF_ELEMENTS_NUM - 1]);
                         ele->rid.remote_info->flag = RDMA_INFO_NULL;
 
-                        ele->remote_node_ip =
-                                        (int) ele->rid.remote_info->node_ip;
+                        ele->remote_node_ip = (int) ele->rid.remote_info->node_ip;
                         ele_found = search_rb_conn(ele->remote_node_ip);
 
                         // We find that a connection is already open with that node - delete this connection request.
                         if (ele_found) {
-                                if (ele->remote_node_ip
-                                                != get_dsm_module_state()->rcm->node_ip) {
+                                if (ele->remote_node_ip != get_dsm_module_state()->rcm->node_ip) {
                                         printk(
                                                         ">[exchange_info] - destroy_connection duplicate : %d\n former : %d\n",
                                                         ele->remote_node_ip,
@@ -389,12 +384,9 @@ int exchange_info(struct conn_element *ele, int id) {
                                 complete(&ele->completion);
                                 insert_rb_conn(ele);
                                 arr[0] = (ele->remote_node_ip) & 0x000000ff;
-                                arr[1] = (ele->remote_node_ip >> 8)
-                                                & 0x000000ff;
-                                arr[2] = (ele->remote_node_ip >> 16)
-                                                & 0x000000ff;
-                                arr[3] = (ele->remote_node_ip >> 24)
-                                                & 0x000000ff;
+                                arr[1] = (ele->remote_node_ip >> 8) & 0x000000ff;
+                                arr[2] = (ele->remote_node_ip >> 16) & 0x000000ff;
+                                arr[3] = (ele->remote_node_ip >> 24) & 0x000000ff;
                                 scnprintf(charid, 20, "%u.%u.%u.%u", arr[0],
                                                 arr[1], arr[2], arr[3]);
                                 kobject_rename(&ele->sysfs.connection_kobject,
@@ -409,8 +401,7 @@ int exchange_info(struct conn_element *ele, int id) {
                 }
                 case RDMA_INFO_READY_SV: {
                         refill_recv_wr(ele,
-                                        &ele->rx_buffer.rx_buf[RX_BUF_ELEMENTS_NUM
-                                                        - 1]);
+                                        &ele->rx_buffer.rx_buf[RX_BUF_ELEMENTS_NUM - 1]);
 
                         ele->rid.remote_info->flag = RDMA_INFO_NULL;
                         //Server acknowledged --> connection is complete.
@@ -510,8 +501,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
                         if (svms.pp[i]) {
                                 send_request_dsm_page_pull(svms.pp[i],
                                                 fault_svm,
-                                                (uint64_t) (addr
-                                                                - fault_svm->priv->offset));
+                                                (uint64_t) (addr - fault_svm->priv->offset));
                         }
                 }
         }

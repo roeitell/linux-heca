@@ -68,341 +68,341 @@
  */
 
 struct msg_stats {
-    atomic64_t request_page;
-    atomic64_t request_page_pull;
-    atomic64_t page_request_reply;
-    atomic64_t page_info_update;
-    atomic64_t page_request_redirect;
-    atomic64_t try_request_page;
-    atomic64_t try_request_page_fail;
-    atomic64_t err;
+        atomic64_t request_page;
+        atomic64_t request_page_pull;
+        atomic64_t page_request_reply;
+        atomic64_t page_info_update;
+        atomic64_t page_request_redirect;
+        atomic64_t try_request_page;
+        atomic64_t try_request_page_fail;
+        atomic64_t err;
 };
 
 struct con_element_sysfs {
-    struct kobject connection_kobject;
-    struct kobject connection_rx_kobject;
-    struct kobject connection_tx_kobject;
-    struct msg_stats rx_stats;
-    struct msg_stats tx_stats;
+        struct kobject connection_kobject;
+        struct kobject connection_rx_kobject;
+        struct kobject connection_tx_kobject;
+        struct msg_stats rx_stats;
+        struct msg_stats tx_stats;
 };
 
 struct dsm_page_stats {
-    atomic64_t nb_page_requested;
-    atomic64_t nb_page_request_success;
-    atomic64_t nb_page_sent;
-    atomic64_t nb_page_pull;
-    atomic64_t nb_page_pull_fail;
-    atomic64_t nb_page_push_request;
-    atomic64_t nb_page_redirect;
-    atomic64_t nb_page_requested_prefetch;
-    atomic64_t nb_err;
+        atomic64_t nb_page_requested;
+        atomic64_t nb_page_request_success;
+        atomic64_t nb_page_sent;
+        atomic64_t nb_page_pull;
+        atomic64_t nb_page_pull_fail;
+        atomic64_t nb_page_push_request;
+        atomic64_t nb_page_redirect;
+        atomic64_t nb_page_requested_prefetch;
+        atomic64_t nb_err;
 };
 
 struct svm_sysfs {
 
-    struct kobject svm_kobject;
-    struct kobject local;
-    struct dsm_page_stats stats;
+        struct kobject svm_kobject;
+        struct kobject local;
+        struct dsm_page_stats stats;
 
 };
 
 struct dsm {
-    u32 dsm_id;
+        u32 dsm_id;
 
-    struct radix_tree_root svm_tree_root;
-    struct radix_tree_root svm_mm_tree_root;
-    struct rb_root mr_tree_root;
+        struct radix_tree_root svm_tree_root;
+        struct radix_tree_root svm_mm_tree_root;
+        struct rb_root mr_tree_root;
 
-    struct mutex dsm_mutex;
-    struct list_head svm_list;
-    seqlock_t mr_seq_lock;
+        struct mutex dsm_mutex;
+        struct list_head svm_list;
+        seqlock_t mr_seq_lock;
 
-    struct list_head dsm_ptr;
+        struct list_head dsm_ptr;
 
-    struct kobject dsm_kobject;
-    int nb_local_svm;
+        struct kobject dsm_kobject;
+        int nb_local_svm;
 };
 
 struct dsm_kobjects {
-    struct kobject * dsm_kobject;
-    struct kobject * rdma_kobject;
-    struct kobject * domains_kobject;
+        struct kobject * dsm_kobject;
+        struct kobject * rdma_kobject;
+        struct kobject * domains_kobject;
 };
 
 struct rcm {
-    int node_ip;
+        int node_ip;
 
-    struct rdma_cm_id *cm_id;
-    struct ib_device *dev;
-    struct ib_pd *pd;
-    struct ib_mr *mr;
+        struct rdma_cm_id *cm_id;
+        struct ib_device *dev;
+        struct ib_pd *pd;
+        struct ib_mr *mr;
 
-    struct ib_cq *listen_cq;
+        struct ib_cq *listen_cq;
 
-    struct mutex rcm_mutex;
+        struct mutex rcm_mutex;
 
-    struct rb_root root_conn;
-    seqlock_t conn_lock;
+        struct rb_root root_conn;
+        seqlock_t conn_lock;
 
-    struct sockaddr_in sin;
+        struct sockaddr_in sin;
 
 };
 
 struct rdma_info_data {
 
-    void *send_mem;
-    void *recv_mem;
+        void *send_mem;
+        void *recv_mem;
 
-    struct rdma_info *send_info;
-    struct rdma_info *recv_info;
-    struct rdma_info *remote_info;
+        struct rdma_info *send_info;
+        struct rdma_info *recv_info;
+        struct rdma_info *remote_info;
 
-    struct ib_sge recv_sge;
-    struct ib_recv_wr recv_wr;
-    struct ib_recv_wr *recv_bad_wr;
+        struct ib_sge recv_sge;
+        struct ib_recv_wr recv_wr;
+        struct ib_recv_wr *recv_bad_wr;
 
-    struct ib_sge send_sge;
-    struct ib_send_wr send_wr;
-    struct ib_send_wr *send_bad_wr;
-    int exchanged;
+        struct ib_sge send_sge;
+        struct ib_send_wr send_wr;
+        struct ib_send_wr *send_bad_wr;
+        int exchanged;
 };
 
 struct page_pool_ele {
 
-    void * page_buf;
-    struct page * mem_page;
-    struct llist_node llnode;
+        void * page_buf;
+        struct page * mem_page;
+        struct llist_node llnode;
 
 };
 
 struct page_pool {
 
-    struct llist_head page_empty_pool_list;
-    struct llist_head page_release_list;
+        struct llist_head page_empty_pool_list;
+        struct llist_head page_release_list;
 
-    spinlock_t page_pool_empty_list_lock;
+        spinlock_t page_pool_empty_list_lock;
 
-    struct work_struct page_release_work;
+        struct work_struct page_release_work;
 
 };
 
 struct rx_buffer {
-    struct rx_buf_ele * rx_buf;
+        struct rx_buf_ele * rx_buf;
 };
 
 struct tx_buffer {
-    struct tx_buf_ele * tx_buf;
+        struct tx_buf_ele * tx_buf;
 
-    struct llist_head tx_free_elements_list;
-    struct llist_head tx_free_elements_list_reply;
-    struct list_head request_queue;
-    spinlock_t request_queue_lock;
-    spinlock_t tx_free_elements_list_lock;
-    spinlock_t tx_free_elements_list_reply_lock;
+        struct llist_head tx_free_elements_list;
+        struct llist_head tx_free_elements_list_reply;
+        struct list_head request_queue;
+        spinlock_t request_queue_lock;
+        spinlock_t tx_free_elements_list_lock;
+        spinlock_t tx_free_elements_list_reply_lock;
 
 };
 
 struct conn_element {
-    struct rcm *rcm;
-    atomic_t alive;
+        struct rcm *rcm;
+        atomic_t alive;
 
-    int remote_node_ip;
-    struct rdma_info_data rid;
+        int remote_node_ip;
+        struct rdma_info_data rid;
 
-    struct ib_mr *mr;
-    struct ib_pd *pd;
-    struct rdma_cm_id *cm_id;
-    struct ib_cq *send_cq;
-    struct ib_cq *recv_cq;
+        struct ib_mr *mr;
+        struct ib_pd *pd;
+        struct rdma_cm_id *cm_id;
+        struct ib_cq *send_cq;
+        struct ib_cq *recv_cq;
 
-    struct work_struct send_work;
-    struct work_struct recv_work;
+        struct work_struct send_work;
+        struct work_struct recv_work;
 
-    struct rx_buffer rx_buffer;
-    struct tx_buffer tx_buffer;
+        struct rx_buffer rx_buffer;
+        struct tx_buffer tx_buffer;
 
-    struct page_pool page_pool;
-    struct rb_node rb_node;
+        struct page_pool page_pool;
+        struct rb_node rb_node;
 
-    struct con_element_sysfs sysfs;
+        struct con_element_sysfs sysfs;
 
-    struct completion completion;
+        struct completion completion;
 
 };
 
 struct rdma_info {
 
-    u8 flag;
-    u32 node_ip;
-    u64 buf_msg_addr;
-    u32 rkey_msg;
-    u64 buf_rx_addr;
-    u32 rkey_rx;
-    u32 rx_buf_size;
+        u8 flag;
+        u32 node_ip;
+        u64 buf_msg_addr;
+        u32 rkey_msg;
+        u64 buf_rx_addr;
+        u32 rkey_rx;
+        u32 rx_buf_size;
 
 };
 
 struct dsm_message {
-    u32 dsm_id;
-    u32 src_id;
-    u32 dest_id;
+        u32 dsm_id;
+        u32 src_id;
+        u32 dest_id;
 
-    u16 type;
-    u32 offset;
-    u64 req_addr;
-    u64 dst_addr;
-    u32 rkey;
+        u16 type;
+        u32 offset;
+        u64 req_addr;
+        u64 dst_addr;
+        u32 rkey;
 };
 
 /*
  * region represents local area of VM memory.
  */
 struct memory_region {
-    unsigned long addr;
-    unsigned long sz;
-    u32 descriptor;
+        unsigned long addr;
+        unsigned long sz;
+        u32 descriptor;
 
-    struct rb_node rb_node;
-    struct subvirtual_machine *svm;
+        struct rb_node rb_node;
+        struct subvirtual_machine *svm;
 };
 
 struct private_data {
-    struct mm_struct *mm;
-    unsigned long offset;
-    struct dsm * dsm;
-    struct subvirtual_machine *svm;
+        struct mm_struct *mm;
+        unsigned long offset;
+        struct dsm * dsm;
+        struct subvirtual_machine *svm;
 };
 
 struct subvirtual_machine {
-    u32 svm_id;
-    atomic_t status;
+        u32 svm_id;
+        atomic_t status;
 #define DSM_SVM_ONLINE 0
 #define DSM_SVM_OFFLINE -1
 
-    struct dsm *dsm;
-    struct conn_element *ele;
-    struct private_data *priv;
-    u32 descriptor;
-    struct list_head svm_ptr;
-    struct list_head mr_list;
+        struct dsm *dsm;
+        struct conn_element *ele;
+        struct private_data *priv;
+        u32 descriptor;
+        struct list_head svm_ptr;
+        struct list_head mr_list;
 
-    struct radix_tree_root page_cache;
-    spinlock_t page_cache_spinlock;
+        struct radix_tree_root page_cache;
+        spinlock_t page_cache_spinlock;
 
-    struct rb_root push_cache;
-    seqlock_t push_cache_lock;
+        struct rb_root push_cache;
+        seqlock_t push_cache_lock;
 
-    struct svm_sysfs svm_sysfs;
+        struct svm_sysfs svm_sysfs;
 };
 
 struct work_request_ele {
-    struct conn_element *ele;
+        struct conn_element *ele;
 
-    struct ib_send_wr wr;
-    struct ib_sge sg;
-    struct ib_send_wr *bad_wr;
+        struct ib_send_wr wr;
+        struct ib_sge sg;
+        struct ib_send_wr *bad_wr;
 
-    struct dsm_message *dsm_msg;
+        struct dsm_message *dsm_msg;
 
 };
 
 struct msg_work_request {
-    struct work_request_ele *wr_ele;
-    struct page_pool_ele *dst_addr;
-    struct dsm_page_cache *dpc;
+        struct work_request_ele *wr_ele;
+        struct page_pool_ele *dst_addr;
+        struct dsm_page_cache *dpc;
 
 };
 
 struct recv_work_req_ele {
-    struct conn_element * ele;
+        struct conn_element * ele;
 
-    struct ib_recv_wr sq_wr;
-    struct ib_recv_wr *bad_wr;
-    struct ib_sge recv_sgl;
+        struct ib_recv_wr sq_wr;
+        struct ib_recv_wr *bad_wr;
+        struct ib_sge recv_sgl;
 
 };
 
 struct reply_work_request {
-    //The one for sending back a message
-    struct work_request_ele *wr_ele;
+        //The one for sending back a message
+        struct work_request_ele *wr_ele;
 
-    //The one for sending the page
-    struct ib_send_wr wr;
-    struct ib_send_wr *bad_wr;
-    struct page * mem_page;
-    void *page_buf;
-    struct ib_sge page_sgl;
+        //The one for sending the page
+        struct ib_send_wr wr;
+        struct ib_send_wr *bad_wr;
+        struct page * mem_page;
+        void *page_buf;
+        struct ib_sge page_sgl;
 
 };
 
 struct tx_callback {
-    int (*func)(struct tx_buf_ele *);
+        int (*func)(struct tx_buf_ele *);
 };
 
 struct tx_buf_ele {
-    int id;
-    atomic_t used;
+        int id;
+        atomic_t used;
 
-    void *mem;
-    struct dsm_message *dsm_msg;
-    struct msg_work_request *wrk_req;
-    struct reply_work_request *reply_work_req;
-    struct llist_node tx_buf_ele_ptr;
+        void *mem;
+        struct dsm_message *dsm_msg;
+        struct msg_work_request *wrk_req;
+        struct reply_work_request *reply_work_req;
+        struct llist_node tx_buf_ele_ptr;
 
-    struct tx_callback callback;
+        struct tx_callback callback;
 };
 
 struct rx_buf_ele {
-    int id;
-    void *mem;
-    struct dsm_message *dsm_msg;
-    //The one for catching the request in the first place
-    struct recv_work_req_ele *recv_wrk_rq_ele;
+        int id;
+        void *mem;
+        struct dsm_message *dsm_msg;
+        //The one for catching the request in the first place
+        struct recv_work_req_ele *recv_wrk_rq_ele;
 };
 
 struct dsm_request {
-    u16 type;
-    struct page *page;
-    struct subvirtual_machine *svm;
-    struct subvirtual_machine *fault_svm;
-    uint64_t addr;
-    int (*func)(struct tx_buf_ele *);
-    struct dsm_message dsm_msg;
-    struct dsm_page_cache *dpc;
-    int index;
+        u16 type;
+        struct page *page;
+        struct subvirtual_machine *svm;
+        struct subvirtual_machine *fault_svm;
+        uint64_t addr;
+        int (*func)(struct tx_buf_ele *);
+        struct dsm_message dsm_msg;
+        struct dsm_page_cache *dpc;
+        int index;
 
-    struct list_head queue;
+        struct list_head queue;
 };
 
 struct dsm_module_state {
 
-    struct rcm * rcm;
-    struct mutex dsm_state_mutex;
-    struct radix_tree_root dsm_tree_root;
-    struct list_head dsm_list;
+        struct rcm * rcm;
+        struct mutex dsm_state_mutex;
+        struct radix_tree_root dsm_tree_root;
+        struct list_head dsm_list;
 
-    struct dsm_kobjects dsm_kobjects;
-    struct workqueue_struct * dsm_rx_wq;
-    struct workqueue_struct * dsm_tx_wq;
+        struct dsm_kobjects dsm_kobjects;
+        struct workqueue_struct * dsm_rx_wq;
+        struct workqueue_struct * dsm_tx_wq;
 };
 
 struct svm_list {
-    struct subvirtual_machine **pp;
-    int num;
+        struct subvirtual_machine **pp;
+        int num;
 };
 
 struct dsm_page_cache {
-    struct subvirtual_machine *svm;
-    unsigned long addr;
-    u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
+        struct subvirtual_machine *svm;
+        unsigned long addr;
+        u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
-    struct page **pages;
-    struct svm_list svms;
-    atomic_t found;
-    atomic_t nproc;
-    unsigned long bitmap;
+        struct page **pages;
+        struct svm_list svms;
+        atomic_t found;
+        atomic_t nproc;
+        unsigned long bitmap;
 
-    struct rb_node rb_node;
+        struct rb_node rb_node;
 };
 
 /*
@@ -421,25 +421,25 @@ struct dsm_page_cache {
 #define DSM_DSM                         _IOW(DSM_IO, 0xA9, struct svm_data)
 
 struct svm_data {
-    u32 dsm_id;
-    u32 svm_id;
-    unsigned long offset;
-    char *ip;
-    int port;
-    int local_port;
+        u32 dsm_id;
+        u32 svm_id;
+        unsigned long offset;
+        char *ip;
+        int port;
+        int local_port;
 };
 
 struct unmap_data {
-    u32 dsm_id;
-    u32 *svm_ids;
-    unsigned long addr;
-    size_t sz;
+        u32 dsm_id;
+        u32 *svm_ids;
+        unsigned long addr;
+        size_t sz;
 };
 
 struct dsm_swp_data {
-    struct dsm *dsm;
-    struct svm_list svms;
-    u32 flags;
+        struct dsm *dsm;
+        struct svm_list svms;
+        u32 flags;
 #define DSM_PUSHING 1
 };
 

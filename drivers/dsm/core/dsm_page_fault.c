@@ -641,7 +641,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                         goto lock;
         }
         if (unlikely(dsd.flags & DSM_INFLIGHT)) {
-                wait_on_bit(pte, DSM_INFLIGHT_BITWAIT, inflight_wait,
+                wait_on_bit(page_table, DSM_INFLIGHT_BITWAIT, inflight_wait,
                                 TASK_UNINTERRUPTIBLE);
         }
         retry: dpc = dsm_cache_get_hold(fault_svm, norm_addr);

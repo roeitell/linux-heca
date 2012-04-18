@@ -27,6 +27,7 @@
 #include <linux/writeback.h>
 #include <linux/swap.h>
 #include <linux/atomic.h>
+#include <linux/wait.h>
 
 #include <asm-generic/memory_model.h>
 #include <asm-generic/mman-common.h>

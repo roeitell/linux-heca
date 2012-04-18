@@ -745,8 +745,9 @@ void release_page_work(struct work_struct *work) {
                         ppe->page_buf = NULL;
                 }
                 page = ppe->mem_page;
-                if (page)
+                if (page) {
                         page_cache_release(page);
+                }
                 node = node->next;
                 llist_add(&ppe->llnode, &pp->page_empty_pool_list);
 
@@ -969,7 +970,7 @@ struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
 
         if (llnode) {
 tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-                                                        atomic_set(&tx_e->used, 1);
+                                                                        atomic_set(&tx_e->used, 1);
         }
 
         return tx_e;
@@ -986,7 +987,7 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
 
         if (llnode) {
 tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-                                                        atomic_set(&tx_e->used, 1);
+                                                                        atomic_set(&tx_e->used, 1);
         }
 
         return tx_e;

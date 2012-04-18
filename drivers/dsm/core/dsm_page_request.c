@@ -296,7 +296,7 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         ptep_clear_flush_notify(pd.vma, addr, pd.pte);
 
         set_pte_at(mm, addr, pd.pte,
-                        swp_entry_to_pte( dsm_descriptor_to_swp_entry(remote_svm->descriptor, 0)));
+                        swp_entry_to_pte( dsm_descriptor_to_swp_entry(remote_svm->descriptor, DSM_INFLIGHT)));
 
         page_remove_rmap(page);
 

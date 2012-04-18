@@ -150,6 +150,8 @@ static int dsm_send_message_handler(struct conn_element *ele,
                 }
                 case REQUEST_PAGE: {
                         atomic64_inc(&ele->sysfs.tx_stats.request_page);
+                        clear_bit(DSM_INFLIGHT_BITWAIT,
+                                        tx_buf_e->wrk_req->dpc->pte);
                         break;
                 }
                 case TRY_REQUEST_PAGE: {

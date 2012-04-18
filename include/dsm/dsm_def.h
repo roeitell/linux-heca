@@ -401,6 +401,7 @@ struct dsm_page_cache {
         atomic_t found;
         atomic_t nproc;
         unsigned long bitmap;
+        struct pte_t * pte;
 
         struct rb_node rb_node;
 };
@@ -440,7 +441,10 @@ struct dsm_swp_data {
         struct dsm *dsm;
         struct svm_list svms;
         u32 flags;
-#define DSM_PUSHING 1
+#define DSM_INFLIGHT            0x01
+#define DSM_INFLIGHT_BITWAIT    0x0100
+#define DSM_PUSHING             0x02
+
 };
 
 #endif /* DSM_DEF_H_ */

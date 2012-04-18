@@ -466,7 +466,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
 
                 if (!new_dpc) {
                         new_dpc = dsm_alloc_dpc(fault_svm, norm_addr, svms,
-                                        svms.num + nproc, tag);
+                                        svms.num + nproc, tag, page_table);
                         if (!new_dpc)
                                 goto fail;
                 }
@@ -615,6 +615,11 @@ static struct dsm_page_cache *convert_push_dpc(
         return ret;
 }
 
+static int inflight_wait(void *ptr) {
+        schedule();
+        return 0;
+}
+
 static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned long address, pte_t *page_table, pmd_t *pmd,
                 unsigned int flags, pte_t orig_pte, swp_entry_t entry) {
@@ -634,7 +639,10 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 if (likely(dpc))
                         goto lock;
         }
-
+        if (unlikely(dsd.flags & DSM_INFLIGHT)) {
+                wait_on_bit(pte, DSM_INFLIGHT_BITWAIT, inflight_wait,
+                                TASK_UNINTERRUPTIBLE);
+        }
         retry: dpc = dsm_cache_get_hold(fault_svm, norm_addr);
         if (!dpc) {
                 dpc = dsm_cache_add_send(fault_svm, dsd.svms, address,

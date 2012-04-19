@@ -55,12 +55,6 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *, unsigned long,
 void dsm_dealloc_dpc(struct dsm_page_cache **);
 
 struct dsm_functions {
-        struct dsm *(*_find_dsm)(u32 dsm_id);
-
-        struct subvirtual_machine *(*_find_svm)(struct dsm *, u32 svm_id);
-
-        struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
-                        struct mm_struct *);
 
         int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
                         struct subvirtual_machine *, uint64_t,
@@ -71,11 +65,7 @@ struct dsm_functions {
 };
 
 // dsm_unmap
-void reg_dsm_functions(struct dsm *(*_find_dsm)(u32 dsm_id),
-                struct subvirtual_machine *(*_find_svm)(struct dsm* dsm,
-                                u32 svm_id),
-                struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
-                                struct mm_struct *),
+void reg_dsm_functions(
                 int (*request_dsm_page)(struct page *,
                                 struct subvirtual_machine *,
                                 struct subvirtual_machine *, uint64_t,
@@ -83,6 +73,12 @@ void reg_dsm_functions(struct dsm *(*_find_dsm)(u32 dsm_id),
                                 struct dsm_page_cache*),
                 int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
                                 struct subvirtual_machine *, unsigned long));
+
+int request_dsm_page_op(struct page *, struct subvirtual_machine *,
+                struct subvirtual_machine *, uint64_t,
+                int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *);
+int dsm_request_page_pull_op(struct dsm *, struct mm_struct *,
+                struct subvirtual_machine *, unsigned long);
 
 /* dsm_unmap.c */
 extern struct dsm_functions *funcs;

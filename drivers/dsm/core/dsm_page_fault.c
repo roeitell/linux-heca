@@ -392,7 +392,7 @@ static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
         set_page_private(page, private);
         SetPageSwapBacked(page);
 
-        funcs->request_dsm_page(page, remote_svm, fault_svm,
+        request_dsm_page_op(page, remote_svm, fault_svm,
                         (uint64_t) (addr - fault_svm->priv->offset), func, tag,
                         dpc);
 
@@ -434,8 +434,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
                 if (likely(!r)) {
                         for (i = 0; i < svms.num; i++) {
                                 if (likely(svms.pp[i])) {
-                                        funcs->request_dsm_page(
-                                                        new_dpc->pages[0],
+                                        request_dsm_page_op(new_dpc->pages[0],
                                                         svms.pp[i], fault_svm,
                                                         (uint64_t) (addr - fault_svm->priv->offset),
                                                         NULL, PULL_TAG, NULL);
@@ -626,7 +625,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned int flags, pte_t orig_pte, swp_entry_t entry) {
 
         struct dsm_swp_data dsd = swp_entry_to_dsm_data(entry);
-        struct subvirtual_machine *fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
+        struct subvirtual_machine *fault_svm = find_local_svm_in_dsm(dsd.dsm,
+                        mm);
 //we need to use the page addr and not the fault address in order to have a unique reference
         unsigned long norm_addr = address & PAGE_MASK;
         spinlock_t *ptl;

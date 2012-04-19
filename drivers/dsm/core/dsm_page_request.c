@@ -656,7 +656,7 @@ static inline int _push_back_if_remote_dsm_page(struct page *page) {
                 if (!mr || mr->local == LOCAL)
                         continue;
                 else {
-                        funcs->dsm_request_page_pull(svm->dsm,vma->vm_mm, svm, address);
+                        dsm_request_page_pull_op(svm->dsm,vma->vm_mm, svm, address);
                         printk(
                                         "Pushing back page %p, DSM %d , SVM %d , Address %p \n",
                                         (void *)page, svm->dsm->dsm_id, svm->svm_id,

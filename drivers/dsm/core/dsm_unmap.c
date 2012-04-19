@@ -9,11 +9,7 @@
 
 struct dsm_functions *funcs;
 
-void reg_dsm_functions(struct dsm *(*_find_dsm)(u32 dsm_id),
-                struct subvirtual_machine *(*_find_svm)(struct dsm* dsm,
-                                u32 svm_id),
-                struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
-                                struct mm_struct *),
+void reg_dsm_functions(
                 int (*request_dsm_page)(struct page *,
                                 struct subvirtual_machine *,
                                 struct subvirtual_machine *, uint64_t,
@@ -22,10 +18,7 @@ void reg_dsm_functions(struct dsm *(*_find_dsm)(u32 dsm_id),
                 int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
                                 struct subvirtual_machine *, unsigned long)) {
 
-        funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
-        funcs->_find_dsm = _find_dsm;
-        funcs->_find_svm = _find_svm;
-        funcs->_find_local_svm = _find_local_svm;
+        funcs = kzmalloc(sizeof(*funcs), GFP_KERNEL);
         funcs->request_dsm_page = request_dsm_page;
         funcs->dsm_request_page_pull = dsm_request_page_pull;
 }
@@ -35,6 +28,23 @@ void dereg_dsm_functions(void) {
         kfree(funcs);
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
+
+inline int request_dsm_page_op(struct page * page,
+                struct subvirtual_machine * svm,
+                struct subvirtual_machine * svm2, uint64_t addr,
+                int (*func)(struct tx_buf_ele *), int tag,
+                struct dsm_page_cache * cache) {
+        if (likely(funcs && funcs->request_dsm_page))
+                return funcs->request_dsm_page(page, svm, svm2, addr, func, tag,
+                                cache);
+        return NULL;
+}
+inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
+                struct subvirtual_machine *svm, unsigned long addr) {
+        if (likely(funcs && funcs->dsm_request_page_pull))
+                return funcs->dsm_request_page_pull(dsm, mm, svm, addr);
+        return NULL;
+}
 
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
                 unsigned long request_addr) {

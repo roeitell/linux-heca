@@ -88,7 +88,9 @@ struct dsm_module_state * get_dsm_module_state(void);
 struct dsm_module_state * create_dsm_module_state(void);
 void destroy_dsm_module_state(void);
 struct dsm *find_dsm(u32);
-struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
+struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
+                struct mm_struct *);
+struct subvirtual_machine *find_local_svm(struct mm_struct *);
 struct subvirtual_machine *find_svm(struct dsm *, u32);
 void insert_mr(struct dsm *, struct memory_region *);
 struct memory_region *search_mr(struct dsm *, unsigned long);

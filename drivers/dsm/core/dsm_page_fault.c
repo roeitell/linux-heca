@@ -626,7 +626,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned int flags, pte_t orig_pte, swp_entry_t entry) {
 
         struct dsm_swp_data dsd = swp_entry_to_dsm_data(entry);
-        struct subvirtual_machine *fault_svm = find_local_svm(dsd.dsm, mm);
+        struct subvirtual_machine *fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
 //we need to use the page addr and not the fault address in order to have a unique reference
         unsigned long norm_addr = address & PAGE_MASK;
         spinlock_t *ptl;
@@ -640,6 +640,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 if (likely(dpc))
                         goto lock;
         }
+
         if (unlikely(dsd.flags & DSM_INFLIGHT)) {
                 wait_on_bit(page_table, DSM_INFLIGHT_BITWAIT, inflight_wait,
                                 TASK_UNINTERRUPTIBLE);

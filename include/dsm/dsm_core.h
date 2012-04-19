@@ -74,7 +74,6 @@ void reg_dsm_functions(struct dsm *(*_find_dsm)(u32 dsm_id),
 struct subvirtual_machine *(*_find_svm)(struct dsm* dsm, u32 svm_id),
 
 struct subvirtual_machine *(*_find_local_svm)(struct dsm *, struct mm_struct *),
-
                 int (*request_dsm_page)(struct page *,
                                 struct subvirtual_machine *,
                                 struct subvirtual_machine *, uint64_t,

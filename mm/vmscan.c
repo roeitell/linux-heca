@@ -50,6 +50,8 @@
 
 #include "internal.h"
 
+#include <dsm/dsm_mem.h>
+
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
 
@@ -846,6 +848,8 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		if (PageAnon(page) && !PageSwapCache(page)) {
 			if (!(sc->gfp_mask & __GFP_IO))
 				goto keep_locked;
+			if(push_back_if_remote_dsm_page(page))
+			        goto cull_mlocked;
 			if (!add_to_swap(page))
 				goto activate_locked;
 			may_enter_fs = 1;

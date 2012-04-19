@@ -627,3 +627,61 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
 }
 EXPORT_SYMBOL(dsm_update_pte_entry);
 
+/*
+ * Return 0 => page dsm or not dsm_remote => try to swap out
+ * Return 1 => page scheduled for push back do not swap out
+ */
+static inline int _push_back_if_remote_dsm_page(struct page *page) {
+        struct anon_vma *anon_vma;
+        struct anon_vma_chain *avc;
+        int ret = 0;
+
+        anon_vma = page_lock_anon_vma(page);
+        if (!anon_vma)
+                return ret;
+        //list_for_each_entry(avc, &anon_vma->head, same_anon_vma)
+        {
+                struct vm_area_struct *vma = avc->vma;
+                unsigned long address;
+                struct subvirtual_machine *svm;
+                struct memory_region *mr;
+
+                if (PAGE_MIGRATION && (flags & TTU_MIGRATION) && is_vma_temporary_stack(
+                                vma))
+                        continue;
+
+                address = vma_address(page, vma);
+                if (address == -EFAULT)
+                        continue;
+                svm = find_local_svm(vma->vm_mm);
+                if (!svm)
+                        continue;
+                mr = search_mr(svm->dsm, address);
+                if (!mr || mr->local == LOCAL)
+                        continue;
+                else {
+                        dsm_request_page_pull(svm->dsm, svm, address);
+                        printk(
+                                        "Pushing back page %p, DSM %d , SVM %d , Address %p \n",
+                                        page, svm->dsm->dsm_id, svm->svm_id,
+                                        address);
+                        ret = 1
+                        break;
+                }
+
+        }
+
+        page_unlock_anon_vma(anon_vma);
+        return ret;
+
+}
+#ifdef CONFIG_DSM_CORE
+int push_back_if_remote_dsm_page(struct page *page) {
+        return _push_back_if_remote_dsm_page(page);
+}
+
+#else
+int push_back_if_remote_dsm_page(struct page *page) {
+        return 0;
+}
+

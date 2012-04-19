@@ -228,7 +228,9 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
                         //the following should never fail as we locked the dsm and we made sure that we add the ID first
                         r = radix_tree_insert(&dsm->svm_mm_tree_root,
                                         (unsigned long) priv_data->mm, new_svm);
-
+                        r = radix_tree_insert(
+                                        &get_dsm_module_state()->mm_tree_root,
+                                        (unsigned long) priv_data->mm, new_svm);
                         radix_tree_preload_end();
 
                         new_svm->priv = priv_data;
@@ -405,6 +407,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
                 if (svm->priv && svm->priv->mm == current->mm) {
                         if (j == 0)
                                 r = 0;
+                        mr->local = LOCAL;
                         goto out;
                 }
         }
@@ -662,7 +665,7 @@ MODULE_PARM_DESC( port,
 static int dsm_init(void) {
         struct dsm_module_state *dsm_state = create_dsm_module_state();
 
-        reg_dsm_functions(&find_dsm, &find_svm, &find_local_svm,
+        reg_dsm_functions(&find_dsm, &find_svm, &find_local_svm_in_dsm,
                         &request_dsm_page);
 
         printk("[dsm_init] ip : %s\n", ip);

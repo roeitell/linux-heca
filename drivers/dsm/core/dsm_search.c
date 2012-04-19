@@ -12,6 +12,7 @@ struct dsm_module_state * create_dsm_module_state(void) {
         dsm_state = kzalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
         BUG_ON(!(dsm_state));
         INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
+        INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL);
         INIT_LIST_HEAD(&dsm_state->dsm_list);
         mutex_init(&dsm_state->dsm_state_mutex);
         dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
@@ -91,7 +92,7 @@ struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
 }
 EXPORT_SYMBOL(find_svm);
 
-struct subvirtual_machine *find_local_svm(struct dsm * dsm,
+struct subvirtual_machine *find_local_svm_in_dsm(struct dsm * dsm,
                 struct mm_struct *mm) {
         struct subvirtual_machine *svm;
 
@@ -101,7 +102,20 @@ struct subvirtual_machine *find_local_svm(struct dsm * dsm,
 
         return svm;
 }
+EXPORT_SYMBOL(find_local_svm_in_dsm);
+
+struct subvirtual_machine *find_local_svm(struct mm_struct *mm) {
+        struct subvirtual_machine *svm;
+
+        rcu_read_lock();
+        svm = _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
+                        (unsigned long) mm);
+        rcu_read_unlock();
+
+        return svm;
+}
 EXPORT_SYMBOL(find_local_svm);
+
 
 void insert_rb_conn(struct conn_element *ele) {
         struct rcm *rcm = get_dsm_module_state()->rcm;

@@ -7,7 +7,7 @@
 
 #include <dsm/dsm_core.h>
 
-struct dsm_functions *funcs;
+struct dsm_functions *funcs = NULL;
 
 void reg_dsm_functions(
                 int (*request_dsm_page)(struct page *,
@@ -17,10 +17,13 @@ void reg_dsm_functions(
                                 struct dsm_page_cache *),
                 int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
                                 struct subvirtual_machine *, unsigned long)) {
+        struct dsm_functions * tmp;
 
-        funcs = kzmalloc(sizeof(*funcs), GFP_KERNEL);
-        funcs->request_dsm_page = request_dsm_page;
-        funcs->dsm_request_page_pull = dsm_request_page_pull;
+        tmp = kmalloc(sizeof(*funcs), GFP_KERNEL);
+        tmp->request_dsm_page = request_dsm_page;
+        tmp->dsm_request_page_pull = dsm_request_page_pull;
+        funcs = tmp;
+
 }
 EXPORT_SYMBOL(reg_dsm_functions);
 
@@ -34,16 +37,16 @@ inline int request_dsm_page_op(struct page * page,
                 struct subvirtual_machine * svm2, uint64_t addr,
                 int (*func)(struct tx_buf_ele *), int tag,
                 struct dsm_page_cache * cache) {
-        if (likely(funcs && funcs->request_dsm_page))
+        if (likely(funcs))
                 return funcs->request_dsm_page(page, svm, svm2, addr, func, tag,
                                 cache);
-        return NULL;
+        return -1;
 }
 inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
                 struct subvirtual_machine *svm, unsigned long addr) {
-        if (likely(funcs && funcs->dsm_request_page_pull))
+        if (likely(funcs))
                 return funcs->dsm_request_page_pull(dsm, mm, svm, addr);
-        return NULL;
+        return -1;
 }
 
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,

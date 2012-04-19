@@ -639,16 +639,12 @@ static inline int _push_back_if_remote_dsm_page(struct page *page) {
         anon_vma = page_lock_anon_vma(page);
         if (!anon_vma)
                 return ret;
-        //list_for_each_entry(avc, &anon_vma->head, same_anon_vma)
+        list_for_each_entry(avc, &anon_vma->head, same_anon_vma)
         {
                 struct vm_area_struct *vma = avc->vma;
                 unsigned long address;
                 struct subvirtual_machine *svm;
                 struct memory_region *mr;
-
-                if (PAGE_MIGRATION && (flags & TTU_MIGRATION) && is_vma_temporary_stack(
-                                vma))
-                        continue;
 
                 address = vma_address(page, vma);
                 if (address == -EFAULT)
@@ -660,12 +656,12 @@ static inline int _push_back_if_remote_dsm_page(struct page *page) {
                 if (!mr || mr->local == LOCAL)
                         continue;
                 else {
-                        dsm_request_page_pull(svm->dsm, svm, address);
+                        dsm_request_page_pull(svm->dsm,vma->vm_mm, svm, address);
                         printk(
                                         "Pushing back page %p, DSM %d , SVM %d , Address %p \n",
-                                        page, svm->dsm->dsm_id, svm->svm_id,
-                                        address);
-                        ret = 1
+                                        (void *)page, svm->dsm->dsm_id, svm->svm_id,
+                                        (void *)address);
+                        ret = 1;
                         break;
                 }
 

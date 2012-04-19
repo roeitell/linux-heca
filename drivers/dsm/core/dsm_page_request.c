@@ -646,7 +646,7 @@ static inline int _push_back_if_remote_dsm_page(struct page *page) {
                 struct subvirtual_machine *svm;
                 struct memory_region *mr;
 
-                address = vma_address(page, vma);
+                address = page_address_in_vma(page, vma);
                 if (address == -EFAULT)
                         continue;
                 svm = find_local_svm(vma->vm_mm);
@@ -680,4 +680,4 @@ int push_back_if_remote_dsm_page(struct page *page) {
 int push_back_if_remote_dsm_page(struct page *page) {
         return 0;
 }
-
+#endif

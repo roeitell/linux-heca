@@ -18,13 +18,16 @@ void reg_dsm_functions(struct dsm *(*_find_dsm)(u32 dsm_id),
                                 struct subvirtual_machine *,
                                 struct subvirtual_machine *, uint64_t,
                                 int (*func)(struct tx_buf_ele *), int,
-                                struct dsm_page_cache *)) {
+                                struct dsm_page_cache *),
+                int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
+                                struct subvirtual_machine *, unsigned long)) {
 
         funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
         funcs->_find_dsm = _find_dsm;
         funcs->_find_svm = _find_svm;
         funcs->_find_local_svm = _find_local_svm;
         funcs->request_dsm_page = request_dsm_page;
+        funcs->dsm_request_page_pull = dsm_request_page_pull;
 }
 EXPORT_SYMBOL(reg_dsm_functions);
 

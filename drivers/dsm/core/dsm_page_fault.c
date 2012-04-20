@@ -605,7 +605,6 @@ static struct dsm_page_cache *convert_push_dpc(
                 page = dpc->pages[0];
                 addr = dpc->addr;
                 if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                        synchronize_rcu();
                         dsm_dealloc_dpc(&dpc);
                 }
 

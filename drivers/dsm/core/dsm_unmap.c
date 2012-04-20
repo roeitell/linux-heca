@@ -28,7 +28,9 @@ void reg_dsm_functions(
 EXPORT_SYMBOL(reg_dsm_functions);
 
 void dereg_dsm_functions(void) {
-        kfree(funcs);
+        struct dsm_functions * tmp = funcs;
+        funcs = NULL;
+        kfree(tmp);
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 

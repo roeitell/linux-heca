@@ -84,6 +84,7 @@ int dsm_request_page_pull_op(struct dsm *, struct mm_struct *,
 extern struct dsm_functions *funcs;
 void dereg_dsm_functions(void);
 int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32, unsigned long);
+void lazy_free_swap(struct page *);
 
 /* dsm_page_request.c */
 struct page *dsm_extract_page_from_remote(struct dsm *,

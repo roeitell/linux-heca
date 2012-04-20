@@ -746,6 +746,7 @@ void release_page_work(struct work_struct *work) {
                 }
                 page = ppe->mem_page;
                 if (page) {
+                        lazy_free_swap(page);
                         page_cache_release(page);
                 }
                 node = node->next;

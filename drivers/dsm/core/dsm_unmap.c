@@ -9,6 +9,12 @@
 
 struct dsm_functions *funcs = NULL;
 
+void lazy_free_swap(struct page *page) {
+        if (likely(!page_mapped(page)))
+                try_to_free_swap(page);
+}
+EXPORT_SYMBOL(lazy_free_swap);
+
 void reg_dsm_functions(
                 int (*request_dsm_page)(struct page *,
                                 struct subvirtual_machine *,
@@ -25,7 +31,6 @@ void reg_dsm_functions(
         funcs = tmp;
 
 }
-EXPORT_SYMBOL(reg_dsm_functions);
 
 void dereg_dsm_functions(void) {
         struct dsm_functions * tmp = funcs;
@@ -188,8 +193,6 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         dec_mm_counter(mm, MM_ANONPAGES);
 
         // this is a page flagging without data exchange so we can free the page
-        if (likely(!page_mapped(page)))
-                try_to_free_swap(page);
 
         unlock_page(page);
         put_page(page);

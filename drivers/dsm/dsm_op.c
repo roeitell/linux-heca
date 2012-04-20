@@ -971,7 +971,7 @@ struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
 
         if (llnode) {
 tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-                                                                        atomic_set(&tx_e->used, 1);
+                                                                                        atomic_set(&tx_e->used, 1);
         }
 
         return tx_e;
@@ -988,7 +988,7 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
 
         if (llnode) {
 tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-                                                                        atomic_set(&tx_e->used, 1);
+                                                                                        atomic_set(&tx_e->used, 1);
         }
 
         return tx_e;
@@ -1034,14 +1034,14 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
                         printk(">[destroy_rcm] - no cm_id\n");
                 }
 
-        mutex_destroy(&rcm->rcm_mutex);
-        dsm_state->rcm = NULL;
-        kfree(rcm);
-    }
+                mutex_destroy(&rcm->rcm_mutex);
+                dsm_state->rcm = NULL;
+                kfree(rcm);
+        }
 
-    destroy_dsm_cache_kmem();
-    destroy_kmem_request_cache();
-    dsm_destroy_descriptors();
+        destroy_dsm_cache_kmem();
+        destroy_kmem_request_cache();
+        dsm_destroy_descriptors();
 
         return 0;
 }
@@ -1168,37 +1168,34 @@ static void release_dpc_element(struct subvirtual_machine *svm,
 }
 
 void release_push_elements(struct subvirtual_machine *svm,
-        struct subvirtual_machine *remote_svm) 
-{
-    struct rb_node *node;
-    struct dsm_page_cache *dpc; 
-    int i;
+                struct subvirtual_machine *remote_svm) {
+        struct rb_node *node;
+        struct dsm_page_cache *dpc;
+        int i;
 
-    write_seqlock(&svm->push_cache_lock);
-    for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
-        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
-        if (!remote_svm)
-            goto release;
+        write_seqlock(&svm->push_cache_lock);
+        for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
+                dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+                if (!remote_svm)
+                        goto release;
 
-        for (i = 0; i < dpc->svms.num; i++) {
-            if (dpc->svms.pp[i] == remote_svm)
-                goto surrogate;
+                for (i = 0; i < dpc->svms.num; i++) {
+                        if (dpc->svms.pp[i] == remote_svm)
+                                goto surrogate;
+                }
+                continue;
+
+                surrogate: if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
+                        atomic_dec(&dpc->nproc);
+                        release: if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+                                page_cache_release(dpc->pages[0]);
+                                set_page_private(dpc->pages[0], 0);
+                                dsm_dealloc_dpc(&dpc);
+                                rb_erase(&dpc->rb_node, &svm->push_cache);
+                        }
+                }
         }
-        continue;
-
-        surrogate:
-        if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
-            atomic_dec(&dpc->nproc);
-            release:
-            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                page_cache_release(dpc->pages[0]);
-                set_page_private(dpc->pages[0], 0);
-                dsm_dealloc_dpc(&dpc);
-                rb_erase(&dpc->rb_node, &svm->push_cache);
-            }
-        }
-    }
-    write_sequnlock(&svm->push_cache_lock);
+        write_sequnlock(&svm->push_cache_lock);
 }
 
 void release_svm_tx_elements(struct subvirtual_machine *svm,

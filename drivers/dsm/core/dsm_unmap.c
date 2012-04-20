@@ -31,6 +31,7 @@ void reg_dsm_functions(
         funcs = tmp;
 
 }
+EXPORT_SYMBOL(reg_dsm_functions);
 
 void dereg_dsm_functions(void) {
         struct dsm_functions * tmp = funcs;

@@ -314,15 +314,22 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         swp_entry_t swp_e;
         struct dsm_pte_data pd;
         int dsc = -1;
+        spinlock_t *ptl = NULL;
 
-        dsm_extract_pte_data(&pd, mm, addr);
+        retry: dsm_extract_pte_data(&pd, mm, addr);
         if (!pd.pte)
                 goto out;
+        pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
+        if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
+                pte_unmap_unlock(pd.pte, ptl);
+                goto retry;
+        }
+
         pte_entry = *(pd.pte);
 
         dpc = dsm_push_cache_get(local_svm, addr, remote_svm);
         if (unlikely(!dpc))
-                goto out;
+                goto pte_unlock;
 
         page = dpc->pages[0];
         if (unlikely(PageActive(page))) {
@@ -358,19 +365,22 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num && atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
                 dsm_push_cache_release(local_svm, &dpc);
                 if (likely(page)) {
+                        lock_page(page);
                         page_cache_release(page);
                         set_page_private(page, 0);
                         if (likely(dsc >= 0)) {
-                                lock_page(page);
+
                                 flush_cache_page(pd.vma, addr,
                                                 pte_pfn(*(pd.pte)));
                                 ptep_clear_flush_notify(pd.vma, addr, pd.pte);
                                 set_pte_at(mm, addr, pd.pte,
                                                 swp_entry_to_pte( dsm_descriptor_to_swp_entry(dsc, 0)));
-                                unlock_page(page);
+
                         }
+                        unlock_page(page);
                 }
         }
+        pte_unlock: pte_unmap_unlock(pd.pte, ptl);
         out: return page;
 
 }

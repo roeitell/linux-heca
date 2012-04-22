@@ -43,7 +43,7 @@ unsigned int inet_addr(char *);
 
 int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
-int destroy_connection(struct conn_element *, struct rcm *);
+int destroy_connection(struct conn_element *);
 void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32, 
     u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
 void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32, 
@@ -83,7 +83,7 @@ void remove_dsm(struct dsm *);
  */
 void insert_rb_conn(struct conn_element *);
 struct conn_element* search_rb_conn(int);
-void erase_rb_conn(struct rb_root *, struct conn_element *);
+void erase_rb_conn(struct conn_element *);
 struct dsm_module_state * get_dsm_module_state(void);
 struct dsm_module_state * create_dsm_module_state(void);
 void destroy_dsm_module_state(void);

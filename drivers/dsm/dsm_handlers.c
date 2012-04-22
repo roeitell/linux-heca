@@ -445,7 +445,8 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
                         break;
 
                 case RDMA_CM_EVENT_DISCONNECTED:
-                        ret = destroy_connection(ele, ele->rcm);
+                        if (likely(atomic_cmpxchg(&ele->alive, 1, 0) == 1))
+                                ret = destroy_connection(ele);
                         break;
 
                 case RDMA_CM_EVENT_ADDR_ERROR:
@@ -476,7 +477,6 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
                                         event->event);
                         break;
         }
-
         return ret;
 
         err5: err++;
@@ -543,9 +543,9 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
                         break;
 
                 case RDMA_CM_EVENT_DISCONNECTED:
-                        printk("[server_event_handler] disconnect received\n");
                         ele = id->context;
-                        ret = destroy_connection(ele, ele->rcm);
+                        if (likely(atomic_cmpxchg(&ele->alive, 1, 0) == 1))
+                                ret = destroy_connection(ele);
                         break;
 
                 case RDMA_CM_EVENT_CONNECT_ERROR:

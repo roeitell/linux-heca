@@ -154,9 +154,13 @@ struct conn_element* search_rb_conn(int node_ip) {
 }
 EXPORT_SYMBOL(search_rb_conn);
 
-void erase_rb_conn(struct rb_root *root, struct conn_element *ele) {
-    BUG_ON(!ele);
-    rb_erase(&ele->rb_node, root);
+void erase_rb_conn(struct conn_element *ele)
+{
+        struct rcm *rcm = get_dsm_module_state()->rcm;
+
+        write_seqlock(&rcm->conn_lock);
+        rb_erase(&ele->rb_node, &rcm->root_conn);
+        write_sequnlock(&rcm->conn_lock);
 }
 EXPORT_SYMBOL(erase_rb_conn);
 

@@ -7,23 +7,24 @@
 
 #include <dsm/dsm_module.h>
 
-static int rcm_disconnect(struct rcm *rcm) {
-    struct rb_root *root = &rcm->root_conn;
-    struct rb_node *node, *next;
-    struct conn_element *ele;
+static int rcm_disconnect(struct rcm *rcm)
+{
+        struct rb_root *root = &rcm->root_conn;
+        struct rb_node *node, *next;
+        struct conn_element *ele;
 
-    write_seqlock(&rcm->conn_lock);
-    for (node = rb_first(root); node; node = next) {
-        ele = rb_entry(node, struct conn_element, rb_node);
-        rdma_disconnect(ele->cm_id);
-        destroy_connection(ele, rcm);
-        next = rb_next(node);
-        erase_rb_conn(root, ele);
-        vfree(ele);
-    }
-    write_sequnlock(&rcm->conn_lock);
+        for (node = rb_first(root); node; node = next) {
+                ele = rb_entry(node, struct conn_element, rb_node);
+                next = rb_next(node);
+                if (atomic_cmpxchg(&ele->alive, 1, 0) == 1) {
+                        rdma_disconnect(ele->cm_id);
+                        destroy_connection(ele);
+                }
+        }
 
-    return 0;
+        while(rb_first(root));
+
+        return 0;
 }
 
 static void destroy_tx_buffer(struct conn_element *ele) {
@@ -695,9 +696,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
             (struct sockaddr*) &dst, 2000);
 
-    err1: write_seqlock(&rcm->conn_lock);
-    erase_rb_conn(&rcm->root_conn, ele);
-    write_sequnlock(&rcm->conn_lock);
+    err1: erase_rb_conn(ele);
     vfree(ele);
     err: return -1;
 }
@@ -984,85 +983,72 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
     return tx_e;
 }
 
-int destroy_rcm(struct dsm_module_state *dsm_state) {
-    struct rcm *rcm = dsm_state->rcm;
+int destroy_rcm(struct dsm_module_state *dsm_state)
+{
+        struct rcm *rcm = dsm_state->rcm;
 
-    if (likely(rcm)) {
+        if (likely(rcm)) {
+                rcm_disconnect(rcm);
 
-        rcm_disconnect(dsm_state->rcm);
+                if (likely(rcm->cm_id)) {
+                        if (likely(rcm->cm_id->qp))
+                            ib_destroy_qp(rcm->cm_id->qp);
 
-        if (likely(rcm->cm_id)) {
-            int r;
+                        if (likely(rcm->listen_cq))
+                            ib_destroy_cq(rcm->listen_cq);
 
-            if (rcm->cm_id->qp)
-                if ((r = ib_destroy_qp(rcm->cm_id->qp)))
-                    printk(">[destroy_rcm] - Cannot destroy qp %d\n", r);
+                        if (likely(rcm->mr))
+                            ib_dereg_mr(rcm->mr);
 
-            if (rcm->listen_cq)
-                if ((r = ib_destroy_cq(rcm->listen_cq)))
-                    printk(">[destroy_rcm] - Cannot destroy cq %d\n", r);
+                        if (likely(rcm->pd))
+                            ib_dealloc_pd(rcm->pd);
 
-            if (rcm->mr)
-                if ((r = ib_dereg_mr(rcm->mr)))
-                    printk(">[destroy_rcm] - Cannot dereg mr %d\n", r);
+                        rdma_destroy_id(rcm->cm_id);
+                }
 
-            if (rcm->pd)
-                if ((r = ib_dealloc_pd(rcm->pd)))
-                    printk(">[destroy_rcm] - Cannot dealloc pd %d\n", r);
-
-            rdma_destroy_id(rcm->cm_id);
-
-        } else {
-            printk(">[destroy_rcm] - no cm_id\n");
+                mutex_destroy(&rcm->rcm_mutex);
+                dsm_state->rcm = NULL;
+                kfree(rcm);
         }
 
-        mutex_destroy(&rcm->rcm_mutex);
-        dsm_state->rcm = NULL;
-        kfree(rcm);
-    }
+        destroy_dsm_cache_kmem();
+        destroy_kmem_request_cache();
+        dsm_destroy_descriptors();
 
-    destroy_dsm_cache_kmem();
-    destroy_kmem_request_cache();
-    dsm_destroy_descriptors();
-
-    return 0;
+        return 0;
 }
 
-int destroy_connection(struct conn_element *ele, struct rcm *rcm) {
-    int ret = 0;
+int destroy_connection(struct conn_element *ele)
+{
+        int ret = 0;
 
-    if (ele && atomic_cmpxchg(&ele->alive, 1, 0)) {
-        if (ele->cm_id) {
-            if (ele->cm_id->qp)
-                if ((ret = ib_destroy_qp(ele->cm_id->qp)))
-                    printk(">[destroy_connection] - Cannot destroy qp\n");
+        if (likely(ele->cm_id)) {
 
-            if (ele->send_cq)
-                if ((ret = ib_destroy_cq(ele->send_cq)))
-                    printk(">[destroy_connection] - Cannot destroy send cq\n");
+                if (likely(ele->cm_id->qp))
+                        ret |= ib_destroy_qp(ele->cm_id->qp);
 
-            if (ele->recv_cq)
-                if ((ret = ib_destroy_cq(ele->recv_cq)))
-                    printk(">[destroy_connection] - Cannot destroy recv cq\n");
+                if (likely(ele->send_cq))
+                        ret |= ib_destroy_cq(ele->send_cq);
 
-            if (ele->mr)
-                if ((ret = ib_dereg_mr(ele->mr)))
-                    printk(">[destroy_connection] - Cannot dereg mr\n");
+                if (likely(ele->recv_cq))
+                        ret |= ib_destroy_cq(ele->recv_cq);
 
-            if (ele->pd)
-                if ((ret = ib_dealloc_pd(ele->pd)))
-                    printk(">[destroy_connection] -Cannot dealloc pd\n");
+                if (likely(ele->mr))
+                        ret |= ib_dereg_mr(ele->mr);
 
-            destroy_rx_buffer(ele);
-            destroy_tx_buffer(ele);
+                if (likely(ele->pd))
+                        ret |= ib_dealloc_pd(ele->pd);
 
-            free_rdma_info(ele);
+                destroy_rx_buffer(ele);
+                destroy_tx_buffer(ele);
+                free_rdma_info(ele);
 
-            rdma_destroy_id(ele->cm_id);
+                rdma_destroy_id(ele->cm_id);
         }
-    }
+        erase_rb_conn(ele);
+        vfree(ele);
 
-    return 0;
+        return ret;
 }
 
 static inline u32 *svm_ids_without_svm(struct svm_list svms, u32 svm_id) {

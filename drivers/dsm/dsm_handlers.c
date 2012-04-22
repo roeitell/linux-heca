@@ -7,6 +7,36 @@
 
 #include <dsm/dsm_module.h>
 
+static void destroy_connection_work(struct work_struct *work)
+{
+        struct rcm *rcm = get_dsm_module_state()->rcm;
+        struct rb_root *root;
+        struct rb_node *node, *next;
+        struct conn_element *ele;
+        unsigned long seq;
+
+        do {
+                seq = read_seqbegin(&rcm->conn_lock);
+                root = &rcm->root_conn;
+                for (node = rb_first(root); node; node = next) {
+                        ele = rb_entry(node, struct conn_element, rb_node);
+                        next = rb_next(node);
+                        if (atomic_cmpxchg(&ele->alive, -1, 0) == -1)
+                                destroy_connection(ele);
+                }
+        } while (read_seqretry(&rcm->conn_lock, seq));
+
+        kfree(work);
+}
+
+static inline void schedule_destroy_conns(void)
+{
+        struct work_struct *work = kmalloc(sizeof(struct work_struct), 
+                        GFP_KERNEL);
+        INIT_WORK(work, destroy_connection_work);
+        schedule_work(work);
+}
+
 static void print_work_completion(struct ib_wc *wc, char * error_context) {
         printk(
                         "%s status = %d , wrid= %llu vend_err %x , opcode=%d  msg lenght %d\n",
@@ -220,187 +250,100 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context) {
         }
 }
 
-static void dsm_send_poll(struct ib_cq *cq) {
+static void dsm_send_poll(struct ib_cq *cq)
+{
         struct ib_wc wc;
         struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
-        while (atomic_read(&ele->alive) && ib_poll_cq(cq, 1, &wc) > 0) {
-                if (likely(wc.status == IB_WC_SUCCESS)) {
-                        switch (wc.opcode) {
-                                case IB_WC_SEND: {
-                                        if (unlikely(ele->rid.exchanged)) {
-                                                ele->rid.exchanged--;
-                                                printk(
-                                                                ">[dsm_send_poll] - ack rdma info exchange wr_id %llu \n",
-                                                                wc.wr_id);
-                                        } else {
+        while (ib_poll_cq(cq, 1, &wc) > 0) {
+                if (unlikely(wc.status != IB_WC_SUCCESS ||
+                             wc.opcode != IB_WC_SEND))
+                        continue;
 
-                                                if (dsm_send_message_handler(
-                                                                ele,
-                                                                &ele->tx_buffer.tx_buf[wc.wr_id]))
-                                                        print_work_completion(
-                                                                        &wc,
-                                                                        "[dsm_send_poll] unhandled message stats , wc info - ");
-
-                                        }
-                                        break;
-                                }
-                                case IB_WC_RDMA_WRITE: {
-
-                                        break;
-                                }
-                                default: {
-                                        print_work_completion(&wc,
-                                                        "[dsm_send_poll] - wrong  opcode ");
-                                        break;
-                                }
-                        }
+                if (unlikely(ele->rid.exchanged)) {
+                        ele->rid.exchanged--;
                 } else {
-                        print_work_completion(&wc,
-                                        "[dsm_send_poll] WC status not success ");
+                        dsm_send_message_handler(ele,
+                                    &ele->tx_buffer.tx_buf[wc.wr_id]);
                 }
-
         }
 }
 
-static void dsm_recv_poll(struct ib_cq *cq) {
+static void dsm_recv_poll(struct ib_cq *cq)
+{
         struct ib_wc wc;
-        struct conn_element *ele = NULL;
+        struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
-        if (cq)
-                ele = (struct conn_element *) cq->cq_context;
-        if (!ele)
-                goto err;
+        while (ib_poll_cq(cq, 1, &wc) > 0) {
+                if (unlikely(wc.status != IB_WC_SUCCESS ||
+                             wc.opcode != IB_WC_RECV))
+                        continue;
 
-        while (atomic_read(&ele->alive) && ib_poll_cq(cq, 1, &wc) > 0) {
-                switch (wc.status) {
-                        case IB_WC_WR_FLUSH_ERR: {
-                                goto err;
-                        }
-                        case IB_WC_SUCCESS:
-                                break;
-
-                        default: {
-                                print_work_completion(&wc,
-                                                "[dsm_recv_poll] unknown completion status ");
-                                goto err;
-                        }
+                if (unlikely(ele->rid.remote_info->flag)) {
+                        BUG_ON(wc.byte_len != sizeof(struct rdma_info));
+                        reg_rem_info(ele);
+                        exchange_info(ele, wc.wr_id);
+                } else {
+                        BUG_ON(wc.byte_len != sizeof(struct dsm_message));
+                        dsm_recv_message_handler(ele,
+                                        &ele->rx_buffer.rx_buf[wc.wr_id]);
                 }
-
-                switch (wc.opcode) {
-                        case IB_WC_RECV: {
-                                if (ele) {
-                                        if (unlikely(
-                                                        ele->rid.remote_info->flag)) {
-                                                if (wc.byte_len
-                                                                != sizeof(struct rdma_info)) {
-                                                        print_work_completion(
-                                                                        &wc,
-                                                                        "[dsm_recv_poll] -Received bogus data, size -");
-                                                        goto err;
-                                                }
-
-                                                reg_rem_info(ele);
-
-                                                exchange_info(ele, wc.wr_id);
-                                        } else {
-                                                if (unlikely(
-                                                                wc.byte_len
-                                                                                != sizeof(struct dsm_message))) {
-                                                        print_work_completion(
-                                                                        &wc,
-                                                                        "[dsm_recv_poll] -Received bogus data, size -");
-                                                        goto err;
-                                                }
-
-                                                if (dsm_recv_message_handler(
-                                                                ele,
-                                                                &ele->rx_buffer.rx_buf[wc.wr_id]))
-                                                        print_work_completion(
-                                                                        &wc,
-                                                                        "[dsm_recv_poll] - unknown message status ");
-
-                                        }
-                                } else
-                                        printk(
-                                                        ">[recv_cq_handle] - reference to a non existent connection\n");
-
-                                break;
-
-                        }
-                        default: {
-                                printk(
-                                                ">[recv_cq_handle] - expected opcode %d got %d\n",
-                                                IB_WC_RECV, wc.opcode);
-                                break;
-                        }
-                }
-
         }
-
-        err: return;
-
 }
 
-/*
- * This one notifies that the sending as been correctly done
- */
-static void _send_cq_handle(struct ib_cq *cq) {
-        int ret = 0;
-        struct conn_element *ele = (struct conn_element *) cq->cq_context;
-        dsm_send_poll(cq);
-        ret = ib_req_notify_cq(cq,
-                        IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-        dsm_send_poll(cq);
-        if (ret > 0)
+static inline void queue_recv_work(struct conn_element *ele)
+{
+        rcu_read_lock();
+        if (atomic_read(&ele->alive))
+                queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
+        rcu_read_unlock();
+}
+
+static inline void queue_send_work(struct conn_element *ele)
+{
+        rcu_read_lock();
+        if (atomic_read(&ele->alive))
                 queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
-        else if (ret < 0)
-                printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
-
+        rcu_read_unlock();
 }
 
-/*
- * This one handles the reception of messages for both client or server purposes
- */
-static void _recv_cq_handle(struct ib_cq *cq) {
+void send_cq_handle_work(struct work_struct *work)
+{
+        struct conn_element *ele = container_of(work, struct conn_element,
+                        send_work);
         int ret = 0;
-        struct conn_element *ele = (struct conn_element *) cq->cq_context;
-        dsm_recv_poll(cq);
-        ret = ib_req_notify_cq(cq,
+
+        dsm_send_poll(ele->send_cq);
+        ret = ib_req_notify_cq(ele->send_cq,
                         IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-        dsm_recv_poll(cq);
+        dsm_send_poll(ele->send_cq);
+        if (ret > 0)
+                queue_send_work(ele);
+}
+
+void recv_cq_handle_work(struct work_struct *work)
+{
+        struct conn_element *ele = container_of(work, struct conn_element,
+                        recv_work);
+        int ret = 0;
+
+        dsm_recv_poll(ele->recv_cq);
+        ret = ib_req_notify_cq(ele->recv_cq,
+                        IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
+        dsm_recv_poll(ele->recv_cq);
         flush_dsm_request(ele);
         if (ret > 0)
-                queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
-        else if (ret < 0)
-                printk("[_send_cq_handle]ib_req_notify_cq fault  %d\n ", ret);
-
+                queue_recv_work(ele);
 }
 
-void send_cq_handle_work(struct work_struct *work) {
-        struct conn_element *ele;
-
-        if (module_is_live(THIS_MODULE)) {
-                ele = container_of(work, struct conn_element, send_work);
-                _send_cq_handle(ele->send_cq);
-        }
-}
-void recv_cq_handle_work(struct work_struct *work) {
-        struct conn_element *ele;
-
-        if (module_is_live(THIS_MODULE)) {
-                ele = container_of(work, struct conn_element, recv_work);
-                _recv_cq_handle(ele->recv_cq);
-        }
+void send_cq_handle(struct ib_cq *cq, void *cq_context)
+{
+        queue_send_work((struct conn_element *) cq->cq_context);
 }
 
-void send_cq_handle(struct ib_cq *cq, void *cq_context) {
-        struct conn_element *ele = (struct conn_element *) cq->cq_context;
-        queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
-}
-void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
-        struct conn_element *ele = (struct conn_element *) cq->cq_context;
-        queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
+void recv_cq_handle(struct ib_cq *cq, void *cq_context)
+{
+        queue_recv_work((struct conn_element *) cq->cq_context);
 }
 
 /*
@@ -445,8 +388,8 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
                         break;
 
                 case RDMA_CM_EVENT_DISCONNECTED:
-                        if (likely(atomic_cmpxchg(&ele->alive, 1, 0) == 1))
-                                ret = destroy_connection(ele);
+                        if (likely(atomic_cmpxchg(&ele->alive, 1, -1) == 1))
+                                schedule_destroy_conns();
                         break;
 
                 case RDMA_CM_EVENT_ADDR_ERROR:
@@ -544,8 +487,8 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
 
                 case RDMA_CM_EVENT_DISCONNECTED:
                         ele = id->context;
-                        if (likely(atomic_cmpxchg(&ele->alive, 1, 0) == 1))
-                                ret = destroy_connection(ele);
+                        if (likely(atomic_cmpxchg(&ele->alive, 1, -1) == 1))
+                                schedule_destroy_conns();
                         break;
 
                 case RDMA_CM_EVENT_CONNECT_ERROR:

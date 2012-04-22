@@ -16,7 +16,7 @@ static int rcm_disconnect(struct rcm *rcm)
         for (node = rb_first(root); node; node = next) {
                 ele = rb_entry(node, struct conn_element, rb_node);
                 next = rb_next(node);
-                if (atomic_cmpxchg(&ele->alive, 1, 0) == 1) {
+                if (atomic_cmpxchg(&ele->alive, 1, 0)) {
                         rdma_disconnect(ele->cm_id);
                         destroy_connection(ele);
                 }
@@ -1024,6 +1024,10 @@ int destroy_connection(struct conn_element *ele)
 
         if (likely(ele->cm_id)) {
 
+                synchronize_rcu();
+                cancel_work_sync(&ele->recv_work);
+                cancel_work_sync(&ele->send_work);
+
                 if (likely(ele->cm_id->qp))
                         ret |= ib_destroy_qp(ele->cm_id->qp);
 
@@ -1042,9 +1046,9 @@ int destroy_connection(struct conn_element *ele)
                 destroy_rx_buffer(ele);
                 destroy_tx_buffer(ele);
                 free_rdma_info(ele);
-
                 rdma_destroy_id(ele->cm_id);
         }
+
         erase_rb_conn(ele);
         vfree(ele);
 

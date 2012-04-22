@@ -1018,9 +1018,30 @@ int destroy_rcm(struct dsm_module_state *dsm_state)
         return 0;
 }
 
+static void remove_svms_for_conn(struct conn_element *ele)
+{
+        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct dsm *dsm;
+        struct subvirtual_machine *svm;
+        struct list_head *pos, *n, *it;
+
+        list_for_each (pos, &dsm_state->dsm_list) {
+                dsm = list_entry(pos, struct dsm, dsm_ptr);
+                list_for_each_safe (it, n, &dsm->svm_list) {
+                        svm = list_entry(it, struct subvirtual_machine, 
+                                        svm_ptr);
+                        if (svm->ele == ele)
+                                remove_svm(dsm->dsm_id, svm->svm_id);
+                }
+        }
+                      
+}
+
 int destroy_connection(struct conn_element *ele)
 {
         int ret = 0;
+
+        remove_svms_for_conn(ele);
 
         if (likely(ele->cm_id)) {
 

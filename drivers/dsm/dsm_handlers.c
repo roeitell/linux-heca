@@ -37,13 +37,6 @@ static inline void schedule_destroy_conns(void)
         schedule_work(work);
 }
 
-static void print_work_completion(struct ib_wc *wc, char * error_context) {
-        printk(
-                        "%s status = %d , wrid= %llu vend_err %x , opcode=%d  msg lenght %d\n",
-                        error_context, wc->status, wc->wr_id, wc->vendor_err,
-                        wc->opcode, wc->byte_len);
-}
-
 static int flush_dsm_request(struct conn_element *ele) {
         struct tx_buffer *tx = &ele->tx_buffer;
         struct tx_buf_ele *tx_e;

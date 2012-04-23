@@ -45,16 +45,16 @@ int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element *, struct rcm *);
 void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32,
-                u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
+        u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
 void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32,
-                u32, u32, uint64_t);
+        u32, u32, uint64_t);
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *);
 int create_connection(struct rcm *, struct svm_data *);
 int setup_connection(struct conn_element *, int);
 int connect_client(struct rdma_cm_id *);
 struct page_pool_ele * create_new_page_pool_element_from_page(
-                struct conn_element *, struct page *);
+        struct conn_element *, struct page *);
 void release_page(struct conn_element *, struct tx_buf_ele *);
 void release_page_work(struct work_struct *);
 void release_tx_element(struct conn_element *, struct tx_buf_ele *);
@@ -66,7 +66,7 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *);
 void release_svm_tx_requests(struct subvirtual_machine *, struct tx_buffer *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
 void release_push_elements(struct subvirtual_machine *,
-                struct subvirtual_machine *);
+        struct subvirtual_machine *);
 
 /*
  * CTL
@@ -89,7 +89,7 @@ struct dsm_module_state * create_dsm_module_state(void);
 void destroy_dsm_module_state(void);
 struct dsm *find_dsm(u32);
 struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
-                struct mm_struct *);
+        struct mm_struct *);
 struct subvirtual_machine *find_local_svm(struct mm_struct *);
 struct subvirtual_machine *find_svm(struct dsm *, u32);
 void insert_mr(struct dsm *, struct memory_region *);
@@ -124,10 +124,10 @@ int exchange_info(struct conn_element *, int);
 int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
-                struct subvirtual_machine *, uint64_t,
-                int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *);
+        struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
+        int, struct dsm_page_cache *);
 int dsm_request_page_pull(struct dsm *, struct mm_struct *,
-                struct subvirtual_machine *, unsigned long);
+        struct subvirtual_machine *, unsigned long);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 
 /*
@@ -140,7 +140,7 @@ int create_dsm_sysfs_entry(struct dsm *, struct dsm_module_state *);
 void delete_dsm_sysfs_entry(struct kobject *);
 int create_svm_sysfs_entry(struct subvirtual_machine *, char *);
 int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
-                char*);
+        char*);
 void delete_connection_entry(struct con_element_sysfs *);
 
 #endif /* DSM_OP_H_ */

@@ -10,32 +10,29 @@
 static char *ip = 0;
 static int port = 0;
 
-static void reset_dsm_page_stats(struct dsm_page_stats * stats) {
-    atomic64_set(&stats->nb_page_pull, 0);
-    atomic64_set(&stats->nb_page_pull_fail, 0);
-    atomic64_set(&stats->nb_page_push_request, 0);
-    atomic64_set(&stats->nb_page_requested, 0);
-    atomic64_set(&stats->nb_page_sent, 0);
-    atomic64_set(&stats->nb_page_redirect, 0);
-    atomic64_set(&stats->nb_err, 0);
-    atomic64_set(&stats->nb_page_request_success, 0);
-    atomic64_set(&stats->nb_page_requested_prefetch, 0);
-
-}
-static void reset_svm_stats(struct svm_sysfs *sysfs) {
-    reset_dsm_page_stats(&sysfs->stats);
+static inline void reset_page_stats(struct dsm_page_stats *stats)
+{
+    dsm_stats_set(&stats->nb_page_pull, 0);
+    dsm_stats_set(&stats->nb_page_pull_fail, 0);
+    dsm_stats_set(&stats->nb_page_push_request, 0);
+    dsm_stats_set(&stats->nb_page_requested, 0);
+    dsm_stats_set(&stats->nb_page_sent, 0);
+    dsm_stats_set(&stats->nb_page_redirect, 0);
+    dsm_stats_set(&stats->nb_err, 0);
+    dsm_stats_set(&stats->nb_page_request_success, 0);
+    dsm_stats_set(&stats->nb_page_requested_prefetch, 0);
 }
 
-static void reset_msg_stats(struct msg_stats *stats) {
-    atomic64_set(&stats->err, 0);
-    atomic64_set(&stats->page_info_update, 0);
-    atomic64_set(&stats->page_request_reply, 0);
-    atomic64_set(&stats->request_page, 0);
-    atomic64_set(&stats->request_page_pull, 0);
-    atomic64_set(&stats->try_request_page, 0);
-    atomic64_set(&stats->try_request_page_fail, 0);
-    atomic64_set(&stats->page_request_redirect, 0);
-
+static inline void reset_msg_stats(struct msg_stats *stats)
+{
+    dsm_stats_set(&stats->err, 0);
+    dsm_stats_set(&stats->page_info_update, 0);
+    dsm_stats_set(&stats->page_request_reply, 0);
+    dsm_stats_set(&stats->request_page, 0);
+    dsm_stats_set(&stats->request_page_pull, 0);
+    dsm_stats_set(&stats->try_request_page, 0);
+    dsm_stats_set(&stats->try_request_page_fail, 0);
+    dsm_stats_set(&stats->page_request_redirect, 0);
 }
 
 void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
@@ -243,7 +240,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->dsm->nb_local_svm++;
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
-            reset_svm_stats(&new_svm->svm_sysfs);
+            reset_page_stats(&new_svm->svm_sysfs.stats);
             if (create_svm_sysfs_entry(new_svm, "local")) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
@@ -319,7 +316,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
-            reset_svm_stats(&new_svm->svm_sysfs);
+            reset_page_stats(&new_svm->svm_sysfs.stats);
             if (create_svm_sysfs_entry(new_svm, svm_info.ip)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);

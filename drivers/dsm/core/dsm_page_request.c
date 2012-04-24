@@ -397,14 +397,14 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
 
     if (tag == TRY_REQUEST_PAGE) {
         if (page)
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
+            dsm_stats_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
+            dsm_stats_inc(&local_svm->svm_sysfs.stats.nb_page_pull_fail);
     } else {
         if (page)
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
+            dsm_stats_inc(&local_svm->svm_sysfs.stats.nb_page_sent);
         else
-            atomic64_inc(&local_svm->svm_sysfs.stats.nb_err);
+            dsm_stats_inc(&local_svm->svm_sysfs.stats.nb_err);
     }
 
     return page;

@@ -133,6 +133,16 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 /*
  * SYSFS
  */
+#ifdef DSM_STATS
+#define dsm_stats_inc(s) atomic64_inc(s)
+#define dsm_stats_read(s) atomic64_read(s)
+#define dsm_stats_set(s,v) atomic64_set(s,v)
+#else
+#define dsm_stats_inc(s)
+#define dsm_stats_read(s) 0
+#define dsm_stats_set(s,v)
+#endif
+
 void dsm_sysf_cleanup(struct dsm_module_state *);
 int dsm_sysf_setup(struct dsm_module_state *);
 void delete_svm_sysfs_entry(struct kobject *);

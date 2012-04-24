@@ -106,7 +106,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                atomic64_inc(&ele->sysfs.rx_stats.page_request_reply);
+                dsm_stats_inc(&ele->sysfs.rx_stats.page_request_reply);
                 process_page_response(ele, tx_e); // client got its response
             }
             break;
@@ -116,19 +116,19 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                 tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                 process_page_response(ele, tx_e);
-                atomic64_inc(&ele->sysfs.rx_stats.try_request_page_fail);
+                dsm_stats_inc(&ele->sysfs.rx_stats.try_request_page_fail);
             }
             break;
         }
         case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
             process_page_request(ele, rx_e); // server got a request
-            atomic64_inc(&ele->sysfs.rx_stats.request_page);
+            dsm_stats_inc(&ele->sysfs.rx_stats.request_page);
             break;
         }
         case REQUEST_PAGE_PULL: {
             process_pull_request(ele, rx_e); // server is requested to pull
-            atomic64_inc(&ele->sysfs.rx_stats.request_page_pull);
+            dsm_stats_inc(&ele->sysfs.rx_stats.request_page_pull);
             break;
         }
         case SVM_STATUS_UPDATE: {
@@ -137,7 +137,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
         }
 
         default: {
-            atomic64_inc(&ele->sysfs.rx_stats.err);
+            dsm_stats_inc(&ele->sysfs.rx_stats.err);
             printk(
                     "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
                     rx_e, rx_e->dsm_msg->type, rx_e->id);
@@ -159,36 +159,36 @@ static int dsm_send_message_handler(struct conn_element *ele,
         case PAGE_REQUEST_REPLY: {
             release_page(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
-            atomic64_inc(&ele->sysfs.tx_stats.page_request_reply);
+            dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
             break;
         }
         case REQUEST_PAGE: {
-            atomic64_inc(&ele->sysfs.tx_stats.request_page);
+            dsm_stats_inc(&ele->sysfs.tx_stats.request_page);
             clear_bit(DSM_INFLIGHT_BITWAIT,
                     (volatile unsigned long *) tx_buf_e->wrk_req->dpc->pte);
             break;
         }
         case TRY_REQUEST_PAGE: {
-            atomic64_inc(&ele->sysfs.tx_stats.try_request_page);
+            dsm_stats_inc(&ele->sysfs.tx_stats.try_request_page);
             break;
         }
         case REQUEST_PAGE_PULL: {
             release_tx_element(ele, tx_buf_e);
-            atomic64_inc(&ele->sysfs.tx_stats.request_page_pull);
+            dsm_stats_inc(&ele->sysfs.tx_stats.request_page_pull);
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             release_tx_element(ele, tx_buf_e);
-            atomic64_inc(&ele->sysfs.tx_stats.try_request_page_fail);
+            dsm_stats_inc(&ele->sysfs.tx_stats.try_request_page_fail);
             break;
         }
         case SVM_STATUS_UPDATE: {
             release_tx_element_reply(ele, tx_buf_e);
-            atomic64_inc(&ele->sysfs.tx_stats.page_request_reply);
+            dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
             break;
         }
         default: {
-            atomic64_inc(&ele->sysfs.tx_stats.err);
+            dsm_stats_inc(&ele->sysfs.tx_stats.err);
             printk(
                     "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
                     tx_buf_e, tx_buf_e->dsm_msg->type, tx_buf_e->id);

@@ -49,23 +49,23 @@ static ssize_t svm_show(struct kobject *kobj, struct kobj_attribute *attr,
     svm_sysfs = container_of(kobj, struct svm_sysfs , svm_kobject);
 
     if (strcmp(attr->attr.name, "nb_page_requested") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_requested);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_requested);
     else if (strcmp(attr->attr.name, "nb_page_sent") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_sent);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_sent);
     else if (strcmp(attr->attr.name, "nb_page_pull") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_pull);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_pull);
     else if (strcmp(attr->attr.name, "nb_page_pull_fail") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_pull_fail);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_pull_fail);
     else if (strcmp(attr->attr.name, "nb_page_push_request") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_push_request);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_push_request);
     else if (strcmp(attr->attr.name, "nb_page_redirect") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_redirect);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_redirect);
     else if (strcmp(attr->attr.name, "nb_page_error") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_err);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_err);
     else if (strcmp(attr->attr.name, "nb_request_page_prefetch") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_requested_prefetch);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_requested_prefetch);
     else if (strcmp(attr->attr.name, "nb_page_request_success") == 0)
-        var = atomic64_read(&svm_sysfs->stats.nb_page_request_success);
+        var = dsm_stats_read(&svm_sysfs->stats.nb_page_request_success);
     else
         var = 0;
 
@@ -101,21 +101,21 @@ static long connection_show(struct msg_stats *stats,
         struct kobj_attribute *attr) {
     unsigned long var = 0;
     if (strcmp(attr->attr.name, "request_page") == 0)
-        var = atomic64_read(&stats->request_page);
+        var = dsm_stats_read(&stats->request_page);
     else if (strcmp(attr->attr.name, "request_page_pull") == 0)
-        var = atomic64_read(&stats->request_page_pull);
+        var = dsm_stats_read(&stats->request_page_pull);
     else if (strcmp(attr->attr.name, "page_request_reply") == 0)
-        var = atomic64_read(&stats->page_request_reply);
+        var = dsm_stats_read(&stats->page_request_reply);
     else if (strcmp(attr->attr.name, "page_request_redirect") == 0)
-        var = atomic64_read(&stats->page_request_redirect);
+        var = dsm_stats_read(&stats->page_request_redirect);
     else if (strcmp(attr->attr.name, "page_info_update") == 0)
-        var = atomic64_read(&stats->page_info_update);
+        var = dsm_stats_read(&stats->page_info_update);
     else if (strcmp(attr->attr.name, "try_request_page") == 0)
-        var = atomic64_read(&stats->try_request_page);
+        var = dsm_stats_read(&stats->try_request_page);
     else if (strcmp(attr->attr.name, "try_request_page_fail") == 0)
-        var = atomic64_read(&stats->try_request_page_fail);
+        var = dsm_stats_read(&stats->try_request_page_fail);
     else if (strcmp(attr->attr.name, "msg_err") == 0)
-        var = atomic64_read(&stats->err);
+        var = dsm_stats_read(&stats->err);
     else
         var = 0;
 

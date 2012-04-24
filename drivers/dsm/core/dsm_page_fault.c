@@ -330,7 +330,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
             SetPageUptodate(page);
 
             unlock_page(dpc->pages[0]);
-            atomic64_inc(&dpc->svm->svm_sysfs.stats.nb_page_pull_fail);
+            dsm_stats_inc(&dpc->svm->svm_sysfs.stats.nb_page_pull_fail);
 
             dsm_cache_release(dpc->svm, addr);
             dpc_nproc_dec(&dpc, 1);
@@ -377,10 +377,10 @@ static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
 
     if (tag == PULL_TRY_TAG) {
         func = dsm_try_pull_req_complete;
-        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
+        dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
     } else { /* prefetch or pull */
         func = dsm_pull_req_complete;
-        atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
+        dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
     }
 
     page_cache_get(page);
@@ -564,7 +564,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                         dsd = swp_entry_to_dsm_data(swp_e);
                         dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                                 2, tag, vma, mm, private, 0, pte_entry, pte);
-                        atomic64_inc(
+                        dsm_stats_inc(
                                 &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
                     }
                 }
@@ -716,7 +716,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     }
 
     update_mmu_cache(vma, address, page_table);
-    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
+    dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
     goto out;

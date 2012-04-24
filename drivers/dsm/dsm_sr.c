@@ -64,7 +64,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
     struct tx_buf_ele *tx_e;
     int ret = 0;
 
-    atomic64_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
+    dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
 
     if (list_empty(&tx->request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);

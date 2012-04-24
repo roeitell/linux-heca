@@ -57,13 +57,16 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
     if (dsm) {
         mutex_lock(&dsm->dsm_mutex);
         svm = find_svm(dsm, svm_id);
+        if (!svm) {
+            mutex_unlock(&dsm_state->dsm_state_mutex);
+            goto out;
+        }
+    }
+    if (svm->priv) {
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
-
-    if (!svm)
-        goto out;
 
     atomic_set(&svm->status, DSM_SVM_OFFLINE);
 

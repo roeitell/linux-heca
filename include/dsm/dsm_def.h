@@ -447,6 +447,7 @@ struct dsm_swp_data {
 #define DSM_INFLIGHT            0x01
 #define DSM_INFLIGHT_BITWAIT    0x08
 #define DSM_PUSHING             0x02
+#define DSM_PUSHING_BITWAIT     0x09
 
 };
 

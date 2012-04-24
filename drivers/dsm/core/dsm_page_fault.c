@@ -586,9 +586,8 @@ static struct dsm_page_cache *convert_push_dpc(
     if (likely(dpc)) {
         page = dpc->pages[0];
         addr = dpc->addr;
-        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1)
             dsm_dealloc_dpc(&dpc);
-        }
 
         ret = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page, pte);
     }
@@ -614,16 +613,17 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct page *found_page, *swapcache = NULL;
     pte_t pte;
 
-    if (unlikely(dsd.flags & DSM_PUSHING)) {
-        dpc = convert_push_dpc(fault_svm, norm_addr, dsd, page_table);
-        if (likely(dpc))
-            goto lock;
+    if (unlikely(dsd.flags)) {
+        if (dsd.flags & DSM_PUSHING) {
+            dpc = convert_push_dpc(fault_svm, norm_addr, dsd, page_table);
+            if (likely(dpc))
+                goto lock;
+        } else if (dsd.flags & DSM_INFLIGHT) {
+            wait_on_bit(page_table, DSM_INFLIGHT_BITWAIT, inflight_wait,
+                    TASK_UNINTERRUPTIBLE);
+        }
     }
 
-    if (unlikely(dsd.flags & DSM_INFLIGHT)) {
-        wait_on_bit(page_table, DSM_INFLIGHT_BITWAIT, inflight_wait,
-                TASK_UNINTERRUPTIBLE);
-    }
     retry: dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,

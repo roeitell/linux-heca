@@ -57,6 +57,8 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
     if (dsm) {
         mutex_lock(&dsm->dsm_mutex);
         svm = find_svm(dsm, svm_id);
+        radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
+                (unsigned long) svm->priv->mm);
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
 
@@ -514,6 +516,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp) {
     unsigned long addr;
     struct dsm *dsm;
     struct unmap_data udata;
+    struct memory_region *mr;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
@@ -522,7 +525,8 @@ static int pushback_page(struct private_data *priv_data, void __user *argp) {
     BUG_ON(!dsm);
 
     addr = udata.addr & PAGE_MASK;
-    r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr);
+    mr = search_mr(dsm, addr);
+    r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr, mr);
 
     out: return r;
 }
@@ -585,28 +589,20 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
                 r = register_svm(priv_data, argp);
             break;
         }
-        case DSM_MR: {
-            if (priv_data->dsm)
-                r = register_mr(priv_data, argp);
-            break;
-        }
         case DSM_CONNECT: {
             if (priv_data->dsm)
                 r = connect_svm(priv_data, argp);
             break;
         }
-        case DSM_UNMAP_RANGE: {
-            r = unmap_range(priv_data, argp);
+        case DSM_MR: {
+            if (priv_data->dsm)
+                r = register_mr(priv_data, argp);
             break;
         }
-        case UNMAP_PAGE: {
-            r = unmap_page(priv_data, argp);
-            break;
-        }
-        case DSM_TRY_PUSH_BACK_PAGE: {
-            r = pushback_page(priv_data, argp);
-            break;
-        }
+
+        /*
+         * Statistics
+         */
         case DSM_GEN_STAT: {
             if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
                 goto out;
@@ -627,6 +623,23 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
             cele = search_rb_conn(ip_addr);
             break;
         }
+
+        /*
+         * Deprecated calls
+         */
+        case DSM_UNMAP_RANGE: {
+            r = unmap_range(priv_data, argp);
+            break;
+        }
+        case UNMAP_PAGE: {
+            r = unmap_page(priv_data, argp);
+            break;
+        }
+        case DSM_TRY_PUSH_BACK_PAGE: {
+            r = pushback_page(priv_data, argp);
+            break;
+        }
+
         default: {
             r = -EFAULT;
             break;

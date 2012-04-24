@@ -464,15 +464,13 @@ int dsm_recv_info(struct conn_element *ele) {
 }
 
 int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
-        struct subvirtual_machine *fault_svm, unsigned long request_addr) {
+        struct subvirtual_machine *fault_svm, unsigned long request_addr,
+        struct memory_region *mr)
+{
     int i = 0;
     unsigned long addr = request_addr & PAGE_MASK;
-    struct memory_region *mr;
-    struct svm_list svms;
+    struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);
     struct page *page;
-
-    mr = search_mr(dsm, addr); /* TODO: unsure if should be masked right now */
-    svms = dsm_descriptor_to_svms(mr->descriptor);
 
     down_read(&mm->mmap_sem);
     page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);

@@ -233,48 +233,40 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context) {
     }
 }
 
-<<<<<<< HEAD
 static void dsm_send_poll(struct ib_cq *cq)
 {
-        struct ib_wc wc;
-        struct conn_element *ele = (struct conn_element *) cq->cq_context;
+    struct ib_wc wc;
+    struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
-        while (ib_poll_cq(cq, 1, &wc) > 0) {
-                if (unlikely(wc.status != IB_WC_SUCCESS ||
-                             wc.opcode != IB_WC_SEND))
-                        continue;
+    while (ib_poll_cq(cq, 1, &wc) > 0) {
+        if (unlikely(wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_SEND))
+            continue;
 
-                if (unlikely(ele->rid.exchanged)) {
-                        ele->rid.exchanged--;
-                } else {
-                        dsm_send_message_handler(ele,
-                                    &ele->tx_buffer.tx_buf[wc.wr_id]);
-                }
-        }
-
+        if (unlikely(ele->rid.exchanged))
+            ele->rid.exchanged--;
+        else
+            dsm_send_message_handler(ele, &ele->tx_buffer.tx_buf[wc.wr_id]);
     }
 }
 
 static void dsm_recv_poll(struct ib_cq *cq)
 {
-        struct ib_wc wc;
-        struct conn_element *ele = (struct conn_element *) cq->cq_context;
+    struct ib_wc wc;
+    struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
-        while (ib_poll_cq(cq, 1, &wc) > 0) {
-                if (unlikely(wc.status != IB_WC_SUCCESS ||
-                             wc.opcode != IB_WC_RECV))
-                        continue;
+    while (ib_poll_cq(cq, 1, &wc) > 0) {
+        if (unlikely(wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV))
+            continue;
 
-                if (unlikely(ele->rid.remote_info->flag)) {
-                        BUG_ON(wc.byte_len != sizeof(struct rdma_info));
-                        reg_rem_info(ele);
-                        exchange_info(ele, wc.wr_id);
-                } else {
-                        BUG_ON(wc.byte_len != sizeof(struct dsm_message));
-                        dsm_recv_message_handler(ele,
-                                        &ele->rx_buffer.rx_buf[wc.wr_id]);
-                }
+        if (unlikely(ele->rid.remote_info->flag)) {
+            BUG_ON(wc.byte_len != sizeof(struct rdma_info));
+            reg_rem_info(ele);
+            exchange_info(ele, wc.wr_id);
+        } else {
+            BUG_ON(wc.byte_len != sizeof(struct dsm_message));
+            dsm_recv_message_handler(ele, &ele->rx_buffer.rx_buf[wc.wr_id]);
         }
+    }
 }
 
 static inline void queue_recv_work(struct conn_element *ele)

@@ -261,9 +261,11 @@ struct memory_region {
     unsigned long addr;
     unsigned long sz;
     u32 descriptor;
-
     struct rb_node rb_node;
-    struct subvirtual_machine *svm;
+    int local;
+#define LOCAL   1
+#define REMOTE  0
+
 };
 
 struct private_data {
@@ -379,6 +381,7 @@ struct dsm_module_state {
     struct rcm * rcm;
     struct mutex dsm_state_mutex;
     struct radix_tree_root dsm_tree_root;
+    struct radix_tree_root mm_tree_root;
     struct list_head dsm_list;
 
     struct dsm_kobjects dsm_kobjects;
@@ -401,6 +404,7 @@ struct dsm_page_cache {
     atomic_t found;
     atomic_t nproc;
     unsigned long bitmap;
+    pte_t * pte;
 
     struct rb_node rb_node;
 };
@@ -440,7 +444,10 @@ struct dsm_swp_data {
     struct dsm *dsm;
     struct svm_list svms;
     u32 flags;
-#define DSM_PUSHING 1
+#define DSM_INFLIGHT            0x01
+#define DSM_INFLIGHT_BITWAIT    0x08
+#define DSM_PUSHING             0x02
+
 };
 
 #endif /* DSM_DEF_H_ */

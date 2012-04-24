@@ -7,30 +7,51 @@
 
 #include <dsm/dsm_core.h>
 
-struct dsm_functions *funcs;
+struct dsm_functions *funcs = NULL;
+
+void lazy_free_swap(struct page *page) {
+    if (likely(!page_mapped(page)))
+        try_to_free_swap(page);
+}
+EXPORT_SYMBOL(lazy_free_swap);
 
 void reg_dsm_functions(
-        struct dsm *(*_find_dsm)(u32 dsm_id),
-        struct subvirtual_machine *(*_find_svm)(struct dsm* dsm, u32 svm_id),
-        struct subvirtual_machine *(*_find_local_svm)(struct dsm *,
-                struct mm_struct *),
-        int(*request_dsm_page)(struct page *, struct subvirtual_machine *, 
-                struct subvirtual_machine *, uint64_t, 
-                int(*func)(struct tx_buf_ele *), int, 
-                struct dsm_page_cache *)) {
+        int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
+                struct subvirtual_machine *, uint64_t,
+                int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *),
+        int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
+                struct subvirtual_machine *, unsigned long)) {
+    struct dsm_functions * tmp;
 
-    funcs = kmalloc(sizeof(*funcs), GFP_KERNEL);
-    funcs->_find_dsm = _find_dsm;
-    funcs->_find_svm = _find_svm;
-    funcs->_find_local_svm = _find_local_svm;
-    funcs->request_dsm_page = request_dsm_page;
+    tmp = kmalloc(sizeof(*funcs), GFP_KERNEL);
+    tmp->request_dsm_page = request_dsm_page;
+    tmp->dsm_request_page_pull = dsm_request_page_pull;
+    funcs = tmp;
+
 }
 EXPORT_SYMBOL(reg_dsm_functions);
 
 void dereg_dsm_functions(void) {
-    kfree(funcs);
+    struct dsm_functions * tmp = funcs;
+    funcs = NULL;
+    kfree(tmp);
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
+
+inline int request_dsm_page_op(struct page * page,
+        struct subvirtual_machine * svm, struct subvirtual_machine * svm2,
+        uint64_t addr, int (*func)(struct tx_buf_ele *), int tag,
+        struct dsm_page_cache * cache) {
+    if (likely(funcs))
+        return funcs->request_dsm_page(page, svm, svm2, addr, func, tag, cache);
+    return -1;
+}
+inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
+        struct subvirtual_machine *svm, unsigned long addr) {
+    if (likely(funcs))
+        return funcs->dsm_request_page_pull(dsm, mm, svm, addr);
+    return -1;
+}
 
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         unsigned long request_addr) {
@@ -98,8 +119,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, addr, pte, swp_entry_to_pte(
-                dsm_descriptor_to_swp_entry(descriptor, 0)));
+            set_pte_at(mm, addr, pte,
+                    swp_entry_to_pte( dsm_descriptor_to_swp_entry(descriptor, 0)));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -143,7 +164,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         printk("[dsm_flag_page_remote] KSM page\n");
 
         r = ksm_madvise(vma, request_addr, request_addr + PAGE_SIZE,
-        MADV_UNMERGEABLE, &vma->vm_flags);
+                MADV_UNMERGEABLE, &vma->vm_flags);
 
         if (r) {
             printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
@@ -161,15 +182,13 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte, swp_entry_to_pte(dsm_descriptor_to_swp_entry( 
-            descriptor, 0)));
+    set_pte_at(mm, addr, pte,
+            swp_entry_to_pte(dsm_descriptor_to_swp_entry( descriptor, 0)));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);
 
     // this is a page flagging without data exchange so we can free the page
-    if (likely(!page_mapped(page)))
-        try_to_free_swap(page);
 
     unlock_page(page);
     put_page(page);

@@ -65,7 +65,7 @@ void reg_rem_info(struct conn_element *);
 void release_svm_from_mr_descriptors(struct subvirtual_machine *);
 void release_svm_tx_requests(struct subvirtual_machine *, struct tx_buffer *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
-void release_push_elements(struct subvirtual_machine *, 
+void release_push_elements(struct subvirtual_machine *,
         struct subvirtual_machine *);
 
 /*
@@ -88,7 +88,9 @@ struct dsm_module_state * get_dsm_module_state(void);
 struct dsm_module_state * create_dsm_module_state(void);
 void destroy_dsm_module_state(void);
 struct dsm *find_dsm(u32);
-struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
+struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
+        struct mm_struct *);
+struct subvirtual_machine *find_local_svm(struct mm_struct *);
 struct subvirtual_machine *find_svm(struct dsm *, u32);
 void insert_mr(struct dsm *, struct memory_region *);
 struct memory_region *search_mr(struct dsm *, unsigned long);
@@ -121,10 +123,10 @@ int process_pull_request(struct conn_element *, struct rx_buf_ele *);
 int exchange_info(struct conn_element *, int);
 int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);
-int request_dsm_page(struct page *, struct subvirtual_machine *, 
-        struct subvirtual_machine *, uint64_t, int(*func)(struct tx_buf_ele *),
+int request_dsm_page(struct page *, struct subvirtual_machine *,
+        struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
         int, struct dsm_page_cache *);
-int dsm_request_page_pull(struct dsm *, struct mm_struct *, 
+int dsm_request_page_pull(struct dsm *, struct mm_struct *,
         struct subvirtual_machine *, unsigned long);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 
@@ -140,6 +142,5 @@ int create_svm_sysfs_entry(struct subvirtual_machine *, char *);
 int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
         char*);
 void delete_connection_entry(struct con_element_sysfs *);
-
 
 #endif /* DSM_OP_H_ */

@@ -32,11 +32,9 @@ static ssize_t kobj_dsm_attr_store(struct kobject *kobj, struct attribute *attr,
     return ret;
 }
 
-const struct sysfs_ops kobj_dsm_sysfs_ops = { .show = kobj_dsm_attr_show,
-        .store = kobj_dsm_attr_store, };
+const struct sysfs_ops kobj_dsm_sysfs_ops = { .show = kobj_dsm_attr_show, .store = kobj_dsm_attr_store, };
 
-static struct kobj_type dsm_kobject_type = {
-        .release = dsm_kobject_type_release, .sysfs_ops = &kobj_dsm_sysfs_ops, };
+static struct kobj_type dsm_kobject_type = { .release = dsm_kobject_type_release, .sysfs_ops = &kobj_dsm_sysfs_ops, };
 
 /*
  * SVM variable for user space statistics
@@ -74,31 +72,17 @@ static ssize_t svm_show(struct kobject *kobj, struct kobj_attribute *attr,
     return sprintf(buf, "%lu\n", var);
 
 }
-static struct kobj_attribute nb_page_request_success_attribute =
-        __ATTR(nb_page_request_success, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_requested_attribute =
-        __ATTR(nb_page_requested, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_sent_attribute =
-        __ATTR(nb_page_sent, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_pull_attribute =
-        __ATTR(nb_page_pull, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_pull_fail_attribute =
-        __ATTR(nb_page_pull_fail, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_push_request_attribute =
-        __ATTR(nb_page_push_request, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_error_attribute =
-        __ATTR(nb_page_error, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_redirect_attribute =
-        __ATTR(nb_page_redirect, 0444, svm_show, NULL);
-static struct kobj_attribute nb_request_page_prefetch_attribute =
-        __ATTR(nb_request_page_prefetch, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_request_success_attribute = __ATTR(nb_page_request_success, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_requested_attribute = __ATTR(nb_page_requested, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_sent_attribute = __ATTR(nb_page_sent, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_pull_attribute = __ATTR(nb_page_pull, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_pull_fail_attribute = __ATTR(nb_page_pull_fail, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_push_request_attribute = __ATTR(nb_page_push_request, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_error_attribute = __ATTR(nb_page_error, 0444, svm_show, NULL);
+static struct kobj_attribute nb_page_redirect_attribute = __ATTR(nb_page_redirect, 0444, svm_show, NULL);
+static struct kobj_attribute nb_request_page_prefetch_attribute = __ATTR(nb_request_page_prefetch, 0444, svm_show, NULL);
 
-static struct attribute *svm_attrs[] = { &nb_page_requested_attribute.attr,
-        &nb_page_request_success_attribute.attr, &nb_page_sent_attribute.attr,
-        &nb_page_pull_attribute.attr, &nb_page_pull_fail_attribute.attr,
-        &nb_page_push_request_attribute.attr, &nb_page_redirect_attribute.attr,
-        &nb_page_error_attribute.attr, &nb_request_page_prefetch_attribute.attr,
-        NULL, /* need to NULL terminate the list of attributes */
+static struct attribute *svm_attrs[] = { &nb_page_requested_attribute.attr, &nb_page_request_success_attribute.attr, &nb_page_sent_attribute.attr, &nb_page_pull_attribute.attr, &nb_page_pull_fail_attribute.attr, &nb_page_push_request_attribute.attr, &nb_page_redirect_attribute.attr, &nb_page_error_attribute.attr, &nb_request_page_prefetch_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
 };
 
 /*
@@ -161,65 +145,33 @@ static ssize_t connection_rx_show(struct kobject *kobj,
     return sprintf(buf, "%lu\n", var);
 }
 
-static struct kobj_attribute tx_request_page_attribute =
-        __ATTR(request_page, 0444, connection_tx_show, NULL);
-static struct kobj_attribute tx_request_page_pull_attribute =
-        __ATTR(request_page_pull, 0444, connection_tx_show, NULL);
-static struct kobj_attribute tx_page_request_reply_attribute =
-        __ATTR(page_request_reply, 0444, connection_tx_show, NULL);
-static struct kobj_attribute tx_page_request_redirect_attribute =
-        __ATTR(page_request_redirect, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_page_info_update_attribute =
-        __ATTR(page_info_update, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_try_request_page_attribute =
-        __ATTR(try_request_page, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_try_request_page_fail_attribute =
-        __ATTR(try_request_page_fail, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_msg_err_attribute =
-        __ATTR(msg_err, 0444, connection_tx_show,NULL);
+static struct kobj_attribute tx_request_page_attribute = __ATTR(request_page, 0444, connection_tx_show, NULL);
+static struct kobj_attribute tx_request_page_pull_attribute = __ATTR(request_page_pull, 0444, connection_tx_show, NULL);
+static struct kobj_attribute tx_page_request_reply_attribute = __ATTR(page_request_reply, 0444, connection_tx_show, NULL);
+static struct kobj_attribute tx_page_request_redirect_attribute = __ATTR(page_request_redirect, 0444, connection_tx_show,NULL);
+static struct kobj_attribute tx_page_info_update_attribute = __ATTR(page_info_update, 0444, connection_tx_show,NULL);
+static struct kobj_attribute tx_try_request_page_attribute = __ATTR(try_request_page, 0444, connection_tx_show,NULL);
+static struct kobj_attribute tx_try_request_page_fail_attribute = __ATTR(try_request_page_fail, 0444, connection_tx_show,NULL);
+static struct kobj_attribute tx_msg_err_attribute = __ATTR(msg_err, 0444, connection_tx_show,NULL);
 
-static struct attribute *tx_connection_attrs[] = {
-        &tx_request_page_attribute.attr, &tx_request_page_pull_attribute.attr,
-        &tx_page_request_reply_attribute.attr,
-        &tx_page_request_redirect_attribute.attr,
-        &tx_page_info_update_attribute.attr,
-        &tx_try_request_page_attribute.attr,
-        &tx_try_request_page_fail_attribute.attr, &tx_msg_err_attribute.attr,
-        NULL, /* need to NULL terminate the list of attributes */
+static struct attribute *tx_connection_attrs[] = { &tx_request_page_attribute.attr, &tx_request_page_pull_attribute.attr, &tx_page_request_reply_attribute.attr, &tx_page_request_redirect_attribute.attr, &tx_page_info_update_attribute.attr, &tx_try_request_page_attribute.attr, &tx_try_request_page_fail_attribute.attr, &tx_msg_err_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
 };
 
-static struct attribute_group tx_connection_attr_group = { .attrs =
-        tx_connection_attrs, };
+static struct attribute_group tx_connection_attr_group = { .attrs = tx_connection_attrs, };
 
-static struct kobj_attribute rx_request_page_attribute =
-        __ATTR(request_page, 0444, connection_rx_show, NULL);
-static struct kobj_attribute rx_request_page_pull_attribute =
-        __ATTR(request_page_pull, 0444, connection_rx_show, NULL);
-static struct kobj_attribute rx_page_request_reply_attribute =
-        __ATTR(page_request_reply, 0444, connection_rx_show, NULL);
-static struct kobj_attribute rx_page_request_redirect_attribute =
-        __ATTR(page_request_redirect, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_page_info_update_attribute =
-        __ATTR(page_info_update, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_try_request_page_attribute =
-        __ATTR(try_request_page, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_try_request_page_fail_attribute =
-        __ATTR(try_request_page_fail, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_msg_err_attribute =
-        __ATTR(msg_err, 0444, connection_rx_show,NULL);
+static struct kobj_attribute rx_request_page_attribute = __ATTR(request_page, 0444, connection_rx_show, NULL);
+static struct kobj_attribute rx_request_page_pull_attribute = __ATTR(request_page_pull, 0444, connection_rx_show, NULL);
+static struct kobj_attribute rx_page_request_reply_attribute = __ATTR(page_request_reply, 0444, connection_rx_show, NULL);
+static struct kobj_attribute rx_page_request_redirect_attribute = __ATTR(page_request_redirect, 0444, connection_rx_show,NULL);
+static struct kobj_attribute rx_page_info_update_attribute = __ATTR(page_info_update, 0444, connection_rx_show,NULL);
+static struct kobj_attribute rx_try_request_page_attribute = __ATTR(try_request_page, 0444, connection_rx_show,NULL);
+static struct kobj_attribute rx_try_request_page_fail_attribute = __ATTR(try_request_page_fail, 0444, connection_rx_show,NULL);
+static struct kobj_attribute rx_msg_err_attribute = __ATTR(msg_err, 0444, connection_rx_show,NULL);
 
-static struct attribute *rx_connection_attrs[] = {
-        &rx_request_page_attribute.attr, &rx_request_page_pull_attribute.attr,
-        &rx_page_request_reply_attribute.attr,
-        &rx_page_request_redirect_attribute.attr,
-        &rx_page_info_update_attribute.attr,
-        &rx_try_request_page_attribute.attr,
-        &rx_try_request_page_fail_attribute.attr, &rx_msg_err_attribute.attr,
-        NULL, /* need to NULL terminate the list of attributes */
+static struct attribute *rx_connection_attrs[] = { &rx_request_page_attribute.attr, &rx_request_page_pull_attribute.attr, &rx_page_request_reply_attribute.attr, &rx_page_request_redirect_attribute.attr, &rx_page_info_update_attribute.attr, &rx_try_request_page_attribute.attr, &rx_try_request_page_fail_attribute.attr, &rx_msg_err_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
 };
 
-static struct attribute_group rx_connection_attr_group = { .attrs =
-        rx_connection_attrs, };
+static struct attribute_group rx_connection_attr_group = { .attrs = rx_connection_attrs, };
 
 static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
     struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
@@ -264,13 +216,12 @@ void delete_svm_sysfs_entry(struct kobject *obj) {
     kobject_del(obj);
 }
 
-int create_dsm_sysfs_entry(struct dsm *dsm, 
-        struct dsm_module_state *dsm_state) {
+int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) {
     char id[11];
 
     scnprintf(id, 11, "%x", dsm->dsm_id);
     return kobject_init_and_add(&dsm->dsm_kobject, &dsm_kobject_type,
-        dsm_state->dsm_kobjects.domains_kobject, id);
+            dsm_state->dsm_kobjects.domains_kobject, id);
 }
 
 void delete_dsm_sysfs_entry(struct kobject *obj) {

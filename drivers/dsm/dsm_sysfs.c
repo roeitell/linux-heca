@@ -263,7 +263,8 @@ int create_connection_sysfs_entry(struct con_element_sysfs *sysfs,
     return r;
 }
 
-void delete_connection_entry(struct con_element_sysfs *sysfs) {
+void delete_connection_sysfs_entry(struct con_element_sysfs *sysfs)
+{
     kobject_put(&sysfs->connection_rx_kobject);
     kobject_del(&sysfs->connection_rx_kobject);
     kobject_put(&sysfs->connection_tx_kobject);

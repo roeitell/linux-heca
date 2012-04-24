@@ -1064,6 +1064,7 @@ int destroy_connection(struct conn_element *ele)
         }
 
         erase_rb_conn(ele);
+        delete_connection_sysfs_entry(&ele->sysfs);
         vfree(ele);
 
         return ret;

@@ -151,6 +151,6 @@ void delete_dsm_sysfs_entry(struct kobject *);
 int create_svm_sysfs_entry(struct subvirtual_machine *, char *);
 int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
         char*);
-void delete_connection_entry(struct con_element_sysfs *);
+void delete_connection_sysfs_entry(struct con_element_sysfs *);
 
 #endif /* DSM_OP_H_ */

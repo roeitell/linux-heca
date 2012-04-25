@@ -633,7 +633,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
             if (likely(pte_same(*page_table, orig_pte)))
                 ret = VM_FAULT_OOM;
-            pte_unmap_unlock(pte, ptl);
+            pte_unmap_unlock(page_table, ptl);
             return ret;
         }
         ret = VM_FAULT_MAJOR;

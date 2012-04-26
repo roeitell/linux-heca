@@ -221,8 +221,10 @@ int process_page_request(struct conn_element * ele,
     tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
+    tx_e->reply_work_req->mm = local_svm->priv->mm;
+    tx_e->reply_work_req->addr = norm_addr;
     page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
-            msg->type, &tx_e->wrk_req->pte);
+            msg->type, &tx_e->reply_work_req->pte);
 
     if (unlikely(!page)) {
         release_tx_element_reply(ele, tx_e);
@@ -463,8 +465,7 @@ int dsm_recv_info(struct conn_element *ele) {
 
 int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *fault_svm, unsigned long request_addr,
-        struct memory_region *mr)
-{
+        struct memory_region *mr) {
     int i = 0;
     unsigned long addr = request_addr & PAGE_MASK;
     struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);

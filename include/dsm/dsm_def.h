@@ -312,7 +312,6 @@ struct msg_work_request {
     struct work_request_ele *wr_ele;
     struct page_pool_ele *dst_addr;
     struct dsm_page_cache *dpc;
-    pte_t *pte;
 
 };
 
@@ -335,6 +334,9 @@ struct reply_work_request {
     struct page * mem_page;
     void *page_buf;
     struct ib_sge page_sgl;
+    pte_t *pte;
+    struct mm_struct *mm;
+    unsigned long addr;
 
 };
 

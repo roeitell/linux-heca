@@ -154,12 +154,13 @@ static int dsm_send_message_handler(struct conn_element *ele,
 
     switch (tx_buf_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
+            clear_dsm_swp_entry_flag(tx_buf_e->reply_work_req->mm,
+                    tx_buf_e->reply_work_req->addr,
+                    tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
             release_page(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
             dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
-            clear_dsm_swp_entry_flag(tx_buf_e->wrk_req->dpc->svm->priv->mm,
-                    tx_buf_e->wrk_req->dpc->addr, tx_buf_e->wrk_req->pte,
-                    DSM_INFLIGHT_BITPOS);
+
             break;
         }
         case REQUEST_PAGE: {

@@ -608,7 +608,6 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
 
     do {
         cond_resched();
-        smp_mb();
         pte = *page_table;
         if (!pte_same(pte, *orig_pte)) {
             if (!pte_present(pte))

@@ -661,8 +661,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
                 printk("[do_dsm_page_fault] flight wait %p  \n", address);
                 if (unlikely(
-                        inflight_wait(page_table, &orig_pte, &entry, &dsd,
-                                flags))) {
+                        inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
                     ret = VM_FAULT_MAJOR;
                     count_vm_event(PGMAJFAULT);
                     mem_cgroup_count_vm_event(mm, PGMAJFAULT);

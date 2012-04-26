@@ -616,7 +616,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                     swp_entry = pte_to_swp_entry(pte);
                     if (non_swap_entry(swp_entry))
                         if (is_dsm_entry(swp_entry))
-                            if (dsm_swap_entry_same(swp_entry, *entry)) {
+                            if (dsm_swp_entry_same(swp_entry, *entry)) {
                                 tmp_dsd = swp_entry_to_dsm_data(swp_entry);
                                 if (tmp_dsd.flags & DSM_INFLIGHT) {
                                     printk(

@@ -626,10 +626,9 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
             ret = 1;
             break;
         }
-
+        printk("[inflight_wait] inflight  pte: %p \n", page_table);
     } while (1);
-
-    out: return ret;
+    return ret;
 }
 
 static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
@@ -652,6 +651,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {
+            printk("[do_dsm_page_fault] inflight  address : %p , pte: %p \n",
+                    address, page_table);
             if (unlikely(inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
                 ret = VM_FAULT_MAJOR;
                 count_vm_event(PGMAJFAULT);

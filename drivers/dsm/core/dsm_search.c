@@ -388,9 +388,7 @@ void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
     entry = pte_to_swp_entry(tmp_pte);
     val = dsm_entry_to_val(entry);
     flags = val & 0xFFFFFF;
-    printk("cleared inflight bit before, %d  \n", flags);
     clear_bit(pos, (volatile long unsigned int *) &flags);
-    printk("cleared inflight bit after, %d  \n", flags);
     val = val >> 24;
     set_pte_at(mm, addr, pte,
             swp_entry_to_pte(dsm_descriptor_to_swp_entry(val, flags)));

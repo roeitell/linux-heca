@@ -298,8 +298,6 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
             }
         }
         unlock_page(dpc->pages[0]);
-        printk("[dsm_pull_req_complete] unlocking page  page %p \n",
-                dpc->pages[0]);
     }
 
     dpc_nproc_dec(&dpc, dpc->tag != PREFETCH_TAG);
@@ -618,8 +616,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                             if (dsm_swp_entry_same(swp_entry, *entry)) {
                                 tmp_dsd = swp_entry_to_dsm_data(swp_entry);
                                 if (tmp_dsd.flags & DSM_INFLIGHT) {
-                                    printk(
-                                            "[inflight_wait] still in flight , continue\n");
+
                                     continue;
                                 } else {
                                     *orig_pte = pte;
@@ -633,7 +630,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
             break;
         }
     } while (1);
-    printk("[inflight_wait] exiting with  value: %d \n", ret);
+
     return ret;
 }
 
@@ -651,14 +648,13 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct page *found_page, *swapcache = NULL;
     pte_t pte;
 
-    printk("[do_dsm_page_fault] faulting address %p  \n", address);
     if (unlikely(dsd.flags)) {
         if (dsd.flags & DSM_PUSHING) {
             dpc = convert_push_dpc(fault_svm, norm_addr, dsd);
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {
-            printk("[do_dsm_page_fault] flight wait %p  \n", address);
+
             if (unlikely(inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
                 ret = VM_FAULT_MAJOR;
                 count_vm_event(PGMAJFAULT);
@@ -688,13 +684,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     if (unlikely(dpc->tag != PULL_TAG))
         dpc->tag = PULL_TAG;
-    printk("[do_dsm_page_fault] before try lock page %p  \n", dpc->pages[0]);
+
     lock: if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
-        printk("[do_dsm_page_fault] we retry page %p  \n", dpc->pages[0]);
         goto out;
     }
-    printk("[do_dsm_page_fault] after try lock page %p  \n", dpc->pages[0]);
+
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
         if (unlikely(page_private(dpc->pages[0]) == ULONG_MAX)) {
@@ -764,7 +759,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
-    printk("[do_dsm_page_fault] resolved %p  \n", address);
     goto out;
 
     out_nomap: pte_unmap_unlock(page_table, ptl);

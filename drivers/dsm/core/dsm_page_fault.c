@@ -605,7 +605,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
     int ret = 0;
 
     do {
-        cond_resched_softirq();
+        udelay(1);
         pte = *page_table;
         if (!test_bit(DSM_INFLIGHT_BITWAIT,
                 (const volatile long unsigned int *) &pte)) {
@@ -626,7 +626,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
             ret = 1;
             break;
         }
-
+       // cond_resched();
     } while (1);
     printk("[inflight_wait] exiting with  value: %d \n", ret);
     return ret;
@@ -641,7 +641,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 //we need to use the page addr and not the fault address in order to have a unique reference
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
-    int ret = 0, i = -1, rethrow, exclusive = 0;
+    int ret = 0, i = -1, exclusive = 0;
     struct dsm_page_cache *dpc = NULL;
     struct page *found_page, *swapcache = NULL;
     pte_t pte;
@@ -681,8 +681,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     if (unlikely(dpc->tag != PULL_TAG))
         dpc->tag = PULL_TAG;
 
-    lock: rethrow = !lock_page_or_retry(dpc->pages[0], mm, flags);
-    if (rethrow) {
+    lock: if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
         goto out;
     }

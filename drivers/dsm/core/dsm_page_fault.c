@@ -400,7 +400,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
 
 static struct dsm_page_cache *dsm_cache_add_pushed(
         struct subvirtual_machine *fault_svm, struct svm_list svms,
-        unsigned long addr, struct page *page, pte_t * pte) {
+        unsigned long addr, struct page *page) {
     struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
     int r, i;
 
@@ -410,7 +410,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
             goto fail;
 
         if (!new_dpc) {
-            new_dpc = dsm_alloc_dpc(fault_svm, addr, svms, 3, PULL_TAG, pte);
+            new_dpc = dsm_alloc_dpc(fault_svm, addr, svms, 3, PULL_TAG);
             new_dpc->pages[0] = page;
             atomic_set(&new_dpc->found, 0);
             if (!new_dpc)
@@ -459,7 +459,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
 
         if (!new_dpc) {
             new_dpc = dsm_alloc_dpc(fault_svm, norm_addr, svms,
-                    svms.num + nproc, tag, page_table);
+                    svms.num + nproc, tag);
             if (!new_dpc)
                 goto fail;
         }
@@ -582,7 +582,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
 
 static struct dsm_page_cache *convert_push_dpc(
         struct subvirtual_machine *fault_svm, unsigned long norm_addr,
-        struct dsm_swp_data dsd, pte_t *pte) {
+        struct dsm_swp_data dsd) {
     struct dsm_page_cache *dpc, *ret = NULL;
     struct page *page;
     unsigned long addr;
@@ -594,7 +594,7 @@ static struct dsm_page_cache *convert_push_dpc(
         if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1)
             dsm_dealloc_dpc(&dpc);
 
-        ret = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page, pte);
+        ret = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page);
     }
     return ret;
 }
@@ -655,7 +655,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     printk("[do_dsm_page_fault] faulting address %p  \n", address);
     if (unlikely(dsd.flags)) {
         if (dsd.flags & DSM_PUSHING) {
-            dpc = convert_push_dpc(fault_svm, norm_addr, dsd, page_table);
+            dpc = convert_push_dpc(fault_svm, norm_addr, dsd);
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {

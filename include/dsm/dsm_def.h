@@ -312,6 +312,7 @@ struct msg_work_request {
     struct work_request_ele *wr_ele;
     struct page_pool_ele *dst_addr;
     struct dsm_page_cache *dpc;
+    pte_t *pte;
 
 };
 
@@ -404,7 +405,6 @@ struct dsm_page_cache {
     atomic_t found;
     atomic_t nproc;
     unsigned long bitmap;
-    pte_t * pte;
 
     struct rb_node rb_node;
 };

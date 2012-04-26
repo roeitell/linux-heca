@@ -27,8 +27,7 @@ void destroy_dsm_cache_kmem(void) {
 EXPORT_SYMBOL(destroy_dsm_cache_kmem);
 
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
-        unsigned long addr, struct svm_list svms, int nproc, int tag,
-        pte_t *pte) {
+        unsigned long addr, struct svm_list svms, int nproc, int tag) {
     struct dsm_page_cache *dpc;
 
     dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
@@ -41,7 +40,6 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
     dpc->svms = svms;
     dpc->tag = tag;
     dpc->svm = svm;
-    dpc->pte = pte;
 
     if (svms.num > DSM_PAGE_CACHE_DEFAULT) {
         kfree(dpc->pages);
@@ -50,7 +48,7 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
 
     out: return dpc;
 }
-;
+
 
 void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
     int i;
@@ -62,7 +60,6 @@ void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
         *dpc = NULL;
     }
 }
-;
 EXPORT_SYMBOL(dsm_dealloc_dpc);
 
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,

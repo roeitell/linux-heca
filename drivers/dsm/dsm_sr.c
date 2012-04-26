@@ -222,7 +222,7 @@ int process_page_request(struct conn_element * ele,
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
     page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
-            msg->type);
+            msg->type, &tx_e->wrk_req->pte);
 
     if (unlikely(!page)) {
         release_tx_element_reply(ele, tx_e);

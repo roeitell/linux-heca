@@ -652,12 +652,22 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {
-            printk("[do_dsm_page_fault] flight wait %p  \n", address);
-            if (unlikely(inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
-                ret = VM_FAULT_MAJOR;
-                count_vm_event(PGMAJFAULT);
-                mem_cgroup_count_vm_event(mm, PGMAJFAULT);
+            if ((flags & FAULT_FLAG_ALLOW_RETRY) && !(flags & FAULT_FLAG_RETRY_NOWAIT)) {
+                ret |= VM_FAULT_RETRY;
+                printk("[do_dsm_page_fault] we retry on flight bit %p  \n",
+                        address);
                 goto out;
+            } else {
+
+                printk("[do_dsm_page_fault] flight wait %p  \n", address);
+                if (unlikely(
+                        inflight_wait(page_table, &orig_pte, &entry, &dsd,
+                                flags))) {
+                    ret = VM_FAULT_MAJOR;
+                    count_vm_event(PGMAJFAULT);
+                    mem_cgroup_count_vm_event(mm, PGMAJFAULT);
+                    goto out;
+                }
             }
 
         }
@@ -688,7 +698,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         printk("[do_dsm_page_fault] we retry %p  \n", address);
         goto out;
     }
-
+    printk("[do_dsm_page_fault] after try lock %p  \n", address);
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
         if (unlikely(page_private(dpc->pages[0]) == ULONG_MAX)) {

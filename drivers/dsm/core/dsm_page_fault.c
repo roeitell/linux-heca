@@ -605,7 +605,6 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
     int ret = 0;
 
     do {
-
         cond_resched();
         pte = *page_table;
         if (!test_bit(DSM_INFLIGHT_BITWAIT,
@@ -629,6 +628,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
         }
 
     } while (1);
+    printk("[inflight_wait] exiting with  value: %d \n", ret);
     return ret;
 }
 

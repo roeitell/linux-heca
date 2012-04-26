@@ -298,6 +298,8 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
             }
         }
         unlock_page(dpc->pages[0]);
+        printk("[dsm_pull_req_complete] unlocking page  page %p \n",
+                dpc->pages[0]);
     }
 
     dpc_nproc_dec(&dpc, dpc->tag != PREFETCH_TAG);
@@ -607,27 +609,27 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
     do {
         cond_resched();
         pte = *page_table;
-        if (!test_bit(DSM_INFLIGHT_BITWAIT,
-                (const volatile long unsigned int *) &pte)) {
-            swp_entry = pte_to_swp_entry(pte);
+        if (!pte_same(pte, *orig_pte)) {
             if (!pte_present(pte))
-                if (!pte_none(pte) && !pte_file(pte))
+                if (!pte_none(pte) && !pte_file(pte)) {
+                    swp_entry = pte_to_swp_entry(pte);
                     if (non_swap_entry(swp_entry))
                         if (is_dsm_entry(swp_entry)) {
                             tmp_dsd = swp_entry_to_dsm_data(swp_entry);
-                            *orig_pte = pte;
-                            *entry = swp_entry;
-                            *dsd = tmp_dsd;
-                            break;
+                            if (tmp_dsd.flags & DSM_INFLIGHT) {
+                                *orig_pte = pte;
+                                *entry = swp_entry;
+                                *dsd = tmp_dsd;
+                                break;
+                            }
                         }
+                }
             ret = 1;
             break;
-        } else if (!pte_same(pte, *orig_pte)) {
-            ret = 1;
-            break;
+
         }
-        printk("[inflight_wait] exiting with  value: %d \n", ret);
     } while (1);
+    printk("[inflight_wait] exiting with  value: %d \n", ret);
     return ret;
 }
 
@@ -652,21 +654,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {
-            if ((flags & FAULT_FLAG_ALLOW_RETRY) && !(flags & FAULT_FLAG_RETRY_NOWAIT)) {
-                ret |= VM_FAULT_RETRY;
-                printk("[do_dsm_page_fault] we retry on flight bit %p  \n",
-                        address);
+            printk("[do_dsm_page_fault] flight wait %p  \n", address);
+            if (unlikely(inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
+                ret = VM_FAULT_MAJOR;
+                count_vm_event(PGMAJFAULT);
+                mem_cgroup_count_vm_event(mm, PGMAJFAULT);
                 goto out;
-            } else {
-
-                printk("[do_dsm_page_fault] flight wait %p  \n", address);
-                if (unlikely(
-                        inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
-                    ret = VM_FAULT_MAJOR;
-                    count_vm_event(PGMAJFAULT);
-                    mem_cgroup_count_vm_event(mm, PGMAJFAULT);
-                    goto out;
-                }
             }
 
         }
@@ -691,13 +684,13 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     if (unlikely(dpc->tag != PULL_TAG))
         dpc->tag = PULL_TAG;
-    printk("[do_dsm_page_fault] before try lock %p  \n", address);
+    printk("[do_dsm_page_fault] before try lock page %p  \n", dpc->pages[0]);
     lock: if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
-        printk("[do_dsm_page_fault] we retry %p  \n", address);
+        printk("[do_dsm_page_fault] we retry page %p  \n", dpc->pages[0]);
         goto out;
     }
-    printk("[do_dsm_page_fault] after try lock %p  \n", address);
+    printk("[do_dsm_page_fault] after try lock page %p  \n", dpc->pages[0]);
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
         if (unlikely(page_private(dpc->pages[0]) == ULONG_MAX)) {

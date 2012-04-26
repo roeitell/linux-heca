@@ -605,7 +605,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
     int ret = 0;
 
     do {
-        cond_resched();
+        cond_resched_softirq();
         pte = *page_table;
         if (!test_bit(DSM_INFLIGHT_BITWAIT,
                 (const volatile long unsigned int *) &pte)) {

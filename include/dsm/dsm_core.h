@@ -92,7 +92,7 @@ void lazy_free_swap(struct page *);
 /* dsm_page_request.c */
 struct page *dsm_extract_page_from_remote(struct dsm *,
         struct subvirtual_machine *, struct subvirtual_machine *, unsigned long,
-        u16);
+        u16, pte_t ** );
 struct page *dsm_prepare_page_for_push(struct subvirtual_machine *,
         struct svm_list, struct mm_struct *, unsigned long, u32);
 struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,

@@ -607,7 +607,8 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
     do {
         schedule();
         pte = *page_table;
-        if (!test_bit(DSM_INFLIGHT_BITWAIT, &pte)) {
+        if (!test_bit(DSM_INFLIGHT_BITWAIT,
+                (const volatile long unsigned int *) &pte)) {
             swp_entry = pte_to_swp_entry(pte);
             if (!pte_present(pte))
                 if (!pte_none(pte) && !pte_file(pte))

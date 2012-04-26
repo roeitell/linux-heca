@@ -562,10 +562,13 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 if (non_swap_entry(swp_e)) {
                     if (is_dsm_entry(swp_e)) {
                         dsd = swp_entry_to_dsm_data(swp_e);
-                        dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
-                                2, tag, vma, mm, private, 0, pte_entry, pte);
-                        dsm_stats_inc(
-                                &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
+                        if (!dsd.flags & DSM_INFLIGHT) {
+                            dsm_cache_add_send(fault_svm, dsd.svms, addr,
+                                    norm_addr, 2, tag, vma, mm, private, 0,
+                                    pte_entry, pte);
+                            dsm_stats_inc(
+                                    &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
+                        }
                     }
                 }
             }
@@ -594,9 +597,38 @@ static struct dsm_page_cache *convert_push_dpc(
     return ret;
 }
 
-static int inflight_wait(void *ptr) {
-    schedule();
-    return 0;
+static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
+        struct dsm_swp_data *dsd) {
+    pte_t pte;
+    swp_entry_t swp_entry;
+    struct dsm_swp_data tmp_dsd;
+    int ret = 0;
+
+    do {
+        schedule();
+        pte = *page_table;
+        if (!test_bit(DSM_INFLIGHT_BITWAIT, &pte)) {
+            swp_entry = pte_to_swp_entry(pte);
+            if (!pte_present(pte))
+                if (!pte_none(pte) && !pte_file(pte))
+                    if (non_swap_entry(swp_entry))
+                        if (is_dsm_entry(swp_entry)) {
+                            tmp_dsd = swp_entry_to_dsm_data(swp_entry);
+                            *orig_pte = pte;
+                            *entry = swp_entry;
+                            *dsd = tmp_dsd;
+                            break;
+                        }
+            ret = 1;
+            break;
+        } else if (!pte_same(pte, *orig_pte)) {
+            ret = 1;
+            break;
+        }
+
+    } while (1);
+
+    out: return ret;
 }
 
 static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
@@ -619,8 +651,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {
-            wait_on_bit(page_table, DSM_INFLIGHT_BITWAIT, inflight_wait,
-                    TASK_UNINTERRUPTIBLE);
+            if (unlikely(inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
+                ret = VM_FAULT_MAJOR;
+                count_vm_event(PGMAJFAULT);
+                mem_cgroup_count_vm_event(mm, PGMAJFAULT);
+                goto out;
+            }
         }
     }
 

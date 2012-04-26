@@ -616,11 +616,13 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                     if (non_swap_entry(swp_entry))
                         if (is_dsm_entry(swp_entry)) {
                             tmp_dsd = swp_entry_to_dsm_data(swp_entry);
-                            if (tmp_dsd.flags & DSM_INFLIGHT) {
+                            if (!(tmp_dsd.flags & DSM_INFLIGHT)) {
                                 *orig_pte = pte;
                                 *entry = swp_entry;
                                 *dsd = tmp_dsd;
                                 break;
+                            } else {
+                                continue;
                             }
                         }
                 }

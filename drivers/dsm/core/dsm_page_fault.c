@@ -605,8 +605,8 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
     int ret = 0;
 
     do {
-        printk("[inflight_wait] inflight  pte: %p \n", page_table);
-        schedule();
+
+        cond_resched();
         pte = *page_table;
         if (!test_bit(DSM_INFLIGHT_BITWAIT,
                 (const volatile long unsigned int *) &pte)) {
@@ -629,7 +629,6 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
         }
 
     } while (1);
-    printk("[inflight_wait] exiting with  value: %d \n", ret);
     return ret;
 }
 
@@ -653,8 +652,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {
-            printk("[do_dsm_page_fault] inflight  address : %p , pte: %p \n",
-                    address, page_table);
             if (unlikely(inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
                 ret = VM_FAULT_MAJOR;
                 count_vm_event(PGMAJFAULT);

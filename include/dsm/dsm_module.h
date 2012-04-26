@@ -44,10 +44,10 @@ unsigned int inet_addr(char *);
 int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element *);
-void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32, 
-    u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
-void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32, 
-    u32, u32, uint64_t);
+void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32,
+        u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
+void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32,
+        u32, u32, uint64_t);
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *);
 int create_connection(struct rcm *, struct svm_data *);
@@ -96,6 +96,7 @@ void insert_mr(struct dsm *, struct memory_region *);
 struct memory_region *search_mr(struct dsm *, unsigned long);
 int destroy_mrs(struct dsm *, int);
 int remove_svm_from_mrs(struct dsm *, u32);
+void clear_dsm_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
 
 /*
  * handler

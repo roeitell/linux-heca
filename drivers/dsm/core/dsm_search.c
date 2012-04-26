@@ -377,7 +377,23 @@ inline int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2) {
 
 }
 
-void clear_inflight_flag(pte_t * pte, u32 flags) {
+void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
+        pte_t * pte, int pos) {
+    u64 val;
+    u32 flags;
+    swp_entry_t entry;
+    pte_t tmp_pte;
+
+    tmp_pte = *pte;
+    entry = pte_to_swp_entry(pte);
+    val = dsm_entry_to_val(entry);
+    flags = val & 0xFFFFFF;
+    printk("cleared inflight bit before, %d  \n", flags);
+    clear_bit(pos, &flags);
+    printk("cleared inflight bit after, %d  \n", flags);
+    val = val >> 24;
+    set_pte_at(mm, addr, pte,
+            swp_entry_to_pte(dsm_descriptor_to_swp_entry(val, flags)));
 
 }
-
+EXPORT_SYMBOL(clear_dsm_swp_entry_flag);

@@ -157,12 +157,9 @@ static int dsm_send_message_handler(struct conn_element *ele,
             release_page(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
             dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
-            printk("[dsm_send_message_handler] before inflight bit %lu \n",
-                    *(tx_buf_e->wrk_req->pte));
-            clear_bit(DSM_INFLIGHT_BITWAIT,
-                    (volatile unsigned long *) tx_buf_e->wrk_req->pte);
-            printk("[dsm_send_message_handler] cleared inflight bit %lu \n",
-                    *(tx_buf_e->wrk_req->pte));
+            clear_dsm_swp_entry_flag(tx_buf_e->wrk_req->dpc->svm->priv->mm,
+                    tx_buf_e->wrk_req->dpc->addr, tx_buf_e->wrk_req->pte,
+                    DSM_INFLIGHT_BITPOS);
             break;
         }
         case REQUEST_PAGE: {

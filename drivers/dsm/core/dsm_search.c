@@ -168,13 +168,12 @@ struct conn_element* search_rb_conn(int node_ip) {
 }
 EXPORT_SYMBOL(search_rb_conn);
 
-void erase_rb_conn(struct conn_element *ele)
-{
-        struct rcm *rcm = get_dsm_module_state()->rcm;
+void erase_rb_conn(struct conn_element *ele) {
+    struct rcm *rcm = get_dsm_module_state()->rcm;
 
-        write_seqlock(&rcm->conn_lock);
-        rb_erase(&ele->rb_node, &rcm->root_conn);
-        write_sequnlock(&rcm->conn_lock);
+    write_seqlock(&rcm->conn_lock);
+    rb_erase(&ele->rb_node, &rcm->root_conn);
+    write_sequnlock(&rcm->conn_lock);
 }
 EXPORT_SYMBOL(erase_rb_conn);
 
@@ -338,8 +337,6 @@ inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags) {
     u64 val = dsc;
     return val_to_dsm_entry((val << 24) | flags);
 }
-;
-EXPORT_SYMBOL(dsm_descriptor_to_swp_entry);
 
 inline struct svm_list dsm_descriptor_to_svms(u32 dsc) {
     struct svm_list svms;
@@ -368,6 +365,19 @@ inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry) {
 
     out: return dsd;
 }
-;
-EXPORT_SYMBOL(swp_entry_to_dsm_data);
+
+inline int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2) {
+
+    u64 val = dsm_entry_to_val(entry) >> 24;
+    u64 val2 = dsm_entry_to_val(entry2) >> 24;
+
+    if (val == val2)
+        return 1;
+    return 0;
+
+}
+
+void clear_inflight_flag(pte_t * pte, u32 flags) {
+
+}
 

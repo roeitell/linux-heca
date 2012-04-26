@@ -7,34 +7,31 @@
 
 #include <dsm/dsm_module.h>
 
-static void destroy_connection_work(struct work_struct *work)
-{
-        struct rcm *rcm = get_dsm_module_state()->rcm;
-        struct rb_root *root;
-        struct rb_node *node, *next;
-        struct conn_element *ele;
-        unsigned long seq;
+static void destroy_connection_work(struct work_struct *work) {
+    struct rcm *rcm = get_dsm_module_state()->rcm;
+    struct rb_root *root;
+    struct rb_node *node, *next;
+    struct conn_element *ele;
+    unsigned long seq;
 
-        do {
-                seq = read_seqbegin(&rcm->conn_lock);
-                root = &rcm->root_conn;
-                for (node = rb_first(root); node; node = next) {
-                        ele = rb_entry(node, struct conn_element, rb_node);
-                        next = rb_next(node);
-                        if (atomic_cmpxchg(&ele->alive, -1, 0) == -1)
-                                destroy_connection(ele);
-                }
-        } while (read_seqretry(&rcm->conn_lock, seq));
+    do {
+        seq = read_seqbegin(&rcm->conn_lock);
+        root = &rcm->root_conn;
+        for (node = rb_first(root); node; node = next) {
+            ele = rb_entry(node, struct conn_element, rb_node);
+            next = rb_next(node);
+            if (atomic_cmpxchg(&ele->alive, -1, 0) == -1)
+                destroy_connection(ele);
+        }
+    } while (read_seqretry(&rcm->conn_lock, seq));
 
-        kfree(work);
+    kfree(work);
 }
 
-static inline void schedule_destroy_conns(void)
-{
-        struct work_struct *work = kmalloc(sizeof(struct work_struct), 
-                        GFP_KERNEL);
-        INIT_WORK(work, destroy_connection_work);
-        schedule_work(work);
+static inline void schedule_destroy_conns(void) {
+    struct work_struct *work = kmalloc(sizeof(struct work_struct), GFP_KERNEL);
+    INIT_WORK(work, destroy_connection_work);
+    schedule_work(work);
 }
 
 static int flush_dsm_request(struct conn_element *ele) {
@@ -164,8 +161,12 @@ static int dsm_send_message_handler(struct conn_element *ele,
         }
         case REQUEST_PAGE: {
             dsm_stats_inc(&ele->sysfs.tx_stats.request_page);
+            printk("[dsm_send_message_handler] before inflight bit %lu \n",
+                    *(tx_buf_e->wrk_req->dpc->pte));
             clear_bit(DSM_INFLIGHT_BITWAIT,
                     (volatile unsigned long *) tx_buf_e->wrk_req->dpc->pte);
+            printk("[dsm_send_message_handler] cleared inflight bit %lu \n",
+                    *(tx_buf_e->wrk_req->dpc->pte));
             break;
         }
         case TRY_REQUEST_PAGE: {
@@ -233,8 +234,7 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context) {
     }
 }
 
-static void dsm_send_poll(struct ib_cq *cq)
-{
+static void dsm_send_poll(struct ib_cq *cq) {
     struct ib_wc wc;
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
@@ -249,8 +249,7 @@ static void dsm_send_poll(struct ib_cq *cq)
     }
 }
 
-static void dsm_recv_poll(struct ib_cq *cq)
-{
+static void dsm_recv_poll(struct ib_cq *cq) {
     struct ib_wc wc;
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
@@ -269,67 +268,62 @@ static void dsm_recv_poll(struct ib_cq *cq)
     }
 }
 
-static inline void queue_recv_work(struct conn_element *ele)
-{
-        rcu_read_lock();
-        if (atomic_read(&ele->alive))
-                queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
-        rcu_read_unlock();
+static inline void queue_recv_work(struct conn_element *ele) {
+    rcu_read_lock();
+    if (atomic_read(&ele->alive))
+        queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
+    rcu_read_unlock();
 }
 
-static inline void queue_send_work(struct conn_element *ele)
-{
-        rcu_read_lock();
-        if (atomic_read(&ele->alive))
-                queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
-        rcu_read_unlock();
+static inline void queue_send_work(struct conn_element *ele) {
+    rcu_read_lock();
+    if (atomic_read(&ele->alive))
+        queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
+    rcu_read_unlock();
 }
 
-void send_cq_handle_work(struct work_struct *work)
-{
-        struct conn_element *ele = container_of(work, struct conn_element,
-                        send_work);
-        int ret = 0;
+void send_cq_handle_work(struct work_struct *work) {
+    struct conn_element
+    *ele = container_of(work, struct conn_element,
+            send_work);
+    int ret = 0;
 
-        dsm_send_poll(ele->send_cq);
-        ret = ib_req_notify_cq(ele->send_cq,
-                        IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-        dsm_send_poll(ele->send_cq);
-        if (ret > 0)
-                queue_send_work(ele);
+    dsm_send_poll(ele->send_cq);
+    ret = ib_req_notify_cq(ele->send_cq,
+            IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
+    dsm_send_poll(ele->send_cq);
+    if (ret > 0)
+        queue_send_work(ele);
 }
 
-void recv_cq_handle_work(struct work_struct *work)
-{
-        struct conn_element *ele = container_of(work, struct conn_element,
-                        recv_work);
-        int ret = 0;
+void recv_cq_handle_work(struct work_struct *work) {
+    struct conn_element
+    *ele = container_of(work, struct conn_element,
+            recv_work);
+    int ret = 0;
 
-        dsm_recv_poll(ele->recv_cq);
-        ret = ib_req_notify_cq(ele->recv_cq,
-                        IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-        dsm_recv_poll(ele->recv_cq);
-        flush_dsm_request(ele);
-        if (ret > 0)
-                queue_recv_work(ele);
+    dsm_recv_poll(ele->recv_cq);
+    ret = ib_req_notify_cq(ele->recv_cq,
+            IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
+    dsm_recv_poll(ele->recv_cq);
+    flush_dsm_request(ele);
+    if (ret > 0)
+        queue_recv_work(ele);
 }
 
-void send_cq_handle(struct ib_cq *cq, void *cq_context)
-{
-        queue_send_work((struct conn_element *) cq->cq_context);
+void send_cq_handle(struct ib_cq *cq, void *cq_context) {
+    queue_send_work((struct conn_element *) cq->cq_context);
 }
 
-void recv_cq_handle(struct ib_cq *cq, void *cq_context)
-{
-        queue_recv_work((struct conn_element *) cq->cq_context);
+void recv_cq_handle(struct ib_cq *cq, void *cq_context) {
+    queue_recv_work((struct conn_element *) cq->cq_context);
 }
 
 /*
  * This one is specific to the client part
  * It triggers the connection in the first place and handles the reaction of the remote node.
  */
-int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
-{
+int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event) {
     int ret = 0;
     int err = 0;
     struct conn_element *ele = id->context;
@@ -368,7 +362,7 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 
         case RDMA_CM_EVENT_DISCONNECTED:
             if (likely(atomic_cmpxchg(&ele->alive, 1, -1) == 1))
-                    schedule_destroy_conns();
+                schedule_destroy_conns();
             break;
 
         case RDMA_CM_EVENT_ADDR_ERROR:

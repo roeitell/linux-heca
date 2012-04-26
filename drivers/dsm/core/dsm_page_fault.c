@@ -608,27 +608,30 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
 
     do {
         cond_resched();
+        smp_mb();
         pte = *page_table;
         if (!pte_same(pte, *orig_pte)) {
             if (!pte_present(pte))
                 if (!pte_none(pte) && !pte_file(pte)) {
                     swp_entry = pte_to_swp_entry(pte);
                     if (non_swap_entry(swp_entry))
-                        if (is_dsm_entry(swp_entry)) {
-                            tmp_dsd = swp_entry_to_dsm_data(swp_entry);
-                            if (!(tmp_dsd.flags & DSM_INFLIGHT)) {
-                                *orig_pte = pte;
-                                *entry = swp_entry;
-                                *dsd = tmp_dsd;
-                                break;
-                            } else {
-                                continue;
+                        if (is_dsm_entry(swp_entry))
+                            if (dsm_swap_entry_same(swp_entry, *entry)) {
+                                tmp_dsd = swp_entry_to_dsm_data(swp_entry);
+                                if (tmp_dsd.flags & DSM_INFLIGHT) {
+                                    printk(
+                                            "[inflight_wait] still in flight , continue\n");
+                                    continue;
+                                } else {
+                                    *orig_pte = pte;
+                                    *entry = swp_entry;
+                                    *dsd = tmp_dsd;
+                                    break;
+                                }
                             }
-                        }
                 }
             ret = 1;
             break;
-
         }
     } while (1);
     printk("[inflight_wait] exiting with  value: %d \n", ret);

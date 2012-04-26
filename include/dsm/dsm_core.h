@@ -43,6 +43,11 @@
 #define PUSH_TAG        4  /* pushing the page */
 #define PULL_TRY_TAG    8  /* pulling the page by request (pushing to us) */
 
+/* dsm_search */
+inline int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
+inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t);
+inline swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
+
 /* dsm_cache.c */
 void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);

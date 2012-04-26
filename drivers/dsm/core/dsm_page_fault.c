@@ -605,7 +605,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
     int ret = 0;
 
     do {
-        udelay(1);
+        cond_resched();
         pte = *page_table;
         if (!test_bit(DSM_INFLIGHT_BITWAIT,
                 (const volatile long unsigned int *) &pte)) {
@@ -626,9 +626,8 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
             ret = 1;
             break;
         }
-       // cond_resched();
+        printk("[inflight_wait] exiting with  value: %d \n", ret);
     } while (1);
-    printk("[inflight_wait] exiting with  value: %d \n", ret);
     return ret;
 }
 
@@ -646,18 +645,21 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct page *found_page, *swapcache = NULL;
     pte_t pte;
 
+    printk("[do_dsm_page_fault] faulting address %p  \n", address);
     if (unlikely(dsd.flags)) {
         if (dsd.flags & DSM_PUSHING) {
             dpc = convert_push_dpc(fault_svm, norm_addr, dsd, page_table);
             if (likely(dpc))
                 goto lock;
         } else if (dsd.flags & DSM_INFLIGHT) {
+            printk("[do_dsm_page_fault] flight wait %p  \n", address);
             if (unlikely(inflight_wait(page_table, &orig_pte, &entry, &dsd))) {
                 ret = VM_FAULT_MAJOR;
                 count_vm_event(PGMAJFAULT);
                 mem_cgroup_count_vm_event(mm, PGMAJFAULT);
                 goto out;
             }
+
         }
     }
 
@@ -680,9 +682,10 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     if (unlikely(dpc->tag != PULL_TAG))
         dpc->tag = PULL_TAG;
-
+    printk("[do_dsm_page_fault] before try lock %p  \n", address);
     lock: if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
+        printk("[do_dsm_page_fault] we retry %p  \n", address);
         goto out;
     }
 
@@ -755,6 +758,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
+    printk("[do_dsm_page_fault] resolved %p  \n", address);
     goto out;
 
     out_nomap: pte_unmap_unlock(page_table, ptl);

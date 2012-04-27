@@ -653,17 +653,13 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             dpc = convert_push_dpc(fault_svm, norm_addr, dsd);
             if (likely(dpc))
                 goto lock;
-        } else if (dsd.flags & DSM_INFLIGHT) {
-            if ((flags & FAULT_FLAG_ALLOW_RETRY) && (flags & FAULT_FLAG_RETRY_NOWAIT)) {
-                //  we have a nowait fault ( kvm async pf)
-                ret |= VM_FAULT_RETRY;
-                goto out;
-            } else if (inflight_wait(page_table, &orig_pte, &entry, &dsd)) {
+        } else if (dsd.flags & DSM_INFLIGHT)
+            if (inflight_wait(page_table, &orig_pte, &entry, &dsd)) {
                 // we have to rethrow as all the pte changed to something we didn't set ( probably resoved)
                 ret |= VM_FAULT_RETRY;
                 goto out;
             }
-        }
+
     }
 
     retry: dpc = dsm_cache_get_hold(fault_svm, norm_addr);

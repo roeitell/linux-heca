@@ -367,8 +367,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
             if (likely(change_pte)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
                 if (likely(pte_same(*(pd.pte), pte_entry))) {
-                    clear_bit(DSM_PUSHING_BITWAIT,
-                            (volatile unsigned long *) pd.pte);
+                    clear_dsm_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
                 }
                 pte_unmap_unlock(pd.pte, ptl);
             }

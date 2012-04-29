@@ -304,7 +304,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
-    int change_pte = 0;
+    int change_pte = 0, active = 0;
     spinlock_t *ptl = NULL;
 
     retry: dsm_extract_pte_data(&pd, mm, addr);
@@ -319,6 +319,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
 
     page = dpc->pages[0];
     if (unlikely(PageActive(page))) {
+        active = 1;
         goto noop;
 
     } else if (pte_present(pte_entry)) {
@@ -334,10 +335,10 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
             flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
             ptep_clear_flush_notify(pd.vma, addr, pd.pte);
             set_pte_at(mm, addr, pd.pte,
-                    swp_entry_to_pte(dsm_descriptor_to_swp_entry( dpc->tag, (dpc->svms.num == 1)? 0 : DSM_PUSHING)));
+                    swp_entry_to_pte(dsm_descriptor_to_swp_entry(
+                    dpc->tag, (dpc->svms.num == 1)? 0 : DSM_PUSHING)));
             page_remove_rmap(page);
             dec_mm_counter(mm, MM_ANONPAGES);
-            *return_pte = pd.pte;
             pte_unmap_unlock(pd.pte, ptl);
             unlock_page(page);
         } else if (dpc->svms.num > 1) {
@@ -357,8 +358,11 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         change_pte = 1;
     }
 
+    *return_pte = pd.pte;
+
     noop: atomic_dec(&dpc->nproc);
-    if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num && atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
+    if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num && 
+            atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
         dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
             lock_page(page);
@@ -374,7 +378,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
             unlock_page(page);
         }
     }
-    out: return page;
+    out: return active? NULL : page;
 
 }
 

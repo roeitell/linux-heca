@@ -35,7 +35,7 @@ static void destroy_tx_buffer(struct conn_element *ele) {
             ib_dma_unmap_single(ele->cm_id->device, (u64) tx_buf[i].dsm_msg,
                     sizeof(struct dsm_message), DMA_TO_DEVICE);
 
-            vfree(tx_buf[i].mem);
+            kfree(tx_buf[i].mem);
             kfree(tx_buf[i].wrk_req->wr_ele);
             kfree(tx_buf[i].wrk_req);
         }
@@ -53,7 +53,7 @@ static void destroy_rx_buffer(struct conn_element *ele) {
         for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
             ib_dma_unmap_single(ele->cm_id->device, (u64) rx[i].dsm_msg,
                     sizeof(struct dsm_message), DMA_FROM_DEVICE);
-            vfree(rx[i].mem);
+            kfree(rx[i].mem);
 
             kfree(rx[i].recv_wrk_rq_ele);
         }
@@ -67,14 +67,14 @@ static void free_rdma_info(struct conn_element *ele) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) ele->rid.send_info,
                 sizeof(struct rdma_info), DMA_TO_DEVICE);
-        vfree(ele->rid.send_mem);
+        kfree(ele->rid.send_mem);
     }
 
     if (ele->rid.recv_info) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) ele->rid.recv_info,
                 sizeof(struct rdma_info), DMA_FROM_DEVICE);
-        vfree(ele->rid.recv_mem);
+        kfree(ele->rid.recv_mem);
     }
 
     if (ele->rid.remote_info) {
@@ -126,7 +126,7 @@ static int create_rx_buffer(struct conn_element *ele) {
     memset(rx, 0, (sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM));
 
     for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
-        rx[i].mem = vmalloc(sizeof(struct dsm_message));
+        rx[i].mem = kmalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (!rx[i].mem)
             goto err1;
         memset(rx[i].mem, 0, sizeof(struct dsm_message));
@@ -153,13 +153,13 @@ static int create_rx_buffer(struct conn_element *ele) {
     err3: ib_dma_unmap_single(ele->cm_id->device,
             (u64) (unsigned long) rx[i].dsm_msg, sizeof(struct dsm_message),
             DMA_FROM_DEVICE);
-    err2: vfree(rx[i].mem);
+    err2: kfree(rx[i].mem);
 
     err1: for (undo = 0; undo < i; ++undo) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) rx[undo].dsm_msg,
                 sizeof(struct dsm_message), DMA_FROM_DEVICE);
-        vfree(rx[undo].mem);
+        kfree(rx[undo].mem);
         kfree(rx[undo].recv_wrk_rq_ele);
     }
 
@@ -318,7 +318,7 @@ static int create_rdma_info(struct conn_element *ele) {
     int size = sizeof(struct rdma_info);
     struct rdma_info_data * rid = &ele->rid;
 
-    rid->send_mem = vmalloc(size);
+    rid->send_mem = kmalloc(size, GFP_KERNEL);
     if (unlikely(!rid->send_mem))
         goto send_mem_err;
 
@@ -327,7 +327,7 @@ static int create_rdma_info(struct conn_element *ele) {
     if (unlikely(!rid->send_info))
         goto send_info_err;
 
-    rid->recv_mem = vmalloc(size);
+    rid->recv_mem = kmalloc(size, GFP_KERNEL);
     if (unlikely(!rid->send_mem))
         goto recv_mem_err;
 
@@ -359,7 +359,7 @@ static int create_rdma_info(struct conn_element *ele) {
 
     recv_info_err: printk(
             ">[create_rdma_info] - ERROR : NO RECV INFO BUFFER\n");
-    vfree(rid->recv_mem);
+    kfree(rid->recv_mem);
 
     recv_mem_err: printk(
             ">[create_rdma_info] - no memory allocated for the reception buffer\n");
@@ -369,7 +369,7 @@ static int create_rdma_info(struct conn_element *ele) {
 
     send_info_err: printk(
             ">[create_rdma_info] - ERROR : NO SEND INFO BUFFER\n");
-    vfree(rid->send_mem);
+    kfree(rid->send_mem);
 
     send_mem_err: printk(
             ">[create_rdma_info] - no memory allocated for the sending buffer\n");
@@ -475,7 +475,7 @@ static int create_tx_buffer(struct conn_element *ele) {
     }
     ele->tx_buffer.tx_buf = tx_buff_e;
     for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
-        tx_buff_e[i].mem = vmalloc(sizeof(struct dsm_message));
+        tx_buff_e[i].mem = kmalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (unlikely(!tx_buff_e[i].mem))
             goto err1;
 
@@ -537,7 +537,7 @@ static int create_tx_buffer(struct conn_element *ele) {
             sizeof(struct dsm_message), DMA_TO_DEVICE);
     printk("> [create_tx_buffer][ERR] - Removed dsm_msg registration\n");
     err2: printk(">[create_tx_buffer] - 5\n");
-    vfree(tx_buff_e[i].mem);
+    kfree(tx_buff_e[i].mem);
     printk("> [create_tx_buffer][ERR] - Freed dsm_msg\n");
     ++ret;
 
@@ -548,7 +548,7 @@ static int create_tx_buffer(struct conn_element *ele) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) tx_buff_e[undo].dsm_msg,
                 sizeof(struct dsm_message), DMA_TO_DEVICE);
-        vfree(tx_buff_e[undo].mem);
+        kfree(tx_buff_e[undo].mem);
     }
 
     memset(tx_buff_e, 0, sizeof(struct tx_buf_ele) * TX_BUF_ELEMENTS_NUM);

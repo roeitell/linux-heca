@@ -429,100 +429,6 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
     out: return r;
 }
 
-static int unmap_range(struct private_data *priv_data, void __user *argp) {
-
-    int r = -EFAULT, j;
-
-    struct dsm *dsm;
-    struct subvirtual_machine *svm = NULL;
-    struct unmap_data udata;
-    unsigned long i = 0, end = 0;
-    u32 descriptor;
-
-    printk("[DSM_UNMAP_RANGE]\n");
-
-    if (copy_from_user((void *) &udata, argp, sizeof udata))
-        goto out;
-
-    dsm = find_dsm(udata.dsm_id);
-    BUG_ON(!dsm);
-
-    for (j = 0; udata.svm_ids[j]; j++) {
-        svm = find_svm(dsm, udata.svm_ids[j]);
-        if (!svm) {
-            printk("[UNMAP_RANGE] could not find the route element \n");
-            r = -1;
-            printk("[UNMAP_RANGE] dsm_id : %d - vm_id : %d\n", udata.dsm_id,
-                    udata.svm_ids[j]);
-            goto out;
-        }
-
-        if (priv_data->svm->dsm->dsm_id != svm->dsm->dsm_id) {
-            printk("[UNMAP_RANGE] DSM id not same, bad id  \n");
-            r = -1;
-            goto out;
-        }
-    }
-
-    descriptor = dsm_get_descriptor(dsm, udata.svm_ids);
-
-    i = udata.addr;
-    end = i + udata.sz;
-    while (i < end) {
-        r = dsm_flag_page_remote(current->mm, dsm, descriptor, i);
-        if (r)
-            break;
-
-        i += PAGE_SIZE;
-    }
-    printk("[?] unmapped #pages : %lu\n", (i - udata.addr) / PAGE_SIZE);
-    r = 0;
-
-    out: return r;
-}
-
-static int unmap_page(struct private_data *priv_data, void __user *argp) {
-
-    int r = -EFAULT, i;
-    u32 descriptor;
-
-    struct dsm *dsm;
-    struct subvirtual_machine *svm = NULL;
-    struct unmap_data udata;
-
-    printk("[DSM_UNMAP_PAGE]\n");
-
-    if (copy_from_user((void *) &udata, argp, sizeof udata)) {
-        goto out;
-    }
-
-    dsm = find_dsm(udata.dsm_id);
-    BUG_ON(!dsm);
-
-    for (i = 0; udata.svm_ids[i]; i++) {
-        svm = find_svm(dsm, udata.svm_ids[i]);
-        if (!svm) {
-            printk("[UNMAP_PAGE] could not find the route element \n");
-            r = -1;
-            printk("[unmap page 1] dsm_id : %d - vm_id : %d\n", udata.dsm_id,
-                    udata.svm_ids[i]);
-            goto out;
-        }
-    }
-
-    if (priv_data->svm->dsm->dsm_id != svm->dsm->dsm_id) {
-        printk("[UNMAP_PAGE] DSM id not same, bad id  \n");
-        r = -1;
-        goto out;
-    }
-
-    descriptor = dsm_get_descriptor(dsm, udata.svm_ids);
-
-    r = dsm_flag_page_remote(current->mm, dsm, descriptor, udata.addr);
-
-    out: return r;
-}
-
 static int pushback_page(struct private_data *priv_data, void __user *argp) {
     int r = -EFAULT;
     unsigned long addr;
@@ -613,7 +519,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         }
 
         /*
-         * Statistics
+         * Statistics and devel/debug
          */
         case DSM_GEN_STAT: {
             if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
@@ -633,18 +539,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
 
             ip_addr = inet_addr(svm_info.ip);
             cele = search_rb_conn(ip_addr);
-            break;
-        }
-
-        /*
-         * Deprecated calls
-         */
-        case DSM_UNMAP_RANGE: {
-            r = unmap_range(priv_data, argp);
-            break;
-        }
-        case UNMAP_PAGE: {
-            r = unmap_page(priv_data, argp);
             break;
         }
         case DSM_TRY_PUSH_BACK_PAGE: {

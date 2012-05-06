@@ -606,14 +606,19 @@ EXPORT_SYMBOL(dsm_update_pte_entry);
  * Return 0 => page dsm or not dsm_remote => try to swap out
  * Return 1 => page scheduled for push back do not swap out
  */
-static inline int _push_back_if_remote_dsm_page(struct page *page) {
+static int _push_back_if_remote_dsm_page(struct page *page)
+{
     struct anon_vma *anon_vma;
     struct anon_vma_chain *avc;
     int ret = 0;
 
+    if (unlikely(!get_dsm_module_state()))
+        return ret;
+
     anon_vma = page_lock_anon_vma(page);
     if (!anon_vma)
         return ret;
+
     list_for_each_entry(avc, &anon_vma->head, same_anon_vma)
     {
         struct vm_area_struct *vma = avc->vma;
@@ -623,34 +628,34 @@ static inline int _push_back_if_remote_dsm_page(struct page *page) {
 
         address = page_address_in_vma(page, vma);
         if (address == -EFAULT)
-        continue;
+            continue;
+
         svm = find_local_svm(vma->vm_mm);
         if (!svm)
-        continue;
+            continue;
+
         mr = search_mr(svm->dsm, address);
         if (!mr || mr->local == LOCAL)
-        continue;
+            continue;
 
         dsm_request_page_pull_op(svm->dsm, vma->vm_mm, svm, address, mr);
-        printk(
-                "Pushing back page %p, DSM %d , SVM %d , Address %p \n",
-                (void *)page, svm->dsm->dsm_id, svm->svm_id,
-                (void *)address);
         ret = 1;
         break;
     }
 
     page_unlock_anon_vma(anon_vma);
     return ret;
-
 }
+
 #ifdef CONFIG_DSM_CORE
-int push_back_if_remote_dsm_page(struct page *page) {
+int push_back_if_remote_dsm_page(struct page *page)
+{
     return _push_back_if_remote_dsm_page(page);
 }
 
 #else
-int push_back_if_remote_dsm_page(struct page *page) {
+int push_back_if_remote_dsm_page(struct page *page)
+{
     return 0;
 }
 #endif

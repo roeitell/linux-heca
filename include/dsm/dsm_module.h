@@ -134,7 +134,7 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 /*
  * SYSFS
  */
-#ifdef DSM_STATS
+#if 1
 #define dsm_stats_inc(s) atomic64_inc(s)
 #define dsm_stats_read(s) atomic64_read(s)
 #define dsm_stats_set(s,v) atomic64_set(s,v)
@@ -144,12 +144,12 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 #define dsm_stats_set(s,v)
 #endif
 
-void dsm_sysf_cleanup(struct dsm_module_state *);
-int dsm_sysf_setup(struct dsm_module_state *);
+void dsm_sysfs_cleanup(struct dsm_module_state *);
+int dsm_sysfs_setup(struct dsm_module_state *);
 void delete_svm_sysfs_entry(struct kobject *);
 int create_dsm_sysfs_entry(struct dsm *, struct dsm_module_state *);
 void delete_dsm_sysfs_entry(struct kobject *);
-int create_svm_sysfs_entry(struct subvirtual_machine *, char *);
+int create_svm_sysfs_entry(struct subvirtual_machine *);
 int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
         char*);
 void delete_connection_sysfs_entry(struct con_element_sysfs *);

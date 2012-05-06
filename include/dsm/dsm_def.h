@@ -99,11 +99,8 @@ struct dsm_page_stats {
 };
 
 struct svm_sysfs {
-
     struct kobject svm_kobject;
-    struct kobject local;
     struct dsm_page_stats stats;
-
 };
 
 struct dsm {
@@ -124,9 +121,9 @@ struct dsm {
 };
 
 struct dsm_kobjects {
-    struct kobject * dsm_kobject;
-    struct kobject * rdma_kobject;
-    struct kobject * domains_kobject;
+    struct kobject *dsm_glob_kobject;
+    struct kobject *rdma_kobject;
+    struct kobject *domains_kobject;
 };
 
 struct rcm {

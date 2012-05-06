@@ -180,31 +180,23 @@ static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
     kobject_del(dsm_kobjects->rdma_kobject);
     kobject_put(dsm_kobjects->domains_kobject);
     kobject_del(dsm_kobjects->domains_kobject);
-    kobject_del(dsm_kobjects->dsm_kobject);
+    kobject_del(dsm_kobjects->dsm_glob_kobject);
     return;
 }
 
-int create_svm_sysfs_entry(struct subvirtual_machine *svm, char *ip) {
-    struct kobject *kobj = &svm->svm_sysfs.svm_kobject, *kobj_ip;
-    char id[11];
+int create_svm_sysfs_entry(struct subvirtual_machine *svm)
+{
+    struct kobject *kobj = &svm->svm_sysfs.svm_kobject;
     int r;
 
-    scnprintf(id, 11, "%x", svm->svm_id);
     r = kobject_init_and_add(kobj, &dsm_kobject_type, &svm->dsm->dsm_kobject,
-            id, ip);
+            "svm.%u", svm->svm_id);
 
     if (!r) {
         r = sysfs_create_group(kobj, &svm_attr_group);
         if (r) {
             kobject_put(kobj);
             kobject_del(kobj);
-        } else {
-            kobj_ip = &svm->svm_sysfs.local;
-            r = kobject_init_and_add(kobj_ip, &dsm_kobject_type, kobj, ip);
-            if (r) {
-                kobject_put(kobj_ip);
-                kobject_del(kobj_ip);
-            }
         }
     }
 
@@ -216,12 +208,10 @@ void delete_svm_sysfs_entry(struct kobject *obj) {
     kobject_del(obj);
 }
 
-int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) {
-    char id[11];
-
-    scnprintf(id, 11, "%x", dsm->dsm_id);
+int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state)
+{
     return kobject_init_and_add(&dsm->dsm_kobject, &dsm_kobject_type,
-            dsm_state->dsm_kobjects.domains_kobject, id);
+            dsm_state->dsm_kobjects.domains_kobject, "dsm.%u", dsm->dsm_id);
 }
 
 void delete_dsm_sysfs_entry(struct kobject *obj) {
@@ -273,19 +263,19 @@ void delete_connection_sysfs_entry(struct con_element_sysfs *sysfs)
     kobject_del(&sysfs->connection_kobject);
 }
 
-int dsm_sysf_setup(struct dsm_module_state *dsm_state) {
-
+int dsm_sysfs_setup(struct dsm_module_state *dsm_state)
+{
     struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
-    dsm_kobjects->dsm_kobject = kobject_create_and_add("dsm", kernel_kobj);
-    if (!dsm_kobjects->dsm_kobject)
+    dsm_kobjects->dsm_glob_kobject = kobject_create_and_add("dsm", kernel_kobj);
+    if (!dsm_kobjects->dsm_glob_kobject)
         goto err;
     dsm_kobjects->rdma_kobject = kobject_create_and_add("rdma_engine",
-            dsm_kobjects->dsm_kobject);
+            dsm_kobjects->dsm_glob_kobject);
     if (!dsm_kobjects->rdma_kobject)
         goto err1;
     dsm_kobjects->domains_kobject = kobject_create_and_add("domains",
-            dsm_kobjects->dsm_kobject);
+            dsm_kobjects->dsm_glob_kobject);
     if (!dsm_kobjects->domains_kobject)
         goto err2;
 
@@ -293,14 +283,12 @@ int dsm_sysf_setup(struct dsm_module_state *dsm_state) {
 
     err2: kobject_put(dsm_kobjects->rdma_kobject);
     kobject_del(dsm_kobjects->rdma_kobject);
-    err1: kobject_del(dsm_kobjects->dsm_kobject);
+    err1: kobject_del(dsm_kobjects->dsm_glob_kobject);
     err: return -ENOMEM;
-
 }
 
-void dsm_sysf_cleanup(struct dsm_module_state *dsm_state) {
-
+void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state)
+{
     cleanup_top_level_kobject(dsm_state);
-
 }
 

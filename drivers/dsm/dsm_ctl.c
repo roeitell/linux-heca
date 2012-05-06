@@ -241,7 +241,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
             reset_page_stats(&new_svm->svm_sysfs.stats);
-            if (create_svm_sysfs_entry(new_svm, "local")) {
+            if (create_svm_sysfs_entry(new_svm)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
                 radix_tree_delete(&dsm->svm_mm_tree_root,
@@ -317,7 +317,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp) {
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
             reset_page_stats(&new_svm->svm_sysfs.stats);
-            if (create_svm_sysfs_entry(new_svm, svm_info.ip)) {
+            if (create_svm_sysfs_entry(new_svm)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
                 continue;
@@ -674,7 +674,7 @@ static int dsm_init(void) {
     if (create_rcm(dsm_state, ip, port))
         goto err;
 
-    if (dsm_sysf_setup(dsm_state)) {
+    if (dsm_sysfs_setup(dsm_state)) {
         dereg_dsm_functions();
         destroy_rcm(dsm_state);
     }
@@ -693,7 +693,7 @@ static void dsm_exit(void) {
     }
 
     dereg_dsm_functions();
-    dsm_sysf_cleanup(dsm_state);
+    dsm_sysfs_cleanup(dsm_state);
     destroy_rcm(dsm_state);
 
     misc_deregister(&rdma_misc);

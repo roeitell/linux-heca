@@ -12,6 +12,7 @@ struct dsm_module_state * create_dsm_module_state(void) {
     dsm_state = kzalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
     BUG_ON(!(dsm_state));
     INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
+    INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL);
     INIT_LIST_HEAD(&dsm_state->dsm_list);
     mutex_init(&dsm_state->dsm_state_mutex);
     dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
@@ -57,15 +58,15 @@ struct dsm *find_dsm(u32 id) {
 }
 EXPORT_SYMBOL(find_dsm);
 
-static struct subvirtual_machine *_find_svm_in_tree(struct radix_tree_root *root, 
-        unsigned long svm_id) {
+static struct subvirtual_machine *_find_svm_in_tree(
+        struct radix_tree_root *root, unsigned long svm_id) {
 
     struct subvirtual_machine *svm;
     struct subvirtual_machine **svmp;
 
     repeat: svm = NULL;
-    svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root, 
-        (unsigned long) svm_id);
+    svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root,
+            (unsigned long) svm_id);
     if (svmp) {
         svm = radix_tree_deref_slot((void**) svmp);
         if (unlikely(!svm))
@@ -77,7 +78,8 @@ static struct subvirtual_machine *_find_svm_in_tree(struct radix_tree_root *root
     }
 
     out: return svm;
-};
+}
+;
 
 struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
     struct subvirtual_machine *svm;
@@ -90,12 +92,24 @@ struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
 }
 EXPORT_SYMBOL(find_svm);
 
-struct subvirtual_machine *find_local_svm(struct dsm * dsm,
+struct subvirtual_machine *find_local_svm_in_dsm(struct dsm * dsm,
         struct mm_struct *mm) {
     struct subvirtual_machine *svm;
 
     rcu_read_lock();
     svm = _find_svm_in_tree(&dsm->svm_mm_tree_root, (unsigned long) mm);
+    rcu_read_unlock();
+
+    return svm;
+}
+EXPORT_SYMBOL(find_local_svm_in_dsm);
+
+struct subvirtual_machine *find_local_svm(struct mm_struct *mm) {
+    struct subvirtual_machine *svm;
+
+    rcu_read_lock();
+    svm = _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
+            (unsigned long) mm);
     rcu_read_unlock();
 
     return svm;
@@ -140,7 +154,7 @@ struct conn_element* search_rb_conn(int node_ip) {
         root = &rcm->root_conn;
         for (node = root->rb_node; node; this = 0) {
             this = rb_entry(node, struct conn_element, rb_node);
-     
+
             if (node_ip < this->remote_node_ip)
                 node = node->rb_left;
             else if (node_ip > this->remote_node_ip)
@@ -154,13 +168,12 @@ struct conn_element* search_rb_conn(int node_ip) {
 }
 EXPORT_SYMBOL(search_rb_conn);
 
-void erase_rb_conn(struct conn_element *ele)
-{
-        struct rcm *rcm = get_dsm_module_state()->rcm;
+void erase_rb_conn(struct conn_element *ele) {
+    struct rcm *rcm = get_dsm_module_state()->rcm;
 
-        write_seqlock(&rcm->conn_lock);
-        rb_erase(&ele->rb_node, &rcm->root_conn);
-        write_sequnlock(&rcm->conn_lock);
+    write_seqlock(&rcm->conn_lock);
+    rb_erase(&ele->rb_node, &rcm->root_conn);
+    write_sequnlock(&rcm->conn_lock);
 }
 EXPORT_SYMBOL(erase_rb_conn);
 
@@ -231,7 +244,7 @@ int destroy_mrs(struct dsm *dsm, int force) {
             }
         }
 
-        printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr+mr->sz);
+        printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr + mr->sz);
         rb_erase(&mr->rb_node, root);
         kfree(mr);
         ret++;
@@ -250,7 +263,7 @@ static u32 sdsc_max;
 static spinlock_t sdsc_lock;
 
 void dsm_init_descriptors(void) {
-    sdsc = kzalloc(sizeof(struct svm_list)*256, GFP_KERNEL);
+    sdsc = kzalloc(sizeof(struct svm_list) * 256, GFP_KERNEL);
     sdsc_max = 256;
     spin_lock_init(&sdsc_lock);
 }
@@ -268,11 +281,11 @@ EXPORT_SYMBOL(dsm_destroy_descriptors);
 
 static void dsm_expand_descriptors(void) {
     struct svm_list *nsdsc, *tmp = sdsc;
-   
-    nsdsc = kzalloc(sizeof(struct svm_list)*sdsc_max*2, GFP_KERNEL);
-    memcpy(nsdsc, sdsc, sizeof(struct svm_list)*sdsc_max);
-    memset(nsdsc + sizeof(struct svm_list)*sdsc_max, 0, 
-            sizeof(struct svm_list)*sdsc_max);
+
+    nsdsc = kzalloc(sizeof(struct svm_list) * sdsc_max * 2, GFP_KERNEL);
+    memcpy(nsdsc, sdsc, sizeof(struct svm_list) * sdsc_max);
+    memset(nsdsc + sizeof(struct svm_list) * sdsc_max, 0,
+            sizeof(struct svm_list) * sdsc_max);
 
     rcu_assign_pointer(sdsc, nsdsc);
     sdsc_max *= 2;
@@ -286,7 +299,7 @@ static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
     for (j = 0; svm_ids[j]; j++)
         ;
     sdsc[i].num = j;
-    sdsc[i].pp = kmalloc(sizeof(struct subvirtual_machine *)*j, GFP_KERNEL);
+    sdsc[i].pp = kmalloc(sizeof(struct subvirtual_machine *) * j, GFP_KERNEL);
     for (j = 0; svm_ids[j]; j++)
         sdsc[i].pp[j] = find_svm(dsm, svm_ids[j]);
 }
@@ -301,9 +314,9 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
     spin_lock(&sdsc_lock);
     for (i = 0; i < sdsc_max && sdsc[i].num; i++) {
         for (j = 0;
-             j < sdsc[i].num && sdsc[i].pp[j] && 
-                 svm_ids[j] && sdsc[i].pp[j]->svm_id == svm_ids[j];
-             j++);
+                j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] && sdsc[i].pp[j]->svm_id == svm_ids[j];
+                j++)
+            ;
         if (j == sdsc[i].num && !svm_ids[j])
             break;
     }
@@ -316,14 +329,14 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
 
     spin_unlock(&sdsc_lock);
     return i;
-};
+}
+;
 EXPORT_SYMBOL(dsm_get_descriptor);
 
 inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags) {
     u64 val = dsc;
     return val_to_dsm_entry((val << 24) | flags);
-};
-EXPORT_SYMBOL(dsm_descriptor_to_swp_entry);
+}
 
 inline struct svm_list dsm_descriptor_to_svms(u32 dsc) {
     struct svm_list svms;
@@ -351,6 +364,34 @@ inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry) {
     dsd.dsm = NULL;
 
     out: return dsd;
-};
-EXPORT_SYMBOL(swp_entry_to_dsm_data);
+}
 
+inline int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2) {
+
+    u64 val = dsm_entry_to_val(entry) >> 24;
+    u64 val2 = dsm_entry_to_val(entry2) >> 24;
+
+    if (val == val2)
+        return 1;
+    return 0;
+
+}
+
+void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
+        pte_t * pte, int pos) {
+    u64 val;
+    u32 flags;
+    swp_entry_t entry;
+    pte_t tmp_pte;
+
+    tmp_pte = *pte;
+    entry = pte_to_swp_entry(tmp_pte);
+    val = dsm_entry_to_val(entry);
+    flags = val & 0xFFFFFF;
+    clear_bit(pos, (volatile long unsigned int *) &flags);
+    val = val >> 24;
+    set_pte_at(mm, addr, pte,
+            swp_entry_to_pte(dsm_descriptor_to_swp_entry(val, flags)));
+
+}
+EXPORT_SYMBOL(clear_dsm_swp_entry_flag);

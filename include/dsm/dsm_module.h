@@ -44,10 +44,10 @@ unsigned int inet_addr(char *);
 int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element *);
-void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32, 
-    u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
-void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32, 
-    u32, u32, uint64_t);
+void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32,
+        u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
+void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32,
+        u32, u32, uint64_t);
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *);
 int create_connection(struct rcm *, struct svm_data *);
@@ -65,7 +65,7 @@ void reg_rem_info(struct conn_element *);
 void release_svm_from_mr_descriptors(struct subvirtual_machine *);
 void release_svm_tx_requests(struct subvirtual_machine *, struct tx_buffer *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
-void release_push_elements(struct subvirtual_machine *, 
+void release_push_elements(struct subvirtual_machine *,
         struct subvirtual_machine *);
 
 /*
@@ -88,12 +88,15 @@ struct dsm_module_state * get_dsm_module_state(void);
 struct dsm_module_state * create_dsm_module_state(void);
 void destroy_dsm_module_state(void);
 struct dsm *find_dsm(u32);
-struct subvirtual_machine *find_local_svm(struct dsm *, struct mm_struct *);
+struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
+        struct mm_struct *);
+struct subvirtual_machine *find_local_svm(struct mm_struct *);
 struct subvirtual_machine *find_svm(struct dsm *, u32);
 void insert_mr(struct dsm *, struct memory_region *);
 struct memory_region *search_mr(struct dsm *, unsigned long);
 int destroy_mrs(struct dsm *, int);
 int remove_svm_from_mrs(struct dsm *, u32);
+void clear_dsm_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
 
 /*
  * handler
@@ -121,16 +124,26 @@ int process_pull_request(struct conn_element *, struct rx_buf_ele *);
 int exchange_info(struct conn_element *, int);
 int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);
-int request_dsm_page(struct page *, struct subvirtual_machine *, 
-        struct subvirtual_machine *, uint64_t, int(*func)(struct tx_buf_ele *),
+int request_dsm_page(struct page *, struct subvirtual_machine *,
+        struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
         int, struct dsm_page_cache *);
-int dsm_request_page_pull(struct dsm *, struct mm_struct *, 
-        struct subvirtual_machine *, unsigned long);
+int dsm_request_page_pull(struct dsm *, struct mm_struct *,
+        struct subvirtual_machine *, unsigned long, struct memory_region *);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 
 /*
  * SYSFS
  */
+#ifdef DSM_STATS
+#define dsm_stats_inc(s) atomic64_inc(s)
+#define dsm_stats_read(s) atomic64_read(s)
+#define dsm_stats_set(s,v) atomic64_set(s,v)
+#else
+#define dsm_stats_inc(s)
+#define dsm_stats_read(s) 0
+#define dsm_stats_set(s,v)
+#endif
+
 void dsm_sysf_cleanup(struct dsm_module_state *);
 int dsm_sysf_setup(struct dsm_module_state *);
 void delete_svm_sysfs_entry(struct kobject *);
@@ -139,7 +152,6 @@ void delete_dsm_sysfs_entry(struct kobject *);
 int create_svm_sysfs_entry(struct subvirtual_machine *, char *);
 int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
         char*);
-void delete_connection_entry(struct con_element_sysfs *);
-
+void delete_connection_sysfs_entry(struct con_element_sysfs *);
 
 #endif /* DSM_OP_H_ */

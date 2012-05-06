@@ -9,14 +9,15 @@
 static struct kmem_cache *dsm_cache_kmem;
 
 static inline void init_dsm_cache_elm(void *obj) {
-    ((struct dsm_page_cache *) obj)->pages = kzalloc(sizeof(struct page *)*
-        DSM_PAGE_CACHE_DEFAULT, GFP_KERNEL);
-};
+    ((struct dsm_page_cache *) obj)->pages = kzalloc(
+            sizeof(struct page *) * DSM_PAGE_CACHE_DEFAULT, GFP_KERNEL);
+}
+;
 
 void init_dsm_cache_kmem(void) {
     dsm_cache_kmem = kmem_cache_create("dsm_page_cache",
-        sizeof(struct dsm_page_cache), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, 
-        init_dsm_cache_elm);
+            sizeof(struct dsm_page_cache), 0,
+            SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, init_dsm_cache_elm);
 }
 EXPORT_SYMBOL(init_dsm_cache_kmem);
 
@@ -42,11 +43,12 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
 
     if (svms.num > DSM_PAGE_CACHE_DEFAULT) {
         kfree(dpc->pages);
-        dpc->pages = kzalloc(sizeof(struct page *)*svms.num, GFP_KERNEL);
+        dpc->pages = kzalloc(sizeof(struct page *) * svms.num, GFP_KERNEL);
     }
 
     out: return dpc;
-};
+}
+
 
 void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
     int i;
@@ -57,7 +59,7 @@ void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
         kmem_cache_free(dsm_cache_kmem, *dpc);
         *dpc = NULL;
     }
-};
+}
 EXPORT_SYMBOL(dsm_dealloc_dpc);
 
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
@@ -92,7 +94,7 @@ struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
     return dpc;
 }
 
-struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm, 
+struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
         unsigned long addr) {
     struct dsm_page_cache *dpc;
 

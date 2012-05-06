@@ -36,7 +36,7 @@ static void destroy_tx_buffer(struct conn_element *ele) {
             ib_dma_unmap_single(ele->cm_id->device, (u64) tx_buf[i].dsm_msg,
                     sizeof(struct dsm_message), DMA_TO_DEVICE);
 
-            vfree(tx_buf[i].mem);
+            kfree(tx_buf[i].mem);
             kfree(tx_buf[i].wrk_req->wr_ele);
             kfree(tx_buf[i].wrk_req);
         }
@@ -54,7 +54,7 @@ static void destroy_rx_buffer(struct conn_element *ele) {
         for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
             ib_dma_unmap_single(ele->cm_id->device, (u64) rx[i].dsm_msg,
                     sizeof(struct dsm_message), DMA_FROM_DEVICE);
-            vfree(rx[i].mem);
+            kfree(rx[i].mem);
 
             kfree(rx[i].recv_wrk_rq_ele);
         }
@@ -68,14 +68,14 @@ static void free_rdma_info(struct conn_element *ele) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) ele->rid.send_info,
                 sizeof(struct rdma_info), DMA_TO_DEVICE);
-        vfree(ele->rid.send_mem);
+        kfree(ele->rid.send_mem);
     }
 
     if (ele->rid.recv_info) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) ele->rid.recv_info,
                 sizeof(struct rdma_info), DMA_FROM_DEVICE);
-        vfree(ele->rid.recv_mem);
+        kfree(ele->rid.recv_mem);
     }
 
     if (ele->rid.remote_info) {
@@ -127,7 +127,7 @@ static int create_rx_buffer(struct conn_element *ele) {
     memset(rx, 0, (sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM));
 
     for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
-        rx[i].mem = vmalloc(sizeof(struct dsm_message));
+        rx[i].mem = kmalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (!rx[i].mem)
             goto err1;
         memset(rx[i].mem, 0, sizeof(struct dsm_message));
@@ -154,13 +154,13 @@ static int create_rx_buffer(struct conn_element *ele) {
     err3: ib_dma_unmap_single(ele->cm_id->device,
             (u64) (unsigned long) rx[i].dsm_msg, sizeof(struct dsm_message),
             DMA_FROM_DEVICE);
-    err2: vfree(rx[i].mem);
+    err2: kfree(rx[i].mem);
 
     err1: for (undo = 0; undo < i; ++undo) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) rx[undo].dsm_msg,
                 sizeof(struct dsm_message), DMA_FROM_DEVICE);
-        vfree(rx[undo].mem);
+        kfree(rx[undo].mem);
         kfree(rx[undo].recv_wrk_rq_ele);
     }
 
@@ -319,7 +319,7 @@ static int create_rdma_info(struct conn_element *ele) {
     int size = sizeof(struct rdma_info);
     struct rdma_info_data * rid = &ele->rid;
 
-    rid->send_mem = vmalloc(size);
+    rid->send_mem = kmalloc(size, GFP_KERNEL);
     if (unlikely(!rid->send_mem))
         goto send_mem_err;
 
@@ -328,7 +328,7 @@ static int create_rdma_info(struct conn_element *ele) {
     if (unlikely(!rid->send_info))
         goto send_info_err;
 
-    rid->recv_mem = vmalloc(size);
+    rid->recv_mem = kmalloc(size, GFP_KERNEL);
     if (unlikely(!rid->send_mem))
         goto recv_mem_err;
 
@@ -360,7 +360,7 @@ static int create_rdma_info(struct conn_element *ele) {
 
     recv_info_err: printk(
             ">[create_rdma_info] - ERROR : NO RECV INFO BUFFER\n");
-    vfree(rid->recv_mem);
+    kfree(rid->recv_mem);
 
     recv_mem_err: printk(
             ">[create_rdma_info] - no memory allocated for the reception buffer\n");
@@ -370,7 +370,7 @@ static int create_rdma_info(struct conn_element *ele) {
 
     send_info_err: printk(
             ">[create_rdma_info] - ERROR : NO SEND INFO BUFFER\n");
-    vfree(rid->send_mem);
+    kfree(rid->send_mem);
 
     send_mem_err: printk(
             ">[create_rdma_info] - no memory allocated for the sending buffer\n");
@@ -433,8 +433,7 @@ static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id) {
     tx_ele->wrk_req->wr_ele->wr.opcode = IB_WR_SEND;
     tx_ele->wrk_req->wr_ele->wr.send_flags = IB_SEND_SIGNALED;
     tx_ele->wrk_req->wr_ele->wr.num_sge = 1;
-    tx_ele->wrk_req->wr_ele->wr.sg_list =
-            (struct ib_sge *) &tx_ele->wrk_req->wr_ele->sg;
+    tx_ele->wrk_req->wr_ele->wr.sg_list = (struct ib_sge *) &tx_ele->wrk_req->wr_ele->sg;
 
     tx_ele->wrk_req->wr_ele->sg.addr = (u64) tx_ele->dsm_msg;
     tx_ele->wrk_req->wr_ele->sg.length = sizeof(struct dsm_message);
@@ -477,7 +476,7 @@ static int create_tx_buffer(struct conn_element *ele) {
     }
     ele->tx_buffer.tx_buf = tx_buff_e;
     for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
-        tx_buff_e[i].mem = vmalloc(sizeof(struct dsm_message));
+        tx_buff_e[i].mem = kmalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (unlikely(!tx_buff_e[i].mem))
             goto err1;
 
@@ -539,7 +538,7 @@ static int create_tx_buffer(struct conn_element *ele) {
             sizeof(struct dsm_message), DMA_TO_DEVICE);
     printk("> [create_tx_buffer][ERR] - Removed dsm_msg registration\n");
     err2: printk(">[create_tx_buffer] - 5\n");
-    vfree(tx_buff_e[i].mem);
+    kfree(tx_buff_e[i].mem);
     printk("> [create_tx_buffer][ERR] - Freed dsm_msg\n");
     ++ret;
 
@@ -550,7 +549,7 @@ static int create_tx_buffer(struct conn_element *ele) {
         ib_dma_unmap_single(ele->cm_id->device,
                 (u64) (unsigned long) tx_buff_e[undo].dsm_msg,
                 sizeof(struct dsm_message), DMA_TO_DEVICE);
-        vfree(tx_buff_e[undo].mem);
+        kfree(tx_buff_e[undo].mem);
     }
 
     memset(tx_buff_e, 0, sizeof(struct tx_buf_ele) * TX_BUF_ELEMENTS_NUM);
@@ -636,10 +635,8 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     if (ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))
         goto err_notify;
 
-    rcm->mr = ib_get_dma_mr(
-            rcm->pd,
-            IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ
-                    | IB_ACCESS_REMOTE_WRITE);
+    rcm->mr = ib_get_dma_mr(rcm->pd,
+            IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
     if (IS_ERR(rcm->mr))
         goto err_mr;
 
@@ -713,35 +710,36 @@ void reg_rem_info(struct conn_element *ele) {
     ele->rid.remote_info->flag = ele->rid.recv_info->flag;
 }
 
-void release_page_work(struct work_struct *work)
-{
-        struct page_pool_ele *ppe = NULL;
-        struct conn_element *ele;
-        struct page_pool *pp;
-        struct llist_node *node;
-        struct page *page = NULL;
+void release_page_work(struct work_struct *work) {
+    struct page_pool_ele * ppe = NULL;
+    struct conn_element * ele;
+    struct page_pool * pp;
+    struct llist_node *node;
+    struct page * page = NULL;
 
-        pp = container_of(work, struct page_pool ,page_release_work );
-        ele= container_of(pp, struct conn_element ,page_pool );
-        pp = &ele->page_pool;
+    pp= container_of(work, struct page_pool ,page_release_work );
+    ele= container_of(pp, struct conn_element ,page_pool );
+    pp = &ele->page_pool;
 
-        node = llist_del_all(&pp->page_release_list);
+    node = llist_del_all(&pp->page_release_list);
 
-        while (node) {
-                ppe = container_of(node, struct page_pool_ele, llnode);
-                if (ppe->page_buf) {
-                        ib_dma_unmap_page(ele->cm_id->device, 
-                            (u64) ppe->page_buf, PAGE_SIZE, DMA_BIDIRECTIONAL);
-                        ppe->page_buf = NULL;
-                }
-                page = ppe->mem_page;
-                if (page) {
-                        dsm_try_free_disk_swap(page);
-                        page_cache_release(page);
-                }
-                node = node->next;
-                llist_add(&ppe->llnode, &pp->page_empty_pool_list);
+    while (node) {
+        ppe= container_of(node ,struct page_pool_ele , llnode );
+        if (ppe->page_buf) {
+            ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
+                    PAGE_SIZE, DMA_BIDIRECTIONAL);
+            ppe->page_buf = NULL;
         }
+        page = ppe->mem_page;
+        if (page) {
+            lazy_free_swap(page);
+            page_cache_release(page);
+        }
+        node = node->next;
+        llist_add(&ppe->llnode, &pp->page_empty_pool_list);
+
+    }
+
 }
 
 void release_page(struct conn_element * ele, struct tx_buf_ele * tx_e) {
@@ -894,10 +892,8 @@ int setup_connection(struct conn_element *ele, int type) {
     ele->pd = ib_alloc_pd(ele->cm_id->device);
     if (!ele->pd)
         goto err1;
-    ele->mr = ib_get_dma_mr(
-            ele->pd,
-            IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ
-                    | IB_ACCESS_REMOTE_WRITE);
+    ele->mr = ib_get_dma_mr(ele->pd,
+            IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
     if (!ele->mr)
         goto err2;
 
@@ -960,8 +956,8 @@ struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *ele) {
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
     if (llnode) {
-        tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-        atomic_set(&tx_e->used, 1);
+tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+                                                                                                        atomic_set(&tx_e->used, 1);
     }
 
     return tx_e;
@@ -977,8 +973,8 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
 
     if (llnode) {
-        tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-        atomic_set(&tx_e->used, 1);
+tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+                                                                                                        atomic_set(&tx_e->used, 1);
     }
 
     return tx_e;
@@ -1021,21 +1017,18 @@ int destroy_rcm(struct dsm_module_state *dsm_state)
 
 static void remove_svms_for_conn(struct conn_element *ele)
 {
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
-        struct dsm *dsm;
-        struct subvirtual_machine *svm;
-        struct list_head *pos, *n, *it;
+    struct dsm *dsm;
+    struct subvirtual_machine *svm;
+    struct list_head *pos, *n, *it;
 
-        list_for_each (pos, &dsm_state->dsm_list) {
-                dsm = list_entry(pos, struct dsm, dsm_ptr);
-                list_for_each_safe (it, n, &dsm->svm_list) {
-                        svm = list_entry(it, struct subvirtual_machine, 
-                                        svm_ptr);
-                        if (svm->ele == ele)
-                                remove_svm(dsm->dsm_id, svm->svm_id);
-                }
+    list_for_each (pos, &get_dsm_module_state()->dsm_list) {
+        dsm = list_entry(pos, struct dsm, dsm_ptr);
+        list_for_each_safe (it, n, &dsm->svm_list) {
+            svm = list_entry(it, struct subvirtual_machine, svm_ptr);
+            if (svm->ele == ele)
+                remove_svm(dsm->dsm_id, svm->svm_id);
         }
-                      
+    }
 }
 
 int destroy_connection(struct conn_element *ele)
@@ -1072,6 +1065,7 @@ int destroy_connection(struct conn_element *ele)
         }
 
         erase_rb_conn(ele);
+        delete_connection_sysfs_entry(&ele->sysfs);
         vfree(ele);
 
         return ret;
@@ -1133,31 +1127,30 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *svm) {
 static void release_dpc_element(struct subvirtual_machine *svm,
         struct dsm_page_cache *dpc, struct tx_buf_ele *tx_e)
 {
-        int i;
+    int i;
 
-        atomic_dec(&dpc->nproc);
-        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                if (atomic_cmpxchg(&dpc->found, -1, -2) == -1) {
-                        for (i = 0; i < dpc->svms.num; i++) {
-                                page_cache_release(dpc->pages[i]);
-                                set_page_private(dpc->pages[i], 0);
-                                SetPageUptodate(dpc->pages[i]);
-                        }
-                        unlock_page(dpc->pages[0]);
-                }
-                dsm_cache_release(dpc->svm, dpc->addr);
-                page_cache_release(dpc->pages[0]);
-                dsm_dealloc_dpc(&dpc);
+    atomic_dec(&dpc->nproc);
+    if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        if (atomic_cmpxchg(&dpc->found, -1, -2) == -1) {
+            for (i = 0; i < dpc->svms.num; i++) {
+                page_cache_release(dpc->pages[i]);
+                set_page_private(dpc->pages[i], 0);
+                SetPageUptodate(dpc->pages[i]);
+            }
+            unlock_page(dpc->pages[0]);
         }
-        if (tx_e && tx_e->wrk_req->dst_addr)
-            ((struct page_pool_ele *) tx_e->wrk_req->dst_addr)->mem_page = 0;
+        dsm_cache_release(dpc->svm, dpc->addr);
+        page_cache_release(dpc->pages[0]);
+        dsm_dealloc_dpc(&dpc);
+    }
+    if (tx_e && tx_e->wrk_req->dst_addr)
+        ((struct page_pool_ele *) tx_e->wrk_req->dst_addr)->mem_page = 0;
 }
 
 void release_push_elements(struct subvirtual_machine *svm,
-        struct subvirtual_machine *remote_svm) 
-{
+        struct subvirtual_machine *remote_svm) {
     struct rb_node *node;
-    struct dsm_page_cache *dpc; 
+    struct dsm_page_cache *dpc;
     int i;
 
     write_seqlock(&svm->push_cache_lock);
@@ -1172,11 +1165,9 @@ void release_push_elements(struct subvirtual_machine *svm,
         }
         continue;
 
-        surrogate:
-        if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
+        surrogate: if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
             atomic_dec(&dpc->nproc);
-            release:
-            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+            release: if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
                 page_cache_release(dpc->pages[0]);
                 set_page_private(dpc->pages[0], 0);
                 dsm_dealloc_dpc(&dpc);
@@ -1196,9 +1187,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
     for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
         msg = tx_buf[i].dsm_msg;
 
-        if (msg->dsm_id == svm->dsm->dsm_id
-                && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)
-                && atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
+        if (msg->dsm_id == svm->dsm->dsm_id && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) && atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
             release_dpc_element(svm, tx_buf[i].wrk_req->dpc, &tx_buf[i]);
             release_page(ele, &tx_buf[i]);
             release_tx_element(ele, &tx_buf[i]);

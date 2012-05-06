@@ -26,8 +26,7 @@
 #include <linux/swapops.h>
 #include <asm/atomic.h>
 #include <linux/llist.h>
-
-//#define ULONG_MAX       0xFFFFFFFFFFFFFFFF
+#include <linux/dsm.h>
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
@@ -377,7 +376,6 @@ struct dsm_request {
 };
 
 struct dsm_module_state {
-
     struct rcm * rcm;
     struct mutex dsm_state_mutex;
     struct radix_tree_root dsm_tree_root;
@@ -406,37 +404,6 @@ struct dsm_page_cache {
     unsigned long bitmap;
 
     struct rb_node rb_node;
-};
-
-/*
- * CTL info
- */
-#define DSM_IO                          0xFF
-#define DSM_SVM                         _IOW(DSM_IO, 0xA0, struct svm_data)
-#define DSM_CONNECT                     _IOW(DSM_IO, 0xA1, struct svm_data)
-#define DSM_UNMAP_RANGE                 _IOW(DSM_IO, 0xA2, struct unmap_data)
-#define DSM_MR                          _IOW(DSM_IO, 0xA3, struct unmap_data)
-#define PAGE_SWAP                       _IOW(DSM_IO, 0xA4, struct dsm_message)
-#define UNMAP_PAGE                      _IOW(DSM_IO, 0xA5, struct unmap_data)
-#define DSM_GET_STAT                    _IOW(DSM_IO, 0xA6, struct svm_data)
-#define DSM_GEN_STAT                    _IOW(DSM_IO, 0xA7, struct svm_data)
-#define DSM_TRY_PUSH_BACK_PAGE          _IOW(DSM_IO, 0xA8, struct unmap_data)
-#define DSM_DSM                         _IOW(DSM_IO, 0xA9, struct svm_data)
-
-struct svm_data {
-    u32 dsm_id;
-    u32 svm_id;
-    unsigned long offset;
-    char *ip;
-    int port;
-    int local_port;
-};
-
-struct unmap_data {
-    u32 dsm_id;
-    u32 *svm_ids;
-    unsigned long addr;
-    size_t sz;
 };
 
 struct dsm_swp_data {

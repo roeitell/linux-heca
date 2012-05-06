@@ -5,6 +5,7 @@
  *      Author: Benoit
  */
 
+#include <linux/list.h>
 #include <dsm/dsm_module.h>
 
 static int rcm_disconnect(struct rcm *rcm)
@@ -1195,25 +1196,34 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
 }
 
 void release_svm_tx_requests(struct subvirtual_machine *svm,
-        struct tx_buffer *tx) {
+        struct tx_buffer *tx)
+{
     struct list_head del_queue;
     struct list_head *pos, *n;
-    struct dsm_request *req = NULL;
+
+    BUG_ON(!svm);
+    BUG_ON(!tx);
 
     INIT_LIST_HEAD(&del_queue);
 
     spin_lock(&tx->request_queue_lock);
     list_for_each_safe(pos, n, &tx->request_queue) {
+	struct dsm_request *req;
+
         req = list_entry(pos, struct dsm_request, queue);
+	BUG_ON(!req);
         if (req->svm == svm || req->fault_svm == svm) {
             list_del(&req->queue);
             list_add_tail(&req->queue, &del_queue);
-        }
+	}
     }
     spin_unlock(&tx->request_queue_lock);
 
     list_for_each_safe(pos, n, &del_queue) {
+	struct dsm_request *req;
+
         req = list_entry(pos, struct dsm_request, queue);
+	BUG_ON(!req);
         release_dpc_element(svm, req->dpc, NULL);
         release_dsm_request(req);
     }

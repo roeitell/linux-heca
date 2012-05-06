@@ -5,6 +5,7 @@
  *      Author: Benoit
  */
 
+#include <linux/list.h>
 #include <dsm/dsm_module.h>
 
 static char *ip = 0;
@@ -40,14 +41,11 @@ void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
     reset_msg_stats(&sysfs->tx_stats);
 }
 
-void remove_svm(u32 dsm_id, u32 svm_id) {
+void remove_svm(u32 dsm_id, u32 svm_id)
+{
     struct dsm_module_state *dsm_state = get_dsm_module_state();
-    struct rb_root *root;
-    struct rb_node *node;
-    struct conn_element *ele;
     struct dsm *dsm;
-    struct subvirtual_machine *svm = NULL, *local_svm;
-    struct list_head *pos;
+    struct subvirtual_machine *svm = NULL;
 
     mutex_lock(&dsm_state->dsm_state_mutex);
     dsm = find_dsm(dsm_id);
@@ -64,6 +62,8 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
                 (unsigned long) svm->priv->mm);
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
+    if (!dsm)
+	return;
 
     atomic_set(&svm->status, DSM_SVM_OFFLINE);
 
@@ -77,18 +77,30 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
 
     release_svm_from_mr_descriptors(svm);
     if (svm->priv) {
+	struct rb_root *root;
+	struct rb_node *node;
+
+	BUG_ON(!dsm_state->rcm);
         root = &dsm_state->rcm->root_conn;
         for (node = rb_first(root); node; node = rb_next(node)) {
+	    struct conn_element *ele;
+
             ele = rb_entry(node, struct conn_element, rb_node);
+	    BUG_ON(!ele);
             release_svm_tx_requests(svm, &ele->tx_buffer);
             release_svm_tx_elements(svm, ele);
         }
         release_push_elements(svm, NULL);
     } else if (svm->ele) {
+	struct list_head *pos;
+
         release_svm_tx_requests(svm, &svm->ele->tx_buffer);
         release_svm_tx_elements(svm, svm->ele);
         list_for_each (pos, &svm->dsm->svm_list) {
+	    struct subvirtual_machine *local_svm;
+
             local_svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
+	    BUG_ON(!local_svm);
             if (!local_svm->priv)
                 continue;
             release_push_elements(local_svm, svm);
@@ -100,8 +112,8 @@ void remove_svm(u32 dsm_id, u32 svm_id) {
 
     kfree(svm);
 
-    out: if (dsm)
-        mutex_unlock(&dsm->dsm_mutex);
+out:
+    mutex_unlock(&dsm->dsm_mutex);
 }
 
 void remove_dsm(struct dsm *dsm) {

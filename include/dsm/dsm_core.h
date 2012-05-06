@@ -35,7 +35,7 @@
 
 #include <dsm/dsm_def.h>
 
-#define DSM_PAGE_CACHE_DEFAULT  4 /* default alloc of pages in cache */
+#define DSM_PAGE_CACHE_DEFAULT  3 /* default alloc of pages in cache */
 
 #define PULL_TAG        1  /* pulling the page */
 #define PREFETCH_TAG    2  /* pulling the page for prefetch */

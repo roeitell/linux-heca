@@ -302,6 +302,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
 unlock:
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
         lru_cache_add_anon(page);
+        lru_add_drain();
 
         /*
          * First response to arrive can free all the redundant pages. The found
@@ -516,10 +517,14 @@ static struct dsm_page_cache *dsm_cache_add_send(
                         svms.pp[r], private, tag, r);
             }
             if (prefetch) {
+                /*
+                 * Naive prefetch disabled; will be re-inserted via John's code
+                 *
                 for (r = 1; r < 40; r++) {
                     get_dsm_page(mm, addr + r * PAGE_SIZE, fault_svm, 0,
                             PREFETCH_TAG);
                 }
+                 */
             }
             return new_dpc;
         }
@@ -818,6 +823,9 @@ out_nomap:
 
 out_page: 
     unlock_page(found_page);
+    if (i)
+        unlock_page(dpc->pages[0]);
+
     page_cache_release(found_page);
     if (swapcache) {
         unlock_page(swapcache);

@@ -416,7 +416,8 @@ EXPORT_SYMBOL(dsm_extract_page_from_remote);
 
 struct page *dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
         struct svm_list svms, struct mm_struct *mm, unsigned long addr,
-        u32 descriptor) {
+        u32 descriptor)
+{
     struct dsm_pte_data pd;
     struct dsm_page_cache *dpc;
     pte_t pte_entry, *pte;

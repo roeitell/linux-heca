@@ -495,7 +495,6 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
     page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
     up_read(&mm->mmap_sem);
 
-printk(KERN_ALERT "%p\n", page); 
     if (page) {
         for (i = 0; i < svms.num; i++) {
             if (svms.pp[i]) {

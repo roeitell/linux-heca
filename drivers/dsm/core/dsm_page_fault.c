@@ -586,17 +586,14 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
         pte = pte_offset_map(pmd, addr);
         pte_entry = *pte;
 
-        if (unlikely(!pte_present(pte_entry))) {
-            if (!pte_none(pte_entry)) {
-                swp_e = pte_to_swp_entry(pte_entry);
-                if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
-                    dsd = swp_entry_to_dsm_data(swp_e);
-                    if (!dsd.flags & DSM_INFLIGHT) {
-                        dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
-                                2, tag, vma, mm, private, 0, pte_entry, pte);
-                        dsm_stats_inc(
-                                &fault_svm->svm_sysfs.nb_prefetch_attempt);
-                    }
+        if (!pte_present(pte_entry) && !pte_none(pte_entry)) {
+            swp_e = pte_to_swp_entry(pte_entry);
+            if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
+                dsd = swp_entry_to_dsm_data(swp_e);
+                if (!dsd.flags & DSM_INFLIGHT) {
+                    dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
+                            2, tag, vma, mm, private, 0, pte_entry, pte);
+                    dsm_stats_inc(&fault_svm->svm_sysfs.nb_prefetch_attempt);
                 }
             }
         }

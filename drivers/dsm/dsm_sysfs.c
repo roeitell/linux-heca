@@ -78,7 +78,7 @@ static struct attribute_group rx_connection_attr_group = { .attrs = rx_attrs };
 
 
 
-static void dsm_kobject_type_release(struct kobject * kobj)
+static void dsm_kobject_type_release(struct kobject *kobj)
 {
     printk("Releasing kobject %p\n", kobj);
 }

@@ -8,20 +8,24 @@
 
 static struct dsm_module_state *dsm_state;
 
-struct dsm_module_state * create_dsm_module_state(void) {
+struct dsm_module_state *create_dsm_module_state(void)
+{
     dsm_state = kzalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
     BUG_ON(!(dsm_state));
     INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
     INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL);
     INIT_LIST_HEAD(&dsm_state->dsm_list);
     mutex_init(&dsm_state->dsm_state_mutex);
-    dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
-    dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
+    dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq",
+            WQ_HIGHPRI | WQ_MEM_RECLAIM, 0);
+    dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq",
+            WQ_HIGHPRI | WQ_MEM_RECLAIM, 0);
     return dsm_state;
 }
 EXPORT_SYMBOL(create_dsm_module_state);
 
-void destroy_dsm_module_state(void) {
+void destroy_dsm_module_state(void)
+{
     mutex_destroy(&dsm_state->dsm_state_mutex);
     destroy_workqueue(dsm_state->dsm_tx_wq);
     destroy_workqueue(dsm_state->dsm_rx_wq);
@@ -29,12 +33,14 @@ void destroy_dsm_module_state(void) {
 }
 EXPORT_SYMBOL(destroy_dsm_module_state);
 
-struct dsm_module_state * get_dsm_module_state(void) {
+inline struct dsm_module_state *get_dsm_module_state(void)
+{
     return dsm_state;
 }
 EXPORT_SYMBOL(get_dsm_module_state);
 
-struct dsm *find_dsm(u32 id) {
+struct dsm *find_dsm(u32 id)
+{
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct dsm *dsm;
     struct dsm **dsmp;
@@ -42,7 +48,8 @@ struct dsm *find_dsm(u32 id) {
 
     rcu_read_lock();
     root = &dsm_state->dsm_tree_root;
-    repeat: dsm = NULL;
+repeat: 
+    dsm = NULL;
     dsmp = (struct dsm **) radix_tree_lookup_slot(root, (unsigned long) id);
     if (dsmp) {
         dsm = radix_tree_deref_slot((void **) dsmp);
@@ -53,18 +60,20 @@ struct dsm *find_dsm(u32 id) {
                 goto repeat;
         }
     }
-    out: rcu_read_unlock();
+out: 
+    rcu_read_unlock();
     return dsm;
 }
 EXPORT_SYMBOL(find_dsm);
 
 static struct subvirtual_machine *_find_svm_in_tree(
-        struct radix_tree_root *root, unsigned long svm_id) {
-
+        struct radix_tree_root *root, unsigned long svm_id)
+{
     struct subvirtual_machine *svm;
     struct subvirtual_machine **svmp;
 
-    repeat: svm = NULL;
+repeat:
+    svm = NULL;
     svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root,
             (unsigned long) svm_id);
     if (svmp) {
@@ -77,11 +86,12 @@ static struct subvirtual_machine *_find_svm_in_tree(
         }
     }
 
-    out: return svm;
+out: 
+    return svm;
 }
-;
 
-struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
+struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id)
+{
     struct subvirtual_machine *svm;
 
     rcu_read_lock();
@@ -93,7 +103,8 @@ struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id) {
 EXPORT_SYMBOL(find_svm);
 
 struct subvirtual_machine *find_local_svm_in_dsm(struct dsm * dsm,
-        struct mm_struct *mm) {
+        struct mm_struct *mm)
+{
     struct subvirtual_machine *svm;
 
     rcu_read_lock();
@@ -104,7 +115,8 @@ struct subvirtual_machine *find_local_svm_in_dsm(struct dsm * dsm,
 }
 EXPORT_SYMBOL(find_local_svm_in_dsm);
 
-struct subvirtual_machine *find_local_svm(struct mm_struct *mm) {
+struct subvirtual_machine *find_local_svm(struct mm_struct *mm)
+{
     struct subvirtual_machine *svm;
 
     rcu_read_lock();
@@ -116,11 +128,11 @@ struct subvirtual_machine *find_local_svm(struct mm_struct *mm) {
 }
 EXPORT_SYMBOL(find_local_svm);
 
-void insert_rb_conn(struct conn_element *ele) {
+void insert_rb_conn(struct conn_element *ele)
+{
     struct rcm *rcm = get_dsm_module_state()->rcm;
     struct rb_root *root;
-    struct rb_node **new;
-    struct rb_node *parent = NULL;
+    struct rb_node **new, *parent = NULL;
     struct conn_element *this;
 
     write_seqlock(&rcm->conn_lock);
@@ -137,12 +149,12 @@ void insert_rb_conn(struct conn_element *ele) {
     rb_link_node(&ele->rb_node, parent, new);
     rb_insert_color(&ele->rb_node, root);
     write_sequnlock(&rcm->conn_lock);
-
 }
 EXPORT_SYMBOL(insert_rb_conn);
 
 // Return NULL if no element contained within tree.
-struct conn_element* search_rb_conn(int node_ip) {
+struct conn_element *search_rb_conn(int node_ip)
+{
     struct rcm *rcm = get_dsm_module_state()->rcm;
     struct rb_root *root;
     struct rb_node *node;
@@ -168,7 +180,8 @@ struct conn_element* search_rb_conn(int node_ip) {
 }
 EXPORT_SYMBOL(search_rb_conn);
 
-void erase_rb_conn(struct conn_element *ele) {
+void erase_rb_conn(struct conn_element *ele)
+{
     struct rcm *rcm = get_dsm_module_state()->rcm;
 
     write_seqlock(&rcm->conn_lock);
@@ -177,10 +190,10 @@ void erase_rb_conn(struct conn_element *ele) {
 }
 EXPORT_SYMBOL(erase_rb_conn);
 
-void insert_mr(struct dsm *dsm, struct memory_region *mr) {
+void insert_mr(struct dsm *dsm, struct memory_region *mr)
+{
     struct rb_root *root = &dsm->mr_tree_root;
-    struct rb_node **new = &root->rb_node;
-    struct rb_node *parent = NULL;
+    struct rb_node **new = &root->rb_node, *parent = NULL;
     struct memory_region *this;
     write_seqlock(&dsm->mr_seq_lock);
     while (*new) {
@@ -199,7 +212,8 @@ void insert_mr(struct dsm *dsm, struct memory_region *mr) {
 EXPORT_SYMBOL(insert_mr);
 
 // Return NULL if no element contained within tree.
-struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
+struct memory_region *search_mr(struct dsm *dsm, unsigned long addr)
+{
     struct rb_root *root = &dsm->mr_tree_root;
     struct rb_node *node = root->rb_node;
     struct memory_region *this = NULL;
@@ -221,12 +235,13 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr) {
 
         }
     } while (read_seqretry(&dsm->mr_seq_lock, seq));
-    return this;
 
+    return this;
 }
 EXPORT_SYMBOL(search_mr);
 
-int destroy_mrs(struct dsm *dsm, int force) {
+int destroy_mrs(struct dsm *dsm, int force)
+{
     struct rb_root *root = &dsm->mr_tree_root;
     struct rb_node *node;
     struct memory_region *mr;
@@ -248,8 +263,8 @@ int destroy_mrs(struct dsm *dsm, int force) {
         rb_erase(&mr->rb_node, root);
         kfree(mr);
         ret++;
-
-        next: continue;
+next:
+        continue;
     }
     write_sequnlock(&dsm->mr_seq_lock);
 
@@ -262,14 +277,16 @@ static struct svm_list *sdsc;
 static u32 sdsc_max;
 static spinlock_t sdsc_lock;
 
-void dsm_init_descriptors(void) {
+void dsm_init_descriptors(void)
+{
     sdsc = kzalloc(sizeof(struct svm_list) * 256, GFP_KERNEL);
     sdsc_max = 256;
     spin_lock_init(&sdsc_lock);
 }
 EXPORT_SYMBOL(dsm_init_descriptors);
 
-void dsm_destroy_descriptors(void) {
+void dsm_destroy_descriptors(void)
+{
     int i;
 
     for (i = 0; i < sdsc_max; i++)
@@ -279,7 +296,8 @@ void dsm_destroy_descriptors(void) {
 }
 EXPORT_SYMBOL(dsm_destroy_descriptors);
 
-static void dsm_expand_descriptors(void) {
+static void dsm_expand_descriptors(void)
+{
     struct svm_list *nsdsc, *tmp = sdsc;
 
     nsdsc = kzalloc(sizeof(struct svm_list) * sdsc_max * 2, GFP_KERNEL);
@@ -293,7 +311,8 @@ static void dsm_expand_descriptors(void) {
     kfree(tmp);
 }
 
-static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
+static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids)
+{
     u32 j;
 
     for (j = 0; svm_ids[j]; j++)
@@ -308,7 +327,8 @@ static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
  * svm_ids should be NULL terminated
  *
  */
-u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
+u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
+{
     u32 i, j;
 
     spin_lock(&sdsc_lock);
@@ -333,12 +353,14 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
 ;
 EXPORT_SYMBOL(dsm_get_descriptor);
 
-inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags) {
+inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags)
+{
     u64 val = dsc;
     return val_to_dsm_entry((val << 24) | flags);
 }
 
-inline struct svm_list dsm_descriptor_to_svms(u32 dsc) {
+inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
+{
     struct svm_list svms;
 
     rcu_read_lock();
@@ -348,7 +370,8 @@ inline struct svm_list dsm_descriptor_to_svms(u32 dsc) {
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svms);
 
-inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry) {
+inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry)
+{
     struct dsm_swp_data dsd;
     u64 val = dsm_entry_to_val(entry);
     int i;
@@ -363,35 +386,28 @@ inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry) {
     }
     dsd.dsm = NULL;
 
-    out: return dsd;
+out:
+    return dsd;
 }
 
-inline int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2) {
-
+inline int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2)
+{
     u64 val = dsm_entry_to_val(entry) >> 24;
     u64 val2 = dsm_entry_to_val(entry2) >> 24;
-
-    if (val == val2)
-        return 1;
-    return 0;
-
+    return val == val2;
 }
 
 void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
-        pte_t * pte, int pos) {
-    u64 val;
-    u32 flags;
-    swp_entry_t entry;
-    pte_t tmp_pte;
+        pte_t *pte, int pos)
+{
+    pte_t tmp_pte = *pte;
+    swp_entry_t entry = pte_to_swp_entry(tmp_pte);
+    u64 val = dsm_entry_to_val(entry);
+    u32 flags = val & 0xFFFFFF;
 
-    tmp_pte = *pte;
-    entry = pte_to_swp_entry(tmp_pte);
-    val = dsm_entry_to_val(entry);
-    flags = val & 0xFFFFFF;
     clear_bit(pos, (volatile long unsigned int *) &flags);
     val = val >> 24;
     set_pte_at(mm, addr, pte,
             swp_entry_to_pte(dsm_descriptor_to_swp_entry(val, flags)));
-
 }
 EXPORT_SYMBOL(clear_dsm_swp_entry_flag);

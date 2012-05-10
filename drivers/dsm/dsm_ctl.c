@@ -40,7 +40,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
     if (!dsm)
-	return;
+        return;
 
     atomic_set(&svm->status, DSM_SVM_OFFLINE);
 
@@ -54,30 +54,30 @@ void remove_svm(u32 dsm_id, u32 svm_id)
 
     release_svm_from_mr_descriptors(svm);
     if (svm->priv) {
-	struct rb_root *root;
-	struct rb_node *node;
+        struct rb_root *root;
+        struct rb_node *node;
 
-	BUG_ON(!dsm_state->rcm);
+        BUG_ON(!dsm_state->rcm);
         root = &dsm_state->rcm->root_conn;
         for (node = rb_first(root); node; node = rb_next(node)) {
-	    struct conn_element *ele;
+            struct conn_element *ele;
 
             ele = rb_entry(node, struct conn_element, rb_node);
-	    BUG_ON(!ele);
+            BUG_ON(!ele);
             release_svm_tx_requests(svm, &ele->tx_buffer);
             release_svm_tx_elements(svm, ele);
         }
         release_push_elements(svm, NULL);
     } else if (svm->ele) {
-	struct list_head *pos;
+        struct list_head *pos;
 
         release_svm_tx_requests(svm, &svm->ele->tx_buffer);
         release_svm_tx_elements(svm, svm->ele);
         list_for_each (pos, &svm->dsm->svm_list) {
-	    struct subvirtual_machine *local_svm;
+            struct subvirtual_machine *local_svm;
 
             local_svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-	    BUG_ON(!local_svm);
+            BUG_ON(!local_svm);
             if (!local_svm->priv)
                 continue;
             release_push_elements(local_svm, svm);
@@ -124,8 +124,7 @@ static int register_dsm(struct private_data *priv_data, void __user *argp)
 {
     int r = -EFAULT;
     struct svm_data svm_info;
-    struct dsm * found_dsm, *new_dsm = NULL;
-
+    struct dsm *found_dsm, *new_dsm = NULL;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
@@ -266,12 +265,11 @@ out:
 
 static int connect_svm(struct private_data *priv_data, void __user *argp)
 {
-    int r = -EFAULT;
+    int r = -EFAULT, ip_addr;
     struct dsm *dsm;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
     struct svm_data svm_info;
     struct conn_element *cele;
-    int ip_addr;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
@@ -575,10 +573,10 @@ module_init(dsm_init);
 
 static void dsm_exit(void)
 {
-    struct dsm * dsm = NULL;
+    struct dsm *dsm = NULL;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     while (!list_empty(&dsm_state->dsm_list)) {
-        dsm = list_first_entry(&dsm_state->dsm_list, struct dsm, dsm_ptr );
+        dsm = list_first_entry(&dsm_state->dsm_list, struct dsm, dsm_ptr);
         remove_dsm(dsm);
     }
 

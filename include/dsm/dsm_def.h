@@ -85,21 +85,21 @@ struct con_element_sysfs {
     struct msg_stats tx_stats;
 };
 
-struct dsm_page_stats {
-    atomic64_t nb_page_requested;
-    atomic64_t nb_page_request_success;
-    atomic64_t nb_page_sent;
-    atomic64_t nb_page_pull;
-    atomic64_t nb_page_pull_fail;
-    atomic64_t nb_page_push_request;
-    atomic64_t nb_page_redirect;
-    atomic64_t nb_page_requested_prefetch;
-    atomic64_t nb_err;
-};
-
 struct svm_sysfs {
     struct kobject svm_kobject;
-    struct dsm_page_stats stats;
+
+    atomic64_t nb_remote_fault;
+    atomic64_t nb_remote_fault_success;
+    atomic64_t nb_push_attempt;
+    atomic64_t nb_push_success;
+    atomic64_t nb_prefetch_attempt;
+    atomic64_t nb_prefetch_success;
+    atomic64_t nb_prefetch_failed_response;
+    atomic64_t nb_push_failed_response;
+    atomic64_t nb_answer_fault;
+    atomic64_t nb_answer_fault_fail;
+    atomic64_t nb_answer_attempt;
+    atomic64_t nb_answer_attempt_fail;
 };
 
 struct dsm {

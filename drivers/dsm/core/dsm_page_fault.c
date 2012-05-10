@@ -289,7 +289,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
 {
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct page *page = tx_e->wrk_req->dst_addr->mem_page;
-    int i, j;
+    int i;
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
 
@@ -302,20 +302,20 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
 unlock:
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
         lru_cache_add_anon(page);
-        lru_add_drain();
 
         /*
          * First response to arrive can free all the redundant pages. The found
          * page has already been added to lru, so it won't be freed.
          */
-        for (j = 0; j < dpc->svms.num; j++) {
-            if (likely(dpc->pages[j])) {
-                set_page_private(dpc->pages[j], 0);
-                SetPageUptodate(dpc->pages[j]);
-                page_cache_release(dpc->pages[j]);
+        for (i = 0; i < dpc->svms.num; i++) {
+            if (likely(dpc->pages[i])) {
+                set_page_private(dpc->pages[i], 0);
+                SetPageUptodate(dpc->pages[i]);
+                page_cache_release(dpc->pages[i]);
             }
         }
         unlock_page(dpc->pages[0]);
+        lru_add_drain();
     }
 
     dpc_nproc_dec(&dpc, dpc->tag != PREFETCH_TAG);
@@ -349,7 +349,9 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
             SetPageUptodate(page);
 
             unlock_page(dpc->pages[0]);
-            dsm_stats_inc(&dpc->svm->svm_sysfs.stats.nb_page_pull_fail);
+            dsm_stats_inc(dpc->tag == PREFETCH_TAG?
+                    &dpc->svm->svm_sysfs.nb_prefetch_failed_response :
+                    &dpc->svm->svm_sysfs.nb_push_failed_response);
 
             dsm_cache_release(dpc->svm, addr);
             dpc_nproc_dec(&dpc, 1);
@@ -358,6 +360,9 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
     }
 
     r = dsm_pull_req_complete(tx_e);
+
+    if (dpc->tag == PREFETCH_TAG)
+        dsm_stats_inc(&dpc->svm->svm_sysfs.nb_prefetch_success);
 
     /*
      * Get_user_pages for addr will trigger a page fault, and the faulter
@@ -395,13 +400,8 @@ static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
     if (unlikely(!page))
         goto out;
 
-    if (tag == PULL_TRY_TAG) {
-        func = dsm_try_pull_req_complete;
-        dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_requested);
-    } else { /* prefetch or pull */
-        func = dsm_pull_req_complete;
-        dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_pull);
-    }
+    func = (tag == PULL_TRY_TAG)?
+        dsm_try_pull_req_complete : dsm_pull_req_complete;
 
     page_cache_get(page);
     set_page_private(page, private);
@@ -493,7 +493,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
 
             __set_page_locked(page);
             page_cache_get(page);
-            set_page_private(page, 0);
+            set_page_private(page, private);
             SetPageSwapBacked(page);
             new_dpc->pages[0] = page;
         }
@@ -516,16 +516,17 @@ static struct dsm_page_cache *dsm_cache_add_send(
                 get_remote_dsm_page(vma, norm_addr, new_dpc, fault_svm,
                         svms.pp[r], private, tag, r);
             }
+
+            /*
+             * Naive prefetch disabled; will be re-inserted via John's code
+             *
             if (prefetch) {
-                /*
-                 * Naive prefetch disabled; will be re-inserted via John's code
-                 *
                 for (r = 1; r < 40; r++) {
                     get_dsm_page(mm, addr + r * PAGE_SIZE, fault_svm, 0,
                             PREFETCH_TAG);
                 }
-                 */
             }
+             */
             return new_dpc;
         }
     } while (r != -ENOMEM);
@@ -594,7 +595,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                         dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                                 2, tag, vma, mm, private, 0, pte_entry, pte);
                         dsm_stats_inc(
-                                &fault_svm->svm_sysfs.stats.nb_page_requested_prefetch);
+                                &fault_svm->svm_sysfs.nb_prefetch_attempt);
                     }
                 }
             }
@@ -702,6 +703,7 @@ retry:
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,
                 PULL_TAG, vma, mm, 0, flags & FAULT_FLAG_ALLOW_RETRY, orig_pte,
                 page_table);
+        dsm_stats_inc(&fault_svm->svm_sysfs.nb_remote_fault);
         if (unlikely(!dpc)) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
             if (likely(pte_same(*page_table, orig_pte)))
@@ -812,7 +814,7 @@ lock:
     }
 
     update_mmu_cache(vma, address, page_table);
-    dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_request_success);
+    dsm_stats_inc(&fault_svm->svm_sysfs.nb_remote_fault_success);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
     goto out;

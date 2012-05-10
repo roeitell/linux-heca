@@ -9,22 +9,26 @@
 
 static struct kmem_cache *kmem_request_cache;
 
-void init_kmem_request_cache(void) {
+void init_kmem_request_cache(void)
+{
     kmem_request_cache = kmem_cache_create("dsm_request",
             sizeof(struct dsm_request), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
             NULL);
 }
 
-void destroy_kmem_request_cache(void) {
+void destroy_kmem_request_cache(void)
+{
     kmem_cache_destroy(kmem_request_cache);
 }
 
-void release_dsm_request(struct dsm_request *req) {
+void release_dsm_request(struct dsm_request *req)
+{
     kmem_cache_free(kmem_request_cache, req);
 }
 
 static inline void queue_dsm_request(struct conn_element *ele,
-        struct dsm_request *req) {
+        struct dsm_request *req)
+{
     spin_lock(&ele->tx_buffer.request_queue_lock);
     list_add_tail(&req->queue, &ele->tx_buffer.request_queue);
     spin_unlock(&ele->tx_buffer.request_queue_lock);
@@ -35,7 +39,8 @@ static inline void add_dsm_request(struct tx_buffer *tx,
         struct conn_element *ele, u16 type,
         struct subvirtual_machine *fault_svm, struct subvirtual_machine *svm,
         uint64_t addr, int (*func)(struct tx_buf_ele *),
-        struct dsm_page_cache *dpc, struct page *page) {
+        struct dsm_page_cache *dpc, struct page *page)
+{
     struct dsm_request *req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
     req->type = type;
     req->fault_svm = fault_svm;
@@ -48,7 +53,8 @@ static inline void add_dsm_request(struct tx_buffer *tx,
 }
 
 static inline void add_dsm_request_msg(struct conn_element *ele, u16 type,
-        struct dsm_message *msg) {
+        struct dsm_message *msg)
+{
     struct dsm_request *req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
     req->type = type;
     req->func = NULL;
@@ -57,14 +63,13 @@ static inline void add_dsm_request_msg(struct conn_element *ele, u16 type,
 }
 
 static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
-        struct subvirtual_machine *fault_svm, uint64_t addr) {
+        struct subvirtual_machine *fault_svm, uint64_t addr)
+{
 
     struct conn_element * ele = svm->ele;
     struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e;
     int ret = 0;
-
-    dsm_stats_inc(&fault_svm->svm_sysfs.stats.nb_page_push_request);
 
     if (list_empty(&tx->request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);
@@ -79,11 +84,13 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
 
     add_dsm_request(tx, ele, REQUEST_PAGE_PULL, fault_svm, svm, addr, NULL,
             NULL, NULL);
-    out: return ret;
+out: 
+    return ret;
 }
 
 static int send_svm_status_update(struct conn_element *ele,
-        struct rx_buf_ele *rx_buf_e) {
+        struct rx_buf_ele *rx_buf_e)
+{
     struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e = NULL;
     int ret = 0;
@@ -107,7 +114,8 @@ static int send_svm_status_update(struct conn_element *ele,
 
 int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         struct subvirtual_machine *fault_svm, uint64_t addr,
-        int (*func)(struct tx_buf_ele *), int tag, struct dsm_page_cache *dpc) {
+        int (*func)(struct tx_buf_ele *), int tag, struct dsm_page_cache *dpc)
+{
 
     struct conn_element *ele;
     struct tx_buffer *tx;
@@ -144,10 +152,12 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 
     add_dsm_request(tx, ele, req_tag, fault_svm, remote_svm, addr, func, dpc,
             page);
-    out: return ret;
+out: 
+    return ret;
 }
 
-int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
+int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
+{
     struct subvirtual_machine *local_svm;
     unsigned long norm_addr;
     struct dsm *dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
@@ -162,34 +172,32 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) 
     norm_addr = rx_buf_e->dsm_msg->req_addr + local_svm->priv->offset;
     return dsm_trigger_page_pull(dsm, local_svm, norm_addr);
 
-    fail: return send_svm_status_update(ele, rx_buf_e);
+fail:
+    return send_svm_status_update(ele, rx_buf_e);
 }
 
-int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
+int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
+{
     printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_msg->src_id);
     remove_svm(rx_buf_e->dsm_msg->dsm_id, rx_buf_e->dsm_msg->src_id);
     return 1;
 }
 
-/**
- * Read the message received in the wc, to get the offset and then find where the page has been written
- *
- * RETURN 0 if a page exists in the buffer at this offset
- *               -1 if the page cannot be found
- */
-int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e) {
-
+int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
+{
     if (tx_e->callback.func && !tx_e->callback.func(tx_e))
         goto out;
 
     release_page(ele, tx_e);
     release_tx_element(ele, tx_e);
 
-    out: return 0;
+out:
+    return 0;
 }
 
 int process_page_request(struct conn_element * ele,
-        struct rx_buf_ele * rx_buf_e) {
+        struct rx_buf_ele * rx_buf_e)
+{
     struct page_pool_ele * ppe;
     struct tx_buf_ele *tx_e = NULL;
     struct page * page;
@@ -259,7 +267,8 @@ int process_page_request(struct conn_element * ele,
             ret = 0;
         }
 
-        no_page_out: return ret;
+no_page_out:
+        return ret;
     }
     /*
      * Page grabbed successfully, seems that the local svm is still online.
@@ -275,12 +284,15 @@ int process_page_request(struct conn_element * ele,
 
     return ret;
 
-    no_svm: ret = send_svm_status_update(ele, rx_buf_e);
-    fail: printk("[process_page_request] failure to answer page fault\n");
+no_svm: 
+    ret = send_svm_status_update(ele, rx_buf_e);
+fail: 
+    printk("[process_page_request] failure to answer page fault\n");
     return ret;
 }
 
-int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
+int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e)
+{
     int ret = 0;
 
     switch (tx_e->dsm_msg->type) {
@@ -320,7 +332,8 @@ int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
  *      u32 rkey_rx;
  *      u32 rx_buf_size;
  */
-int exchange_info(struct conn_element *ele, int id) {
+int exchange_info(struct conn_element *ele, int id)
+{
     int flag = (int) ele->rid.remote_info->flag;
     int ret = 0;
     struct conn_element * ele_found;
@@ -401,21 +414,25 @@ int exchange_info(struct conn_element *ele, int id) {
         }
     }
 
-    recv_send: ret = dsm_recv_info(ele);
+recv_send: 
+    ret = dsm_recv_info(ele);
     if (ret) {
         printk(">[exchange_info] - Could not post the receive work request\n");
         goto err;
     }
 
-    send: ret = dsm_send_info(ele);
+send: 
+    ret = dsm_send_info(ele);
     if (ret < 0) {
         printk(">[exchange_info] - Could not post the send work request\n");
         goto err;
     }
 
-    out: return ret;
+out: 
+    return ret;
 
-    err: printk(">[exchange_info] - No receive info\n");
+err: 
+    printk(">[exchange_info] - No receive info\n");
     return ret;
 
 }
@@ -426,7 +443,8 @@ int exchange_info(struct conn_element *ele, int id) {
  * RETURN dsm_post_send
  */
 
-int dsm_send_info(struct conn_element *ele) {
+int dsm_send_info(struct conn_element *ele)
+{
     struct rdma_info_data *rid = &ele->rid;
 
     rid->send_sge.addr = (u64) rid->send_info;
@@ -448,7 +466,8 @@ int dsm_send_info(struct conn_element *ele) {
  *
  * RETURN ib_post_recv
  */
-int dsm_recv_info(struct conn_element *ele) {
+int dsm_recv_info(struct conn_element *ele)
+{
     struct rdma_info_data *rid = &ele->rid;
 
     rid->recv_sge.addr = (u64) rid->recv_info;
@@ -465,7 +484,8 @@ int dsm_recv_info(struct conn_element *ele) {
 
 int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *fault_svm, unsigned long request_addr,
-        struct memory_region *mr) {
+        struct memory_region *mr)
+{
     int i = 0;
     unsigned long addr = request_addr & PAGE_MASK;
     struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);
@@ -475,6 +495,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
     page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
     up_read(&mm->mmap_sem);
 
+printk(KERN_ALERT "%p\n", page); 
     if (page) {
         for (i = 0; i < svms.num; i++) {
             if (svms.pp[i]) {

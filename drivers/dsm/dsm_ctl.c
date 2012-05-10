@@ -11,35 +11,12 @@
 static char *ip = 0;
 static int port = 0;
 
-static inline void reset_page_stats(struct dsm_page_stats *stats)
-{
-    dsm_stats_set(&stats->nb_page_pull, 0);
-    dsm_stats_set(&stats->nb_page_pull_fail, 0);
-    dsm_stats_set(&stats->nb_page_push_request, 0);
-    dsm_stats_set(&stats->nb_page_requested, 0);
-    dsm_stats_set(&stats->nb_page_sent, 0);
-    dsm_stats_set(&stats->nb_page_redirect, 0);
-    dsm_stats_set(&stats->nb_err, 0);
-    dsm_stats_set(&stats->nb_page_request_success, 0);
-    dsm_stats_set(&stats->nb_page_requested_prefetch, 0);
-}
-
-static inline void reset_msg_stats(struct msg_stats *stats)
-{
-    dsm_stats_set(&stats->err, 0);
-    dsm_stats_set(&stats->page_info_update, 0);
-    dsm_stats_set(&stats->page_request_reply, 0);
-    dsm_stats_set(&stats->request_page, 0);
-    dsm_stats_set(&stats->request_page_pull, 0);
-    dsm_stats_set(&stats->try_request_page, 0);
-    dsm_stats_set(&stats->try_request_page_fail, 0);
-    dsm_stats_set(&stats->page_request_redirect, 0);
-}
-
-void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
-    reset_msg_stats(&sysfs->rx_stats);
-    reset_msg_stats(&sysfs->tx_stats);
-}
+module_param(ip, charp, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(ip, "The ip of the machine running this module - will be used"
+       " as node_id.");
+module_param(port, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(port, "The port on the machine running this module - used for"
+       " DSM_RDMA communication.");
 
 void remove_svm(u32 dsm_id, u32 svm_id)
 {
@@ -116,7 +93,8 @@ out:
     mutex_unlock(&dsm->dsm_mutex);
 }
 
-void remove_dsm(struct dsm *dsm) {
+void remove_dsm(struct dsm *dsm)
+{
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct list_head *pos, *n;
@@ -142,7 +120,8 @@ void remove_dsm(struct dsm *dsm) {
     mutex_unlock(&dsm_state->dsm_state_mutex);
 }
 
-static int register_dsm(struct private_data *priv_data, void __user *argp) {
+static int register_dsm(struct private_data *priv_data, void __user *argp)
+{
     int r = -EFAULT;
     struct svm_data svm_info;
     struct dsm * found_dsm, *new_dsm = NULL;
@@ -202,12 +181,13 @@ static int register_dsm(struct private_data *priv_data, void __user *argp) {
     if (new_dsm)
         kfree(new_dsm);
 
-    exit: mutex_unlock(&dsm_state->dsm_state_mutex);
+exit: 
+    mutex_unlock(&dsm_state->dsm_state_mutex);
     return r;
-
 }
 
-static int register_svm(struct private_data *priv_data, void __user *argp) {
+static int register_svm(struct private_data *priv_data, void __user *argp)
+{
     int r = -EFAULT;
     struct dsm *dsm;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
@@ -252,7 +232,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->dsm->nb_local_svm++;
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
-            reset_page_stats(&new_svm->svm_sysfs.stats);
+            reset_svm_stats(new_svm);
             if (create_svm_sysfs_entry(new_svm)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
@@ -279,12 +259,13 @@ static int register_svm(struct private_data *priv_data, void __user *argp) {
     if (new_svm)
         kfree(new_svm);
 
-    out: mutex_unlock(&dsm->dsm_mutex);
+out: 
+    mutex_unlock(&dsm->dsm_mutex);
     return r;
-
 }
 
-static int connect_svm(struct private_data *priv_data, void __user *argp) {
+static int connect_svm(struct private_data *priv_data, void __user *argp)
+{
     int r = -EFAULT;
     struct dsm *dsm;
     struct subvirtual_machine *found_svm, *new_svm = NULL;
@@ -328,7 +309,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp) {
             new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
-            reset_page_stats(&new_svm->svm_sysfs.stats);
+            reset_svm_stats(new_svm);
             if (create_svm_sysfs_entry(new_svm)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
@@ -368,7 +349,8 @@ static int connect_svm(struct private_data *priv_data, void __user *argp) {
     mutex_unlock(&dsm->dsm_mutex);
     return r;
 
-    connect_fail: list_del(&new_svm->svm_ptr);
+connect_fail: 
+    list_del(&new_svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm_info.svm_id);
     delete_svm_sysfs_entry(&new_svm->svm_sysfs.svm_kobject);
 
@@ -377,7 +359,8 @@ static int connect_svm(struct private_data *priv_data, void __user *argp) {
     return r;
 }
 
-static int register_mr(struct private_data *priv_data, void __user *argp) {
+static int register_mr(struct private_data *priv_data, void __user *argp)
+{
     int r = -EFAULT, j;
     struct dsm *dsm;
     struct memory_region *mr;
@@ -426,10 +409,12 @@ static int register_mr(struct private_data *priv_data, void __user *argp) {
             break;
     }
 
-    out: return r;
+out: 
+    return r;
 }
 
-static int pushback_page(struct private_data *priv_data, void __user *argp) {
+static int pushback_page(struct private_data *priv_data, void __user *argp)
+{
     int r = -EFAULT;
     unsigned long addr;
     struct dsm *dsm;
@@ -446,10 +431,12 @@ static int pushback_page(struct private_data *priv_data, void __user *argp) {
     mr = search_mr(dsm, addr);
     r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr, mr);
 
-    out: return r;
+out: 
+    return r;
 }
 
-static int open(struct inode *inode, struct file *f) {
+static int open(struct inode *inode, struct file *f)
+{
     struct private_data *data;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
@@ -468,7 +455,8 @@ static int open(struct inode *inode, struct file *f) {
     return 0;
 }
 
-static int release(struct inode *inode, struct file *f) {
+static int release(struct inode *inode, struct file *f)
+{
     struct private_data *data = (struct private_data *) f->private_data;
 
     if (!data->svm)
@@ -483,8 +471,8 @@ static int release(struct inode *inode, struct file *f) {
     return 0;
 }
 
-static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
-
+static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
+{
     struct private_data *priv_data = (struct private_data *) f->private_data;
     void __user *argp = (void __user *) arg;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -552,24 +540,18 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         }
     }
 
-    out: return r;
+out: 
+    return r;
 }
 
-static struct file_operations rdma_fops = { .owner = THIS_MODULE, .release = release, .unlocked_ioctl = ioctl, .open = open, .llseek = noop_llseek, };
+static struct file_operations rdma_fops = { .owner = THIS_MODULE,
+    .release = release, .unlocked_ioctl = ioctl, .open = open,
+    .llseek = noop_llseek, };
+static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "rdma",
+    &rdma_fops, };
 
-static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "rdma", &rdma_fops,
-
-};
-
-module_param(ip, charp, S_IRUGO|S_IWUSR);
-module_param(port, int, S_IRUGO|S_IWUSR);
-
-MODULE_PARM_DESC( ip,
-        "The ip of the machine running this module - will be used as node_id.");
-MODULE_PARM_DESC( port,
-        "The port on the machine running this module - used for DSM_RDMA communication.");
-
-static int dsm_init(void) {
+static int dsm_init(void)
+{
     struct dsm_module_state *dsm_state = create_dsm_module_state();
 
     reg_dsm_functions(&request_dsm_page, &dsm_request_page_pull);
@@ -586,11 +568,13 @@ static int dsm_init(void) {
     }
 
     rdma_listen(dsm_state->rcm->cm_id, 2);
-    err: return misc_register(&rdma_misc);
+err: 
+    return misc_register(&rdma_misc);
 }
 module_init(dsm_init);
 
-static void dsm_exit(void) {
+static void dsm_exit(void)
+{
     struct dsm * dsm = NULL;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     while (!list_empty(&dsm_state->dsm_list)) {
@@ -611,3 +595,4 @@ MODULE_VERSION("0.0.1");
 MODULE_AUTHOR("virtex");
 MODULE_DESCRIPTION("");
 MODULE_LICENSE("GPL");
+

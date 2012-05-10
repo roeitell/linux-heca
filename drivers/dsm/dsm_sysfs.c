@@ -4,14 +4,89 @@
 
 #include <dsm/dsm_module.h>
 
-static void dsm_kobject_type_release(struct kobject * kobj) {
-    //kfree(kobj);
+#define DECLARE_SVM_SYSFS_ATTR(name)                                           \
+    static inline ssize_t show_##name(struct kobject *kobj,                    \
+            struct kobj_attribute *attr, char *buf)                            \
+    {                                                                          \
+        return sprintf(buf, "%lu\n", dsm_stats_read(                           \
+         &(container_of(kobj, struct svm_sysfs, svm_kobject)->name )));        \
+    }                                                                          \
+    static struct kobj_attribute name = __ATTR(name, 0444, show_##name, NULL);
+
+#define DECLARE_TXRX_SYSFS_SHOW_FUNC(name, context)                            \
+    static inline ssize_t show_##name##_##context(struct kobject *kobj,        \
+            struct kobj_attribute *attr, char *buf)                            \
+    {                                                                          \
+        return sprintf(buf, "%lu\n", dsm_stats_read(                           \
+                    &(container_of(kobj, struct con_element_sysfs,             \
+                    connection_##context##_kobject)->context##_stats.name)));  \
+    }                                                                          \
+
+#define DECLARE_TXRX_SYSFS_ATTR(name)                                          \
+    DECLARE_TXRX_SYSFS_SHOW_FUNC(name, tx)                                     \
+    DECLARE_TXRX_SYSFS_SHOW_FUNC(name, rx)                                     \
+    static struct kobj_attribute tx_##name = __ATTR(name, 0444,                \
+            show_##name##_tx, NULL);                                           \
+    static struct kobj_attribute rx_##name = __ATTR(name, 0444,                \
+            show_##name##_rx, NULL);
+
+DECLARE_SVM_SYSFS_ATTR(nb_remote_fault);
+DECLARE_SVM_SYSFS_ATTR(nb_remote_fault_success);
+DECLARE_SVM_SYSFS_ATTR(nb_push_attempt);
+DECLARE_SVM_SYSFS_ATTR(nb_push_success);
+DECLARE_SVM_SYSFS_ATTR(nb_prefetch_attempt);
+DECLARE_SVM_SYSFS_ATTR(nb_prefetch_success);
+DECLARE_SVM_SYSFS_ATTR(nb_prefetch_failed_response);  /* per addr, not page */
+DECLARE_SVM_SYSFS_ATTR(nb_push_failed_response);      /* per addr, not page */
+DECLARE_SVM_SYSFS_ATTR(nb_answer_fault);
+DECLARE_SVM_SYSFS_ATTR(nb_answer_fault_fail);
+DECLARE_SVM_SYSFS_ATTR(nb_answer_attempt);
+DECLARE_SVM_SYSFS_ATTR(nb_answer_attempt_fail);
+
+DECLARE_TXRX_SYSFS_ATTR(request_page);
+DECLARE_TXRX_SYSFS_ATTR(request_page_pull);
+DECLARE_TXRX_SYSFS_ATTR(page_request_reply);
+DECLARE_TXRX_SYSFS_ATTR(page_request_redirect);
+DECLARE_TXRX_SYSFS_ATTR(page_info_update);
+DECLARE_TXRX_SYSFS_ATTR(try_request_page);
+DECLARE_TXRX_SYSFS_ATTR(try_request_page_fail);
+DECLARE_TXRX_SYSFS_ATTR(err);
+
+static struct attribute *svm_attrs[] = { &nb_remote_fault.attr, 
+    &nb_remote_fault_success.attr, &nb_push_attempt.attr, &nb_push_success.attr,
+    &nb_prefetch_attempt.attr, &nb_prefetch_success.attr,
+    &nb_prefetch_failed_response.attr, &nb_push_failed_response.attr,
+    &nb_answer_fault.attr, &nb_answer_attempt.attr, &nb_answer_fault_fail.attr,
+    &nb_answer_attempt_fail.attr, NULL,
+};
+static struct attribute *tx_attrs[] = { &tx_request_page.attr,
+    &tx_request_page_pull.attr, &tx_page_request_reply.attr,
+    &tx_page_request_redirect.attr, &tx_page_info_update.attr,
+    &tx_try_request_page.attr, &tx_try_request_page_fail.attr, &tx_err.attr,
+    NULL,
+};
+static struct attribute *rx_attrs[] = { &rx_request_page.attr,
+    &rx_request_page_pull.attr, &rx_page_request_reply.attr,
+    &rx_page_request_redirect.attr, &rx_page_info_update.attr,
+    &rx_try_request_page.attr, &rx_try_request_page_fail.attr, &rx_err.attr,
+    NULL,
+};
+
+static struct attribute_group svm_attr_group = { .attrs = svm_attrs };
+static struct attribute_group tx_connection_attr_group = { .attrs = tx_attrs };
+static struct attribute_group rx_connection_attr_group = { .attrs = rx_attrs };
+
+
+
+static void dsm_kobject_type_release(struct kobject * kobj)
+{
     printk("Releasing kobject %p\n", kobj);
 }
 
 /* default kobject attribute operations */
 static ssize_t kobj_dsm_attr_show(struct kobject *kobj, struct attribute *attr,
-        char *buf) {
+        char *buf)
+{
     struct kobj_attribute *kattr;
     ssize_t ret = -EIO;
 
@@ -22,7 +97,8 @@ static ssize_t kobj_dsm_attr_show(struct kobject *kobj, struct attribute *attr,
 }
 
 static ssize_t kobj_dsm_attr_store(struct kobject *kobj, struct attribute *attr,
-        const char *buf, size_t count) {
+        const char *buf, size_t count)
+{
     struct kobj_attribute *kattr;
     ssize_t ret = -EIO;
 
@@ -32,148 +108,32 @@ static ssize_t kobj_dsm_attr_store(struct kobject *kobj, struct attribute *attr,
     return ret;
 }
 
-const struct sysfs_ops kobj_dsm_sysfs_ops = { .show = kobj_dsm_attr_show, .store = kobj_dsm_attr_store, };
+static struct sysfs_ops kobj_dsm_sysfs_ops = { .show = kobj_dsm_attr_show,
+    .store = kobj_dsm_attr_store, };
 
-static struct kobj_type dsm_kobject_type = { .release = dsm_kobject_type_release, .sysfs_ops = &kobj_dsm_sysfs_ops, };
+static struct kobj_type dsm_kobject_type = {
+    .release = dsm_kobject_type_release, .sysfs_ops = &kobj_dsm_sysfs_ops, };
 
-/*
- * SVM variable for user space statistics
- */
+void reset_svm_stats(struct subvirtual_machine *svm)
+{
+    struct svm_sysfs *stats = &svm->svm_sysfs;
 
-static ssize_t svm_show(struct kobject *kobj, struct kobj_attribute *attr,
-        char *buf) {
-
-    struct svm_sysfs *svm_sysfs = NULL;
-    unsigned long var = 0;
-
-    svm_sysfs = container_of(kobj, struct svm_sysfs , svm_kobject);
-
-    if (strcmp(attr->attr.name, "nb_page_requested") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_requested);
-    else if (strcmp(attr->attr.name, "nb_page_sent") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_sent);
-    else if (strcmp(attr->attr.name, "nb_page_pull") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_pull);
-    else if (strcmp(attr->attr.name, "nb_page_pull_fail") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_pull_fail);
-    else if (strcmp(attr->attr.name, "nb_page_push_request") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_push_request);
-    else if (strcmp(attr->attr.name, "nb_page_redirect") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_redirect);
-    else if (strcmp(attr->attr.name, "nb_page_error") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_err);
-    else if (strcmp(attr->attr.name, "nb_request_page_prefetch") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_requested_prefetch);
-    else if (strcmp(attr->attr.name, "nb_page_request_success") == 0)
-        var = dsm_stats_read(&svm_sysfs->stats.nb_page_request_success);
-    else
-        var = 0;
-
-    return sprintf(buf, "%lu\n", var);
-
-}
-static struct kobj_attribute nb_page_request_success_attribute = __ATTR(nb_page_request_success, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_requested_attribute = __ATTR(nb_page_requested, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_sent_attribute = __ATTR(nb_page_sent, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_pull_attribute = __ATTR(nb_page_pull, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_pull_fail_attribute = __ATTR(nb_page_pull_fail, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_push_request_attribute = __ATTR(nb_page_push_request, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_error_attribute = __ATTR(nb_page_error, 0444, svm_show, NULL);
-static struct kobj_attribute nb_page_redirect_attribute = __ATTR(nb_page_redirect, 0444, svm_show, NULL);
-static struct kobj_attribute nb_request_page_prefetch_attribute = __ATTR(nb_request_page_prefetch, 0444, svm_show, NULL);
-
-static struct attribute *svm_attrs[] = { &nb_page_requested_attribute.attr, &nb_page_request_success_attribute.attr, &nb_page_sent_attribute.attr, &nb_page_pull_attribute.attr, &nb_page_pull_fail_attribute.attr, &nb_page_push_request_attribute.attr, &nb_page_redirect_attribute.attr, &nb_page_error_attribute.attr, &nb_request_page_prefetch_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
-};
-
-/*
- * An unnamed attribute group will put all of the attributes directly in
- * the kobject directory.  If we specify a name, a subdirectory will be
- * created for the attributes with the directory being the name of the
- * attribute group.
- */
-static struct attribute_group svm_attr_group = { .attrs = svm_attrs, };
-
-/*
- * RDMA connections statistics
- */
-
-static long connection_show(struct msg_stats *stats,
-        struct kobj_attribute *attr) {
-    unsigned long var = 0;
-    if (strcmp(attr->attr.name, "request_page") == 0)
-        var = dsm_stats_read(&stats->request_page);
-    else if (strcmp(attr->attr.name, "request_page_pull") == 0)
-        var = dsm_stats_read(&stats->request_page_pull);
-    else if (strcmp(attr->attr.name, "page_request_reply") == 0)
-        var = dsm_stats_read(&stats->page_request_reply);
-    else if (strcmp(attr->attr.name, "page_request_redirect") == 0)
-        var = dsm_stats_read(&stats->page_request_redirect);
-    else if (strcmp(attr->attr.name, "page_info_update") == 0)
-        var = dsm_stats_read(&stats->page_info_update);
-    else if (strcmp(attr->attr.name, "try_request_page") == 0)
-        var = dsm_stats_read(&stats->try_request_page);
-    else if (strcmp(attr->attr.name, "try_request_page_fail") == 0)
-        var = dsm_stats_read(&stats->try_request_page_fail);
-    else if (strcmp(attr->attr.name, "msg_err") == 0)
-        var = dsm_stats_read(&stats->err);
-    else
-        var = 0;
-
-    return var;
+    dsm_stats_set(&stats->nb_remote_fault, 0);
+    dsm_stats_set(&stats->nb_remote_fault_success, 0);
+    dsm_stats_set(&stats->nb_push_attempt, 0);
+    dsm_stats_set(&stats->nb_push_success, 0);
+    dsm_stats_set(&stats->nb_prefetch_attempt, 0);
+    dsm_stats_set(&stats->nb_prefetch_success, 0);
+    dsm_stats_set(&stats->nb_prefetch_failed_response, 0);
+    dsm_stats_set(&stats->nb_push_failed_response, 0);
+    dsm_stats_set(&stats->nb_answer_fault, 0);
+    dsm_stats_set(&stats->nb_answer_fault_fail, 0);
+    dsm_stats_set(&stats->nb_answer_attempt, 0);
+    dsm_stats_set(&stats->nb_answer_attempt_fail, 0);
 }
 
-static ssize_t connection_tx_show(struct kobject *kobj,
-        struct kobj_attribute *attr, char *buf) {
-    struct con_element_sysfs *cele_sysfs = NULL;
-    unsigned long var;
-
-    cele_sysfs = container_of(kobj,struct con_element_sysfs, connection_tx_kobject);
-
-    var = connection_show(&cele_sysfs->tx_stats, attr);
-    return sprintf(buf, "%lu\n", var);
-
-}
-
-static ssize_t connection_rx_show(struct kobject *kobj,
-        struct kobj_attribute *attr, char *buf) {
-    struct con_element_sysfs *cele_sysfs = NULL;
-    unsigned long var = 0;
-
-    cele_sysfs = container_of(kobj,struct con_element_sysfs, connection_rx_kobject);
-
-    var = connection_show(&cele_sysfs->rx_stats, attr);
-    return sprintf(buf, "%lu\n", var);
-}
-
-static struct kobj_attribute tx_request_page_attribute = __ATTR(request_page, 0444, connection_tx_show, NULL);
-static struct kobj_attribute tx_request_page_pull_attribute = __ATTR(request_page_pull, 0444, connection_tx_show, NULL);
-static struct kobj_attribute tx_page_request_reply_attribute = __ATTR(page_request_reply, 0444, connection_tx_show, NULL);
-static struct kobj_attribute tx_page_request_redirect_attribute = __ATTR(page_request_redirect, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_page_info_update_attribute = __ATTR(page_info_update, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_try_request_page_attribute = __ATTR(try_request_page, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_try_request_page_fail_attribute = __ATTR(try_request_page_fail, 0444, connection_tx_show,NULL);
-static struct kobj_attribute tx_msg_err_attribute = __ATTR(msg_err, 0444, connection_tx_show,NULL);
-
-static struct attribute *tx_connection_attrs[] = { &tx_request_page_attribute.attr, &tx_request_page_pull_attribute.attr, &tx_page_request_reply_attribute.attr, &tx_page_request_redirect_attribute.attr, &tx_page_info_update_attribute.attr, &tx_try_request_page_attribute.attr, &tx_try_request_page_fail_attribute.attr, &tx_msg_err_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
-};
-
-static struct attribute_group tx_connection_attr_group = { .attrs = tx_connection_attrs, };
-
-static struct kobj_attribute rx_request_page_attribute = __ATTR(request_page, 0444, connection_rx_show, NULL);
-static struct kobj_attribute rx_request_page_pull_attribute = __ATTR(request_page_pull, 0444, connection_rx_show, NULL);
-static struct kobj_attribute rx_page_request_reply_attribute = __ATTR(page_request_reply, 0444, connection_rx_show, NULL);
-static struct kobj_attribute rx_page_request_redirect_attribute = __ATTR(page_request_redirect, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_page_info_update_attribute = __ATTR(page_info_update, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_try_request_page_attribute = __ATTR(try_request_page, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_try_request_page_fail_attribute = __ATTR(try_request_page_fail, 0444, connection_rx_show,NULL);
-static struct kobj_attribute rx_msg_err_attribute = __ATTR(msg_err, 0444, connection_rx_show,NULL);
-
-static struct attribute *rx_connection_attrs[] = { &rx_request_page_attribute.attr, &rx_request_page_pull_attribute.attr, &rx_page_request_reply_attribute.attr, &rx_page_request_redirect_attribute.attr, &rx_page_info_update_attribute.attr, &rx_try_request_page_attribute.attr, &rx_try_request_page_fail_attribute.attr, &rx_msg_err_attribute.attr, NULL, /* need to NULL terminate the list of attributes */
-};
-
-static struct attribute_group rx_connection_attr_group = { .attrs = rx_connection_attrs, };
-
-static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
+static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state)
+{
     struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
     kobject_put(dsm_kobjects->rdma_kobject);
@@ -182,6 +142,24 @@ static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
     kobject_del(dsm_kobjects->domains_kobject);
     kobject_del(dsm_kobjects->dsm_glob_kobject);
     return;
+}
+
+static inline void reset_msg_stats(struct msg_stats *stats)
+{
+    dsm_stats_set(&stats->err, 0);
+    dsm_stats_set(&stats->page_info_update, 0);
+    dsm_stats_set(&stats->page_request_reply, 0);
+    dsm_stats_set(&stats->request_page, 0);
+    dsm_stats_set(&stats->request_page_pull, 0);
+    dsm_stats_set(&stats->try_request_page, 0);
+    dsm_stats_set(&stats->try_request_page_fail, 0);
+    dsm_stats_set(&stats->page_request_redirect, 0);
+}
+
+void reset_dsm_connection_stats(struct con_element_sysfs *sysfs)
+{
+    reset_msg_stats(&sysfs->rx_stats);
+    reset_msg_stats(&sysfs->tx_stats);
 }
 
 int create_svm_sysfs_entry(struct subvirtual_machine *svm)
@@ -203,7 +181,8 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm)
     return r;
 }
 
-void delete_svm_sysfs_entry(struct kobject *obj) {
+void delete_svm_sysfs_entry(struct kobject *obj)
+{
     kobject_put(obj);
     kobject_del(obj);
 }
@@ -214,14 +193,15 @@ int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state)
             dsm_state->dsm_kobjects.domains_kobject, "dsm.%u", dsm->dsm_id);
 }
 
-void delete_dsm_sysfs_entry(struct kobject *obj) {
+void delete_dsm_sysfs_entry(struct kobject *obj)
+{
     kobject_put(obj);
     kobject_del(obj);
 }
 
 int create_connection_sysfs_entry(struct con_element_sysfs *sysfs,
-        struct kobject *root_kobj, char* name) {
-
+        struct kobject *root_kobj, char* name) 
+{
     int r = kobject_init_and_add(&sysfs->connection_kobject, &dsm_kobject_type,
             root_kobj, name);
 
@@ -281,10 +261,13 @@ int dsm_sysfs_setup(struct dsm_module_state *dsm_state)
 
     return 0;
 
-    err2: kobject_put(dsm_kobjects->rdma_kobject);
+err2: 
+    kobject_put(dsm_kobjects->rdma_kobject);
     kobject_del(dsm_kobjects->rdma_kobject);
-    err1: kobject_del(dsm_kobjects->dsm_glob_kobject);
-    err: return -ENOMEM;
+err1: 
+    kobject_del(dsm_kobjects->dsm_glob_kobject);
+err: 
+    return -ENOMEM;
 }
 
 void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state)

@@ -25,9 +25,8 @@ void reg_dsm_functions(
                 int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *),
 
         int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
-                struct subvirtual_machine *, unsigned long, 
-                struct memory_region *))
-{
+                struct subvirtual_machine *, unsigned long,
+                struct memory_region *)) {
     struct dsm_functions *tmp;
 
     tmp = kmalloc(sizeof(*funcs), GFP_KERNEL);
@@ -55,8 +54,7 @@ inline int request_dsm_page_op(struct page * page,
 }
 inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *svm, unsigned long addr,
-        struct memory_region *mr)
-{
+        struct memory_region *mr) {
     if (likely(funcs))
         return funcs->dsm_request_page_pull(dsm, mm, svm, addr, mr);
     return -1;
@@ -67,6 +65,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0;
+    int retry = 0;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -90,12 +89,22 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
+        if (!retry) {
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            retry = 1;
+            goto retry;
+        }
         printk("[dsm_flag_page_remote] no pgd \n");
         goto out;
     }
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
+        if (!retry) {
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            retry = 1;
+            goto retry;
+        }
         printk("[dsm_flag_page_remote] no pud \n");
         goto out;
     }

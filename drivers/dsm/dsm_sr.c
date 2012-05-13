@@ -35,13 +35,18 @@ static inline void queue_dsm_request(struct conn_element *ele,
     queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
 }
 
-static inline void add_dsm_request(struct tx_buffer *tx,
-        struct conn_element *ele, u16 type,
-        struct subvirtual_machine *fault_svm, struct subvirtual_machine *svm,
-        uint64_t addr, int (*func)(struct tx_buf_ele *),
-        struct dsm_page_cache *dpc, struct page *page)
+static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
+        u16 type, struct subvirtual_machine *fault_svm,
+        struct subvirtual_machine *svm, uint64_t addr,
+        int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
+        struct page *page)
 {
-    struct dsm_request *req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
+    if (!req) {
+        req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
+        if (unlikely(!req))
+            return -ENOMEM;
+    }
+
     req->type = type;
     req->fault_svm = fault_svm;
     req->svm = svm;
@@ -50,42 +55,78 @@ static inline void add_dsm_request(struct tx_buffer *tx,
     req->dpc = dpc;
     req->page = page;
     queue_dsm_request(ele, req);
+
+    return 0;
 }
 
-static inline void add_dsm_request_msg(struct conn_element *ele, u16 type,
+static int add_dsm_request_msg(struct conn_element *ele, u16 type,
         struct dsm_message *msg)
 {
     struct dsm_request *req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
+    if (unlikely(!req))
+        return -ENOMEM;
+
     req->type = type;
     req->func = NULL;
     memcpy(&req->dsm_msg, msg, sizeof(struct dsm_message));
     queue_dsm_request(ele, req);
+
+    return 0;
 }
 
-static int send_request_dsm_page_pull(struct subvirtual_machine *svm,
-        struct subvirtual_machine *fault_svm, uint64_t addr)
+static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
+        struct svm_list svms, unsigned long addr)
 {
+    struct tx_buf_ele *tx_elms[svms.num];
+    struct dsm_request *reqs[svms.num];
+    int i, j, r = 0;
 
-    struct conn_element * ele = svm->ele;
-    struct tx_buffer *tx = &ele->tx_buffer;
-    struct tx_buf_ele *tx_e;
-    int ret = 0;
+    for (i = 0; i < svms.num; i++) {
+        tx_elms[i] = NULL;
+        reqs[i] = NULL;
+        if (unlikely(!svms.pp[i]))
+            continue;
 
-    if (list_empty(&tx->request_queue)) {
-        tx_e = try_get_next_empty_tx_ele(ele);
-        if (tx_e) {
-            create_page_pull_request(ele, tx_e, fault_svm->dsm->dsm_id,
-                    fault_svm->svm_id, svm->svm_id, addr);
-            tx_e->callback.func = NULL;
-            ret = tx_dsm_send(ele, tx_e);
-            goto out;
+        if (list_empty(&svms.pp[i]->ele->tx_buffer.request_queue))
+            tx_elms[i] = try_get_next_empty_tx_ele(svms.pp[i]->ele);
+
+        if (!tx_elms[i]) {
+            reqs[i] = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
+            if (!reqs[i])
+                goto nomem;
         }
     }
 
-    add_dsm_request(tx, ele, REQUEST_PAGE_PULL, fault_svm, svm, addr, NULL,
-            NULL, NULL);
-out: 
-    return ret;
+    for (i = 0; i < svms.num; i++) {
+        if (unlikely(!svms.pp[i]))
+            continue;
+
+        if (tx_elms[i]) {
+            create_page_pull_request(svms.pp[i]->ele, tx_elms[i],
+                    fault_svm->dsm->dsm_id, fault_svm->svm_id,
+                    svms.pp[i]->svm_id, (uint64_t) addr);
+            tx_elms[i]->callback.func = NULL;
+            r |= tx_dsm_send(svms.pp[i]->ele, tx_elms[i]);
+        } else {
+            BUG_ON(!reqs[i]);
+            r |= add_dsm_request(reqs[i], svms.pp[i]->ele, REQUEST_PAGE_PULL,
+                    fault_svm, svms.pp[i], addr, NULL, NULL, NULL);
+        }
+    }
+
+    return r;
+
+nomem:
+    for (j = 0; j < i; j++) {
+        if (unlikely(!svms.pp[i]))
+            continue;
+
+        if (tx_elms[i])
+            release_tx_element(svms.pp[j]->ele, tx_elms[j]);
+        else 
+            kmem_cache_free(kmem_request_cache, reqs[j]);
+    }
+    return -ENOMEM;
 }
 
 static int send_svm_status_update(struct conn_element *ele,
@@ -93,11 +134,11 @@ static int send_svm_status_update(struct conn_element *ele,
 {
     struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e = NULL;
-    int ret = 0;
+    int ret = 1;
 
     if (list_empty(&tx->request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);
-        if (tx_e) {
+        if (likely(tx_e)) {
             memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
                     sizeof(struct dsm_message));
             tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
@@ -105,9 +146,8 @@ static int send_svm_status_update(struct conn_element *ele,
         }
     }
 
-    if (!ret) {
-        add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_msg);
-    }
+    if (ret)
+        ret = add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_msg);
 
     return ret;
 }
@@ -122,9 +162,6 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
     struct tx_buf_ele *tx_e;
     int ret = 0;
     int req_tag = (tag == PULL_TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
-
-//    printk("[request_dsm_page]svm %p, ele %p txbuff %p , addr %p, try %d\n",
-//            svm, svm->ele, tx, (void *) addr, try);
 
     /*
      * Svm has been fenced out; fail silently (another svm should answer, if
@@ -146,12 +183,14 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
-            goto out;
         }
     }
 
-    add_dsm_request(tx, ele, req_tag, fault_svm, remote_svm, addr, func, dpc,
-            page);
+    if (ret) {
+        ret = add_dsm_request(NULL, ele, req_tag, fault_svm, remote_svm,
+                addr, func, dpc, page);
+    }
+
 out: 
     return ret;
 }
@@ -253,21 +292,19 @@ int process_page_request(struct conn_element * ele,
 
             if (list_empty(&tx->request_queue)) {
                 tx_e = try_get_next_empty_tx_ele(ele);
-                if (tx_e) {
+                if (likely(tx_e)) {
                     memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
                     tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
                     tx_e->wrk_req->dst_addr = NULL;
                     tx_e->callback.func = NULL;
                     ret = tx_dsm_send(ele, tx_e);
-                    goto no_page_out;
                 }
             }
 
-            add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
-            ret = 0;
+            if (ret)
+                ret = add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
         }
 
-no_page_out:
         return ret;
     }
     /*
@@ -486,24 +523,22 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *fault_svm, unsigned long request_addr,
         struct memory_region *mr)
 {
-    int i = 0;
     unsigned long addr = request_addr & PAGE_MASK;
     struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);
     struct page *page;
+    int ret = 0;
 
     down_read(&mm->mmap_sem);
     page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
     up_read(&mm->mmap_sem);
 
-    if (page) {
-        for (i = 0; i < svms.num; i++) {
-            if (svms.pp[i]) {
-                send_request_dsm_page_pull(svms.pp[i], fault_svm,
-                        (uint64_t) (addr - fault_svm->priv->offset));
-            }
-        }
+    if (likely(page)) {
+        ret = send_request_dsm_page_pull(fault_svm, svms,
+                addr - fault_svm->priv->offset);
+        if (unlikely(ret))
+            dsm_cancel_page_push(fault_svm, addr, page);
     }
 
-    return !page || !i;
+    return ret;
 }
 

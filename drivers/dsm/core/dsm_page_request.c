@@ -144,10 +144,6 @@ retry:
     pd->pmd = pmd_offset(pd->pud, addr);
     if (unlikely(pmd_none(*(pd->pmd)))) {
         printk("[_dsm_extract_pte] no pmd error\n");
-        /*
-         * TODO: prepare_page_for_push did not originally have this line;
-         * validate if needed in prepare_page_for_push flow
-         */
         __pte_alloc(mm, pd->vma, pd->pmd, addr);
         goto retry;
     }

@@ -69,7 +69,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 {
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0;
+    int r = 0, retry = 0;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -92,12 +92,22 @@ retry:
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
+        if (!retry) {
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            retry = 1;
+            goto retry;
+        }
         printk("[dsm_flag_page_remote] no pgd \n");
         goto out;
     }
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
+        if (!retry) {
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            retry = 1;
+            goto retry;
+        }
         printk("[dsm_flag_page_remote] no pud \n");
         goto out;
     }
@@ -130,8 +140,8 @@ retry:
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, addr, pte,
-                    swp_entry_to_pte( dsm_descriptor_to_swp_entry(descriptor, 0)));
+            set_pte_at(mm, addr, pte, swp_entry_to_pte(
+                    dsm_descriptor_to_swp_entry(descriptor, 0)));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);

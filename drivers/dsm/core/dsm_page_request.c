@@ -413,8 +413,8 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
 
     dsm_stats_inc( tag == TRY_REQUEST_PAGE?   /* keep conditions in macro */
         (page? 
-            &local_svm->svm_sysfs.nb_answer_attempt :
-            &local_svm->svm_sysfs.nb_answer_attempt_fail) :
+            &local_svm->svm_sysfs.nb_answer_soft_pull :
+            &local_svm->svm_sysfs.nb_answer_soft_pull_fail) :
         (page?
             &local_svm->svm_sysfs.nb_answer_fault :
             &local_svm->svm_sysfs.nb_answer_fault_fail));

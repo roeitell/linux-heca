@@ -92,14 +92,13 @@ struct svm_sysfs {
     atomic64_t nb_remote_fault_success;
     atomic64_t nb_push_attempt;
     atomic64_t nb_push_success;
-    atomic64_t nb_prefetch_attempt;
-    atomic64_t nb_prefetch_success;
-    atomic64_t nb_prefetch_failed_response;
-    atomic64_t nb_push_failed_response;
+    atomic64_t nb_soft_pull_attempt;
+    atomic64_t nb_soft_pull_response;
+    atomic64_t nb_soft_pull_response_fail;
     atomic64_t nb_answer_fault;
     atomic64_t nb_answer_fault_fail;
-    atomic64_t nb_answer_attempt;
-    atomic64_t nb_answer_attempt_fail;
+    atomic64_t nb_answer_soft_pull;
+    atomic64_t nb_answer_soft_pull_fail;
 };
 
 struct dsm {

@@ -330,6 +330,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
     struct page *page = ppe->mem_page;
     unsigned long addr = tx_e->dsm_msg->req_addr + dpc->svm->priv->offset;
     int r = 0, i;
+    struct subvirtual_machine *svm = dpc->svm;
 
     /*
      * Pull try only happens when pushing to us - meaning we're only trying to
@@ -349,9 +350,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
             SetPageUptodate(page);
 
             unlock_page(dpc->pages[0]);
-            dsm_stats_inc(dpc->tag == PREFETCH_TAG?
-                    &dpc->svm->svm_sysfs.nb_prefetch_failed_response :
-                    &dpc->svm->svm_sysfs.nb_push_failed_response);
+            dsm_stats_inc(&dpc->svm->svm_sysfs.nb_soft_pull_response_fail);
 
             dsm_cache_release(dpc->svm, addr);
             dpc_nproc_dec(&dpc, 1);
@@ -360,9 +359,8 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
     }
 
     r = dsm_pull_req_complete(tx_e);
-
-    if (dpc->tag == PREFETCH_TAG)
-        dsm_stats_inc(&dpc->svm->svm_sysfs.nb_prefetch_success);
+    if (r)
+        dsm_stats_inc(&svm->svm_sysfs.nb_soft_pull_response);
 
     /*
      * Get_user_pages for addr will trigger a page fault, and the faulter
@@ -593,7 +591,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 if (!dsd.flags & DSM_INFLIGHT) {
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                             2, tag, vma, mm, private, 0, pte_entry, pte);
-                    dsm_stats_inc(&fault_svm->svm_sysfs.nb_prefetch_attempt);
+                    dsm_stats_inc(&fault_svm->svm_sysfs.nb_soft_pull_attempt);
                 }
             }
         }

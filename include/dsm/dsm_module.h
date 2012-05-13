@@ -153,6 +153,5 @@ int create_svm_sysfs_entry(struct subvirtual_machine *);
 int create_connection_sysfs_entry(struct con_element_sysfs *, struct kobject *,
         char*);
 void delete_connection_sysfs_entry(struct con_element_sysfs *);
-void reset_svm_stats(struct subvirtual_machine *);
 
 #endif /* DSM_OP_H_ */

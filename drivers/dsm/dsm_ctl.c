@@ -231,7 +231,6 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
             new_svm->dsm->nb_local_svm++;
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
-            reset_svm_stats(new_svm);
             if (create_svm_sysfs_entry(new_svm)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);
@@ -307,7 +306,6 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
             new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
             atomic_set(&new_svm->status, DSM_SVM_ONLINE);
 
-            reset_svm_stats(new_svm);
             if (create_svm_sysfs_entry(new_svm)) {
                 radix_tree_delete(&dsm->svm_tree_root,
                         (unsigned long) svm_info.svm_id);

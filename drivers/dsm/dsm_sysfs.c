@@ -34,14 +34,13 @@ DECLARE_SVM_SYSFS_ATTR(nb_remote_fault);
 DECLARE_SVM_SYSFS_ATTR(nb_remote_fault_success);
 DECLARE_SVM_SYSFS_ATTR(nb_push_attempt);
 DECLARE_SVM_SYSFS_ATTR(nb_push_success);
-DECLARE_SVM_SYSFS_ATTR(nb_prefetch_attempt);
-DECLARE_SVM_SYSFS_ATTR(nb_prefetch_success);
-DECLARE_SVM_SYSFS_ATTR(nb_prefetch_failed_response);  /* per addr, not page */
-DECLARE_SVM_SYSFS_ATTR(nb_push_failed_response);      /* per addr, not page */
+DECLARE_SVM_SYSFS_ATTR(nb_soft_pull_attempt);
+DECLARE_SVM_SYSFS_ATTR(nb_soft_pull_response);        /* per page, not addr */
+DECLARE_SVM_SYSFS_ATTR(nb_soft_pull_response_fail);   /* per page, not addr */
 DECLARE_SVM_SYSFS_ATTR(nb_answer_fault);
 DECLARE_SVM_SYSFS_ATTR(nb_answer_fault_fail);
-DECLARE_SVM_SYSFS_ATTR(nb_answer_attempt);
-DECLARE_SVM_SYSFS_ATTR(nb_answer_attempt_fail);
+DECLARE_SVM_SYSFS_ATTR(nb_answer_soft_pull);
+DECLARE_SVM_SYSFS_ATTR(nb_answer_soft_pull_fail);
 
 DECLARE_TXRX_SYSFS_ATTR(request_page);
 DECLARE_TXRX_SYSFS_ATTR(request_page_pull);
@@ -52,12 +51,12 @@ DECLARE_TXRX_SYSFS_ATTR(try_request_page);
 DECLARE_TXRX_SYSFS_ATTR(try_request_page_fail);
 DECLARE_TXRX_SYSFS_ATTR(err);
 
-static struct attribute *svm_attrs[] = { &nb_remote_fault.attr, 
+static struct attribute *svm_attrs[] = { &nb_remote_fault.attr,
     &nb_remote_fault_success.attr, &nb_push_attempt.attr, &nb_push_success.attr,
-    &nb_prefetch_attempt.attr, &nb_prefetch_success.attr,
-    &nb_prefetch_failed_response.attr, &nb_push_failed_response.attr,
-    &nb_answer_fault.attr, &nb_answer_attempt.attr, &nb_answer_fault_fail.attr,
-    &nb_answer_attempt_fail.attr, NULL,
+    &nb_soft_pull_attempt.attr, &nb_soft_pull_response.attr,
+    &nb_soft_pull_response_fail.attr, &nb_answer_fault.attr,
+    &nb_answer_soft_pull.attr, &nb_answer_fault_fail.attr,
+    &nb_answer_soft_pull_fail.attr, NULL,
 };
 static struct attribute *tx_attrs[] = { &tx_request_page.attr,
     &tx_request_page_pull.attr, &tx_page_request_reply.attr,
@@ -114,7 +113,7 @@ static struct sysfs_ops kobj_dsm_sysfs_ops = { .show = kobj_dsm_attr_show,
 static struct kobj_type dsm_kobject_type = {
     .release = dsm_kobject_type_release, .sysfs_ops = &kobj_dsm_sysfs_ops, };
 
-void reset_svm_stats(struct subvirtual_machine *svm)
+static void reset_svm_stats(struct subvirtual_machine *svm)
 {
     struct svm_sysfs *stats = &svm->svm_sysfs;
 
@@ -122,14 +121,13 @@ void reset_svm_stats(struct subvirtual_machine *svm)
     dsm_stats_set(&stats->nb_remote_fault_success, 0);
     dsm_stats_set(&stats->nb_push_attempt, 0);
     dsm_stats_set(&stats->nb_push_success, 0);
-    dsm_stats_set(&stats->nb_prefetch_attempt, 0);
-    dsm_stats_set(&stats->nb_prefetch_success, 0);
-    dsm_stats_set(&stats->nb_prefetch_failed_response, 0);
-    dsm_stats_set(&stats->nb_push_failed_response, 0);
+    dsm_stats_set(&stats->nb_soft_pull_attempt, 0);
+    dsm_stats_set(&stats->nb_soft_pull_response, 0);
+    dsm_stats_set(&stats->nb_soft_pull_response_fail, 0);
     dsm_stats_set(&stats->nb_answer_fault, 0);
     dsm_stats_set(&stats->nb_answer_fault_fail, 0);
-    dsm_stats_set(&stats->nb_answer_attempt, 0);
-    dsm_stats_set(&stats->nb_answer_attempt_fail, 0);
+    dsm_stats_set(&stats->nb_answer_soft_pull, 0);
+    dsm_stats_set(&stats->nb_answer_soft_pull_fail, 0);
 }
 
 static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state)
@@ -166,6 +164,8 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm)
 {
     struct kobject *kobj = &svm->svm_sysfs.svm_kobject;
     int r;
+
+    reset_svm_stats(svm);
 
     r = kobject_init_and_add(kobj, &dsm_kobject_type, &svm->dsm->dsm_kobject,
             "svm.%u", svm->svm_id);

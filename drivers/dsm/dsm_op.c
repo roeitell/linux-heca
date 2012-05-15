@@ -1198,10 +1198,10 @@ surrogate:
             atomic_dec(&dpc->nproc);
 release: 
             if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+                rb_erase(&dpc->rb_node, &svm->push_cache);
                 page_cache_release(dpc->pages[0]);
                 set_page_private(dpc->pages[0], 0);
                 dsm_dealloc_dpc(&dpc);
-                rb_erase(&dpc->rb_node, &svm->push_cache);
             }
         }
     }

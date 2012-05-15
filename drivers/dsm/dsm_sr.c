@@ -160,7 +160,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
     struct conn_element *ele;
     struct tx_buffer *tx;
     struct tx_buf_ele *tx_e;
-    int ret = 0;
+    int ret = -EINVAL;
     int req_tag = (tag == PULL_TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
 
     /*
@@ -275,7 +275,7 @@ int process_page_request(struct conn_element * ele,
 
     if (unlikely(!page)) {
         release_tx_element_reply(ele, tx_e);
-        ret = -1;
+        ret = -EINVAL;
 
         /*
          * Too many consecutive failures to grab pages; seems that svm is
@@ -535,7 +535,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
     if (likely(page)) {
         ret = send_request_dsm_page_pull(fault_svm, svms,
                 addr - fault_svm->priv->offset);
-        if (unlikely(ret))
+        if (unlikely(ret == -ENOMEM))
             dsm_cancel_page_push(fault_svm, addr, page);
     }
 

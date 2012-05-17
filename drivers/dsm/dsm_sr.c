@@ -118,10 +118,10 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
 
 nomem:
     for (j = 0; j < i; j++) {
-        if (unlikely(!svms.pp[i]))
+        if (unlikely(!svms.pp[j]))
             continue;
 
-        if (tx_elms[i])
+        if (tx_elms[j])
             release_tx_element(svms.pp[j]->ele, tx_elms[j]);
         else 
             kmem_cache_free(kmem_request_cache, reqs[j]);
@@ -282,7 +282,8 @@ int process_page_request(struct conn_element * ele,
          *  offline. Send a status update message to client.
          *
          */
-        if (atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) > MAX_CONSECUTIVE_SVM_FAILURES) {
+        if (atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) > 
+                MAX_CONSECUTIVE_SVM_FAILURES) {
             remove_svm(dsm->dsm_id, local_svm->svm_id);
             goto no_svm;
         }
@@ -528,6 +529,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
     struct page *page;
     int ret = 0;
 
+    BUG_ON(!mr);
     down_read(&mm->mmap_sem);
     page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
     up_read(&mm->mmap_sem);

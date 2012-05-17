@@ -292,8 +292,7 @@ static inline void queue_send_work(struct conn_element *ele)
 
 void send_cq_handle_work(struct work_struct *work)
 {
-    struct conn_element
-    *ele = container_of(work, struct conn_element,
+    struct conn_element *ele = container_of(work, struct conn_element,
             send_work);
     int ret = 0;
 
@@ -307,8 +306,7 @@ void send_cq_handle_work(struct work_struct *work)
 
 void recv_cq_handle_work(struct work_struct *work)
 {
-    struct conn_element
-    *ele = container_of(work, struct conn_element,
+    struct conn_element *ele = container_of(work, struct conn_element,
             recv_work);
     int ret = 0;
 

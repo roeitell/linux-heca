@@ -39,6 +39,7 @@
 #define PAGE_POOL_SIZE (MAX_CAP_SCQ + MAX_CAP_RCQ)*2
 
 #define MAX_CONSECUTIVE_SVM_FAILURES 5
+#define MAX_SVMS_PER_PAGE 2
 
 /**
  * RDMA_INFO
@@ -396,7 +397,7 @@ struct dsm_page_cache {
     unsigned long addr;
     u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
-    struct page **pages;
+    struct page *pages[MAX_SVMS_PER_PAGE+1];
     struct svm_list svms;
     atomic_t found;
     atomic_t nproc;

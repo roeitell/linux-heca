@@ -369,7 +369,7 @@ retry:
     }
 
     *return_pte = pd.pte;
-    
+
 noop: 
     atomic_dec(&dpc->nproc);
     if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num && 
@@ -377,17 +377,16 @@ noop:
         dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
             lock_page(page);
-            page_cache_release(page);
             set_page_private(page, 0);
+            unlock_page(page);
+            page_cache_release(page);
             if (likely(change_pte)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-                if (likely(pte_same(*(pd.pte), pte_entry))) {
+                if (likely(pte_same(*(pd.pte), pte_entry)))
                     clear_dsm_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
-                }
                 pte_unmap_unlock(pd.pte, ptl);
                 dsm_stats_inc(&local_svm->svm_sysfs.nb_push_success);
             }
-            unlock_page(page);
         }
     }
 
@@ -466,6 +465,7 @@ retry:
         goto retry;
     }
 
+    BUG_ON(!pte);
     page = vm_normal_page(pd.vma, addr, *pte);
     if (!page) {
         // DSM3: follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
@@ -474,14 +474,13 @@ retry:
         page = pte_page(*pte);
     }
 
-    if (unlikely(PageTransHuge(page))) {
-        if (!PageHuge(page) && PageAnon(page)) {
-            if (unlikely(split_huge_page(page)))
-                goto bad_page;
-        }
+    if (unlikely(PageTransHuge(page) && !PageHuge(page) && PageAnon(page))) {
+        if (unlikely(split_huge_page(page)))
+            goto bad_page;
     }
 
     if (unlikely(PageKsm(page))) {
+        BUG_ON(!pd.vma);
         if (ksm_madvise(pd.vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE,
                 &pd.vma->vm_flags))
             goto bad_page;

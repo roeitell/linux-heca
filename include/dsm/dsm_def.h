@@ -38,6 +38,8 @@
 
 #define PAGE_POOL_SIZE (MAX_CAP_SCQ + MAX_CAP_RCQ)*2
 
+#define MAX_QUEUED_PUSH_REQS 5000
+
 #define MAX_CONSECUTIVE_SVM_FAILURES 5
 #define MAX_SVMS_PER_PAGE 2
 
@@ -195,7 +197,7 @@ struct tx_buffer {
     spinlock_t request_queue_lock;
     spinlock_t tx_free_elements_list_lock;
     spinlock_t tx_free_elements_list_reply_lock;
-
+    unsigned long request_queue_sz;
 };
 
 struct conn_element {

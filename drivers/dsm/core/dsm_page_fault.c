@@ -429,10 +429,10 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
 
         if (!new_dpc) {
             new_dpc = dsm_alloc_dpc(fault_svm, addr, svms, 3, PULL_TAG);
-            new_dpc->pages[0] = page;
-            atomic_set(&new_dpc->found, 0);
             if (!new_dpc)
                 goto fail;
+            new_dpc->pages[0] = page;
+            atomic_set(&new_dpc->found, 0);
         }
 
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
@@ -684,12 +684,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             dpc = convert_push_dpc(fault_svm, norm_addr, dsd);
             if (likely(dpc))
                 goto lock;
-        } else if (dsd.flags & DSM_INFLIGHT)
+        } else if (dsd.flags & DSM_INFLIGHT) {
             if (inflight_wait(page_table, &orig_pte, &entry, &dsd)) {
                 ret |= VM_FAULT_RETRY;
                 goto out;
             }
-
+        }
     }
 
 retry: 

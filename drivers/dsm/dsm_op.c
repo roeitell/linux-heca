@@ -386,6 +386,7 @@ static int init_tx_lists(struct conn_element *ele)
     int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
     int max_tx_reply = TX_BUF_ELEMENTS_NUM;
     INIT_LIST_HEAD(&tx->request_queue);
+    tx->request_queue_sz = 0;
     init_llist_head(&tx->tx_free_elements_list);
     init_llist_head(&tx->tx_free_elements_list_reply);
     spin_lock_init(&tx->tx_free_elements_list_lock);
@@ -875,8 +876,8 @@ struct page_pool_ele *get_empty_page_ele(struct conn_element *ele)
     struct page_pool *pp = &ele->page_pool;
     struct llist_node *llnode = NULL;
 
-    loop: if (llist_empty(&pp->page_empty_pool_list)) {
-        printk("[get_empty_page_ele] forcing a page refill\n");
+loop:
+    if (llist_empty(&pp->page_empty_pool_list)) {
         release_page_work(&ele->page_pool.page_release_work);
         goto loop;
     }

@@ -36,6 +36,22 @@ static inline void schedule_destroy_conns(void)
     schedule_work(work);
 }
 
+static inline void queue_recv_work(struct conn_element *ele)
+{
+    rcu_read_lock();
+    if (atomic_read(&ele->alive))
+        queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
+    rcu_read_unlock();
+}
+
+static inline void queue_send_work(struct conn_element *ele)
+{
+    rcu_read_lock();
+    if (atomic_read(&ele->alive))
+        queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
+    rcu_read_unlock();
+}
+
 static int flush_dsm_request(struct conn_element *ele)
 {
     struct tx_buffer *tx = &ele->tx_buffer;
@@ -46,11 +62,15 @@ static int flush_dsm_request(struct conn_element *ele)
     spin_lock(&tx->request_queue_lock);
     while (!list_empty(&tx->request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);
-        if (!tx_e)
-            break;
+        if (!tx_e) {
+            queue_send_work(ele);
+            ret = 1;
+            goto out;
+        }
 
         req = list_first_entry(&tx->request_queue, struct dsm_request, queue);
         list_del(&req->queue);
+        tx->request_queue_sz--;
 
         //populate it with a new message
         switch (req->type) {
@@ -87,13 +107,21 @@ static int flush_dsm_request(struct conn_element *ele)
             default: {
                 printk("[flush_dsm_request] unrecognised request type %d \n",
                         req->type);
+                release_tx_element(ele, tx_e);
                 ret = 1;
                 goto out;
             }
         }
         tx_e->callback.func = req->func;
-        tx_dsm_send(ele, tx_e);
-        release_dsm_request(req);
+        if (unlikely(tx_dsm_send(ele, tx_e))) {
+            release_tx_element(ele, tx_e);
+            list_add(&req->queue, &tx->request_queue);
+            tx->request_queue_sz++;
+            ret = 1;
+            goto out;
+        } else {
+            release_dsm_request(req);
+        }
     }
 out: 
     spin_unlock(&tx->request_queue_lock);
@@ -272,22 +300,6 @@ static void dsm_recv_poll(struct ib_cq *cq)
             dsm_recv_message_handler(ele, &ele->rx_buffer.rx_buf[wc.wr_id]);
         }
     }
-}
-
-static inline void queue_recv_work(struct conn_element *ele)
-{
-    rcu_read_lock();
-    if (atomic_read(&ele->alive))
-        queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
-    rcu_read_unlock();
-}
-
-static inline void queue_send_work(struct conn_element *ele)
-{
-    rcu_read_lock();
-    if (atomic_read(&ele->alive))
-        queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
-    rcu_read_unlock();
 }
 
 void send_cq_handle_work(struct work_struct *work)

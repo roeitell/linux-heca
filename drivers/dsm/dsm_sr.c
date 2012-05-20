@@ -31,8 +31,8 @@ static inline void queue_dsm_request(struct conn_element *ele,
 {
     spin_lock(&ele->tx_buffer.request_queue_lock);
     list_add_tail(&req->queue, &ele->tx_buffer.request_queue);
+    ele->tx_buffer.request_queue_sz++;
     spin_unlock(&ele->tx_buffer.request_queue_lock);
-    queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
 }
 
 static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
@@ -79,7 +79,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
 {
     struct tx_buf_ele *tx_elms[svms.num];
     struct dsm_request *reqs[svms.num];
-    int i, j, r = 0;
+    int i, j, r = 0, k;
 
     for (i = 0; i < svms.num; i++) {
         tx_elms[i] = NULL;
@@ -91,6 +91,10 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
             tx_elms[i] = try_get_next_empty_tx_ele(svms.pp[i]->ele);
 
         if (!tx_elms[i]) {
+            if (svms.pp[i]->ele->tx_buffer.request_queue_sz >
+                    MAX_QUEUED_PUSH_REQS)
+                goto nomem;
+
             reqs[i] = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
             if (!reqs[i])
                 goto nomem;
@@ -106,7 +110,12 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
                     fault_svm->dsm->dsm_id, fault_svm->svm_id,
                     svms.pp[i]->svm_id, (uint64_t) addr);
             tx_elms[i]->callback.func = NULL;
-            r |= tx_dsm_send(svms.pp[i]->ele, tx_elms[i]);
+            k = tx_dsm_send(svms.pp[i]->ele, tx_elms[i]);
+            if (unlikely(k)) {
+                release_tx_element(svms.pp[i]->ele, tx_elms[i]);
+                r |= k;
+                /* TODO: should we try and alloc a dsm_req now? */
+            }
         } else {
             BUG_ON(!reqs[i]);
             r |= add_dsm_request(reqs[i], svms.pp[i]->ele, REQUEST_PAGE_PULL,
@@ -134,7 +143,7 @@ static int send_svm_status_update(struct conn_element *ele,
 {
     struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e = NULL;
-    int ret = 1;
+    int ret;
 
     if (list_empty(&tx->request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);
@@ -143,12 +152,15 @@ static int send_svm_status_update(struct conn_element *ele,
                     sizeof(struct dsm_message));
             tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
             ret = tx_dsm_send(ele, tx_e);
+            if (likely(!ret))
+                goto out;
+            release_tx_element(ele, tx_e);
         }
     }
 
-    if (ret)
-        ret = add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_msg);
+    ret = add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_msg);
 
+out:
     return ret;
 }
 
@@ -183,13 +195,15 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
+            if (likely(!ret))
+                goto out;
+            release_tx_element(ele, tx_e);
         }
     }
 
-    if (ret) {
-        ret = add_dsm_request(NULL, ele, req_tag, fault_svm, remote_svm,
-                addr, func, dpc, page);
-    }
+    ret = add_dsm_request(NULL, ele, req_tag, fault_svm, remote_svm,
+            addr, func, dpc, page);
+    /* FIXME: Handle req alloc failure */
 
 out: 
     return ret;
@@ -299,13 +313,14 @@ int process_page_request(struct conn_element * ele,
                     tx_e->wrk_req->dst_addr = NULL;
                     tx_e->callback.func = NULL;
                     ret = tx_dsm_send(ele, tx_e);
+                    if (likely(!ret))
+                        goto nopage_out;
+                    release_tx_element(ele, tx_e);
                 }
             }
-
-            if (ret)
-                ret = add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
+            ret = add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
         }
-
+nopage_out:
         return ret;
     }
     /*
@@ -319,6 +334,9 @@ int process_page_request(struct conn_element * ele,
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 
     ret = tx_dsm_send(ele, tx_e);
+    BUG_ON(ret);   /* FIXME: queue req! */
+    if (unlikely(ret))
+        release_tx_element(ele, tx_e);
 
     return ret;
 

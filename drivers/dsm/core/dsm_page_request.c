@@ -312,7 +312,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
-    int change_pte = 0, active = 0;
+    int change_pte = 0, active = 0, unlock;
     spinlock_t *ptl = NULL;
     
 retry: 
@@ -368,17 +368,16 @@ retry:
         change_pte = 1;
     }
 
-    *return_pte = pd.pte;
-
 noop: 
     atomic_dec(&dpc->nproc);
     if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num && 
             atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
         dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
-            lock_page(page);
+            unlock = trylock_page(page);
             set_page_private(page, 0);
-            unlock_page(page);
+            if (unlock)
+                unlock_page(page);
             page_cache_release(page);
             if (likely(change_pte)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -389,6 +388,8 @@ noop:
             }
         }
     }
+
+    *return_pte = pd.pte;
 
 out: 
     return active? NULL : page;

@@ -11,10 +11,13 @@ struct dsm_functions *funcs = NULL;
 
 void lazy_free_swap(struct page *page)
 {
+    int unlock;
+
     if (likely(!page_mapped(page))) {
-        lock_page(page);
+        unlock = trylock_page(page);
         try_to_free_swap(page);
-        unlock_page(page);
+        if (unlock)
+            unlock_page(page);
     }
 }
 EXPORT_SYMBOL(lazy_free_swap);

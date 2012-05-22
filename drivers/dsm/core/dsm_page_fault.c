@@ -278,9 +278,14 @@ unwritable_page:
 
 static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
 {
+    int i;
+
     atomic_dec(&(*dpc)->nproc);
     if (dealloc && atomic_cmpxchg(&(*dpc)->nproc, 1, 0) == 1) {
-        page_cache_release((*dpc)->pages[0]);
+        for (i = 0; i < (*dpc)->svms.num; i++) {
+            if (likely((*dpc)->svms.pp[i]))
+                page_cache_release((*dpc)->pages[i]);
+        }
         dsm_dealloc_dpc(dpc);
     }
 }
@@ -297,16 +302,12 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
         if (dpc->pages[i] == page)
             goto unlock;
     }
-    return 0;
+    BUG();
 
 unlock:
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
+        page_cache_get(page);
         lru_cache_add_anon(page);
-
-        /*
-         * First response to arrive can free all the redundant pages. The found
-         * page has already been added to lru, so it won't be freed.
-         */
         for (i = 0; i < dpc->svms.num; i++) {
             if (likely(dpc->pages[i])) {
                 set_page_private(dpc->pages[i], 0);
@@ -316,6 +317,7 @@ unlock:
         }
         unlock_page(dpc->pages[0]);
         lru_add_drain();
+        dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
     }
 
     dpc_nproc_dec(&dpc, dpc->tag != PREFETCH_TAG);
@@ -359,8 +361,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
     }
 
     r = dsm_pull_req_complete(tx_e);
-    if (r)
-        dsm_stats_inc(&svm->svm_sysfs.nb_soft_pull_response);
+    dsm_stats_inc_cond(&svm->svm_sysfs.nb_soft_pull_response, r);
 
     /*
      * Get_user_pages for addr will trigger a page fault, and the faulter
@@ -490,7 +491,6 @@ static struct dsm_page_cache *dsm_cache_add_send(
                 goto fail;
 
             __set_page_locked(page);
-            page_cache_get(page);
             set_page_private(page, private);
             SetPageSwapBacked(page);
             new_dpc->pages[0] = page;
@@ -809,7 +809,6 @@ lock:
     }
 
     update_mmu_cache(vma, address, page_table);
-    dsm_stats_inc(&fault_svm->svm_sysfs.nb_remote_fault_success);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
     goto out;

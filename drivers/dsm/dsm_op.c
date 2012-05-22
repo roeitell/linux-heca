@@ -385,6 +385,7 @@ static int init_tx_lists(struct conn_element *ele)
     struct tx_buffer *tx = &ele->tx_buffer;
     int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
     int max_tx_reply = TX_BUF_ELEMENTS_NUM;
+
     INIT_LIST_HEAD(&tx->request_queue);
     tx->request_queue_sz = 0;
     init_llist_head(&tx->tx_free_elements_list);

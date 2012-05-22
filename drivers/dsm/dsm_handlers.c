@@ -113,15 +113,8 @@ static int flush_dsm_request(struct conn_element *ele)
             }
         }
         tx_e->callback.func = req->func;
-        if (unlikely(tx_dsm_send(ele, tx_e))) {
-            release_tx_element(ele, tx_e);
-            list_add(&req->queue, &tx->request_queue);
-            tx->request_queue_sz++;
-            ret = 1;
-            goto out;
-        } else {
-            release_dsm_request(req);
-        }
+        tx_dsm_send(ele, tx_e);
+        release_dsm_request(req);
     }
 out: 
     spin_unlock(&tx->request_queue_lock);

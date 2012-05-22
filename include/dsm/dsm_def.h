@@ -30,13 +30,13 @@
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
-#define MAX_CAP_SCQ 256
-#define MAX_CAP_RCQ 1024
+#define MAX_CAP_SCQ 512
+#define MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
 
-#define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ
+#define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ / 2
 #define RX_BUF_ELEMENTS_NUM MAX_CAP_RCQ
 
-#define PAGE_POOL_SIZE (MAX_CAP_SCQ + MAX_CAP_RCQ)*2
+#define PAGE_POOL_SIZE (TX_BUF_ELEMENTS_NUM + RX_BUF_ELEMENTS_NUM) * 2
 
 #define MAX_QUEUED_PUSH_REQS 5000
 

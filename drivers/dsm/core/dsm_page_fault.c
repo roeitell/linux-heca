@@ -312,7 +312,6 @@ unlock:
             if (likely(dpc->pages[i])) {
                 set_page_private(dpc->pages[i], 0);
                 SetPageUptodate(dpc->pages[i]);
-                page_cache_release(dpc->pages[i]);
             }
         }
         unlock_page(dpc->pages[0]);
@@ -402,7 +401,6 @@ static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
     func = (tag == PULL_TRY_TAG)?
         dsm_try_pull_req_complete : dsm_pull_req_complete;
 
-    page_cache_get(page);
     set_page_private(page, private);
     SetPageSwapBacked(page);
 

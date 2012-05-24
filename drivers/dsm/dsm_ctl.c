@@ -355,13 +355,47 @@ connect_fail:
     return r;
 }
 
+static int do_unmap_range(struct dsm *dsm, int dsc, unsigned long start,
+        unsigned long end)
+{
+    int r = 0;
+    unsigned long it;
+
+    for (it = start; it < end; it += PAGE_SIZE) {
+        r = dsm_flag_page_remote(current->mm, dsm, dsc, it);
+        if (r)
+            break;
+    }
+
+    return r;
+}
+
+static int unmap_range(struct private_data *priv_data, void __user *argp)
+{
+    int r = -EFAULT;
+    struct unmap_data udata;
+    struct dsm *dsm;
+
+    if (copy_from_user((void *) &udata, argp, sizeof udata))
+        goto out;
+
+    dsm = find_dsm(udata.dsm_id);
+    if (!dsm)
+        goto out;
+
+    r = do_unmap_range(dsm, dsm_get_descriptor(dsm, udata.svm_ids), udata.addr,
+            udata.addr + udata.sz - 1);
+
+out:
+    return r;
+}
+
 static int register_mr(struct private_data *priv_data, void __user *argp)
 {
-    int r = -EFAULT, j;
+    int r = -EFAULT, i;
     struct dsm *dsm;
     struct memory_region *mr;
     struct unmap_data udata;
-    unsigned long i, end;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
@@ -384,13 +418,13 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     mr->descriptor = dsm_get_descriptor(dsm, udata.svm_ids);
 
     insert_mr(dsm, mr);
-    for (j = 0; udata.svm_ids[j]; j++) {
-        struct subvirtual_machine *svm = find_svm(dsm, udata.svm_ids[j]);
+    for (i = 0; udata.svm_ids[i]; i++) {
+        struct subvirtual_machine *svm = find_svm(dsm, udata.svm_ids[i]);
         if (!svm)
             goto out;
 
         if (svm->priv && svm->priv->mm == current->mm) {
-            if (j == 0)
+            if (i == 0)
                 r = 0;
             mr->local = LOCAL;
             goto out;
@@ -398,11 +432,9 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     }
 
     r = 0;
-    i = udata.addr;
-    for (end = i + udata.sz - 1; i < end; i += PAGE_SIZE) {
-        r = dsm_flag_page_remote(current->mm, dsm, mr->descriptor, i);
-        if (r)
-            break;
+    if (udata.unmap) {
+        r = do_unmap_range(dsm, mr->descriptor, udata.addr,
+                udata.addr + udata.sz - 1);
     }
 
 out: 
@@ -482,25 +514,25 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
         goto out;
 
     switch (ioctl) {
-        case DSM_DSM: {
+        case DSM_DSM:
             r = register_dsm(priv_data, argp);
             break;
-        }
-        case DSM_SVM: {
+        case DSM_SVM:
             if (priv_data->dsm)
                 r = register_svm(priv_data, argp);
             break;
-        }
-        case DSM_CONNECT: {
+        case DSM_CONNECT:
             if (priv_data->dsm)
                 r = connect_svm(priv_data, argp);
             break;
-        }
-        case DSM_MR: {
+        case DSM_MR:
             if (priv_data->dsm)
                 r = register_mr(priv_data, argp);
             break;
-        }
+        case DSM_UNMAP_RANGE:
+            if (priv_data->dsm)
+                r = unmap_range(priv_data, argp);
+            break;
 
         /*
          * Statistics and devel/debug

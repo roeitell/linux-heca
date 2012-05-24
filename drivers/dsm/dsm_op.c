@@ -386,13 +386,13 @@ static int init_tx_lists(struct conn_element *ele)
     int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
     int max_tx_reply = TX_BUF_ELEMENTS_NUM;
 
-    INIT_LIST_HEAD(&tx->request_queue);
     tx->request_queue_sz = 0;
+    init_llist_head(&tx->request_queue);
     init_llist_head(&tx->tx_free_elements_list);
     init_llist_head(&tx->tx_free_elements_list_reply);
     spin_lock_init(&tx->tx_free_elements_list_lock);
     spin_lock_init(&tx->tx_free_elements_list_reply_lock);
-    spin_lock_init(&tx->request_queue_lock);
+    atomic_set(&tx->request_queue_lock, 0);
 
     for (i = 0; i < max_tx_send; ++i)
         release_tx_element(ele, &tx->tx_buf[i]);
@@ -1234,6 +1234,9 @@ void release_svm_tx_requests(struct subvirtual_machine *svm,
     struct list_head del_queue;
     struct list_head *pos, *n;
 
+    /*
+     * FIXME: re-implement for llist, same as flush_dsm_request_queue
+     *
     BUG_ON(!svm);
     BUG_ON(!tx);
 
@@ -1260,5 +1263,6 @@ void release_svm_tx_requests(struct subvirtual_machine *svm,
         release_dpc_element(svm, req->dpc, NULL);
         release_dsm_request(req);
     }
+    */
 }
 

@@ -29,10 +29,14 @@ void release_dsm_request(struct dsm_request *req)
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
-    spin_lock(&ele->tx_buffer.request_queue_lock);
-    list_add_tail(&req->queue, &ele->tx_buffer.request_queue);
-    ele->tx_buffer.request_queue_sz++;
-    spin_unlock(&ele->tx_buffer.request_queue_lock);
+    struct dsm_request *prev;
+
+    llist_add(&req->prev, &ele->tx_buffer.request_queue);
+    if (req->prev.next != NULL) {
+        prev = llist_entry(req->prev.next, struct dsm_request, prev);
+        prev->next = req;
+    }
+    ele->tx_buffer.request_queue_sz++; /* this doesn't need to be precise */
 }
 
 static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
@@ -54,6 +58,7 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
     req->func = func;
     req->dpc = dpc;
     req->page = page;
+    req->next = NULL;
     queue_dsm_request(ele, req);
 
     return 0;
@@ -68,10 +73,16 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
 
     req->type = type;
     req->func = NULL;
+    req->next = NULL;
     memcpy(&req->dsm_msg, msg, sizeof(struct dsm_message));
     queue_dsm_request(ele, req);
 
     return 0;
+}
+
+static inline int request_queue_empty(struct conn_element *ele)
+{
+    return llist_empty(&ele->tx_buffer.request_queue);
 }
 
 static inline int request_queue_full(struct conn_element *ele)
@@ -92,7 +103,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
         if (unlikely(!svms.pp[i]))
             continue;
 
-        if (list_empty(&svms.pp[i]->ele->tx_buffer.request_queue))
+        if (request_queue_empty(svms.pp[i]->ele))
             tx_elms[i] = try_get_next_empty_tx_ele(svms.pp[i]->ele);
 
         if (!tx_elms[i]) {
@@ -137,11 +148,10 @@ nomem:
 static int send_svm_status_update(struct conn_element *ele,
         struct rx_buf_ele *rx_buf_e)
 {
-    struct tx_buffer *tx = &ele->tx_buffer;
     struct tx_buf_ele *tx_e = NULL;
     int ret;
 
-    if (list_empty(&tx->request_queue)) {
+    if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
             memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
@@ -164,7 +174,6 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 {
 
     struct conn_element *ele;
-    struct tx_buffer *tx;
     struct tx_buf_ele *tx_e;
     int ret = -EINVAL;
     int req_tag = (tag == PULL_TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
@@ -178,9 +187,8 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         goto out;
 
     ele = remote_svm->ele;
-    tx = &ele->tx_buffer;
 
-    if (list_empty(&tx->request_queue)) {
+    if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
             create_page_request(ele, tx_e, fault_svm->dsm->dsm_id,
@@ -247,7 +255,6 @@ int process_page_request(struct conn_element * ele,
     struct tx_buf_ele *tx_e = NULL;
     struct page * page;
     int ret = 0;
-    struct tx_buffer *tx;
     struct dsm *dsm;
     struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
@@ -281,6 +288,7 @@ retry:
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
     tx_e->reply_work_req->mm = local_svm->priv->mm;
     tx_e->reply_work_req->addr = norm_addr;
+
     page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
             msg->type, &tx_e->reply_work_req->pte);
 
@@ -300,9 +308,7 @@ retry:
         }
 
         if (msg->type == TRY_REQUEST_PAGE) {
-            tx = &ele->tx_buffer;
-
-            if (list_empty(&tx->request_queue)) {
+            if (request_queue_empty(ele)) {
                 tx_e = try_get_next_empty_tx_ele(ele);
                 if (likely(tx_e)) {
                     memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));

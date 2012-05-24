@@ -15,16 +15,12 @@ struct dsm_pte_data {
     pte_t *pte;
 };
 
-static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
-        unsigned long addr, struct svm_list svms, int nproc, u32 descriptor)
+static int dsm_push_cache_add(struct dsm_page_cache *dpc,
+        struct subvirtual_machine *svm, unsigned long addr)
 {
-    struct dsm_page_cache *dpc = NULL, *rb_dpc;
+    struct dsm_page_cache *rb_dpc;
     struct rb_node **new, *parent = NULL;
-
-    dpc = dsm_alloc_dpc(svm, addr, svms, 1, descriptor);
-    if (unlikely(!dpc))
-        goto out;
-    dpc->bitmap = (1 << nproc) - 1;
+    int r = 0;
 
     write_seqlock(&svm->push_cache_lock);
     for (new = &svm->push_cache.rb_node; *new;) {
@@ -35,22 +31,18 @@ static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
             new = &(*new)->rb_left;
         else if (addr > rb_dpc->addr)
             new = &(*new)->rb_right;
-        else
-            goto exist;
+        else {
+            r = -EEXIST;
+            goto out;
+        }
     }
 
     rb_link_node(&dpc->rb_node, parent, new);
     rb_insert_color(&dpc->rb_node, &svm->push_cache);
-    write_sequnlock(&svm->push_cache_lock);
 
 out:
-    return dpc;
-
-exist:
     write_sequnlock(&svm->push_cache_lock);
-    if (dpc)
-        dsm_dealloc_dpc(&dpc);
-    return dpc;
+    return r;
 }
 
 static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
@@ -154,12 +146,13 @@ retry:
 
     pd->pmd = pmd_offset(pd->pud, addr);
     if (unlikely(pmd_none(*(pd->pmd)))) {
-        __pte_alloc(mm, pd->vma, pd->pmd, addr);
-        goto retry;
+        if (!__pte_alloc(mm, pd->vma, pd->pmd, addr))
+            goto retry;
+        return -4;
     }
     if (unlikely(pmd_bad(*(pd->pmd)))) {
         pmd_clear_bad(pd->pmd);
-        return -4;
+        return -5;
     }
 
     if (unlikely(pmd_trans_huge(*(pd->pmd)))) {
@@ -314,7 +307,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
         unsigned long addr, pte_t **return_pte)
 {
-    struct page *page = NULL;
+    struct page *page;
     struct dsm_page_cache *dpc = NULL;
     pte_t pte_entry;
     swp_entry_t swp_e;
@@ -323,7 +316,8 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     spinlock_t *ptl = NULL;
 
 retry: 
-    if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
+    page = NULL;
+    if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))//#
         goto out;
 
     pte_entry = *(pd.pte);
@@ -351,12 +345,12 @@ retry:
             set_pte_at(mm, addr, pd.pte,
                     swp_entry_to_pte(dsm_descriptor_to_swp_entry(
                     dpc->tag, (dpc->svms.num == 1)? 0 : DSM_PUSHING)));
-            dsm_stats_inc_cond(&local_svm->svm_sysfs.nb_push_success,
-                    dpc->svms.num == 1);
             page_remove_rmap(page);
             dec_mm_counter(mm, MM_ANONPAGES);
             pte_unmap_unlock(pd.pte, ptl);
             unlock_page(page);
+            dsm_stats_inc_cond(&local_svm->svm_sysfs.nb_push_success,
+                    dpc->svms.num == 1);
         } else if (dpc->svms.num > 1) {
             change_pte = 1;
         }
@@ -420,7 +414,6 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte);
     up_read(&mm->mmap_sem);
-    unuse_mm(mm);
 
     dsm_stats_inc( tag == TRY_REQUEST_PAGE?   /* keep conditions in macro */
         (page? 
@@ -444,7 +437,7 @@ struct page *dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
     swp_entry_t swp_e;
     struct page *page = NULL;
     spinlock_t *ptl;
-    int i = 0;
+    int i = 0, r;
 
     BUG_ON(!local_svm);
 
@@ -467,6 +460,10 @@ retry:
          */
         goto out;
     }
+
+    dpc = dsm_alloc_dpc(local_svm, addr, svms, 1, descriptor);
+    if (unlikely(!dpc))
+        goto out;
 
     pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
     if (unlikely(!pte_same(*pte, pte_entry))) {
@@ -506,10 +503,11 @@ retry:
     if (trylock_page(page))
         i = 1;
 
-    dpc = dsm_push_cache_add(local_svm, addr, svms, svms.num, descriptor);
-    if (unlikely(!dpc))
+    r = dsm_push_cache_add(dpc, local_svm, addr);
+    if (unlikely(r))
         goto bad_page;
 
+    dpc->bitmap = (1 << svms.num) - 1;
     dpc->pages[0] = page;
     page_cache_get(page);
     page_cache_get(page);  /* Intentionally duplicate */
@@ -526,6 +524,7 @@ retry:
     return page;
     
 bad_page: 
+    dsm_dealloc_dpc(&dpc);
     pte_unmap_unlock(pte, ptl);
 out: 
     return NULL;

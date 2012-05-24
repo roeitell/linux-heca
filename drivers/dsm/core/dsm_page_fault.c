@@ -316,7 +316,8 @@ unlock:
         }
         unlock_page(dpc->pages[0]);
         lru_add_drain();
-        dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
+        dsm_stats_inc_cond(&dpc->svm->svm_sysfs.nb_remote_fault_success,
+                dpc->tag == PULL_TAG);
     }
 
     dpc_nproc_dec(&dpc, dpc->tag != PREFETCH_TAG);

@@ -52,72 +52,131 @@ static inline void queue_send_work(struct conn_element *ele)
     rcu_read_unlock();
 }
 
-static int flush_dsm_request(struct conn_element *ele)
+static int process_dsm_request(struct conn_element *ele,
+        struct dsm_request *req)
+{
+    struct tx_buf_ele *tx_e = try_get_next_empty_tx_ele(ele);
+    if (!tx_e)
+        return -ENOMEM;
+
+    switch (req->type) {
+        case REQUEST_PAGE:
+            create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr,
+                    req->page, req->type, req->dpc);
+            break;
+        case TRY_REQUEST_PAGE:
+            create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr,
+                    req->page, req->type, req->dpc);
+            break;
+        case REQUEST_PAGE_PULL:
+            create_page_pull_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr);
+            break;
+        case TRY_REQUEST_PAGE_FAIL:
+            memcpy(tx_e->dsm_msg, &req->dsm_msg,
+                    sizeof(struct dsm_message));
+            tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
+            break;
+        case SVM_STATUS_UPDATE:
+            memcpy(tx_e->dsm_msg, &req->dsm_msg,
+                    sizeof(struct dsm_message));
+            tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
+            break;
+
+        default:
+            BUG();
+    }
+    tx_e->callback.func = req->func;
+    tx_dsm_send(ele, tx_e);
+    release_dsm_request(req);
+    ele->tx_buffer.request_queue_sz--;
+
+    return 0;
+}
+
+static inline struct llist_node *llist_get_tail(struct llist_node *node)
+{
+    struct llist_node *it;
+
+    do {
+        it = node;
+        node = llist_next(node);
+    } while(node);
+
+    return it;
+}
+
+static inline void concat_dsm_request_queue(struct tx_buffer *tx,
+        struct llist_node *tail, struct llist_node *head)
+{
+    struct dsm_request *head_req;
+    struct llist_node *cur_tail;
+
+    tail->next = NULL;
+    if (llist_empty(&tx->request_queue)) {
+        if (!cmpxchg(&tx->request_queue.first, NULL, head))
+            return;
+    }
+
+    cur_tail = llist_get_tail(tx->request_queue.first);
+    cur_tail->next = head;
+    head_req = llist_entry(head, struct dsm_request, prev);
+    head_req->next = llist_entry(cur_tail, struct dsm_request, prev);
+}
+
+static int flush_dsm_request_queue(struct conn_element *ele)
 {
     struct tx_buffer *tx = &ele->tx_buffer;
-    struct tx_buf_ele *tx_e;
-    struct dsm_request *req;
-    int ret = 0;
+    struct dsm_request *req, *head_req;
+    struct llist_node *head;
+    int ret = -EFAULT;
 
-    spin_lock(&tx->request_queue_lock);
-    while (!list_empty(&tx->request_queue)) {
-        tx_e = try_get_next_empty_tx_ele(ele);
-        if (!tx_e) {
-            queue_send_work(ele);
-            ret = 1;
-            goto out;
-        }
+    if (llist_empty(&tx->request_queue))
+        goto out;
 
-        req = list_first_entry(&tx->request_queue, struct dsm_request, queue);
-        list_del(&req->queue);
-        tx->request_queue_sz--;
+    if (llist_empty(&tx->tx_free_elements_list))
+        goto out;
 
-        //populate it with a new message
-        switch (req->type) {
-            case REQUEST_PAGE: {
-                create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
-                        req->fault_svm->svm_id, req->svm->svm_id, req->addr,
-                        req->page, req->type, req->dpc);
-                break;
-            }
-            case TRY_REQUEST_PAGE: {
-                create_page_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
-                        req->fault_svm->svm_id, req->svm->svm_id, req->addr,
-                        req->page, req->type, req->dpc);
-                break;
-            }
-            case REQUEST_PAGE_PULL: {
-                create_page_pull_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
-                        req->fault_svm->svm_id, req->svm->svm_id, req->addr);
-                break;
-            }
-            case TRY_REQUEST_PAGE_FAIL: {
-                memcpy(tx_e->dsm_msg, &req->dsm_msg,
-                        sizeof(struct dsm_message));
-                tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
-                break;
-            }
-            case SVM_STATUS_UPDATE: {
-                memcpy(tx_e->dsm_msg, &req->dsm_msg,
-                        sizeof(struct dsm_message));
-                tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
-                break;
-            }
+    if (atomic_cmpxchg(&tx->request_queue_lock, 0, 1))
+        goto unlock;
 
-            default: {
-                printk("[flush_dsm_request] unrecognised request type %d \n",
-                        req->type);
-                release_tx_element(ele, tx_e);
-                ret = 1;
-                goto out;
-            }
-        }
-        tx_e->callback.func = req->func;
-        tx_dsm_send(ele, tx_e);
-        release_dsm_request(req);
+    head = llist_del_all(&tx->request_queue);
+    if (unlikely(!head))
+        goto unlock;
+
+    /*
+     * trick with head_req is used since after llist_add we unsafely change the
+     * req->next pointer, which could create a race condition with us for the
+     * last added entry.
+     */
+    head_req = llist_entry(head, struct dsm_request, prev);
+    for (req = llist_entry(llist_get_tail(head), struct dsm_request, prev); 
+            req && req != head_req; req = req->next) {
+        ret = process_dsm_request(ele, req);
+        if (ret)
+            goto fail;
     }
-out: 
-    spin_unlock(&tx->request_queue_lock);
+
+    /* 
+     * TODO: handle race condition; it's ok for pointers to be different, we 
+     * just need to make sure queue_dsm_request isn't using it anymore.
+     */
+    if (req != head_req)
+        ;
+
+    ret = process_dsm_request(ele, head_req);
+    if (!ret)
+        goto unlock;
+
+    req = head_req;
+
+fail:
+    concat_dsm_request_queue(tx, &req->prev, head);
+unlock:
+    atomic_set(&tx->request_queue_lock, 0);
+out:
     return ret;
 }
 
@@ -180,6 +239,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
 {
     switch (tx_buf_e->dsm_msg->type) {
         case PAGE_REQUEST_REPLY: {
+            BUG_ON(pte_file(*(tx_buf_e->reply_work_req->pte)));
             clear_dsm_swp_entry_flag(tx_buf_e->reply_work_req->mm,
                     tx_buf_e->reply_work_req->addr,
                     tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
@@ -319,7 +379,7 @@ void recv_cq_handle_work(struct work_struct *work)
     ret = ib_req_notify_cq(ele->recv_cq,
             IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
     dsm_recv_poll(ele->recv_cq);
-    flush_dsm_request(ele);
+    flush_dsm_request_queue(ele);
     if (ret > 0)
         queue_recv_work(ele);
 }

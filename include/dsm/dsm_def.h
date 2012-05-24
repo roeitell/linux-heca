@@ -38,7 +38,7 @@
 
 #define PAGE_POOL_SIZE (TX_BUF_ELEMENTS_NUM + RX_BUF_ELEMENTS_NUM) * 2
 
-#define MAX_QUEUED_PUSH_REQS 5000
+#define MAX_QUEUED_PUSH_REQS TX_BUF_ELEMENTS_NUM * 4
 
 #define MAX_CONSECUTIVE_SVM_FAILURES 5
 #define MAX_SVMS_PER_PAGE 2
@@ -193,11 +193,12 @@ struct tx_buffer {
 
     struct llist_head tx_free_elements_list;
     struct llist_head tx_free_elements_list_reply;
-    struct list_head request_queue;
-    spinlock_t request_queue_lock;
     spinlock_t tx_free_elements_list_lock;
     spinlock_t tx_free_elements_list_reply_lock;
-    unsigned long request_queue_sz;
+
+    struct llist_head request_queue;
+    int request_queue_sz;
+    atomic_t request_queue_lock;
 };
 
 struct conn_element {
@@ -372,9 +373,9 @@ struct dsm_request {
     int (*func)(struct tx_buf_ele *);
     struct dsm_message dsm_msg;
     struct dsm_page_cache *dpc;
-    int index;
 
-    struct list_head queue;
+    struct llist_node prev;
+    struct dsm_request *next;
 };
 
 struct dsm_module_state {

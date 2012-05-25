@@ -8,30 +8,34 @@
 
 static struct kmem_cache *dsm_cache_kmem;
 
-static inline void init_dsm_cache_elm(void *obj) {
-    ((struct dsm_page_cache *) obj)->pages = kzalloc(
-            sizeof(struct page *) * DSM_PAGE_CACHE_DEFAULT, GFP_KERNEL);
-}
-;
+static inline void init_dsm_cache_elm(void *obj)
+{
+    struct dsm_page_cache *dpc = (struct dsm_page_cache *) obj;
+    int i;
 
-void init_dsm_cache_kmem(void) {
+    for (i = 0; i < MAX_SVMS_PER_PAGE; i++)
+        dpc->pages[i] = NULL;
+}
+
+void init_dsm_cache_kmem(void)
+{
     dsm_cache_kmem = kmem_cache_create("dsm_page_cache",
             sizeof(struct dsm_page_cache), 0,
             SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, init_dsm_cache_elm);
 }
 EXPORT_SYMBOL(init_dsm_cache_kmem);
 
-void destroy_dsm_cache_kmem(void) {
+void destroy_dsm_cache_kmem(void)
+{
     kmem_cache_destroy(dsm_cache_kmem);
 }
 EXPORT_SYMBOL(destroy_dsm_cache_kmem);
 
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
-        unsigned long addr, struct svm_list svms, int nproc, int tag) {
-    struct dsm_page_cache *dpc;
-
-    dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
-    if (!dpc)
+        unsigned long addr, struct svm_list svms, int nproc, int tag)
+{
+    struct dsm_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
+    if (unlikely(!dpc))
         goto out;
 
     atomic_set(&dpc->found, -1);
@@ -41,16 +45,13 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
     dpc->tag = tag;
     dpc->svm = svm;
 
-    if (svms.num > DSM_PAGE_CACHE_DEFAULT) {
-        kfree(dpc->pages);
-        dpc->pages = kzalloc(sizeof(struct page *) * svms.num, GFP_KERNEL);
-    }
-
-    out: return dpc;
+out:
+    return dpc;
 }
 
 
-void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
+void dsm_dealloc_dpc(struct dsm_page_cache **dpc)
+{
     int i;
 
     if (*dpc) {
@@ -63,12 +64,15 @@ void dsm_dealloc_dpc(struct dsm_page_cache **dpc) {
 EXPORT_SYMBOL(dsm_dealloc_dpc);
 
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
-        unsigned long addr) {
+        unsigned long addr)
+{
     void **ppc;
     struct dsm_page_cache *dpc;
 
     rcu_read_lock();
-    repeat: dpc = NULL;
+
+repeat: 
+    dpc = NULL;
     ppc = radix_tree_lookup_slot(&svm->page_cache, addr);
     if (ppc) {
         dpc = radix_tree_deref_slot(ppc);
@@ -89,13 +93,14 @@ struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
         if (unlikely(dpc != *ppc))
             goto repeat;
     }
-    out: rcu_read_unlock();
-
+out:
+    rcu_read_unlock();
     return dpc;
 }
 
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
-        unsigned long addr) {
+        unsigned long addr)
+{
     struct dsm_page_cache *dpc;
 
     spin_lock_irq(&svm->page_cache_spinlock);

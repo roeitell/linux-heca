@@ -36,8 +36,6 @@
 
 #include <dsm/dsm_def.h>
 
-#define DSM_PAGE_CACHE_DEFAULT  3 /* default alloc of pages in cache */
-
 #define PULL_TAG        1  /* pulling the page */
 #define PREFETCH_TAG    2  /* pulling the page for prefetch */
 #define PUSH_TAG        4  /* pushing the page */
@@ -95,6 +93,8 @@ struct page *dsm_extract_page_from_remote(struct dsm *,
         u16, pte_t ** );
 struct page *dsm_prepare_page_for_push(struct subvirtual_machine *,
         struct svm_list, struct mm_struct *, unsigned long, u32);
+int dsm_cancel_page_push(struct subvirtual_machine *, unsigned long,
+        struct page *);
 struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,
         unsigned long);
 

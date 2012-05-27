@@ -213,13 +213,17 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
 {
     struct subvirtual_machine *local_svm;
     unsigned long norm_addr;
-    struct dsm *dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
+    struct dsm *dsm;
+   
+    BUG_ON(!rx_buf_e);
+    BUG_ON(!rx_buf_e->dsm_msg);
 
-    if (!dsm)
+    dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
+    if (unlikely(!dsm))
         goto fail;
 
     local_svm = find_svm(dsm, rx_buf_e->dsm_msg->src_id);
-    if (!local_svm)
+    if (unlikely(!local_svm || !local_svm->priv))
         goto fail;
 
     norm_addr = rx_buf_e->dsm_msg->req_addr + local_svm->priv->offset;
@@ -241,7 +245,7 @@ int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
     if (tx_e->callback.func && !tx_e->callback.func(tx_e))
         goto out;
 
-    release_page(ele, tx_e);
+    release_ppe(ele, tx_e);
     release_tx_element(ele, tx_e);
 
 out:
@@ -567,17 +571,13 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
             return -ENOMEM;
     }
 
-    down_read(&mm->mmap_sem);
     page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
-    up_read(&mm->mmap_sem);
-
     if (likely(page)) {
         ret = send_request_dsm_page_pull(fault_svm, svms,
                 addr - fault_svm->priv->offset);
         if (unlikely(ret == -ENOMEM))
             dsm_cancel_page_push(fault_svm, addr, page);
     }
-
     return ret;
 }
 

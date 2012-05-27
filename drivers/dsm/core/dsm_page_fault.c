@@ -283,7 +283,7 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
     atomic_dec(&(*dpc)->nproc);
     if (dealloc && atomic_cmpxchg(&(*dpc)->nproc, 1, 0) == 1) {
         for (i = 0; i < (*dpc)->svms.num; i++) {
-            if (likely((*dpc)->svms.pp[i]))
+            if (likely((*dpc)->pages[i]))
                 page_cache_release((*dpc)->pages[i]);
         }
         dsm_dealloc_dpc(dpc);
@@ -348,7 +348,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
         }
 
         if (likely(r)) {
-            page_cache_release(page);
+            set_page_private(page, 0);
             SetPageUptodate(page);
 
             unlock_page(dpc->pages[0]);
@@ -449,7 +449,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
                     request_dsm_page_op(new_dpc->pages[0], svms.pp[i],
                             fault_svm,
                             (uint64_t) (addr - fault_svm->priv->offset), NULL,
-                            PULL_TAG, NULL);
+                            PULL_TRY_TAG, NULL);
                 }
             }
             return new_dpc;
@@ -587,7 +587,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
                 dsd = swp_entry_to_dsm_data(swp_e);
-                if (!dsd.flags & DSM_INFLIGHT) {
+                if (!(dsd.flags & DSM_INFLIGHT)) {
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                             2, tag, vma, mm, private, 0, pte_entry, pte);
                     dsm_stats_inc(&fault_svm->svm_sysfs.nb_soft_pull_attempt);
@@ -604,20 +604,36 @@ static struct dsm_page_cache *convert_push_dpc(
         struct subvirtual_machine *fault_svm, unsigned long norm_addr,
         struct dsm_swp_data dsd)
 {
-    struct dsm_page_cache *dpc, *ret = NULL;
+    struct dsm_page_cache *push_dpc, *dpc = NULL;
     struct page *page;
-    unsigned long addr;
+    unsigned long addr, bit;
 
-    dpc = dsm_push_cache_get_remove(fault_svm, norm_addr);
-    if (likely(dpc)) {
-        page = dpc->pages[0];
-        addr = dpc->addr;
-        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1)
-            dsm_dealloc_dpc(&dpc);
+    push_dpc = dsm_push_cache_get_remove(fault_svm, norm_addr);
+    if (likely(push_dpc)) {
+        page = push_dpc->pages[0];
+        /*
+         * decrease page refcount as to surrogate for all the svms that didn't
+         * answer yet; then increase by one as this is the correct, "found" page.
+         * in the end refcount for page should be elevated by two.
+         */
+        do {
+            bit = find_first_bit(&push_dpc->bitmap, push_dpc->svms.num);
+            if (bit >= push_dpc->svms.num)
+                break;
+            if (test_and_clear_bit(bit, &push_dpc->bitmap))
+                page_cache_release(page);
+        } while(1);
+        page_cache_get(page);
+        SetPageUptodate(page);
+        set_page_private(page, 0);
+        lru_cache_add_anon(page);
 
-        ret = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page);
+        addr = push_dpc->addr;
+        if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)
+            dsm_dealloc_dpc(&push_dpc);
+        dpc = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page);
     }
-    return ret;
+    return dpc;
 }
 
 static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,

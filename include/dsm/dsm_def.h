@@ -174,14 +174,8 @@ struct page_pool_ele {
 };
 
 struct page_pool {
-
     struct llist_head page_empty_pool_list;
-    struct llist_head page_release_list;
-
     spinlock_t page_pool_empty_list_lock;
-
-    struct work_struct page_release_work;
-
 };
 
 struct rx_buffer {
@@ -413,10 +407,10 @@ struct dsm_swp_data {
     struct dsm *dsm;
     struct svm_list svms;
     u32 flags;
-#define DSM_INFLIGHT            0x01
-#define DSM_INFLIGHT_BITPOS     0x00
-#define DSM_PUSHING             0x02
-#define DSM_PUSHING_BITPOS      0x01
+#define DSM_INFLIGHT            0x04
+#define DSM_INFLIGHT_BITPOS     0x02
+#define DSM_PUSHING             0x08
+#define DSM_PUSHING_BITPOS      0x03
 
 };
 

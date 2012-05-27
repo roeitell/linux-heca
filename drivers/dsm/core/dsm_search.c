@@ -401,7 +401,8 @@ void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
         pte_t *pte, int pos)
 {
     pte_t tmp_pte = *pte;
-    swp_entry_t entry = pte_to_swp_entry(tmp_pte);
+    swp_entry_t arch = __pte_to_swp_entry(tmp_pte);
+    swp_entry_t entry = swp_entry(__swp_type(arch), __swp_offset(arch));
     u64 val = dsm_entry_to_val(entry);
     u32 flags = val & 0xFFFFFF;
 

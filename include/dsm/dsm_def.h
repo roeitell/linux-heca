@@ -30,8 +30,8 @@
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
-#define MAX_CAP_SCQ 512
-#define MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
+#define MAX_CAP_SCQ 3072
+#define MAX_CAP_RCQ 4096    /* Heuristic; perhaps raise in the future */
 
 #define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ / 2
 #define RX_BUF_ELEMENTS_NUM MAX_CAP_RCQ
@@ -55,7 +55,6 @@
 /**
  * DSM_MESSAGE
  */
-
 #define REQUEST_PAGE                    0x0000 // We Request a page
 #define REQUEST_PAGE_PULL               0x0001 // We Request a page pull
 #define PAGE_REQUEST_REPLY              0x0002 // We Reply to a page request
@@ -65,10 +64,10 @@
 #define TRY_REQUEST_PAGE_FAIL           0x0020 // We try to get the page failed
 #define SVM_STATUS_UPDATE               0x0030 // The svm is down
 #define DSM_MSG_ERR                     0x8000 // ERROR
+
 /*
  * DSM DATA structure
  */
-
 struct msg_stats {
     atomic64_t request_page;
     atomic64_t request_page_pull;

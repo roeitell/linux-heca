@@ -84,7 +84,10 @@ static int process_dsm_request(struct conn_element *ele,
                     sizeof(struct dsm_message));
             tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
             break;
-
+        case PAGE_INFO_UPDATE:
+            create_reclaim_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
+                    req->fault_svm->svm_id, req->svm->svm_id, req->addr);
+            break;
         default:
             BUG();
     }
@@ -217,7 +220,9 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             process_svm_status(ele, rx_e);
             break;
         }
-
+        case PAGE_INFO_UPDATE:
+            process_page_info_update(ele, rx_e);
+            break;
         default: {
             dsm_stats_inc(&ele->sysfs.rx_stats.err);
             printk(
@@ -271,6 +276,9 @@ static int dsm_send_message_handler(struct conn_element *ele,
             dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
             break;
         }
+        case PAGE_INFO_UPDATE:
+            release_tx_element(ele, tx_buf_e);
+            break;
         default: {
             dsm_stats_inc(&ele->sysfs.tx_stats.err);
             printk(

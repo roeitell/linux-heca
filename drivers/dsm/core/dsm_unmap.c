@@ -28,13 +28,16 @@ void reg_dsm_functions(
                 int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *),
         int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
                 struct subvirtual_machine *, unsigned long, 
-                struct memory_region *))
+                struct memory_region *),
+        int (*reclaim_dsm_page)(struct subvirtual_machine *,
+                struct subvirtual_machine *, unsigned long))
 {
     struct dsm_functions *tmp;
 
     tmp = kmalloc(sizeof(*funcs), GFP_KERNEL);
     tmp->request_dsm_page = request_dsm_page;
     tmp->dsm_request_page_pull = dsm_request_page_pull;
+    tmp->reclaim_dsm_page = reclaim_dsm_page;
     funcs = tmp;
 
 }
@@ -64,6 +67,14 @@ inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
 {
     if (likely(funcs))
         return funcs->dsm_request_page_pull(dsm, mm, svm, addr, mr);
+    return -1;
+}
+
+inline int reclaim_dsm_page_op(struct subvirtual_machine *local_svm,
+        struct subvirtual_machine *remote_svm, unsigned long addr)
+{
+    if (likely(funcs))
+        return funcs->reclaim_dsm_page(local_svm, remote_svm, addr);
     return -1;
 }
 
@@ -142,58 +153,51 @@ retry:
     pte_entry = *pte;
 
     if (!pte_present(pte_entry)) {
+
         if (pte_none(pte_entry)) {
             set_pte_at(mm, addr, pte, swp_entry_to_pte(
                     dsm_descriptor_to_swp_entry(descriptor, 0)));
             goto out_pte_unlock;
-        } else {
-            swp_e = pte_to_swp_entry(pte_entry);
-            if (non_swap_entry(swp_e)) {
-                if (is_migration_entry(swp_e)) {
-                    pte_unmap_unlock(pte, ptl);
-                    migration_entry_wait(mm, pmd, addr);
-                    goto retry;
-                } else {
-                    r = -EFAULT;
-                    goto out_pte_unlock;
-                }
-            } else {
+        } 
+
+        swp_e = pte_to_swp_entry(pte_entry);
+        if (non_swap_entry(swp_e)) {
+            if (is_migration_entry(swp_e)) {
                 pte_unmap_unlock(pte, ptl);
-                r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
-                if (r & VM_FAULT_ERROR) {
-                    printk("[*] failed at faulting \n");
-                    BUG();
-                }
-                r = 0;
+                migration_entry_wait(mm, pmd, addr);
                 goto retry;
             }
+
+            r = -EFAULT;
+            goto out_pte_unlock;
         }
-    } else {
-        page = vm_normal_page(vma, request_addr, *pte);
-        if (unlikely(!page)) {
-            //DSM1 we need to test if the pte is not null
-            page = pte_page(*pte);
+
+        pte_unmap_unlock(pte, ptl);
+        r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
+        if (r & VM_FAULT_ERROR) {
+            printk("[*] failed at faulting \n");
+            BUG();
         }
+        r = 0;
+        goto retry;
+
     }
-    if (PageTransHuge(page)) {
-        printk("[*] we have a huge page \n");
-        if (!PageHuge(page) && PageAnon(page)) {
-            if (unlikely(split_huge_page(page))) {
-                printk("[*] failed at splitting page \n");
-                goto out;
-            }
-        }
+
+    page = vm_normal_page(vma, request_addr, *pte);
+    if (unlikely(!page)) {
+        //DSM1 we need to test if the pte is not null
+        page = pte_page(*pte);
     }
+
+    if (PageTransHuge(page) && !PageHuge(page) && PageAnon(page)) {
+        if (unlikely(split_huge_page(page)))
+            goto out;
+    }
+
     if (PageKsm(page)) {
-        printk("[dsm_flag_page_remote] KSM page\n");
-
-        r = ksm_madvise(vma, request_addr, request_addr + PAGE_SIZE,
-                MADV_UNMERGEABLE, &vma->vm_flags);
-
-        if (r) {
-            printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
-
             // DSM1 : better ksm error handling required.
+        if (ksm_madvise(vma, request_addr, request_addr + PAGE_SIZE,
+                MADV_UNMERGEABLE, &vma->vm_flags)) {
             return -EFAULT;
         }
     }

@@ -443,13 +443,12 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
         r = radix_tree_insert(&fault_svm->page_cache, addr, new_dpc);
         spin_unlock_irq(&fault_svm->page_cache_spinlock);
         radix_tree_preload_end();
+
         if (likely(!r)) {
             for (i = 0; i < svms.num; i++) {
                 if (likely(svms.pp[i])) {
-                    request_dsm_page_op(new_dpc->pages[0], svms.pp[i],
-                            fault_svm,
-                            (uint64_t) (addr - fault_svm->priv->offset), NULL,
-                            PULL_TRY_TAG, NULL);
+                    reclaim_dsm_page_op(fault_svm, svms.pp[i], 
+                            (uint64_t) (addr - fault_svm->priv->offset));
                 }
             }
             return new_dpc;
@@ -627,6 +626,7 @@ static struct dsm_page_cache *convert_push_dpc(
         SetPageUptodate(page);
         set_page_private(page, 0);
         lru_cache_add_anon(page);
+        lru_add_drain();
 
         addr = push_dpc->addr;
         if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)

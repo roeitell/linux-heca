@@ -44,8 +44,6 @@ unsigned int inet_addr(char *);
 int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element *);
-void create_reclaim_request(struct conn_element *, struct tx_buf_ele *, u32,
-        u32, u32, uint64_t);
 void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32,
         u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
 void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32,
@@ -120,7 +118,6 @@ void destroy_kmem_request_cache(void);
 void release_dsm_request(struct dsm_request *);
 int process_page_response(struct conn_element *, struct tx_buf_ele *);
 int process_page_request(struct conn_element *, struct rx_buf_ele *);
-int process_page_info_update(struct conn_element *, struct rx_buf_ele *);
 int process_svm_status(struct conn_element *, struct rx_buf_ele *);
 int process_pull_request(struct conn_element *, struct rx_buf_ele *);
 int exchange_info(struct conn_element *, int);
@@ -131,8 +128,6 @@ int request_dsm_page(struct page *, struct subvirtual_machine *,
         int, struct dsm_page_cache *);
 int dsm_request_page_pull(struct dsm *, struct mm_struct *,
         struct subvirtual_machine *, unsigned long, struct memory_region *);
-int reclaim_dsm_page(struct subvirtual_machine *, struct subvirtual_machine *,
-        unsigned long);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 
 /*

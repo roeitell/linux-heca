@@ -168,32 +168,6 @@ out:
     return ret;
 }
 
-int reclaim_dsm_page(struct subvirtual_machine *local_svm,
-        struct subvirtual_machine *remote_svm, unsigned long addr)
-{
-    struct conn_element *ele;
-    struct tx_buf_ele *tx_e;
-    int ret = -EINVAL;
-
-    ele = remote_svm->ele;
-    if (request_queue_empty(ele)) {
-        tx_e = try_get_next_empty_tx_ele(ele);
-        if (tx_e) {
-            create_reclaim_request(ele, tx_e, local_svm->dsm->dsm_id,
-                    local_svm->svm_id, remote_svm->svm_id, addr);
-            ret = tx_dsm_send(ele, tx_e);
-            goto out;
-        }
-    }
-
-    ret = add_dsm_request(NULL, ele, PAGE_INFO_UPDATE, local_svm, remote_svm,
-            addr, NULL, NULL, NULL);
-    BUG_ON(ret);
-
-out:
-    return ret;
-}
-
 int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         struct subvirtual_machine *fault_svm, uint64_t addr,
         int (*func)(struct tx_buf_ele *), int tag, struct dsm_page_cache *dpc)
@@ -276,34 +250,6 @@ int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 
 out:
     return 0;
-}
-
-int process_page_info_update(struct conn_element *ele, struct rx_buf_ele *rx_e)
-{
-    struct subvirtual_machine *local_svm;
-    unsigned long norm_addr;
-    struct dsm *dsm;
-    u32 svm_id[2];
-
-    BUG_ON(!rx_e);
-    BUG_ON(!rx_e->dsm_msg);
-
-    dsm = find_dsm(rx_e->dsm_msg->dsm_id);
-    if (unlikely(!dsm))
-        goto fail;
-
-    local_svm = find_svm(dsm, rx_e->dsm_msg->src_id);
-    if (unlikely(!local_svm || !local_svm->priv))
-        goto fail;
-
-    norm_addr = rx_e->dsm_msg->req_addr + local_svm->priv->offset;
-    svm_id[0] = rx_e->dsm_msg->dest_id;
-    svm_id[1] = 0;
-    return dsm_flag_page_remote(local_svm->priv->mm, dsm, 
-            dsm_get_descriptor(dsm, svm_id), norm_addr);
-
-fail:
-    return -EFAULT;
 }
 
 int process_page_request(struct conn_element * ele,
@@ -420,7 +366,6 @@ retry:
         case TRY_REQUEST_PAGE:
         case SVM_STATUS_UPDATE:
         case TRY_REQUEST_PAGE_FAIL:
-        case PAGE_INFO_UPDATE:
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);
             break;

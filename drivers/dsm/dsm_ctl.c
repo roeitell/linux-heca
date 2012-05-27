@@ -582,8 +582,7 @@ static int dsm_init(void)
 {
     struct dsm_module_state *dsm_state = create_dsm_module_state();
 
-    reg_dsm_functions(&request_dsm_page, &dsm_request_page_pull,
-            &reclaim_dsm_page);
+    reg_dsm_functions(&request_dsm_page, &dsm_request_page_pull);
 
     printk("[dsm_init] ip : %s\n", ip);
     printk("[dsm_init] port : %d\n", port);

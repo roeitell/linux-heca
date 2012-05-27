@@ -807,19 +807,6 @@ unsigned int inet_addr(char *addr)
     return *(unsigned int*) arr;
 }
 
-void create_reclaim_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
-        u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr)
-{
-    struct dsm_message *msg = tx_e->dsm_msg;
-
-    msg->offset = tx_e->id;
-    msg->dsm_id = dsm_id;
-    msg->dest_id = local_id;
-    msg->src_id = remote_id;
-    msg->req_addr = addr;
-    msg->type = PAGE_INFO_UPDATE;
-}
-
 void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
         u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr,
         struct page *page, u16 type, struct dsm_page_cache *dpc)
@@ -1219,12 +1206,12 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
 void release_svm_tx_requests(struct subvirtual_machine *svm,
         struct tx_buffer *tx)
 {
-    /*
-     * FIXME: re-implement for llist, same as flush_dsm_request_queue
-     *
     struct list_head del_queue;
     struct list_head *pos, *n;
 
+    /*
+     * FIXME: re-implement for llist, same as flush_dsm_request_queue
+     *
     BUG_ON(!svm);
     BUG_ON(!tx);
 

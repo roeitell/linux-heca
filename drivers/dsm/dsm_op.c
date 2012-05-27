@@ -1206,12 +1206,12 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
 void release_svm_tx_requests(struct subvirtual_machine *svm,
         struct tx_buffer *tx)
 {
-    struct list_head del_queue;
-    struct list_head *pos, *n;
-
     /*
      * FIXME: re-implement for llist, same as flush_dsm_request_queue
      *
+    struct list_head del_queue;
+    struct list_head *pos, *n;
+
     BUG_ON(!svm);
     BUG_ON(!tx);
 

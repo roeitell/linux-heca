@@ -604,17 +604,21 @@ static struct dsm_page_cache *convert_push_dpc(
         struct subvirtual_machine *fault_svm, unsigned long norm_addr,
         struct dsm_swp_data dsd)
 {
-    struct dsm_page_cache *push_dpc, *dpc = NULL;
+    struct dsm_page_cache *push_dpc, *dpc;
     struct page *page;
     unsigned long addr, bit;
+
+    dpc = dsm_cache_get_hold(fault_svm, norm_addr);
+    if (dpc)
+        goto out;
 
     push_dpc = dsm_push_cache_get_remove(fault_svm, norm_addr);
     if (likely(push_dpc)) {
         page = push_dpc->pages[0];
         /*
          * decrease page refcount as to surrogate for all the svms that didn't
-         * answer yet; then increase by one as this is the correct, "found" page.
-         * in the end refcount for page should be elevated by two.
+         * answer yet; then increase by two, as this is the correct, "found"
+         * page.
          */
         do {
             bit = find_first_bit(&push_dpc->bitmap, push_dpc->svms.num);
@@ -624,15 +628,19 @@ static struct dsm_page_cache *convert_push_dpc(
                 page_cache_release(page);
         } while(1);
         page_cache_get(page);
+        page_cache_get(page); /* intentionally duplicate */
+
+        SetPageSwapBacked(page);
         SetPageUptodate(page);
         set_page_private(page, 0);
-        lru_cache_add_anon(page);
 
         addr = push_dpc->addr;
         if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)
             dsm_dealloc_dpc(&push_dpc);
         dpc = dsm_cache_add_pushed(fault_svm, dsd.svms, addr, page);
     }
+
+out:
     return dpc;
 }
 
@@ -691,7 +699,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     /*
      * If page is currently being pushed, halt the push, re-claim the page and
-     * notify other nodes. If page is abscent since we're answering a remote
+     * notify other nodes. If page is absent since we're answering a remote
      * fault, wait for it to finish before faulting ourselves.
      */
     if (unlikely(dsd.flags)) {

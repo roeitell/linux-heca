@@ -45,6 +45,30 @@ out:
     return r;
 }
 
+static struct dsm_page_cache *dsm_push_cache_lookup(
+        struct subvirtual_machine *svm, unsigned long addr)
+{
+    struct dsm_page_cache *dpc;
+    struct rb_node *node;
+    int seq;
+
+    do {
+        seq = read_seqbegin(&svm->push_cache_lock);
+        for (node = svm->push_cache.rb_node; node; dpc = 0) {
+            dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+            BUG_ON(!dpc);
+            if (addr < dpc->addr)
+                node = node->rb_left;
+            else if (addr > dpc->addr)
+                node = node->rb_right;
+            else
+                break;
+        }
+    } while (read_seqretry(&svm->push_cache_lock, seq));
+
+    return dpc;
+}
+
 static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
         unsigned long addr, struct subvirtual_machine *remote_svm)
 {
@@ -174,11 +198,9 @@ retry:
 static inline void dsm_extract_do_gup(struct page *page, struct mm_struct *mm,
         unsigned long addr)
 {
-    use_mm(mm);
     down_read(&mm->mmap_sem);
     get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
     up_read(&mm->mmap_sem);
-    unuse_mm(mm);
 }
 
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
@@ -312,7 +334,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     pte_t pte_entry;
     swp_entry_t swp_e;
     struct dsm_pte_data pd;
-    int change_pte = 0, active = 0, unlock;
+    int clear_pte_flag = 0, active = 0;
     spinlock_t *ptl = NULL;
 
 retry: 
@@ -327,46 +349,46 @@ retry:
 
     page = dpc->pages[0];
     BUG_ON(!page);
+
+    /* page has been taken in the meanwhile, bail out */
     if (unlikely(PageActive(page))) {
         active = 1;
         goto noop;
 
+    /* first response to arrive and grab the pte lock */
     } else if (pte_present(pte_entry)) {
-        if (likely(trylock_page(page))) {
-
-            pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-            if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
-                pte_unmap_unlock(pd.pte, ptl);
-                unlock_page(page);
-                goto retry;
-            }
-            flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-            ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-            set_pte_at(mm, addr, pd.pte,
-                    swp_entry_to_pte(dsm_descriptor_to_swp_entry(
-                    dpc->tag, (dpc->svms.num == 1)? 0 : DSM_PUSHING)));
-            page_remove_rmap(page);
-            dec_mm_counter(mm, MM_ANONPAGES);
+        pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
+        if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
             pte_unmap_unlock(pd.pte, ptl);
-            unlock_page(page);
-            dsm_stats_inc_cond(&local_svm->svm_sysfs.nb_push_success,
-                    dpc->svms.num == 1);
-        } else if (dpc->svms.num > 1) {
-            change_pte = 1;
+            goto retry;
         }
 
+        /* make sure shrink_page_list is finished with this page */
+        lock_page(page);
+        flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
+        ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+        set_pte_at(mm, addr, pd.pte,
+                swp_entry_to_pte(dsm_descriptor_to_swp_entry(
+                dpc->tag, (dpc->svms.num == 1)? 0 : DSM_PUSHING)));
+        page_remove_rmap(page);
+        page_cache_release(page);
+        dec_mm_counter(mm, MM_ANONPAGES);
+        pte_unmap_unlock(pd.pte, ptl);
+        unlock_page(page);
+        dsm_stats_inc_cond(&local_svm->svm_sysfs.nb_push_success,
+                dpc->svms.num == 1);
     } else {
         if (unlikely(pte_none(pte_entry))) {
             page = NULL;
             goto noop;
         }
 
-        BUG_ON(pte_file(pte_entry));
         swp_e = pte_to_swp_entry(pte_entry);
         if (unlikely(!non_swap_entry(swp_e) || !is_dsm_entry(swp_e)))
             BUG_ON(page);
 
-        change_pte = 1;
+        /* signal that this is not the first response */
+        clear_pte_flag = 1;
     }
 
 noop: 
@@ -375,12 +397,9 @@ noop:
             atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
         dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
-            unlock = trylock_page(page);
             set_page_private(page, 0);
-            if (unlock)
-                unlock_page(page);
             page_cache_release(page);
-            if (likely(change_pte)) {
+            if (likely(clear_pte_flag)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
                 if (likely(pte_same(*(pd.pte), pte_entry)))
                     clear_dsm_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
@@ -409,11 +428,13 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
     mm = local_svm->priv->mm;
     BUG_ON(!mm);
 
+    use_mm(mm);
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte);
     up_read(&mm->mmap_sem);
+    unuse_mm(mm);
 
     dsm_stats_inc( tag == TRY_REQUEST_PAGE?   /* keep conditions in macro */
         (page? 
@@ -437,11 +458,19 @@ struct page *dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
     swp_entry_t swp_e;
     struct page *page = NULL;
     spinlock_t *ptl;
-    int i = 0, r;
+    int i = 0, r, j;
 
     BUG_ON(!local_svm);
 
 retry:
+    /*
+     * We only change pte when the first response returns, in order to keep the
+     * page accessible; therefore someone might ask us to re-push a page before
+     * any response has even returned.
+     */
+    if (dsm_push_cache_lookup(local_svm, addr))
+        goto out;
+
     if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
         goto out;
 
@@ -509,8 +538,15 @@ retry:
 
     dpc->bitmap = (1 << svms.num) - 1;
     dpc->pages[0] = page;
+    /*
+     * refcount is as follows:
+     *  1 for being in dpc (released upon dealloc)
+     *  1 for every svm sent to (released on page_release_work)
+     *  1 from home --> mapped to a process (released after page_remove_rmap)
+     */
     page_cache_get(page);
-    page_cache_get(page);  /* Intentionally duplicate */
+    for (j = 0; j < svms.num; j++)
+        page_cache_get(page);
     set_page_private(page, ULONG_MAX);
 
     /*
@@ -549,7 +585,6 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
         i = 1;
 
     page_cache_release(page);
-    page_cache_release(page);  /* Intentionally duplicate */
     set_page_private(page, 0);
 
     /*

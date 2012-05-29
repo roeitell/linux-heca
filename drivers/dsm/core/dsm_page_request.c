@@ -78,7 +78,7 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
 
     BUG_ON(!svm);
 
-    rcu_read_lock();
+
     do {
         seq = read_seqbegin(&svm->push_cache_lock);
         for (node = svm->push_cache.rb_node; node; dpc = 0) {
@@ -107,7 +107,7 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
     }
 
 out: 
-    rcu_read_unlock();
+
     return dpc;
 }
 

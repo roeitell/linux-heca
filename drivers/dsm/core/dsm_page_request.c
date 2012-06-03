@@ -337,7 +337,7 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
 
 retry: 
     page = NULL;
-    if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))//#
+    if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
         goto out;
 
     pte_entry = *(pd.pte);

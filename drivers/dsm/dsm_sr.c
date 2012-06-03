@@ -113,10 +113,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
         }
     }
 
-    for (i = 0; i < svms.num; i++) {
-        if (unlikely(!svms.pp[i]))
-            continue;
-
+    for_each_valid_svm(svms, i) {
         if (tx_elms[i]) {
             create_page_pull_request(svms.pp[i]->ele, tx_elms[i],
                     fault_svm->dsm->dsm_id, fault_svm->svm_id,
@@ -566,7 +563,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
      * the meanwhile, but we don't have to use them now as a work thread will 
      * use them anyway to free the req_queue.
      */
-    for (i = 0; i < svms.num; i++) {
+    for_each_valid_svm(svms, i) {
         if (request_queue_full(svms.pp[i]->ele))
             return -ENOMEM;
     }

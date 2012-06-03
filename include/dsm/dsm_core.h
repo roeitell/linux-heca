@@ -41,6 +41,10 @@
 #define PUSH_TAG        4  /* pushing the page */
 #define PULL_TRY_TAG    8  /* pulling the page by request (pushing to us) */
 
+#define for_each_valid_svm(svms, i)      \
+    for (i = 0; i < (svms).num; i++)       \
+        if ((svms).pp[i])
+
 /* dsm_search */
 inline int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
 inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t);

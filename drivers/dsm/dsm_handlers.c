@@ -245,7 +245,6 @@ static int dsm_send_message_handler(struct conn_element *ele,
             release_ppe(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
             dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
-
             break;
         }
         case REQUEST_PAGE: {

@@ -317,10 +317,8 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
 
     spin_lock(&sdsc_lock);
     for (i = 0; i < sdsc_max && sdsc[i].num; i++) {
-        for (j = 0;
-                j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] && sdsc[i].pp[j]->svm_id == svm_ids[j];
-                j++)
-            ;
+        for (j = 0; j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] &&
+                sdsc[i].pp[j]->svm_id == svm_ids[j]; j++);
         if (j == sdsc[i].num && !svm_ids[j])
             break;
     }

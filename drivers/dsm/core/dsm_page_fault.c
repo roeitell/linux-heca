@@ -444,13 +444,10 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
         spin_unlock_irq(&fault_svm->page_cache_spinlock);
         radix_tree_preload_end();
         if (likely(!r)) {
-            for (i = 0; i < svms.num; i++) {
-                if (likely(svms.pp[i])) {
-                    request_dsm_page_op(new_dpc->pages[0], svms.pp[i],
-                            fault_svm,
-                            (uint64_t) (addr - fault_svm->priv->offset), NULL,
-                            PULL_TRY_TAG, NULL);
-                }
+            for_each_valid_svm(svms, i) {
+                request_dsm_page_op(new_dpc->pages[0], svms.pp[i], fault_svm,
+                        (uint64_t) (addr - fault_svm->priv->offset), NULL,
+                        PULL_TRY_TAG, NULL);
             }
             return new_dpc;
         }

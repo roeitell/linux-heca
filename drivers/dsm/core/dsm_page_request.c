@@ -243,7 +243,7 @@ retry:
                     }
                     atomic_dec(&dpc->nproc);
                     if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                        page_cache_release( dpc->pages[0]);
+                        page_cache_release(dpc->pages[0]);
                         dsm_dealloc_dpc(&dpc);
                     }
                     goto retry;

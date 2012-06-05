@@ -1197,28 +1197,34 @@ void release_svm_push_elements(struct subvirtual_machine *svm,
     write_sequnlock(&svm->push_cache_lock);
 }
 
+/*
+ * pull ops tx_elements are only released after a response has returned.
+ * therefore we can catch them and surrogate for them by iterating the tx
+ * buffer.
+ */
 void release_svm_tx_elements(struct subvirtual_machine *svm,
         struct conn_element *ele)
 {
-    struct tx_buf_ele *tx_buf = ele->tx_buffer.tx_buf;
-    struct dsm_message *msg;
+    struct tx_buf_ele *tx_buf;
     int i;
 
-    for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
-        msg = tx_buf[i].dsm_msg;
+    /* killed before it was first connected */
+    if (!ele || !ele->tx_buffer.tx_buf)
+        return;
 
-        /* surrogate for response handler; if pulling, also release tx elm */
+    tx_buf = ele->tx_buffer.tx_buf;
+
+    for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
+        struct dsm_message *msg = tx_buf[i].dsm_msg;
+
         if (msg->dsm_id == svm->dsm->dsm_id &&
                 (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) &&
+                (msg->type == REQUEST_PAGE || msg->type == TRY_REQUEST_PAGE) &&
                 atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
-            struct dsm_page_cache *dpc = tx_buf[i].wrk_req->dpc;
-
-            /* push elements will be released by iterating push_cache */
-            if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
-                release_ppe(ele, &tx_buf[i]);
-                release_tx_element(ele, &tx_buf[i]);
-                surrogate_remote_response_pull(dpc);
-            }
+            tx_buf[i].wrk_req->dst_addr->mem_page = NULL;
+            release_ppe(ele, &tx_buf[i]);
+            release_tx_element(ele, &tx_buf[i]);
+            surrogate_remote_response_pull(tx_buf[i].wrk_req->dpc);
         }
     }
 }

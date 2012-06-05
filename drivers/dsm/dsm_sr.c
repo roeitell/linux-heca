@@ -91,11 +91,9 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
     struct dsm_request *reqs[svms.num];
     int i, j, r = 0;
 
-    for (i = 0; i < svms.num; i++) {
+    for_each_valid_svm(svms, i) {
         tx_elms[i] = NULL;
         reqs[i] = NULL;
-        if (unlikely(!svms.pp[i]))
-            continue;
 
         if (request_queue_empty(svms.pp[i]->ele))
             tx_elms[i] = try_get_next_empty_tx_ele(svms.pp[i]->ele);

@@ -29,13 +29,7 @@ void release_dsm_request(struct dsm_request *req)
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
-    struct dsm_request *prev;
-
-    llist_add(&req->prev, &ele->tx_buffer.request_queue);
-    if (req->prev.next != NULL) {
-        prev = llist_entry(req->prev.next, struct dsm_request, prev);
-        prev->next = req;
-    }
+    llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     ele->tx_buffer.request_queue_sz++; /* this doesn't need to be precise */
 }
 
@@ -374,8 +368,9 @@ retry:
             BUG();
     }
 
-    /*
-     * TODO: Change to a queued request?
+    /* 
+     * we have no other choice but to postpone and try again (no memory for a
+     * queued request). this should happen mainly with softiwarp.
      */
     if (unlikely(ret == -ENOMEM)) {
         cond_resched();

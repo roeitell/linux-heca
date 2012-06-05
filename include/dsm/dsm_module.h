@@ -65,7 +65,7 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *);
 void release_svm_queued_requests(struct subvirtual_machine *,
         struct tx_buffer *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
-void release_push_elements(struct subvirtual_machine *,
+void release_svm_push_elements(struct subvirtual_machine *,
         struct subvirtual_machine *);
 
 /*

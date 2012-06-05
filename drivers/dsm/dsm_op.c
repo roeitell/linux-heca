@@ -1125,122 +1125,76 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
     write_sequnlock(&svm->dsm->mr_seq_lock);
 }
 
-/*
- * FIXME: 
- * good case
- * =========
- *  1. push started
- *  2. all tx elements were sent and discarded
- *  3. local svm down
- *  4. we iterate tx_buffer but don't find anything
- *  5. we find everything in push_cache, and surrogate
- *
- *
- * bad case
- * ========
- *  1. push started
- *  2. all tx elements sent, not all discarded
- *  3. local svm down
- *  4. we iterate tx_buffer and surrogate for some
- *  5. we find in push_cache, and surrogate, but:
- *       -> we can't know by how much to page_cache_release
- *       -> we only know we should release the dpc
- *
- * for remote svms down everything's fine, since we have the bitmap
- *
- */
-void release_push_elements(struct subvirtual_machine *svm,
+static inline void dealloc_push_dpc(struct dsm_page_cache *dpc)
+{
+    set_page_private(dpc->pages[0], 0);
+    page_cache_release(dpc->pages[0]);
+    rb_erase(&dpc->rb_node, &dpc->svm->push_cache);
+    dsm_dealloc_dpc(&dpc);
+}
+
+static int surrogate_remote_response_push(struct dsm_page_cache *dpc,
         struct subvirtual_machine *remote_svm)
 {
-    struct rb_node *node;
-    struct dsm_page_cache *dpc;
     int i;
 
-    write_seqlock(&svm->push_cache_lock);
-    for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
-        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
-        if (!remote_svm)
-            goto release;
-
-        for (i = 0; i < dpc->svms.num; i++) {
+    if (remote_svm) {
+        for_each_valid_svm(dpc->svms, i) {
             if (dpc->svms.pp[i] == remote_svm)
                 goto surrogate;
         }
-        continue;
-
-surrogate: 
-        if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
-            atomic_dec(&dpc->nproc);
-release: 
-            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                rb_erase(&dpc->rb_node, &svm->push_cache);
-                page_cache_release(dpc->pages[0]);
-                set_page_private(dpc->pages[0], 0);
-                dsm_dealloc_dpc(&dpc);
-            }
-        }
-    }
-    write_sequnlock(&svm->push_cache_lock);
-}
-
-static void release_push_dpc(struct subvirtual_machine *svm,
-        struct dsm_page_cache *dpc)
-{
-    int i, release = 1;
-
-    BUG_ON(!dpc->pages[0]);
-
-    for_each_valid_svm(dpc->svms, i) {
-        if (dpc->svms.pp[i] == svm)
-            break;
+        return -EINVAL;
     }
 
-    /* this means we're surrogating for a remote svm */
-    if (i != dpc->svms.num) {
-        if (!test_and_clear_bit(i, &dpc->bitmap))
-            return;
-        release = find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num;
-    }
-
-    page_cache_release(dpc->pages[0]);
-    atomic_dec(&dpc->nproc);
-
-    if (release && atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
-        set_page_private(dpc->pages[0], 0);
+surrogate:
+    if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
         page_cache_release(dpc->pages[0]);
-        /* FIXME: handle locking; when iterating push_cache we're locked */
-        rb_erase(&dpc->rb_node, &dpc->svm->push_cache);
-        dsm_dealloc_dpc(&dpc);
-        /* TODO: we can't clear the pte flag here, handle at pull path */
+        atomic_dec(&dpc->nproc);
+        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1 &&
+                find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num)
+            dealloc_push_dpc(dpc);
+        return 1;
     }
+    return 0;
 }
 
-static inline void release_pull_dpc(struct dsm_page_cache *dpc)
+static inline void surrogate_remote_response_pull(struct dsm_page_cache *dpc)
 {
     int i;
 
     atomic_dec(&dpc->nproc);
     if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        BUG_ON(atomic_read(&dpc->found) < 0);
         for_each_valid_svm(dpc->svms, i)
             page_cache_release(dpc->pages[i]);
         dsm_dealloc_dpc(&dpc);
     }
 }
 
-static inline void release_dpc_element(struct subvirtual_machine *svm,
-        struct dsm_page_cache *dpc)
+void release_svm_push_elements(struct subvirtual_machine *svm,
+        struct subvirtual_machine *remote_svm)
 {
-    switch (dpc->tag) {
-    case PULL_TAG:
-        release_pull_dpc(dpc);
-        break;
-    case PUSH_TAG:
-        release_push_dpc(svm, dpc);
-        break;
-    case PULL_TRY_TAG: /* TODO: unhandled yet */
-    default:
-        break;
+    struct rb_node *node;
+
+    write_seqlock(&svm->push_cache_lock);
+    for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
+        struct dsm_page_cache *dpc;
+
+        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+        if (remote_svm) {
+            surrogate_remote_response_push(dpc, remote_svm);
+        } else {
+            int i;
+
+            for (i = 0; i < dpc->svms.num; i++) {
+                if (1 << i & dpc->bitmap)
+                    page_cache_release(dpc->pages[0]);
+            }
+            dealloc_push_dpc(dpc);
+            continue;
+        }
     }
+    write_sequnlock(&svm->push_cache_lock);
 }
 
 void release_svm_tx_elements(struct subvirtual_machine *svm,
@@ -1259,11 +1213,12 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
                 atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
             struct dsm_page_cache *dpc = tx_buf[i].wrk_req->dpc;
 
+            /* push elements will be released by iterating push_cache */
             if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
                 release_ppe(ele, &tx_buf[i]);
                 release_tx_element(ele, &tx_buf[i]);
+                surrogate_remote_response_pull(dpc);
             }
-            release_dpc_element(svm, dpc);
         }
     }
 }
@@ -1292,14 +1247,14 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,
     /* remove elements to be released from llist */
     init_llist_head(&del_queue);
     for (node = head; node; node = llist_next(node)) {
-        req = llist_entry(node, struct dsm_request, prev);
+        req = llist_entry(node, struct dsm_request, lnode);
         if (req->svm == svm || req->fault_svm == svm) {
             if (node == head)
                 head = node->next;
             else {
                 last->next = node->next;
-                req = llist_entry(node, struct dsm_request, prev);
-                req->next = llist_entry(last, struct dsm_request, prev);
+                req = llist_entry(node, struct dsm_request, lnode);
+                req->next = llist_entry(last, struct dsm_request, lnode);
             }
             llist_add(node, &del_queue);
         } else {
@@ -1315,14 +1270,15 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,
     for (node = tx->request_queue.first; node; node = llist_next(node))
         last = node;
     last->next = head;
-    req = llist_entry(head, struct dsm_request, prev);
-    req->next = llist_entry(last, struct dsm_request, prev);
+    req = llist_entry(head, struct dsm_request, lnode);
+    req->next = llist_entry(last, struct dsm_request, lnode);
 
     /* handle all requests on remove list */
     node = llist_del_all(&del_queue);
     while (node) {
-        req = llist_entry(node, struct dsm_request, prev);
-        release_dpc_element(svm, req->dpc);
+        req = llist_entry(node, struct dsm_request, lnode);
+        if (req->dpc->tag == PULL_TAG)
+            surrogate_remote_response_pull(req->dpc);
         node = llist_next(node);
         release_dsm_request(req);
     }

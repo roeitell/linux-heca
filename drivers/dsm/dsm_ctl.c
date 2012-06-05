@@ -56,16 +56,9 @@ void remove_svm(u32 dsm_id, u32 svm_id)
 
     /*
      * there are three ways of catching and releasing hanged ops:
-     *  - queued requests, for which we need to surrogate both for the 
-     *      remote response and for the post-send handler.
-     *  - tx elements (e.g, requests that were sent but not yet freed),
-     *      for which we need to surrogate only for the remote response.
-     *  - push cache, catching requests that were sent and freed and 
-     *      surrogating for the remote response.
-     *
-     * FIXME: what about page requests that were sent and discarded? we have no
-     * way of catching them!
-     * FIXME: what about tx_reply elements? => handle release properly
+     *  - queued requests
+     *  - tx elements (e.g, requests that were sent but not yet freed)
+     *  - push cache
      */
     if (svm->priv) {
         struct rb_root *root;
@@ -81,12 +74,14 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             release_svm_queued_requests(svm, &ele->tx_buffer);
             release_svm_tx_elements(svm, ele);
         }
-        release_push_elements(svm, NULL);
+        release_svm_push_elements(svm, NULL);
     } else if (svm->ele) {
         struct list_head *pos;
 
         release_svm_queued_requests(svm, &svm->ele->tx_buffer);
         release_svm_tx_elements(svm, svm->ele);
+
+        /* potentially very expensive way to do this */
         list_for_each (pos, &svm->dsm->svm_list) {
             struct subvirtual_machine *local_svm;
 
@@ -94,7 +89,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             BUG_ON(!local_svm);
             if (!local_svm->priv)
                 continue;
-            release_push_elements(local_svm, svm);
+            release_svm_push_elements(local_svm, svm);
         }
     }
 

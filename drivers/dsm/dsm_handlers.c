@@ -69,15 +69,15 @@ static int flush_dsm_request(struct conn_element *ele) {
                 break;
             }
             case TRY_REQUEST_PAGE_FAIL: {
-                memcpy(tx_e->dsm_msg, &req->dsm_msg,
+                memcpy(tx_e->dsm_buf, &req->dsm_buf,
                         sizeof(struct dsm_message));
-                tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
+                tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
                 break;
             }
             case SVM_STATUS_UPDATE: {
-                memcpy(tx_e->dsm_msg, &req->dsm_msg,
+                memcpy(tx_e->dsm_buf, &req->dsm_buf,
                         sizeof(struct dsm_message));
-                tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
+                tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
                 break;
             }
 
@@ -97,11 +97,14 @@ static int flush_dsm_request(struct conn_element *ele) {
 }
 
 static int dsm_recv_message_handler(struct conn_element *ele,
-        struct rx_buf_ele *rx_e) {
+        struct rx_buf_ele *rx_e)
+{
     struct tx_buf_ele *tx_e = NULL;
-    switch (rx_e->dsm_msg->type) {
+    int type = rx_e->dsm_buf->type;
+
+    switch (type) {
         case PAGE_REQUEST_REPLY: {
-            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
+            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                 dsm_stats_inc(&ele->sysfs.rx_stats.page_request_reply);
                 process_page_response(ele, tx_e); // client got its response
@@ -109,9 +112,9 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
-            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
+            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
+                tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
                 process_page_response(ele, tx_e);
                 dsm_stats_inc(&ele->sysfs.rx_stats.try_request_page_fail);
             }
@@ -137,7 +140,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             dsm_stats_inc(&ele->sysfs.rx_stats.err);
             printk(
                     "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
-                    rx_e, rx_e->dsm_msg->type, rx_e->id);
+                    rx_e, rx_e->dsm_buf->type, rx_e->id);
             goto err;
 
         }
@@ -152,7 +155,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
 static int dsm_send_message_handler(struct conn_element *ele,
         struct tx_buf_ele *tx_buf_e) {
 
-    switch (tx_buf_e->dsm_msg->type) {
+    switch (tx_buf_e->dsm_buf->type) {
         case PAGE_REQUEST_REPLY: {
             clear_dsm_swp_entry_flag(tx_buf_e->reply_work_req->mm,
                     tx_buf_e->reply_work_req->addr,
@@ -190,7 +193,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
             dsm_stats_inc(&ele->sysfs.tx_stats.err);
             printk(
                     "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
-                    tx_buf_e, tx_buf_e->dsm_msg->type, tx_buf_e->id);
+                    tx_buf_e, tx_buf_e->dsm_buf->type, tx_buf_e->id);
             return 1;
         }
     }
@@ -247,15 +250,31 @@ static void dsm_send_poll(struct ib_cq *cq) {
     }
 }
 
-static void dsm_recv_poll(struct ib_cq *cq) {
+static void dsm_recv_poll(struct ib_cq *cq)
+{
     struct ib_wc wc;
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
-    while (ib_poll_cq(cq, 1, &wc) > 0) {
-        if (unlikely(wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV))
+    while (ib_poll_cq(cq, 1, &wc) == 1) {
+        if (wc.status == IB_WC_SUCCESS) {
+            if (wc.opcode != IB_WC_RECV) {
+                dsm_printk(KERN_INFO "expected opcode %d got %d",
+                        IB_WC_RECV, wc.opcode);
+                continue;
+            }
+        } else {
+            if (wc.status == IB_WC_WR_FLUSH_ERR) {
+                dsm_printk(KERN_INFO "rx id %llx status %d vendor_err %x",
+                    wc.wr_id, wc.status, wc.vendor_err);
+            } else {
+                dsm_printk(KERN_ERR "rx id %llx status %d vendor_err %x",
+                    wc.wr_id, wc.status, wc.vendor_err);
+                BUG_ON(1);
+            }
             continue;
-
-        if (unlikely(ele->rid.remote_info->flag)) {
+        }
+            
+        if (ele->rid.remote_info->flag) {
             BUG_ON(wc.byte_len != sizeof(struct rdma_info));
             reg_rem_info(ele);
             exchange_info(ele, wc.wr_id);

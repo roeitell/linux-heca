@@ -309,7 +309,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct mm_struct *mm = dpc->svm->priv->mm;
     struct page *page = ppe->mem_page;
-    unsigned long addr = tx_e->dsm_msg->req_addr + dpc->svm->priv->offset;
+    unsigned long addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
     int r = 0, i;
 
     /*
@@ -317,7 +317,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e) {
      * pull from a single svm. If fail, we can discard the whole operation.
      *
      */
-    if (unlikely(tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL)) {
+    if (unlikely(tx_e->dsm_buf->type == TRY_REQUEST_PAGE_FAIL)) {
         for (i = 0; i < dpc->svms.num; i++) {
             if (dpc->pages[i] == page) {
                 r = 1;

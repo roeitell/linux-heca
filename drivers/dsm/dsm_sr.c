@@ -1,8 +1,6 @@
 /*
- * dsm_sr.c
- *
- *  Created on: 26 Jul 2011
- *      Author: Benoit
+ *  Benoit Hudzia <benoit.hudzia@sap.com>
+ *  Aidan Shribman <aidan.shribman@sap.com>
  */
 
 #include <dsm/dsm_module.h>
@@ -52,7 +50,7 @@ static inline void add_dsm_request_msg(struct conn_element *ele, u16 type,
     struct dsm_request *req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
     req->type = type;
     req->func = NULL;
-    memcpy(&req->dsm_msg, msg, sizeof(struct dsm_message));
+    memcpy(&req->dsm_buf, msg, sizeof(struct dsm_message));
     queue_dsm_request(ele, req);
 }
 
@@ -91,15 +89,15 @@ static int send_svm_status_update(struct conn_element *ele,
     if (list_empty(&tx->request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
-            memcpy(tx_e->dsm_msg, rx_buf_e->dsm_msg,
+            memcpy(tx_e->dsm_buf, rx_buf_e->dsm_buf,
                     sizeof(struct dsm_message));
-            tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
+            tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
             ret = tx_dsm_send(ele, tx_e);
         }
     }
 
     if (!ret) {
-        add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_msg);
+        add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_buf);
     }
 
     return ret;
@@ -150,24 +148,24 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
     struct subvirtual_machine *local_svm;
     unsigned long norm_addr;
-    struct dsm *dsm = find_dsm(rx_buf_e->dsm_msg->dsm_id);
+    struct dsm *dsm = find_dsm(rx_buf_e->dsm_buf->dsm_id);
 
     if (!dsm)
         goto fail;
 
-    local_svm = find_svm(dsm, rx_buf_e->dsm_msg->src_id);
+    local_svm = find_svm(dsm, rx_buf_e->dsm_buf->src_id);
     if (!local_svm)
         goto fail;
 
-    norm_addr = rx_buf_e->dsm_msg->req_addr + local_svm->priv->offset;
+    norm_addr = rx_buf_e->dsm_buf->req_addr + local_svm->priv->offset;
     return dsm_trigger_page_pull(dsm, local_svm, norm_addr);
 
     fail: return send_svm_status_update(ele, rx_buf_e);
 }
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
-    printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_msg->src_id);
-    remove_svm(rx_buf_e->dsm_msg->dsm_id, rx_buf_e->dsm_msg->src_id);
+    printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_buf->src_id);
+    remove_svm(rx_buf_e->dsm_buf->dsm_id, rx_buf_e->dsm_buf->src_id);
     return 1;
 }
 
@@ -198,7 +196,7 @@ int process_page_request(struct conn_element * ele,
     struct dsm *dsm;
     struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
-    struct dsm_message *msg = rx_buf_e->dsm_msg;
+    struct dsm_message *msg = rx_buf_e->dsm_buf;
 
     dsm = find_dsm(msg->dsm_id);
     if (!dsm)
@@ -217,10 +215,10 @@ int process_page_request(struct conn_element * ele,
     tx_e = try_get_next_empty_tx_reply_ele(ele);
     BUG_ON(!tx_e);
 
-    memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
-    tx_e->dsm_msg->type = PAGE_REQUEST_REPLY;
-    tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_msg->dst_addr;
-    tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_msg->rkey;
+    memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+    tx_e->dsm_buf->type = PAGE_REQUEST_REPLY;
+    tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_buf->dst_addr;
+    tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_buf->rkey;
     tx_e->reply_work_req->mm = local_svm->priv->mm;
     tx_e->reply_work_req->addr = norm_addr;
     page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
@@ -246,8 +244,8 @@ int process_page_request(struct conn_element * ele,
             if (list_empty(&tx->request_queue)) {
                 tx_e = try_get_next_empty_tx_ele(ele);
                 if (tx_e) {
-                    memcpy(tx_e->dsm_msg, msg, sizeof(struct dsm_message));
-                    tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
+                    memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+                    tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
                     tx_e->wrk_req->dst_addr = NULL;
                     tx_e->callback.func = NULL;
                     ret = tx_dsm_send(ele, tx_e);
@@ -283,7 +281,7 @@ int process_page_request(struct conn_element * ele,
 int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
     int ret = 0;
 
-    switch (tx_e->dsm_msg->type) {
+    switch (tx_e->dsm_buf->type) {
         case REQUEST_PAGE:
         case REQUEST_PAGE_PULL:
         case TRY_REQUEST_PAGE:
@@ -320,33 +318,46 @@ int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e) {
  *      u32 rkey_rx;
  *      u32 rx_buf_size;
  */
+
+/*
+ * State machine:
+ * host A: RDMA_INFO_CL
+ * host B: RDMA_INFO_SV
+ * host A: RDMA_INFO_READY_CL
+ * host B: RDMA_INFO_READY_SV
+ * host A: RDMA_INFO_NULL
+ * host B: RDMA_INFO_NULL
+ */
+ 
 int exchange_info(struct conn_element *ele, int id) {
-    int flag = (int) ele->rid.remote_info->flag;
-    int ret = 0;
+    int flag, ret = 0;
     struct conn_element * ele_found;
     unsigned int arr[4];
     char charid[20];
-    if (unlikely(!ele->rid.recv_info))
+
+    BUG_ON(!ele);
+
+    if (unlikely(!ele->rid.recv_buf))
         goto err;
+    flag = (int) ele->rid.remote_info->flag;
 
     switch (flag) {
         case RDMA_INFO_CL: {
-            --ele->rid.send_info->flag;
+            ele->rid.send_buf->flag = RDMA_INFO_SV;
             goto recv_send;
         }
         case RDMA_INFO_SV: {
             ret = dsm_recv_info(ele);
             if (ret) {
-                printk(
-                        ">[exchange_info] - Could not post the receive work request\n");
+                dsm_printk("could not post the receive work request");
                 goto err;
             }
-            ele->rid.send_info->flag = ele->rid.send_info->flag - 2;
+            ele->rid.send_buf->flag = RDMA_INFO_READY_CL;
             ret = setup_recv_wr(ele);
             goto send;
         }
         case RDMA_INFO_READY_CL: {
-            ele->rid.send_info->flag = ele->rid.send_info->flag - 2;
+            ele->rid.send_buf->flag = RDMA_INFO_READY_SV;
             ret = setup_recv_wr(ele);
             refill_recv_wr(ele,
                     &ele->rx_buffer.rx_buf[RX_BUF_ELEMENTS_NUM - 1]);
@@ -358,29 +369,27 @@ int exchange_info(struct conn_element *ele, int id) {
             // We find that a connection is already open with that node - delete this connection request.
             if (ele_found) {
                 if (ele->remote_node_ip != get_dsm_module_state()->rcm->node_ip) {
-                    printk(
-                            ">[exchange_info] - destroy_connection duplicate : %d\n former : %d\n",
+                    dsm_printk("destroy_connection duplicate: %d former: %d",
                             ele->remote_node_ip, ele_found->remote_node_ip);
                     rdma_disconnect(ele->cm_id);
                 } else {
-                    printk("loopback, lets hope for the best\n");
+                    dsm_printk("loopback, lets hope for the best");
                 }
+                erase_rb_conn(ele);
             }
+
             //ok, inserting this connection to the tree
-            else {
-                complete(&ele->completion);
-                insert_rb_conn(ele);
-                arr[0] = (ele->remote_node_ip) & 0x000000ff;
-                arr[1] = (ele->remote_node_ip >> 8) & 0x000000ff;
-                arr[2] = (ele->remote_node_ip >> 16) & 0x000000ff;
-                arr[3] = (ele->remote_node_ip >> 24) & 0x000000ff;
-                scnprintf(charid, 20, "%u.%u.%u.%u", arr[0], arr[1], arr[2],
-                        arr[3]);
-                kobject_rename(&ele->sysfs.connection_kobject, charid);
-                printk(
-                        ">[exchange_info] inserted conn_element to rb_tree :  %d\n",
-                        ele->remote_node_ip);
-            }
+            complete(&ele->completion);
+            insert_rb_conn(ele);
+            arr[0] = (ele->remote_node_ip) & 0x000000ff;
+            arr[1] = (ele->remote_node_ip >> 8) & 0x000000ff;
+            arr[2] = (ele->remote_node_ip >> 16) & 0x000000ff;
+            arr[3] = (ele->remote_node_ip >> 24) & 0x000000ff;
+            scnprintf(charid, 20, "%u.%u.%u.%u", arr[0], arr[1], arr[2],
+                    arr[3]);
+            kobject_rename(&ele->sysfs.connection_kobject, charid);
+            dsm_printk("inserted conn_element to rb_tree: %d",
+                    ele->remote_node_ip);
 
             goto send;
 
@@ -396,28 +405,31 @@ int exchange_info(struct conn_element *ele, int id) {
             goto out;
         }
         default: {
-            printk(">[exchange_info] - UNKNOWN RDMA INFO FLAG\n");
+            printk(KERN_ERR "unknown RDMA info flag");
             goto out;
         }
     }
 
-    recv_send: ret = dsm_recv_info(ele);
-    if (ret) {
-        printk(">[exchange_info] - Could not post the receive work request\n");
-        goto err;
-    }
-
-    send: ret = dsm_send_info(ele);
+recv_send:
+    ret = dsm_recv_info(ele);
     if (ret < 0) {
-        printk(">[exchange_info] - Could not post the send work request\n");
+        dsm_printk(KERN_ERR "could not post the receive work request");
         goto err;
     }
 
-    out: return ret;
+send:
+    ret = dsm_send_info(ele);
+    if (ret < 0) {
+        dsm_printk(KERN_ERR "could not post the send work request");
+        goto err;
+    }
 
-    err: printk(">[exchange_info] - No receive info\n");
+out:
     return ret;
 
+err:
+    dsm_printk(KERN_ERR "no receive info");
+    return ret;
 }
 
 /**
@@ -429,8 +441,8 @@ int exchange_info(struct conn_element *ele, int id) {
 int dsm_send_info(struct conn_element *ele) {
     struct rdma_info_data *rid = &ele->rid;
 
-    rid->send_sge.addr = (u64) rid->send_info;
-    rid->send_sge.length = sizeof(struct rdma_info);
+    rid->send_sge.addr = rid->send_dma.addr;
+    rid->send_sge.length = rid->send_dma.size;
     rid->send_sge.lkey = ele->mr->lkey;
 
     rid->send_wr.next = NULL;
@@ -451,8 +463,8 @@ int dsm_send_info(struct conn_element *ele) {
 int dsm_recv_info(struct conn_element *ele) {
     struct rdma_info_data *rid = &ele->rid;
 
-    rid->recv_sge.addr = (u64) rid->recv_info;
-    rid->recv_sge.length = sizeof(struct rdma_info);
+    rid->recv_sge.addr = rid->recv_dma.addr;
+    rid->recv_sge.length = rid->recv_dma.size;
     rid->recv_sge.lkey = ele->mr->lkey;
 
     rid->recv_wr.next = NULL;

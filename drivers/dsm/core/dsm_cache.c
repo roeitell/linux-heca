@@ -10,7 +10,8 @@ static struct kmem_cache *dsm_cache_kmem;
 
 static inline void init_dsm_cache_elm(void *obj) {
     ((struct dsm_page_cache *) obj)->pages = kzalloc(
-            sizeof(struct page *) * DSM_PAGE_CACHE_DEFAULT, GFP_KERNEL);
+            sizeof(struct page *) * DSM_PAGE_CACHE_DEFAULT,
+            GFP_ATOMIC);
 }
 ;
 
@@ -30,7 +31,7 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
         unsigned long addr, struct svm_list svms, int nproc, int tag) {
     struct dsm_page_cache *dpc;
 
-    dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
+    dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_ATOMIC);
     if (!dpc)
         goto out;
 
@@ -43,7 +44,7 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
 
     if (svms.num > DSM_PAGE_CACHE_DEFAULT) {
         kfree(dpc->pages);
-        dpc->pages = kzalloc(sizeof(struct page *) * svms.num, GFP_KERNEL);
+        dpc->pages = kzalloc(sizeof(struct page *) * svms.num, GFP_ATOMIC);
     }
 
     out: return dpc;

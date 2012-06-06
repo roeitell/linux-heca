@@ -16,9 +16,16 @@ struct dsm_pte_data {
 };
 
 static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
-        unsigned long addr, struct svm_list svms, int nproc, u32 descriptor) {
+        unsigned long addr, struct svm_list svms, int nproc, u32 descriptor)
+{
     struct dsm_page_cache *dpc = NULL, *rb_dpc;
     struct rb_node **new, *parent = NULL;
+
+    dpc = dsm_alloc_dpc(svm, addr, svms, 1, descriptor);
+    if (!dpc) {
+        dsm_printk(KERN_ERR "can't allocate dpc");
+        return NULL;
+    }
 
     write_seqlock(&svm->push_cache_lock);
     for (new = &svm->push_cache.rb_node; *new;) {
@@ -29,15 +36,19 @@ static struct dsm_page_cache *dsm_push_cache_add(struct subvirtual_machine *svm,
         else if (addr > rb_dpc->addr)
             new = &(*new)->rb_right;
         else
-            goto out;
+            goto found;
     }
 
-    dpc = dsm_alloc_dpc(svm, addr, svms, 1, descriptor);
     dpc->bitmap = (1 << nproc) - 1;
     rb_link_node(&dpc->rb_node, parent, new);
     rb_insert_color(&dpc->rb_node, &svm->push_cache);
+    goto done;
 
-    out: write_sequnlock(&svm->push_cache_lock);
+found:
+    kfree(dpc);
+    dpc = NULL;
+done:
+    write_sequnlock(&svm->push_cache_lock);
     return dpc;
 }
 

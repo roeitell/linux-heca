@@ -1,12 +1,10 @@
 /*
- * dsm_op.h
- *
  *  Created on: 7 Jul 2011
  *      Author: Benoit
  */
 
-#ifndef DSM_OP_H_
-#define DSM_OP_H_
+#ifndef DSM_MODULE_H_
+#define DSM_MODULE_H_
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -35,6 +33,13 @@
 
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
+
+#define CONFIG_DSM_VERBOSE_PRINTK
+
+void __dsm_printk(int level, const char *path, int line,
+    const char *format, ...);
+#define dsm_printk(fmt, args...) \
+    __dsm_printk(0, __FILE__, __LINE__, fmt, ##args);
 
 /*
  *DSM OP

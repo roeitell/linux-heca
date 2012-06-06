@@ -1,8 +1,6 @@
 /*
- * dsm_op.c
- *
- *  Created on: 7 Jul 2011
- *      Author: Benoit
+ * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
+ * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
 
 #include <linux/list.h>
@@ -28,22 +26,26 @@ static int rcm_disconnect(struct rcm *rcm)
         return 0;
 }
 
-static void destroy_tx_buffer(struct conn_element *ele) {
+static void destroy_tx_buffer(struct conn_element *ele)
+{
     int i;
-    struct tx_buf_ele * tx_buf = ele->tx_buffer.tx_buf;
-    if (tx_buf) {
-        for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
-            ib_dma_unmap_single(ele->cm_id->device, (u64) tx_buf[i].dsm_msg,
-                    sizeof(struct dsm_message), DMA_TO_DEVICE);
+    struct tx_buf_ele *tx_buf = ele->tx_buffer.tx_buf;
 
-            kfree(tx_buf[i].mem);
-            kfree(tx_buf[i].wrk_req->wr_ele);
-            kfree(tx_buf[i].wrk_req);
+    if (!tx_buf)
+        return;
+
+    for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
+        if (tx_buf[i].dsm_dma.addr) {
+            ib_dma_unmap_single(ele->cm_id->device, tx_buf[i].dsm_dma.addr,
+                    tx_buf[i].dsm_dma.size, tx_buf[i].dsm_dma.dir);
         }
-
-        kfree(tx_buf);
-        ele->tx_buffer.tx_buf = 0;
+        kfree(tx_buf[i].dsm_buf);
+        kfree(tx_buf[i].wrk_req->wr_ele);
+        kfree(tx_buf[i].wrk_req);
     }
+
+    kfree(tx_buf);
+    ele->tx_buffer.tx_buf = 0;
 }
 
 static void destroy_rx_buffer(struct conn_element *ele) {
@@ -52,9 +54,11 @@ static void destroy_rx_buffer(struct conn_element *ele) {
 
     if (rx) {
         for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
-            ib_dma_unmap_single(ele->cm_id->device, (u64) rx[i].dsm_msg,
-                    sizeof(struct dsm_message), DMA_FROM_DEVICE);
-            kfree(rx[i].mem);
+            if (rx[i].dsm_dma.addr) {
+                ib_dma_unmap_single(ele->cm_id->device, rx[i].dsm_dma.addr,
+                        rx[i].dsm_dma.size, rx[i].dsm_dma.dir);
+            }
+            kfree(rx[i].dsm_buf);
 
             kfree(rx[i].recv_wrk_rq_ele);
         }
@@ -64,18 +68,18 @@ static void destroy_rx_buffer(struct conn_element *ele) {
 }
 
 static void free_rdma_info(struct conn_element *ele) {
-    if (ele->rid.send_info) {
+    if (ele->rid.send_dma.addr) {
         ib_dma_unmap_single(ele->cm_id->device,
-                (u64) (unsigned long) ele->rid.send_info,
-                sizeof(struct rdma_info), DMA_TO_DEVICE);
-        kfree(ele->rid.send_mem);
+                ele->rid.send_dma.addr, ele->rid.send_dma.size,
+                ele->rid.send_dma.dir);
+        kfree(ele->rid.send_buf);
     }
 
-    if (ele->rid.recv_info) {
+    if (ele->rid.recv_dma.addr) {
         ib_dma_unmap_single(ele->cm_id->device,
-                (u64) (unsigned long) ele->rid.recv_info,
-                sizeof(struct rdma_info), DMA_FROM_DEVICE);
-        kfree(ele->rid.recv_mem);
+                ele->rid.recv_dma.addr,
+                ele->rid.recv_dma.size, ele->rid.recv_dma.dir);
+        kfree(ele->rid.recv_buf);
     }
 
     if (ele->rid.remote_info) {
@@ -89,8 +93,8 @@ static void init_rx_ele(struct rx_buf_ele *rx_ele, struct conn_element *ele) {
     struct recv_work_req_ele * rwr = rx_ele->recv_wrk_rq_ele;
     struct ib_sge * recv_sge = &rwr->recv_sgl;
 
-    recv_sge->addr = (u64) rx_ele->dsm_msg;
-    recv_sge->length = sizeof(struct dsm_message);
+    recv_sge->addr = rx_ele->dsm_dma.addr;
+    recv_sge->length = rx_ele->dsm_dma.size;
     recv_sge->lkey = ele->mr->lkey;
 
     rwr->sq_wr.next = NULL;
@@ -117,32 +121,31 @@ static void init_rx_ele(struct rx_buf_ele *rx_ele, struct conn_element *ele) {
 static int create_rx_buffer(struct conn_element *ele) {
     int i;
     int undo = 0;
-    struct rx_buf_ele * rx = kmalloc(
+    struct rx_buf_ele * rx = kzalloc(
             (sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM), GFP_KERNEL);
 
     if (!rx)
         goto err_buf;
 
     ele->rx_buffer.rx_buf = rx;
-    memset(rx, 0, (sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM));
 
     for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
-        rx[i].mem = kmalloc(sizeof(struct dsm_message), GFP_KERNEL);
-        if (!rx[i].mem)
+        rx[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
+        if (!rx[i].dsm_buf)
             goto err1;
-        memset(rx[i].mem, 0, sizeof(struct dsm_message));
 
-        rx[i].dsm_msg = (struct dsm_message *) ib_dma_map_single(
-                ele->cm_id->device, rx[i].mem, sizeof(struct dsm_message),
-                DMA_BIDIRECTIONAL);
-        if (!rx[i].dsm_msg)
+        rx[i].dsm_dma.size = sizeof(struct dsm_message);
+        rx[i].dsm_dma.dir = DMA_BIDIRECTIONAL; 
+        rx[i].dsm_dma.addr = ib_dma_map_single(
+                ele->cm_id->device, rx[i].dsm_buf, rx[i].dsm_dma.size,
+                rx[i].dsm_dma.dir);
+        if (!rx[i].dsm_dma.addr)
             goto err2;
 
-        rx[i].recv_wrk_rq_ele = kmalloc(sizeof(struct recv_work_req_ele),
+        rx[i].recv_wrk_rq_ele = kzalloc(sizeof(struct recv_work_req_ele),
                 GFP_KERNEL);
         if (!rx[i].recv_wrk_rq_ele)
             goto err3;
-        memset(rx[i].recv_wrk_rq_ele, 0, sizeof(struct recv_work_req_ele));
 
         rx[i].id = i;
 
@@ -152,15 +155,14 @@ static int create_rx_buffer(struct conn_element *ele) {
     return 0;
 
     err3: ib_dma_unmap_single(ele->cm_id->device,
-            (u64) (unsigned long) rx[i].dsm_msg, sizeof(struct dsm_message),
-            DMA_FROM_DEVICE);
-    err2: kfree(rx[i].mem);
+            rx[i].dsm_dma.addr, rx[i].dsm_dma.size, rx[i].dsm_dma.dir);
+    err2: kfree(rx[i].dsm_buf);
 
     err1: for (undo = 0; undo < i; ++undo) {
         ib_dma_unmap_single(ele->cm_id->device,
-                (u64) (unsigned long) rx[undo].dsm_msg,
-                sizeof(struct dsm_message), DMA_FROM_DEVICE);
-        kfree(rx[undo].mem);
+                rx[undo].dsm_dma.addr, rx[undo].dsm_dma.size,
+                rx[undo].dsm_dma.dir);
+        kfree(rx[undo].dsm_buf);
         kfree(rx[undo].recv_wrk_rq_ele);
     }
 
@@ -265,13 +267,13 @@ static int setup_qp(struct conn_element *ele) {
 
 static void format_rdma_info(struct conn_element *ele) {
 
-    ele->rid.send_info->node_ip = htonl(ele->rcm->node_ip);
-    ele->rid.send_info->buf_rx_addr = htonll((u64) ele->rx_buffer.rx_buf);
-    ele->rid.send_info->buf_msg_addr = htonll((u64) ele->tx_buffer.tx_buf);
-    ele->rid.send_info->rx_buf_size = htonl(RX_BUF_ELEMENTS_NUM);
-    ele->rid.send_info->rkey_msg = htonl(ele->mr->rkey);
-    ele->rid.send_info->rkey_rx = htonl(ele->mr->rkey);
-    ele->rid.send_info->flag = RDMA_INFO_CL;
+    ele->rid.send_buf->node_ip = htonl(ele->rcm->node_ip);
+    ele->rid.send_buf->buf_rx_addr = htonll((u64) ele->rx_buffer.rx_buf);
+    ele->rid.send_buf->buf_msg_addr = htonll((u64) ele->tx_buffer.tx_buf);
+    ele->rid.send_buf->rx_buf_size = htonl(RX_BUF_ELEMENTS_NUM);
+    ele->rid.send_buf->rkey_msg = htonl(ele->mr->rkey);
+    ele->rid.send_buf->rkey_rx = htonl(ele->mr->rkey);
+    ele->rid.send_buf->flag = RDMA_INFO_CL;
 }
 
 static int create_new_empty_page_pool_element(struct conn_element * ele) {
@@ -319,31 +321,31 @@ static int create_rdma_info(struct conn_element *ele) {
     int size = sizeof(struct rdma_info);
     struct rdma_info_data * rid = &ele->rid;
 
-    rid->send_mem = kmalloc(size, GFP_KERNEL);
-    if (unlikely(!rid->send_mem))
+    rid->send_buf = kzalloc(size, GFP_KERNEL);
+    if (unlikely(!rid->send_buf))
         goto send_mem_err;
 
-    rid->send_info = (struct rdma_info *) ib_dma_map_single(ele->cm_id->device,
-            rid->send_mem, size, DMA_TO_DEVICE);
-    if (unlikely(!rid->send_info))
+    rid->send_dma.size = size;
+    rid->send_dma.dir = DMA_TO_DEVICE;
+    rid->send_dma.addr = ib_dma_map_single(ele->cm_id->device,
+            rid->send_buf, rid->send_dma.size, rid->send_dma.dir);
+    if (unlikely(!rid->send_dma.addr))
         goto send_info_err;
 
-    rid->recv_mem = kmalloc(size, GFP_KERNEL);
-    if (unlikely(!rid->send_mem))
+    rid->recv_buf = kzalloc(size, GFP_KERNEL);
+    if (unlikely(!rid->recv_buf))
         goto recv_mem_err;
 
-    rid->recv_info = (struct rdma_info *) ib_dma_map_single(ele->cm_id->device,
-            rid->recv_mem, size, DMA_FROM_DEVICE);
-    if (unlikely(!rid->send_info))
+    rid->recv_dma.size = size;
+    rid->recv_dma.dir = DMA_FROM_DEVICE;
+    rid->recv_dma.addr = ib_dma_map_single(ele->cm_id->device,
+            rid->recv_buf, rid->recv_dma.size, rid->recv_dma.dir);
+    if (unlikely(!rid->send_dma.addr))
         goto recv_info_err;
 
-    rid->remote_info = kmalloc(size, GFP_KERNEL);
+    rid->remote_info = kzalloc(size, GFP_KERNEL);
     if (unlikely(!rid->remote_info))
         goto remote_info_buffer_err;
-
-    memset(rid->send_info, 0, size);
-    memset(rid->recv_info, 0, size);
-    memset(rid->remote_info, 0, size);
 
     rid->remote_info->flag = RDMA_INFO_CL;
     rid->exchanged = 2;
@@ -355,22 +357,20 @@ static int create_rdma_info(struct conn_element *ele) {
     remote_info_buffer_err: printk(
             ">[create_rdma_info] - ERROR : NO REMOTE INFO BUFFER\n");
     ib_dma_unmap_single(ele->cm_id->device,
-            (u64) (unsigned long) rid->recv_info, sizeof(struct rdma_info),
-            DMA_FROM_DEVICE);
+            rid->recv_dma.addr, rid->recv_dma.size, rid->recv_dma.dir);
 
     recv_info_err: printk(
             ">[create_rdma_info] - ERROR : NO RECV INFO BUFFER\n");
-    kfree(rid->recv_mem);
+    kfree(rid->recv_buf);
 
     recv_mem_err: printk(
             ">[create_rdma_info] - no memory allocated for the reception buffer\n");
     ib_dma_unmap_single(ele->cm_id->device,
-            (u64) (unsigned long) rid->send_info, sizeof(struct rdma_info),
-            DMA_TO_DEVICE);
+            rid->send_dma.addr, rid->send_dma.size, rid->send_dma.dir);
 
     send_info_err: printk(
             ">[create_rdma_info] - ERROR : NO SEND INFO BUFFER\n");
-    kfree(rid->send_mem);
+    kfree(rid->send_buf);
 
     send_mem_err: printk(
             ">[create_rdma_info] - no memory allocated for the sending buffer\n");
@@ -399,14 +399,20 @@ static int init_tx_lists(struct conn_element *ele) {
 }
 
 static void init_reply_wr(struct reply_work_request *rwr, u64 msg_addr,
-        u32 lkey, int id) {
-    struct ib_sge * reply_sge = &rwr->wr_ele->sg;
-    rwr->wr_ele->dsm_msg = (struct dsm_message *) msg_addr;
+        u32 lkey, int id)
+{
+    struct ib_sge *reply_sge;
 
+    BUG_ON(!rwr);
+    BUG_ON(!rwr->wr_ele);
+
+    reply_sge = &rwr->wr_ele->sg;
+    BUG_ON(!reply_sge);
     reply_sge->addr = msg_addr;
     reply_sge->length = sizeof(struct dsm_message);
     reply_sge->lkey = lkey;
 
+    rwr->wr_ele->dsm_dma.addr = msg_addr;
     rwr->wr_ele->wr.next = NULL;
     rwr->wr_ele->wr.num_sge = 1;
     rwr->wr_ele->wr.send_flags = IB_SEND_SIGNALED;
@@ -429,29 +435,37 @@ static void init_page_wr(struct reply_work_request *rwr, u32 lkey, int id) {
 }
 
 static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id) {
+    BUG_ON(!tx_ele);
+    BUG_ON(!tx_ele->wrk_req);
+    BUG_ON(!tx_ele->wrk_req->wr_ele);
+
     tx_ele->wrk_req->wr_ele->wr.wr_id = (u64) id;
     tx_ele->wrk_req->wr_ele->wr.opcode = IB_WR_SEND;
     tx_ele->wrk_req->wr_ele->wr.send_flags = IB_SEND_SIGNALED;
     tx_ele->wrk_req->wr_ele->wr.num_sge = 1;
     tx_ele->wrk_req->wr_ele->wr.sg_list = (struct ib_sge *) &tx_ele->wrk_req->wr_ele->sg;
 
-    tx_ele->wrk_req->wr_ele->sg.addr = (u64) tx_ele->dsm_msg;
-    tx_ele->wrk_req->wr_ele->sg.length = sizeof(struct dsm_message);
+    tx_ele->wrk_req->wr_ele->sg.addr = tx_ele->dsm_dma.addr;
+    tx_ele->wrk_req->wr_ele->sg.length = tx_ele->dsm_dma.addr;
     tx_ele->wrk_req->wr_ele->sg.lkey = lkey;
 
     tx_ele->wrk_req->wr_ele->wr.next = NULL;
 }
 
-static void init_tx_ele(struct tx_buf_ele * tx_ele, struct conn_element *ele,
-        int id) {
+void init_tx_ele(struct tx_buf_ele *tx_ele, struct conn_element *ele,
+        int id)
+{
+    BUG_ON(!tx_ele);
     tx_ele->id = id;
     init_tx_wr(tx_ele, ele->mr->lkey, id);
-    init_reply_wr(tx_ele->reply_work_req, (u64) tx_ele->dsm_msg, ele->mr->lkey,
+    init_reply_wr(tx_ele->reply_work_req, tx_ele->dsm_dma.addr, ele->mr->lkey,
             tx_ele->id);
+    BUG_ON(!ele->mr);
     init_page_wr(tx_ele->reply_work_req, ele->mr->lkey, tx_ele->id);
-    tx_ele->dsm_msg->dest_id = ele->mr->rkey;
-    tx_ele->dsm_msg->offset = tx_ele->id;
+    tx_ele->dsm_buf->dest_id = ele->mr->rkey;
+    tx_ele->dsm_buf->offset = tx_ele->id;
 }
+EXPORT_SYMBOL(init_tx_ele);
 
 /**
  * Buffer for the messages to be sent.
@@ -464,102 +478,94 @@ static void init_tx_ele(struct tx_buf_ele * tx_ele, struct conn_element *ele,
  *               -1 if failure.
  */
 static int create_tx_buffer(struct conn_element *ele) {
-    int i = 0;
-    int undo;
-    int ret = 0;
+    int i, ret = 0;
+    struct tx_buf_ele *tx_buff_e;
 
-    struct tx_buf_ele * tx_buff_e = kmalloc(
-            (sizeof(struct tx_buf_ele) * TX_BUF_ELEMENTS_NUM), GFP_KERNEL);
+    BUG_ON(!ele);
+    BUG_ON(IS_ERR(ele->cm_id));
+    BUG_ON(!ele->cm_id->device);
+    might_sleep();
+
+    tx_buff_e = kzalloc((sizeof(struct tx_buf_ele) * TX_BUF_ELEMENTS_NUM),
+        GFP_KERNEL);
     if (unlikely(!tx_buff_e)) {
-        ret = -1;
-        goto err_buf;
+        dsm_printk(KERN_ERR "Can't allocate memory");
+        return -ENOMEM;
     }
     ele->tx_buffer.tx_buf = tx_buff_e;
+
     for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
-        tx_buff_e[i].mem = kmalloc(sizeof(struct dsm_message), GFP_KERNEL);
-        if (unlikely(!tx_buff_e[i].mem))
-            goto err1;
+        tx_buff_e[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
+        if (!tx_buff_e[i].dsm_buf) {
+            dsm_printk(KERN_ERR "Failed to allocate .dsm_buf");
+            ret = -ENOMEM;
+            goto err;
+        }
 
-        tx_buff_e[i].dsm_msg = (struct dsm_message *) ib_dma_map_single(
-                ele->cm_id->device, tx_buff_e[i].mem,
-                sizeof(struct dsm_message), DMA_TO_DEVICE);
-        if (unlikely(!tx_buff_e[i].dsm_msg))
-            goto err2;
+        tx_buff_e[i].dsm_dma.dir = DMA_TO_DEVICE;
+        tx_buff_e[i].dsm_dma.size = sizeof(struct dsm_message);
+        tx_buff_e[i].dsm_dma.addr = ib_dma_map_single(
+                ele->cm_id->device, tx_buff_e[i].dsm_buf,
+                tx_buff_e[i].dsm_dma.size, tx_buff_e[i].dsm_dma.dir);
+        if (unlikely(!tx_buff_e[i].dsm_dma.addr)) {
+            dsm_printk(KERN_ERR "unable to create ib mapping");
+            ret = -EFAULT;
+            goto err;
+        }
 
-        memset(tx_buff_e[i].dsm_msg, 0, sizeof(struct dsm_message));
-
-        tx_buff_e[i].wrk_req = kmalloc(sizeof(struct msg_work_request),
+        tx_buff_e[i].wrk_req = kzalloc(sizeof(struct msg_work_request),
                 GFP_KERNEL);
-        if (unlikely(!tx_buff_e[i].wrk_req))
-            goto err3;
+        if (!tx_buff_e[i].wrk_req) {
+            dsm_printk(KERN_ERR "Failed to allocate wrk_req");
+            ret = -ENOMEM;
+            goto err;
+        }
 
-        memset(tx_buff_e[i].wrk_req, 0, sizeof(struct msg_work_request));
-
-        tx_buff_e[i].wrk_req->wr_ele = kmalloc(sizeof(struct work_request_ele),
+        tx_buff_e[i].wrk_req->wr_ele = kzalloc(sizeof(struct work_request_ele),
                 GFP_KERNEL);
-        if (unlikely(!tx_buff_e[i].wrk_req->wr_ele))
-            goto err4;
+        if (!tx_buff_e[i].wrk_req->wr_ele) {
+            dsm_printk(KERN_ERR "Failed to allocate wrk_req->wr_ele");
+            ret = -ENOMEM;
+            goto err;
+        }
+        tx_buff_e[i].wrk_req->wr_ele->dsm_dma = tx_buff_e[i].dsm_dma;
 
-        memset(tx_buff_e[i].wrk_req->wr_ele, 0,
-                sizeof(struct work_request_ele));
-
-        tx_buff_e[i].wrk_req->wr_ele->dsm_msg = tx_buff_e[i].dsm_msg;
-
-        tx_buff_e[i].reply_work_req = kmalloc(sizeof(struct reply_work_request),
+        tx_buff_e[i].reply_work_req = kzalloc(sizeof(struct reply_work_request),
                 GFP_KERNEL);
-        if (!tx_buff_e[i].reply_work_req)
-            goto err5;
-        memset(tx_buff_e[i].reply_work_req, 0,
-                sizeof(struct reply_work_request));
+        if (!tx_buff_e[i].reply_work_req) {
+            dsm_printk(KERN_ERR "Failed to allocate reply_work_req");
+            ret = -ENOMEM;
+            goto err;
+        }
 
-        tx_buff_e[i].reply_work_req->wr_ele = kmalloc(
+        tx_buff_e[i].reply_work_req->wr_ele = kzalloc(
                 sizeof(struct work_request_ele), GFP_KERNEL);
-        if (!tx_buff_e[i].reply_work_req->wr_ele)
-            goto err6;
-        memset(tx_buff_e[i].reply_work_req->wr_ele, 0,
-                sizeof(struct work_request_ele));
-
+        if (!tx_buff_e[i].reply_work_req->wr_ele) {
+            dsm_printk(KERN_ERR "Failed to allocate reply_work_req->wr_ele");
+            ret = -ENOMEM;
+            goto err;
+        }
+        dsm_printk(KERN_INFO "before dma_sync_single_range_for_cpu");
+        dma_sync_single_range_for_cpu(ele->cm_id->device->dma_device,
+            tx_buff_e[i].dsm_dma.addr, 0, tx_buff_e[i].dsm_dma.size,
+            tx_buff_e[i].dsm_dma.dir);
+        
+        dsm_printk(KERN_INFO "before init_tx_ele %d", i);
         init_tx_ele(&tx_buff_e[i], ele, i);
+        dsm_printk(KERN_INFO "after init_tx_ele %d", i);
+
+        dsm_printk(KERN_INFO "before dma_sync_single_range_for_device");
+        dma_sync_single_range_for_device(ele->cm_id->device->dma_device,
+            tx_buff_e[i].dsm_dma.addr, 0, tx_buff_e[i].dsm_dma.size,
+            tx_buff_e[i].dsm_dma.dir);
     }
+    goto done;
 
-    return ret;
-
-    kfree(tx_buff_e[i].reply_work_req->wr_ele);
-    ++ret;
-    err6: kfree(tx_buff_e[i].reply_work_req);
-    ++ret;
-    err5: ++ret;
-    err4: ++ret;
-    printk("> [create_tx_buffer][ERR] - Freed the work request\n");
-    kfree(tx_buff_e[i].wrk_req);
-    err3: ++ret;
-    ib_dma_unmap_single(ele->cm_id->device,
-            (u64) (unsigned long) tx_buff_e[i].dsm_msg,
-            sizeof(struct dsm_message), DMA_TO_DEVICE);
-    printk("> [create_tx_buffer][ERR] - Removed dsm_msg registration\n");
-    err2: printk(">[create_tx_buffer] - 5\n");
-    kfree(tx_buff_e[i].mem);
-    printk("> [create_tx_buffer][ERR] - Freed dsm_msg\n");
-    ++ret;
-
-    err1: for (undo = 0; undo < i; ++undo) {
-        kfree(tx_buff_e[undo].reply_work_req->wr_ele);
-        kfree(tx_buff_e[undo].reply_work_req);
-        kfree(tx_buff_e[undo].wrk_req);
-        ib_dma_unmap_single(ele->cm_id->device,
-                (u64) (unsigned long) tx_buff_e[undo].dsm_msg,
-                sizeof(struct dsm_message), DMA_TO_DEVICE);
-        kfree(tx_buff_e[undo].mem);
-    }
-
-    memset(tx_buff_e, 0, sizeof(struct tx_buf_ele) * TX_BUF_ELEMENTS_NUM);
+err:
+    BUG_ON(!tx_buff_e);
+    destroy_tx_buffer(ele);
     kfree(tx_buff_e);
-    ele->tx_buffer.tx_buf = NULL;
-    printk("> [create_tx_buffer][ERR] - Zeroing the tx buffer\n");
-    ++ret;
-
-    err_buf: printk(
-            ">[create_tx_buffer][ERR] - TX BUFFER NOT CREATED - index %d\n", i);
+done:
     return ret;
 }
 
@@ -593,9 +599,8 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     int ret = 0;
 
     struct rcm *rcm = NULL;
-    rcm = kmalloc(sizeof(struct rcm), GFP_KERNEL);
+    rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
     BUG_ON(!(rcm));
-    memset(rcm, 0, sizeof(struct rcm));
     init_kmem_request_cache();
     init_dsm_cache_kmem();
     dsm_init_descriptors();
@@ -700,14 +705,14 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
 }
 
 void reg_rem_info(struct conn_element *ele) {
-    ele->rid.remote_info->node_ip = ntohl(ele->rid.recv_info->node_ip);
-    ele->rid.remote_info->buf_rx_addr = ntohll(ele->rid.recv_info->buf_rx_addr);
+    ele->rid.remote_info->node_ip = ntohl(ele->rid.recv_buf->node_ip);
+    ele->rid.remote_info->buf_rx_addr = ntohll(ele->rid.recv_buf->buf_rx_addr);
     ele->rid.remote_info->buf_msg_addr =
-            ntohll(ele->rid.recv_info->buf_msg_addr);
-    ele->rid.remote_info->rx_buf_size = ntohl(ele->rid.recv_info->rx_buf_size);
-    ele->rid.remote_info->rkey_msg = ntohl(ele->rid.recv_info->rkey_msg);
-    ele->rid.remote_info->rkey_rx = ntohl(ele->rid.recv_info->rkey_rx);
-    ele->rid.remote_info->flag = ele->rid.recv_info->flag;
+            ntohll(ele->rid.recv_buf->buf_msg_addr);
+    ele->rid.remote_info->rx_buf_size = ntohl(ele->rid.recv_buf->rx_buf_size);
+    ele->rid.remote_info->rkey_msg = ntohl(ele->rid.recv_buf->rkey_msg);
+    ele->rid.remote_info->rkey_rx = ntohl(ele->rid.recv_buf->rkey_rx);
+    ele->rid.remote_info->flag = ele->rid.recv_buf->flag;
 }
 
 void release_page_work(struct work_struct *work) {
@@ -811,7 +816,7 @@ unsigned int inet_addr(char *addr) {
 void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
         u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr,
         struct page *page, u16 type, struct dsm_page_cache *dpc) {
-    struct dsm_message *msg = tx_e->dsm_msg;
+    struct dsm_message *msg = tx_e->dsm_buf;
     struct page_pool_ele * ppe = create_new_page_pool_element_from_page(ele,
             page);
 
@@ -832,7 +837,7 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele * tx_e,
 void create_page_pull_request(struct conn_element *ele,
         struct tx_buf_ele * tx_e, u32 dsm_id, u32 local_id, u32 remote_id,
         uint64_t addr) {
-    struct dsm_message *msg = tx_e->dsm_msg;
+    struct dsm_message *msg = tx_e->dsm_buf;
 
     tx_e->wrk_req->dst_addr = NULL;
 
@@ -1185,7 +1190,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
     int i;
 
     for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
-        msg = tx_buf[i].dsm_msg;
+        msg = tx_buf[i].dsm_buf;
 
         if (msg->dsm_id == svm->dsm->dsm_id && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) && atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
             release_dpc_element(svm, tx_buf[i].wrk_req->dpc, &tx_buf[i]);

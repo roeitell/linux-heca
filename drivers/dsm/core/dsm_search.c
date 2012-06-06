@@ -11,8 +11,8 @@ static struct dsm_module_state *dsm_state;
 struct dsm_module_state * create_dsm_module_state(void) {
     dsm_state = kzalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
     BUG_ON(!(dsm_state));
-    INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL);
-    INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL);
+    INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
+    INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
     INIT_LIST_HEAD(&dsm_state->dsm_list);
     mutex_init(&dsm_state->dsm_state_mutex);
     dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq", WQ_HIGHPRI | WQ_MEM_RECLAIM,0);
@@ -260,12 +260,31 @@ EXPORT_SYMBOL(destroy_mrs);
 /* svm_descriptors */
 static struct svm_list *sdsc;
 static u32 sdsc_max;
-static spinlock_t sdsc_lock;
+static struct mutex sdsc_lock;
+
+static void dsm_descriptors_realloc(void)
+{
+    struct svm_list *new_sdsc;
+    u32 new_sdsc_max;
+
+    might_sleep();
+    new_sdsc_max = sdsc_max + 256;
+    new_sdsc = kzalloc(sizeof(struct svm_list) * new_sdsc_max, GFP_KERNEL);
+    BUG_ON(!new_sdsc);
+    if (sdsc) {
+        memcpy(new_sdsc, sdsc, sizeof(struct svm_list) * sdsc_max);
+        kfree(sdsc);
+    }
+    sdsc_max = new_sdsc_max;
+    rcu_assign_pointer(sdsc, new_sdsc);
+    synchronize_rcu();
+}
 
 void dsm_init_descriptors(void) {
-    sdsc = kzalloc(sizeof(struct svm_list) * 256, GFP_KERNEL);
-    sdsc_max = 256;
-    spin_lock_init(&sdsc_lock);
+    mutex_init(&sdsc_lock);
+    mutex_lock(&sdsc_lock);
+    dsm_descriptors_realloc();
+    mutex_unlock(&sdsc_lock);
 }
 EXPORT_SYMBOL(dsm_init_descriptors);
 
@@ -279,23 +298,10 @@ void dsm_destroy_descriptors(void) {
 }
 EXPORT_SYMBOL(dsm_destroy_descriptors);
 
-static void dsm_expand_descriptors(void) {
-    struct svm_list *nsdsc, *tmp = sdsc;
-
-    nsdsc = kzalloc(sizeof(struct svm_list) * sdsc_max * 2, GFP_KERNEL);
-    memcpy(nsdsc, sdsc, sizeof(struct svm_list) * sdsc_max);
-    memset(nsdsc + sizeof(struct svm_list) * sdsc_max, 0,
-            sizeof(struct svm_list) * sdsc_max);
-
-    rcu_assign_pointer(sdsc, nsdsc);
-    sdsc_max *= 2;
-    synchronize_rcu();
-    kfree(tmp);
-}
-
 static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
     u32 j;
 
+    might_sleep();
     for (j = 0; svm_ids[j]; j++)
         ;
     sdsc[i].num = j;
@@ -311,7 +317,7 @@ static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
 u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
     u32 i, j;
 
-    spin_lock(&sdsc_lock);
+    mutex_lock(&sdsc_lock);
     for (i = 0; i < sdsc_max && sdsc[i].num; i++) {
         for (j = 0;
                 j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] && sdsc[i].pp[j]->svm_id == svm_ids[j];
@@ -321,13 +327,13 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids) {
             break;
     }
 
-    if (i == sdsc_max)
-        dsm_expand_descriptors();
+    if (i + 1 == sdsc_max)
+        dsm_descriptors_realloc();
 
     if (!sdsc[i].num)
         dsm_add_descriptor(dsm, i, svm_ids);
 
-    spin_unlock(&sdsc_lock);
+    mutex_unlock(&sdsc_lock);
     return i;
 }
 ;
@@ -338,7 +344,7 @@ inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags) {
     return val_to_dsm_entry((val << 24) | flags);
 }
 
-inline struct svm_list dsm_descriptor_to_svms(u32 dsc) {
+struct svm_list dsm_descriptor_to_svms(u32 dsc) {
     struct svm_list svms;
 
     rcu_read_lock();

@@ -28,10 +28,15 @@
 #include <linux/llist.h>
 #include <linux/dsm.h>
 
+
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
+#if 0
 #define MAX_CAP_SCQ 256
 #define MAX_CAP_RCQ 1024
+#endif
+#define MAX_CAP_SCQ 16
+#define MAX_CAP_RCQ 16
 
 #define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ
 #define RX_BUF_ELEMENTS_NUM MAX_CAP_RCQ
@@ -141,16 +146,20 @@ struct rcm {
     seqlock_t conn_lock;
 
     struct sockaddr_in sin;
+};
 
+struct map_dma {
+    dma_addr_t addr;
+    u64 size;
+    u64 dir;
 };
 
 struct rdma_info_data {
+    struct rdma_info *send_buf;
+    struct rdma_info *recv_buf;
 
-    void *send_mem;
-    void *recv_mem;
-
-    struct rdma_info *send_info;
-    struct rdma_info *recv_info;
+    struct map_dma send_dma;
+    struct map_dma recv_dma;
     struct rdma_info *remote_info;
 
     struct ib_sge recv_sge;
@@ -164,22 +173,16 @@ struct rdma_info_data {
 };
 
 struct page_pool_ele {
-
     void * page_buf;
     struct page * mem_page;
     struct llist_node llnode;
-
 };
 
 struct page_pool {
-
     struct llist_head page_empty_pool_list;
     struct llist_head page_release_list;
-
     spinlock_t page_pool_empty_list_lock;
-
     struct work_struct page_release_work;
-
 };
 
 struct rx_buffer {
@@ -235,14 +238,13 @@ struct rdma_info {
     u64 buf_rx_addr;
     u32 rkey_rx;
     u32 rx_buf_size;
-
 };
 
 struct dsm_message {
+    /* hdr */
     u32 dsm_id;
     u32 src_id;
     u32 dest_id;
-
     u16 type;
     u32 offset;
     u64 req_addr;
@@ -261,13 +263,12 @@ struct memory_region {
     int local;
 #define LOCAL   1
 #define REMOTE  0
-
 };
 
 struct private_data {
     struct mm_struct *mm;
     unsigned long offset;
-    struct dsm * dsm;
+    struct dsm *dsm;
     struct subvirtual_machine *svm;
 };
 
@@ -276,7 +277,6 @@ struct subvirtual_machine {
     atomic_t status;
 #define DSM_SVM_ONLINE 0
 #define DSM_SVM_OFFLINE -1
-
     struct dsm *dsm;
     struct conn_element *ele;
     struct private_data *priv;
@@ -295,29 +295,23 @@ struct subvirtual_machine {
 
 struct work_request_ele {
     struct conn_element *ele;
-
     struct ib_send_wr wr;
     struct ib_sge sg;
     struct ib_send_wr *bad_wr;
-
-    struct dsm_message *dsm_msg;
-
+    struct map_dma dsm_dma;
 };
 
 struct msg_work_request {
     struct work_request_ele *wr_ele;
     struct page_pool_ele *dst_addr;
     struct dsm_page_cache *dpc;
-
 };
 
 struct recv_work_req_ele {
     struct conn_element * ele;
-
     struct ib_recv_wr sq_wr;
     struct ib_recv_wr *bad_wr;
     struct ib_sge recv_sgl;
-
 };
 
 struct reply_work_request {
@@ -344,8 +338,8 @@ struct tx_buf_ele {
     int id;
     atomic_t used;
 
-    void *mem;
-    struct dsm_message *dsm_msg;
+    struct dsm_message *dsm_buf;
+    struct map_dma dsm_dma;
     struct msg_work_request *wrk_req;
     struct reply_work_request *reply_work_req;
     struct llist_node tx_buf_ele_ptr;
@@ -355,8 +349,8 @@ struct tx_buf_ele {
 
 struct rx_buf_ele {
     int id;
-    void *mem;
-    struct dsm_message *dsm_msg;
+    struct dsm_message *dsm_buf;
+    struct map_dma dsm_dma;
     //The one for catching the request in the first place
     struct recv_work_req_ele *recv_wrk_rq_ele;
 };
@@ -368,7 +362,7 @@ struct dsm_request {
     struct subvirtual_machine *fault_svm;
     uint64_t addr;
     int (*func)(struct tx_buf_ele *);
-    struct dsm_message dsm_msg;
+    struct dsm_message *dsm_buf;
     struct dsm_page_cache *dpc;
     int index;
 

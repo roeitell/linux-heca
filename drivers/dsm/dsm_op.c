@@ -1186,7 +1186,7 @@ void release_svm_push_elements(struct subvirtual_machine *svm,
         } else {
             int i;
 
-            for (i = 0; i < dpc->svms.num; i++) {
+            for_each_valid_svm(dpc->svms, i) {
                 if (1 << i & dpc->bitmap)
                     page_cache_release(dpc->pages[0]);
             }

@@ -387,15 +387,11 @@ static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
         int i)
 {
     int (*func)(struct tx_buf_ele *);
-    struct page *page;
-
-    if (unlikely(!remote_svm))
-        goto out;
+    struct page *page = NULL;
 
     if (!dpc->pages[i])
         dpc->pages[i] = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
     page = dpc->pages[i];
-
     if (unlikely(!page))
         goto out;
 
@@ -506,7 +502,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
                 radix_tree_delete(&fault_svm->page_cache, norm_addr);
                 goto fail;
             }
-            for (r = 0; r < svms.num; r++) {
+            for_each_valid_svm(svms, r) {
                 get_remote_dsm_page(vma, norm_addr, new_dpc, fault_svm,
                         svms.pp[r], private, tag, r);
             }
@@ -879,11 +875,9 @@ int dsm_trigger_page_pull(struct dsm *dsm, struct subvirtual_machine *local_svm,
     struct mm_struct *mm;
 
     mm = local_svm->priv->mm;
-    use_mm(mm);
     down_read(&mm->mmap_sem);
     r = get_dsm_page(mm, norm_addr, local_svm, ULONG_MAX, PULL_TRY_TAG);
     up_read(&mm->mmap_sem);
-    unuse_mm(mm);
 
     return r;
 }

@@ -196,9 +196,9 @@ retry:
 static inline void dsm_extract_do_gup(struct page *page, struct mm_struct *mm,
         unsigned long addr)
 {
-    down_read(&mm->mmap_sem);
+    use_mm(mm);
     get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-    up_read(&mm->mmap_sem);
+    unuse_mm(mm);
 }
 
 static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
@@ -448,13 +448,11 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
     mm = local_svm->priv->mm;
     BUG_ON(!mm);
 
-    use_mm(mm);
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte);
     up_read(&mm->mmap_sem);
-    unuse_mm(mm);
 
     dsm_stats_inc( tag == TRY_REQUEST_PAGE?   /* keep conditions in macro */
         (page? 
@@ -556,7 +554,7 @@ retry:
     if (unlikely(r))
         goto bad_page;
 
-    dpc->bitmap = (1 << svms.num) - 1;
+    dpc->bitmap = 0;
     dpc->pages[0] = page;
     /*
      * refcount is as follows:
@@ -565,8 +563,10 @@ retry:
      *  1 from home --> mapped to a process (released after page_remove_rmap)
      */
     page_cache_get(page);
-    for (j = 0; j < svms.num; j++)
+    for_each_valid_svm(svms, j) {
         page_cache_get(page);
+        dpc->bitmap += (1 << j);
+    }
     set_page_private(page, ULONG_MAX);
 
     /*
@@ -739,6 +739,10 @@ static int _push_back_if_remote_dsm_page(struct page *page)
 
     if (unlikely(!get_dsm_module_state()))
         goto out;
+
+    /* we're already pushing this page */
+    if (page_private(page) == ULONG_MAX)
+        return 1;
 
     anon_vma = page_lock_anon_vma(page);
     if (!anon_vma)

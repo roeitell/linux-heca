@@ -237,10 +237,8 @@ int destroy_mrs(struct dsm *dsm, int force)
         mr = rb_entry(node, struct memory_region, rb_node);
         svms = dsm_descriptor_to_svms(mr->descriptor);
         if (!force) {
-            for (i = 0; i < svms.num; i++) {
-                if (svms.pp[i])
-                    goto next;
-            }
+            for_each_valid_svm(svms, i)
+                goto next;
         }
 
         printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr + mr->sz);
@@ -360,11 +358,9 @@ inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry)
 
     dsd.flags = val & 0xFFFFFF;
     dsd.svms = dsm_descriptor_to_svms(val >> 24);
-    for (i = 0; i < dsd.svms.num; i++) {
-        if (dsd.svms.pp[i]) {
-            dsd.dsm = dsd.svms.pp[i]->dsm;
-            goto out;
-        }
+    for_each_valid_svm(dsd.svms, i) {
+        dsd.dsm = dsd.svms.pp[i]->dsm;
+        goto out;
     }
     dsd.dsm = NULL;
 

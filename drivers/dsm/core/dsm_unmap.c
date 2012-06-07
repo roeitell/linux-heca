@@ -9,21 +9,23 @@
 
 struct dsm_functions *funcs = NULL;
 
-void lazy_free_swap(struct page *page) {
+void lazy_free_swap(struct page *page)
+{
+    int unlock;
+
     if (likely(!page_mapped(page))) {
-        lock_page(page);
+        unlock = trylock_page(page);
         try_to_free_swap(page);
-        unlock_page(page);
+        if (unlock)
+            unlock_page(page);
     }
 }
 EXPORT_SYMBOL(lazy_free_swap);
 
 void reg_dsm_functions(
-
         int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
                 struct subvirtual_machine *, uint64_t,
                 int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *),
-
         int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
                 struct subvirtual_machine *, unsigned long, 
                 struct memory_region *))
@@ -38,21 +40,24 @@ void reg_dsm_functions(
 }
 EXPORT_SYMBOL(reg_dsm_functions);
 
-void dereg_dsm_functions(void) {
+void dereg_dsm_functions(void)
+{
     struct dsm_functions * tmp = funcs;
     funcs = NULL;
     kfree(tmp);
 }
 EXPORT_SYMBOL(dereg_dsm_functions);
 
-inline int request_dsm_page_op(struct page * page,
-        struct subvirtual_machine * svm, struct subvirtual_machine * svm2,
+inline int request_dsm_page_op(struct page *page,
+        struct subvirtual_machine *svm, struct subvirtual_machine *svm2,
         uint64_t addr, int (*func)(struct tx_buf_ele *), int tag,
-        struct dsm_page_cache * cache) {
+        struct dsm_page_cache *dpc)
+{
     if (likely(funcs))
-        return funcs->request_dsm_page(page, svm, svm2, addr, func, tag, cache);
+        return funcs->request_dsm_page(page, svm, svm2, addr, func, tag, dpc);
     return -1;
 }
+
 inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
         struct subvirtual_machine *svm, unsigned long addr,
         struct memory_region *mr)
@@ -63,7 +68,8 @@ inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
 }
 
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
-        unsigned long request_addr) {
+        unsigned long request_addr)
+{
     spinlock_t *ptl;
     pte_t *pte;
     int r = 0, retry = 0;
@@ -78,8 +84,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 
     down_read(&mm->mmap_sem);
 
-    retry:
-
+retry:
     vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
         printk("[dsm_flag_page_remote] no VMA or bad VMA \n");
@@ -138,8 +143,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, addr, pte,
-                    swp_entry_to_pte( dsm_descriptor_to_swp_entry(descriptor, 0)));
+            set_pte_at(mm, addr, pte, swp_entry_to_pte(
+                    dsm_descriptor_to_swp_entry(descriptor, 0)));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -212,9 +217,10 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
     unlock_page(page);
     put_page(page);
 
-    out_pte_unlock: pte_unmap_unlock(pte, ptl);
-
-    out: up_read(&mm->mmap_sem);
+out_pte_unlock:
+    pte_unmap_unlock(pte, ptl);
+out:
+    up_read(&mm->mmap_sem);
     return r;
 }
 EXPORT_SYMBOL(dsm_flag_page_remote);

@@ -31,19 +31,18 @@
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
-#if 0
-#define MAX_CAP_SCQ 256
-#define MAX_CAP_RCQ 1024
-#endif
-#define MAX_CAP_SCQ 16
-#define MAX_CAP_RCQ 16
+#define MAX_CAP_SCQ 4096
+#define MAX_CAP_RCQ 8192    /* Heuristic; perhaps raise in the future */
 
-#define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ
+#define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ / 2
 #define RX_BUF_ELEMENTS_NUM MAX_CAP_RCQ
 
-#define PAGE_POOL_SIZE (MAX_CAP_SCQ + MAX_CAP_RCQ)*2
+#define PAGE_POOL_SIZE (TX_BUF_ELEMENTS_NUM + RX_BUF_ELEMENTS_NUM) * 2
+
+#define MAX_QUEUED_PUSH_REQS TX_BUF_ELEMENTS_NUM * 4
 
 #define MAX_CONSECUTIVE_SVM_FAILURES 5
+#define MAX_SVMS_PER_PAGE 2
 
 /**
  * RDMA_INFO
@@ -90,21 +89,20 @@ struct con_element_sysfs {
     struct msg_stats tx_stats;
 };
 
-struct dsm_page_stats {
-    atomic64_t nb_page_requested;
-    atomic64_t nb_page_request_success;
-    atomic64_t nb_page_sent;
-    atomic64_t nb_page_pull;
-    atomic64_t nb_page_pull_fail;
-    atomic64_t nb_page_push_request;
-    atomic64_t nb_page_redirect;
-    atomic64_t nb_page_requested_prefetch;
-    atomic64_t nb_err;
-};
-
 struct svm_sysfs {
     struct kobject svm_kobject;
-    struct dsm_page_stats stats;
+
+    atomic64_t nb_remote_fault;
+    atomic64_t nb_remote_fault_success;
+    atomic64_t nb_push_attempt;
+    atomic64_t nb_push_success;
+    atomic64_t nb_soft_pull_attempt;
+    atomic64_t nb_soft_pull_response;
+    atomic64_t nb_soft_pull_response_fail;
+    atomic64_t nb_answer_fault;
+    atomic64_t nb_answer_fault_fail;
+    atomic64_t nb_answer_soft_pull;
+    atomic64_t nb_answer_soft_pull_fail;
 };
 
 struct dsm {
@@ -180,9 +178,7 @@ struct page_pool_ele {
 
 struct page_pool {
     struct llist_head page_empty_pool_list;
-    struct llist_head page_release_list;
     spinlock_t page_pool_empty_list_lock;
-    struct work_struct page_release_work;
 };
 
 struct rx_buffer {
@@ -194,11 +190,12 @@ struct tx_buffer {
 
     struct llist_head tx_free_elements_list;
     struct llist_head tx_free_elements_list_reply;
-    struct list_head request_queue;
-    spinlock_t request_queue_lock;
     spinlock_t tx_free_elements_list_lock;
     spinlock_t tx_free_elements_list_reply_lock;
 
+    struct llist_head request_queue;
+    int request_queue_sz;
+    atomic_t request_queue_lock;
 };
 
 struct conn_element {
@@ -364,9 +361,9 @@ struct dsm_request {
     int (*func)(struct tx_buf_ele *);
     struct dsm_message *dsm_buf;
     struct dsm_page_cache *dpc;
-    int index;
 
-    struct list_head queue;
+    struct llist_node lnode;
+    struct dsm_request *next;
 };
 
 struct dsm_module_state {
@@ -391,7 +388,7 @@ struct dsm_page_cache {
     unsigned long addr;
     u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
-    struct page **pages;
+    struct page *pages[MAX_SVMS_PER_PAGE+1];
     struct svm_list svms;
     atomic_t found;
     atomic_t nproc;
@@ -404,10 +401,10 @@ struct dsm_swp_data {
     struct dsm *dsm;
     struct svm_list svms;
     u32 flags;
-#define DSM_INFLIGHT            0x01
-#define DSM_INFLIGHT_BITPOS     0x00
-#define DSM_PUSHING             0x02
-#define DSM_PUSHING_BITPOS      0x01
+#define DSM_INFLIGHT            0x04
+#define DSM_INFLIGHT_BITPOS     0x02
+#define DSM_PUSHING             0x08
+#define DSM_PUSHING_BITPOS      0x03
 
 };
 

@@ -19,13 +19,14 @@ struct svm_data {
     int local_port;
 };
 
-#define MAX_SVM_IDS 3
+#define MAX_SVM_IDS 3 /* This actually means 2, as the arr is null terminated */
 
 struct unmap_data {
     __u32 dsm_id;
     unsigned long addr;
     size_t sz;
     __u32 svm_ids[MAX_SVM_IDS];
+    int unmap;
 };
 
 #define DSM_IO                          0xFF
@@ -34,6 +35,7 @@ struct unmap_data {
 #define DSM_SVM                         _IOW(DSM_IO, 0xA1, struct svm_data)
 #define DSM_CONNECT                     _IOW(DSM_IO, 0xA2, struct svm_data)
 #define DSM_MR                          _IOW(DSM_IO, 0xA3, struct unmap_data)
+#define DSM_UNMAP_RANGE                 _IOW(DSM_IO, 0xA4, struct unmap_data)
 /* debug/development */
 #define DSM_GET_STAT                    _IOW(DSM_IO, 0xB4, struct svm_data)
 #define DSM_GEN_STAT                    _IOW(DSM_IO, 0xB5, struct svm_data)

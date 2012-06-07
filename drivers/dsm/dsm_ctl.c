@@ -10,35 +10,12 @@
 static char *ip = 0;
 static int port = 0;
 
-static inline void reset_page_stats(struct dsm_page_stats *stats)
-{
-    dsm_stats_set(&stats->nb_page_pull, 0);
-    dsm_stats_set(&stats->nb_page_pull_fail, 0);
-    dsm_stats_set(&stats->nb_page_push_request, 0);
-    dsm_stats_set(&stats->nb_page_requested, 0);
-    dsm_stats_set(&stats->nb_page_sent, 0);
-    dsm_stats_set(&stats->nb_page_redirect, 0);
-    dsm_stats_set(&stats->nb_err, 0);
-    dsm_stats_set(&stats->nb_page_request_success, 0);
-    dsm_stats_set(&stats->nb_page_requested_prefetch, 0);
-}
-
-static inline void reset_msg_stats(struct msg_stats *stats)
-{
-    dsm_stats_set(&stats->err, 0);
-    dsm_stats_set(&stats->page_info_update, 0);
-    dsm_stats_set(&stats->page_request_reply, 0);
-    dsm_stats_set(&stats->request_page, 0);
-    dsm_stats_set(&stats->request_page_pull, 0);
-    dsm_stats_set(&stats->try_request_page, 0);
-    dsm_stats_set(&stats->try_request_page_fail, 0);
-    dsm_stats_set(&stats->page_request_redirect, 0);
-}
-
-void reset_dsm_connection_stats(struct con_element_sysfs *sysfs) {
-    reset_msg_stats(&sysfs->rx_stats);
-    reset_msg_stats(&sysfs->tx_stats);
-}
+module_param(ip, charp, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(ip, "The ip of the machine running this module - will be used"
+       " as node_id.");
+module_param(port, int, S_IRUGO|S_IWUSR);
+MODULE_PARM_DESC(port, "The port on the machine running this module - used for"
+       " DSM_RDMA communication.");
 
 void remove_svm(u32 dsm_id, u32 svm_id)
 {
@@ -48,21 +25,22 @@ void remove_svm(u32 dsm_id, u32 svm_id)
 
     mutex_lock(&dsm_state->dsm_state_mutex);
     dsm = find_dsm(dsm_id);
-    if (dsm) {
-        mutex_lock(&dsm->dsm_mutex);
-        svm = find_svm(dsm, svm_id);
-        if (!svm) {
-            mutex_unlock(&dsm_state->dsm_state_mutex);
-            goto out;
-        }
+    if (!dsm) {
+        mutex_unlock(&dsm_state->dsm_state_mutex);
+        return;
+    }
+        
+    mutex_lock(&dsm->dsm_mutex);
+    svm = find_svm(dsm, svm_id);
+    if (!svm) {
+        mutex_unlock(&dsm_state->dsm_state_mutex);
+        goto out;
     }
     if (svm->priv) {
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
-    if (!dsm)
-	return;
 
     atomic_set(&svm->status, DSM_SVM_OFFLINE);
 
@@ -75,34 +53,43 @@ void remove_svm(u32 dsm_id, u32 svm_id)
     }
 
     release_svm_from_mr_descriptors(svm);
-    if (svm->priv) {
-	struct rb_root *root;
-	struct rb_node *node;
 
-	BUG_ON(!dsm_state->rcm);
+    /*
+     * there are three ways of catching and releasing hanged ops:
+     *  - queued requests
+     *  - tx elements (e.g, requests that were sent but not yet freed)
+     *  - push cache
+     */
+    if (svm->priv) {
+        struct rb_root *root;
+        struct rb_node *node;
+
+        BUG_ON(!dsm_state->rcm);
         root = &dsm_state->rcm->root_conn;
         for (node = rb_first(root); node; node = rb_next(node)) {
-	    struct conn_element *ele;
+            struct conn_element *ele;
 
             ele = rb_entry(node, struct conn_element, rb_node);
-	    BUG_ON(!ele);
-            release_svm_tx_requests(svm, &ele->tx_buffer);
+            BUG_ON(!ele);
+            release_svm_queued_requests(svm, &ele->tx_buffer);
             release_svm_tx_elements(svm, ele);
         }
-        release_push_elements(svm, NULL);
+        release_svm_push_elements(svm, NULL);
     } else if (svm->ele) {
-	struct list_head *pos;
+        struct list_head *pos;
 
-        release_svm_tx_requests(svm, &svm->ele->tx_buffer);
+        release_svm_queued_requests(svm, &svm->ele->tx_buffer);
         release_svm_tx_elements(svm, svm->ele);
+
+        /* potentially very expensive way to do this */
         list_for_each (pos, &svm->dsm->svm_list) {
-	    struct subvirtual_machine *local_svm;
+            struct subvirtual_machine *local_svm;
 
             local_svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-	    BUG_ON(!local_svm);
+            BUG_ON(!local_svm);
             if (!local_svm->priv)
                 continue;
-            release_push_elements(local_svm, svm);
+            release_svm_push_elements(local_svm, svm);
         }
     }
 
@@ -115,7 +102,8 @@ out:
     mutex_unlock(&dsm->dsm_mutex);
 }
 
-void remove_dsm(struct dsm *dsm) {
+void remove_dsm(struct dsm *dsm)
+{
     struct subvirtual_machine *svm;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct list_head *pos, *n;
@@ -156,7 +144,14 @@ static int register_dsm(struct private_data *priv_data, void __user *argp)
         return -EFAULT;
     }
 
-    /* if not exists allocate a new dsm */
+    /* already exists? (first check; the next one is under lock */
+    found_dsm = find_dsm(svm_info.dsm_id);
+    if (found_dsm) {
+        dsm_printk("we already have the dsm in place");
+        return -EEXIST;
+    }
+
+    /* allocate a new dsm */
     new_dsm = kzalloc(sizeof(*new_dsm), GFP_KERNEL);
     if (!new_dsm) {
         dsm_printk("can't allocate");
@@ -170,51 +165,36 @@ static int register_dsm(struct private_data *priv_data, void __user *argp)
     INIT_LIST_HEAD(&new_dsm->svm_list);
     new_dsm->mr_tree_root = RB_ROOT;
     new_dsm->nb_local_svm = 0;
- 
-    /* check if dsm already exists */
-    mutex_lock(&dsm_state->dsm_state_mutex);
-    found_dsm = find_dsm(svm_info.dsm_id);
-    if (!found_dsm) {
-#if 0
-        mutex_lock(&new_dsm->dsm_mutex);
-#endif
-    }
-    mutex_unlock(&dsm_state->dsm_state_mutex);
-
-    if (found_dsm) {
-        dsm_printk("we already have the dsm in place");
-        r = -EEXIST;
-        goto failed;
-    }
 
     while (1) {
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
+        if (!r)
+            break;
+
         if (r == -ENOMEM) {
             dsm_printk("radix_tree_preload: ENOMEM retrying ...");
             mdelay(2);
             continue;
         }
 
-        if (r) {
-            dsm_printk("radix_tree_preload: failed %d", r);
-            goto failed;
-        }
-        break;
+        dsm_printk("radix_tree_preload: failed %d", r);
+        goto failed;
     }
 
+    /* TODO: move this spin lock to be part of dsm_state */
     spin_lock(&dsm_lock);
     r = radix_tree_insert(&dsm_state->dsm_tree_root,
 		    (unsigned long) new_dsm->dsm_id, new_dsm);
     spin_unlock(&dsm_lock);
-
     radix_tree_preload_end();
 
     if (r) {
         dsm_printk("radix_tree_insert: failed %d", r);
-        goto err_delete;
+        goto failed;
     }
 
-    if (create_dsm_sysfs_entry(new_dsm, dsm_state)) {
+    r = create_dsm_sysfs_entry(new_dsm, dsm_state);
+    if (r) {
         dsm_printk("create_dsm_sysfs_entry: failed %d", r);
         goto err_delete;
     }
@@ -223,25 +203,14 @@ static int register_dsm(struct private_data *priv_data, void __user *argp)
     list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
     dsm_printk("registered dsm %p,  dsm_id : %u, res: %d \n",
             new_dsm, svm_info.dsm_id, r);
-    new_dsm = NULL;
-    goto done;
+    return r;
 
 err_delete:
     radix_tree_delete(&dsm_state->dsm_tree_root,
             (unsigned long) svm_info.dsm_id);
-done:
-#if 0
-    mutex_unlock(&new_dsm->dsm_mutex);
-#endif
 failed:
-    if (new_dsm)
-        kfree(new_dsm);
+    kfree(new_dsm);
     return r;
-}
-
-static int is_local(struct svm_data *svm_info)
-{
-    return !svm_info->offset;
 }
 
 static int register_svm(struct private_data *priv_data, void __user *argp)
@@ -257,20 +226,26 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
         return -EFAULT;
     }
 
+    /* allocate a new svm */
+    new_svm = kzalloc(sizeof(*new_svm), GFP_KERNEL);
+    if (!new_svm) {
+        dsm_printk(KERN_ERR "failed kzalloc");
+        return -ENOMEM;
+    }
+
+    /* grab dsm lock */
     mutex_lock(&dsm_state->dsm_state_mutex);
     dsm = find_dsm(svm_info.dsm_id);
-    if (dsm) {
-#if 0
+    if (dsm)
         mutex_lock(&dsm->dsm_mutex);
-#endif
-    }
     mutex_unlock(&dsm_state->dsm_state_mutex);
     if (!dsm) {
         dsm_printk(KERN_ERR "could not find dsm: %d", svm_info.dsm_id);
         r = -EFAULT;
-        goto do_unlock;
+        goto free_out;
     }
 
+    /* already exists? */
     found_svm = find_svm(dsm, svm_info.svm_id);
     if (found_svm) {
         dsm_printk(KERN_ERR "svm %d (dsm %d) already exists",
@@ -279,128 +254,96 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
         goto do_unlock;
     }
 
-    /* allocate a new svm */
-    new_svm = kzalloc(sizeof(*new_svm), GFP_KERNEL);
-    if (!new_svm) {
-        dsm_printk(KERN_ERR "failed kzalloc");
-        r = -ENOMEM;
-        goto do_unlock;
-    }
-
     new_svm->svm_id = svm_info.svm_id;
     new_svm->dsm = dsm;
-    if (is_local(&svm_info)) {
-        new_svm->priv = priv_data;
-        new_svm->priv->svm = new_svm;
-        new_svm->priv->offset = svm_info.offset;
-        new_svm->dsm->nb_local_svm++;
-    } else {
-        u32 svm_id[] = {new_svm->svm_id, 0};
-        new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
-    }
     spin_lock_init(&new_svm->page_cache_spinlock);
     INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
     new_svm->push_cache = RB_ROOT;
     seqlock_init(&new_svm->push_cache_lock);
     INIT_LIST_HEAD(&new_svm->mr_list);
 
-    /* register new svm to radix tree */
+    if (svm_info.offset) {  /* local svm */
+        new_svm->priv = priv_data;
+        priv_data->svm = new_svm;
+        priv_data->offset = svm_info.offset;
+        new_svm->dsm->nb_local_svm++;
+    } else {
+        u32 svm_id[] = {new_svm->svm_id, 0};
+        new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
+    }
+
+    /* register new svm to radix trees */
     while (1) {
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
+        if (!r)
+            break;
+
         if (r == -ENOMEM) {
             dsm_printk(KERN_ERR "radix_tree_preload: ENOMEM retrying ...");
             mdelay(2);
             continue;
         }
 
-        if (r) {
-            dsm_printk(KERN_ERR "radix_tree_preload: failed %d", r);
-            goto do_unlock;
-        }
-        break;
+        dsm_printk(KERN_ERR "radix_tree_preload: failed %d", r);
+        goto do_unlock;
     }
 
+    /* TODO: use dsm_state global spinlock here! */
     spin_lock(&dsm_lock);
     r = radix_tree_insert(&dsm->svm_tree_root,
             (unsigned long) new_svm->svm_id, new_svm);
-    spin_unlock(&dsm_lock);
-
-    if (r) {
-        dsm_printk(KERN_ERR "failed radix_tree_insert (svm) %d", r);
-        goto err_preload_end;
-    }
-
-    if (!is_local(&svm_info))
-        goto err_preload_end;
-
-    spin_lock(&dsm_lock);
-    r = radix_tree_insert(&dsm->svm_mm_tree_root,
+    if (svm->priv && !r) {
+        r = radix_tree_insert(&dsm->svm_mm_tree_root,
             (unsigned long) new_svm->priv->mm, new_svm);
-    spin_unlock(&dsm_lock);
-
-    if (r) {
-        dsm_printk(KERN_ERR "failed radix_tree_insert (svm_mm) %d", r);
-        goto err_preload_end;
+        if (!r) {
+            r = radix_tree_insert(&dsm_state->mm_tree_root,
+                    (unsigned long) new_svm->priv->mm, new_svm);
+        }
     }
-
-    spin_lock(&dsm_lock);
-    r = radix_tree_insert(&dsm_state->mm_tree_root,
-            (unsigned long) new_svm->priv->mm, new_svm);
     spin_unlock(&dsm_lock);
-
-    if (r) {
-        dsm_printk(KERN_ERR "failed radix_tree_insert (mm) %d", r);
-        goto err_preload_end;
-    }
-
-err_preload_end:
     radix_tree_preload_end();
-    if (r)
+
+    if (r) {
+        dsm_printk(KERN_ERR "failed radix_tree_insert %d", r);
         goto err_delete;
+    }
 
     /* update state */
     atomic_set(&new_svm->status, DSM_SVM_ONLINE);
-    reset_page_stats(&new_svm->svm_sysfs.stats);
     r = create_svm_sysfs_entry(new_svm);
     if (r) {
         dsm_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
-        goto err_sysfs;
+        goto err_delete;
     }
+
     list_add(&new_svm->svm_ptr, &dsm->svm_list);
     dsm_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u\n",
             new_svm, r, svm_info.dsm_id, svm_info.svm_id);
-    new_svm = NULL;
-    goto do_unlock;
-
-err_sysfs:
-    delete_svm_sysfs_entry(&new_svm->svm_sysfs.svm_kobject);
+    mutex_unlock(&dsm->dsm_mutex);
+    return r;
 
 err_delete:
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) new_svm->svm_id);
-    if (!is_local(&svm_info))
-        goto do_unlock;
-    radix_tree_delete(&dsm->svm_mm_tree_root,
-            (unsigned long) new_svm->priv->mm);
-    radix_tree_delete(&dsm_state->mm_tree_root,
-            (unsigned long) new_svm->priv->mm);
-
+    if (svm->priv) {
+        radix_tree_delete(&dsm->svm_mm_tree_root,
+                (unsigned long) new_svm->priv->mm);
+        radix_tree_delete(&dsm_state->mm_tree_root,
+                (unsigned long) new_svm->priv->mm);
+    }
 do_unlock:
-#if 0
     mutex_unlock(&dsm->dsm_mutex);
-#endif
-    if (new_svm)
-        kfree(new_svm);
+free_out:
+    kfree(new_svm);
     return r;
 }
 
 static int connect_svm(struct private_data *priv_data, void __user *argp)
 {
-    int r = 0;
+    int r = 0, ip_addr;
     struct dsm *dsm;
     struct subvirtual_machine *svm;
     struct svm_data svm_info;
     struct conn_element *cele;
-    int ip_addr;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     r = copy_from_user((void *) &svm_info, argp, sizeof svm_info);
@@ -418,27 +361,25 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     dsm_printk(KERN_ERR "connecting to dsm_id: %u [%p], svm_id: %u\n",
         svm_info.dsm_id, dsm, svm_info.svm_id);
 
-#if 0
     mutex_lock(&dsm->dsm_mutex);
-#endif
     svm = find_svm(dsm, svm_info.svm_id);
     if (!svm) {
         dsm_printk(KERN_ERR "Can't find svm %d", svm_info.svm_id);
-        return -EFAULT;
+        goto out;
     }
 
     ip_addr = inet_addr(svm_info.ip);
-
     cele = search_rb_conn(ip_addr);
     if (cele) {
         dsm_printk(KERN_ERR "has existing connection to %d", ip_addr);
-        goto done;
+        BUG_ON(svm->ele != cele);
+        goto out;
     }
 
     r = create_connection(dsm_state->rcm, &svm_info);
     if (r) {
         dsm_printk(KERN_ERR "create_connection failed %d", r);
-        goto failed;
+        goto out;
     }
 
     might_sleep();
@@ -446,35 +387,66 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     if (!cele) {
         dsm_printk(KERN_ERR "conneciton does not exist", r);
         r = -ENOLINK;
-        goto failed;
+        goto out;
     }
 
     wait_for_completion(&cele->completion);
     if (!atomic_read(&cele->alive)) {
-        dsm_printk(KERN_ERR "conneciton is not alive ... abouting");
+        dsm_printk(KERN_ERR "conneciton is not alive ... aborting");
         r = -ENOLINK;
-        goto failed;
+        goto out;
     }
-    goto done;
 
-done:
     svm->ele = cele;
-failed:
-#if 0
+
+out:
     mutex_unlock(&dsm->dsm_mutex);
-#endif
     dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %d: %d",
         svm_info.dsm_id, svm_info.svm_id, ip_addr, r);
     return r;
 }
 
+static int do_unmap_range(struct dsm *dsm, int dsc, unsigned long start,
+        unsigned long end)
+{
+    int r = 0;
+    unsigned long it;
+
+    for (it = start; it < end; it += PAGE_SIZE) {
+        r = dsm_flag_page_remote(current->mm, dsm, dsc, it);
+        if (r)
+            break;
+    }
+
+    return r;
+}
+
+static int unmap_range(struct private_data *priv_data, void __user *argp)
+{
+    int r = -EFAULT;
+    struct unmap_data udata;
+    struct dsm *dsm;
+
+    if (copy_from_user((void *) &udata, argp, sizeof udata))
+        goto out;
+
+    dsm = find_dsm(udata.dsm_id);
+    if (!dsm)
+        goto out;
+
+    r = do_unmap_range(dsm, dsm_get_descriptor(dsm, udata.svm_ids), udata.addr,
+            udata.addr + udata.sz - 1);
+
+out:
+    return r;
+}
+
 static int register_mr(struct private_data *priv_data, void __user *argp)
 {
-    int ret = 0, j;
+    int ret = 0, i;
     struct dsm *dsm;
     struct memory_region *mr;
     struct unmap_data udata;
-    u64 addr, end;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
@@ -488,6 +460,8 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
         ret = -EFAULT;
         goto out;
     }
+
+    /* TODO: lock dsm mutex! */
 
     if (search_mr(dsm, udata.addr)) {
         dsm_printk(KERN_ERR "can't find MR of addr 0x%lx", udata.addr);
@@ -505,7 +479,6 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     mr->addr = udata.addr;
     mr->sz = udata.sz;
     mr->descriptor = dsm_get_descriptor(dsm, udata.svm_ids);
-
     if (!mr->descriptor) {
         dsm_printk(KERN_ERR "can't find MR descriptor for svm_ids");
         ret = -EFAULT;
@@ -513,9 +486,9 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     }
 
     insert_mr(dsm, mr);
-    for (j = 0; udata.svm_ids[j]; j++) {
+    for (i = 0; udata.svm_ids[i]; i++) {
         struct subvirtual_machine *svm;
-        u32 svm_id = udata.svm_ids[j];
+        u32 svm_id = udata.svm_ids[i];
 
         svm = find_svm(dsm, svm_id);
         if (!svm) {
@@ -524,34 +497,23 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
             goto out;
         }
 
-#if 0
-        if (svm->priv && svm->priv->mm == current->mm) { /* is dsm svm */
-            if (j) {
-                dsm_printk(KERN_ERR "dsm svm id=%d must be in index 0", svm_id);
-                ret = -EFAULT;
-            } else {
-                dsm_printk(KERN_INFO "dsm svm id=%d found in index 0", svm_id);
-            }
+        if (svm->priv && svm->priv->mm == current->mm) {
             mr->local = LOCAL;
             goto out;
         }
-#endif
     }
 
-    end = udata.addr + udata.sz - 1;
-    for (addr = udata.addr; addr < end; addr += PAGE_SIZE) {
-        ret = dsm_flag_page_remote(current->mm, dsm, mr->descriptor, addr);
-        if (ret) {
-            dsm_printk(KERN_ERR "can't flag remote page 0x%lx", addr);
-            goto out;
-        }
+    if (udata.unmap) {
+        ret = do_unmap_range(dsm, mr->descriptor, udata.addr,
+                udata.addr + udata.sz - 1);
     }
 
-out:
+out: 
     return ret;
 }
 
-static int pushback_page(struct private_data *priv_data, void __user *argp) {
+static int pushback_page(struct private_data *priv_data, void __user *argp)
+{
     int r = -EFAULT;
     unsigned long addr;
     struct dsm *dsm;
@@ -568,10 +530,12 @@ static int pushback_page(struct private_data *priv_data, void __user *argp) {
     mr = search_mr(dsm, addr);
     r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr, mr);
 
-    out: return r;
+out: 
+    return r;
 }
 
-static int open(struct inode *inode, struct file *f) {
+static int open(struct inode *inode, struct file *f)
+{
     struct private_data *data;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
@@ -592,22 +556,23 @@ static int open(struct inode *inode, struct file *f) {
 
 static int release(struct inode *inode, struct file *f)
 {
-#if 0
     struct private_data *data = (struct private_data *) f->private_data;
+
     if (!data->svm)
         return 1;
+
     remove_svm(data->dsm->dsm_id, data->svm->svm_id);
     if (data->dsm->nb_local_svm == 0) {
         remove_dsm(data->dsm);
         printk("[Release ] last local svm , freeing the dsm\n");
     }
     kfree(data);
-#endif
+
     return 0;
 }
 
-static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
-
+static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
+{
     struct private_data *priv_data = (struct private_data *) f->private_data;
     void __user *argp = (void __user *) arg;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -621,25 +586,25 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         goto out;
 
     switch (ioctl) {
-        case DSM_DSM: {
+        case DSM_DSM:
             r = register_dsm(priv_data, argp);
             break;
-        }
-        case DSM_SVM: {
+        case DSM_SVM:
             if (priv_data->dsm)
                 r = register_svm(priv_data, argp);
             break;
-        }
-        case DSM_CONNECT: {
+        case DSM_CONNECT:
             if (priv_data->dsm)
                 r = connect_svm(priv_data, argp);
             break;
-        }
-        case DSM_MR: {
+        case DSM_MR:
             if (priv_data->dsm)
                 r = register_mr(priv_data, argp);
             break;
-        }
+        case DSM_UNMAP_RANGE:
+            if (priv_data->dsm)
+                r = unmap_range(priv_data, argp);
+            break;
 
         /*
          * Statistics and devel/debug
@@ -674,24 +639,18 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg) {
         }
     }
 
-    out: return r;
+out: 
+    return r;
 }
 
-static struct file_operations rdma_fops = { .owner = THIS_MODULE, .release = release, .unlocked_ioctl = ioctl, .open = open, .llseek = noop_llseek, };
+static struct file_operations rdma_fops = { .owner = THIS_MODULE,
+    .release = release, .unlocked_ioctl = ioctl, .open = open,
+    .llseek = noop_llseek, };
+static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "rdma",
+    &rdma_fops, };
 
-static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "rdma", &rdma_fops,
-
-};
-
-module_param(ip, charp, S_IRUGO|S_IWUSR);
-module_param(port, int, S_IRUGO|S_IWUSR);
-
-MODULE_PARM_DESC( ip,
-        "The ip of the machine running this module - will be used as node_id.");
-MODULE_PARM_DESC( port,
-        "The port on the machine running this module - used for DSM_RDMA communication.");
-
-static int dsm_init(void) {
+static int dsm_init(void)
+{
     struct dsm_module_state *dsm_state = create_dsm_module_state();
 
     reg_dsm_functions(&request_dsm_page, &dsm_request_page_pull);
@@ -708,15 +667,17 @@ static int dsm_init(void) {
     }
 
     rdma_listen(dsm_state->rcm->cm_id, 2);
-    err: return misc_register(&rdma_misc);
+err: 
+    return misc_register(&rdma_misc);
 }
 module_init(dsm_init);
 
-static void dsm_exit(void) {
-    struct dsm * dsm = NULL;
+static void dsm_exit(void)
+{
+    struct dsm *dsm = NULL;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     while (!list_empty(&dsm_state->dsm_list)) {
-        dsm = list_first_entry(&dsm_state->dsm_list, struct dsm, dsm_ptr );
+        dsm = list_first_entry(&dsm_state->dsm_list, struct dsm, dsm_ptr);
         remove_dsm(dsm);
     }
 
@@ -733,3 +694,4 @@ MODULE_VERSION("0.0.1");
 MODULE_AUTHOR("virtex");
 MODULE_DESCRIPTION("");
 MODULE_LICENSE("GPL");
+

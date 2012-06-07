@@ -60,17 +60,17 @@ int setup_connection(struct conn_element *, int);
 int connect_client(struct rdma_cm_id *);
 struct page_pool_ele * create_new_page_pool_element_from_page(
         struct conn_element *, struct page *);
-void release_page(struct conn_element *, struct tx_buf_ele *);
-void release_page_work(struct work_struct *);
+void release_ppe(struct conn_element *, struct tx_buf_ele *);
 void release_tx_element(struct conn_element *, struct tx_buf_ele *);
 void release_tx_element_reply(struct conn_element *, struct tx_buf_ele *);
 int setup_recv_wr(struct conn_element *);
 int refill_recv_wr(struct conn_element *, struct rx_buf_ele *);
 void reg_rem_info(struct conn_element *);
 void release_svm_from_mr_descriptors(struct subvirtual_machine *);
-void release_svm_tx_requests(struct subvirtual_machine *, struct tx_buffer *);
+void release_svm_queued_requests(struct subvirtual_machine *,
+        struct tx_buffer *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
-void release_push_elements(struct subvirtual_machine *,
+void release_svm_push_elements(struct subvirtual_machine *,
         struct subvirtual_machine *);
 
 /*
@@ -141,12 +141,14 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
  */
 #if 1
 #define dsm_stats_inc(s) atomic64_inc(s)
+#define dsm_stats_inc_cond(s,c) if (c) { atomic64_inc(s); }
 #define dsm_stats_read(s) atomic64_read(s)
 #define dsm_stats_set(s,v) atomic64_set(s,v)
 #else
-#define dsm_stats_inc(s)
+#define dsm_stats_inc(s) do { } while(0);
+#define dsm_stats_inc_cond(s,c) do { } while(0);
 #define dsm_stats_read(s) 0
-#define dsm_stats_set(s,v)
+#define dsm_stats_set(s,v) do { } while(0);
 #endif
 
 void dsm_sysfs_cleanup(struct dsm_module_state *);

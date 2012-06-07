@@ -201,17 +201,87 @@ static inline void dsm_extract_do_gup(struct page *page, struct mm_struct *mm,
     up_read(&mm->mmap_sem);
 }
 
+static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
+        struct mm_struct *mm, unsigned long addr, pte_t pte_entry,
+        struct dsm_pte_data *pd)
+{
+    swp_entry_t swp_e;
+    struct dsm_swp_data dsd;
+    struct dsm_page_cache *dpc;
+
+    /* first time dealing with this addr? */
+    if (pte_none(pte_entry))
+        goto fault_page;
+
+    /* page could be swapped to disk */
+    swp_e = pte_to_swp_entry(pte_entry);
+    if (!non_swap_entry(swp_e))
+        goto fault_page;
+
+    if (is_migration_entry(swp_e)) {
+        migration_entry_wait(mm, pd->pmd, addr);
+        return;
+    }
+
+    /* not a swap entry or a migration entry, must be ours */
+    BUG_ON(!is_dsm_entry(swp_e));
+    dsd = swp_entry_to_dsm_data(swp_e);
+
+    if (unlikely(dsd.flags)) {
+        /* 
+         * FIXME: unhandled; we need to stop the push process, and reclaim the
+         * page, so we can answer the fault. an interesting question is what to
+         * do if we're pushing to the faulting machine anyway.
+         */
+        if (dsd.flags & DSM_PUSHING)
+            BUG();
+
+        /* we're answering another fault, we can't answer this one */
+        else if (dsd.flags & DSM_INFLIGHT)
+            return;
+    }
+
+    /* 
+     * if a page has been prefetched, find it and fault it in; otherwise, we
+     * must wait until the concurrent fault that's happening is finished.
+     */
+    dpc = dsm_cache_get_hold(local_svm, addr);
+    if (dpc && dpc->tag == PREFETCH_TAG) {
+        struct page *page;
+        int i;
+       
+        i = atomic_read(&dpc->found);
+        if (i >= 0) {
+            page = dpc->pages[i];
+            if (likely(page))
+                dsm_extract_do_gup(page, mm, addr);
+
+            atomic_dec(&dpc->nproc);
+            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+                for (i = 0; i < dpc->svms.num; i++) {
+                    if (likely(dpc->pages[i]))
+                        page_cache_release(dpc->pages[i]);
+                }
+                dsm_dealloc_dpc(&dpc);
+            }
+            return;
+        }
+    }
+
+fault_page:
+    dsm_extract_do_gup(NULL, mm, addr);
+    return;
+}
+
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
         unsigned long addr, pte_t **return_pte)
 {
     spinlock_t *ptl;
-    int r = 0, i;
-    struct dsm_page_cache *dpc = NULL;
+    int r = 0;
     struct page *page = NULL;
     struct dsm_pte_data pd;
     pte_t pte_entry;
-    swp_entry_t swp_e;
     
 retry:
     if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
@@ -219,45 +289,8 @@ retry:
 
     pte_entry = *(pd.pte);
     if (unlikely(!pte_present(pte_entry))) {
-        if (pte_none(pte_entry))
-            goto chain_fault;
-
-        else {
-            swp_e = pte_to_swp_entry(pte_entry);
-            if (non_swap_entry(swp_e)) {
-                if (is_dsm_entry(swp_e)) {
-                    dpc = dsm_cache_get_hold(local_svm, addr);
-                    if (unlikely(!dpc))
-
-                        goto chain_fault;
-
-                    if (dpc->tag == PULL_TAG || dpc->tag == PULL_TRY_TAG) {
-                        wait_on_page_locked_killable(dpc->pages[0]);
-                    } else if (dpc->tag == PREFETCH_TAG) {
-                        i = atomic_read(&dpc->found);
-                        if (i >= 0) {
-                            page = dpc->pages[i];
-                            if (likely(page))
-                                dsm_extract_do_gup(page, mm, addr);
-                        }
-                    }
-                    atomic_dec(&dpc->nproc);
-                    if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                        page_cache_release(dpc->pages[0]);
-                        dsm_dealloc_dpc(&dpc);
-                    }
-                    goto retry;
-                } else if (is_migration_entry(swp_e)) {
-                    migration_entry_wait(mm, pd.pmd, addr);
-                    goto retry;
-                }
-                BUG();
-            } else {
-chain_fault: 
-                dsm_extract_do_gup(page, mm, addr);
-                goto retry;
-            }
-        }
+        dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry, &pd);
+        goto retry;
     }
 
     pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -267,7 +300,7 @@ chain_fault:
     }
     page = vm_normal_page(pd.vma, addr, *(pd.pte));
     if (!page) {
-// DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
+        /* DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */
         if (pte_pfn(*(pd.pte)) == (unsigned long) (void *) ZERO_PAGE(0))
             goto bad_page;
 
@@ -275,45 +308,35 @@ chain_fault:
     }
 
     if (unlikely(PageTransHuge(page))) {
-        printk("[dsm_extract_page] we have a huge page \n");
         if (!PageHuge(page) && PageAnon(page)) {
-            if (unlikely(split_huge_page(page))) {
-                printk("[dsm_extract_page] failed at splitting page \n");
+            if (unlikely(split_huge_page(page)))
                 goto bad_page;
-            }
-
         }
     }
-    if (unlikely(PageKsm(page))) {
-        printk("[dsm_extract_page] KSM page\n");
 
+    if (unlikely(PageKsm(page))) {
         r = ksm_madvise(pd.vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE,
                 &(pd.vma->vm_flags));
-
-        if (r) {
-            printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
-
-            // DSM1 : better ksm error handling required.
+        if (r) /* DSM1 : better ksm error handling required. */
             goto bad_page;
-        }
     }
 
-    if (unlikely(!trylock_page(page))) {
-        printk("[dsm_extract_page] cannot lock page\n");
+    if (unlikely(!trylock_page(page)))
         goto bad_page;
-    }
 
     page_cache_get(page);
+
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
     ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-    set_pte_at(mm, addr, pd.pte,
-            swp_entry_to_pte(dsm_descriptor_to_swp_entry( remote_svm->descriptor, DSM_INFLIGHT)));
+    set_pte_at(mm, addr, pd.pte, 
+            dsm_descriptor_to_pte(remote_svm->descriptor, DSM_INFLIGHT));
+
     page_remove_rmap(page);
     page_cache_release(page);
-
     dec_mm_counter(mm, MM_ANONPAGES);
-    unlock_page(page);
+
     *return_pte = pd.pte;
+    unlock_page(page);
     pte_unmap_unlock(pd.pte, ptl);
 out: 
     return page;
@@ -365,9 +388,8 @@ retry:
         lock_page(page);
         flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
         ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-        set_pte_at(mm, addr, pd.pte,
-                swp_entry_to_pte(dsm_descriptor_to_swp_entry(
-                dpc->tag, (dpc->svms.num == 1)? 0 : DSM_PUSHING)));
+        set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(dpc->tag,
+                    (dpc->svms.num == 1)? 0 : DSM_PUSHING));
         page_remove_rmap(page);
         page_cache_release(page);
         dec_mm_counter(mm, MM_ANONPAGES);
@@ -659,7 +681,7 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
             set_pte_at(mm, msg->req_addr, pte,
-                    swp_entry_to_pte( dsm_descriptor_to_swp_entry(svm->descriptor, 0)));
+                    dsm_descriptor_to_pte(svm->descriptor, 0));
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
             if (!non_swap_entry(swp_e)) {
@@ -671,7 +693,7 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                     if (old.dsm->dsm_id != dsm->dsm_id && old.svms.pp[0]->svm_id != svm_id) {
                         // update pte
                         set_pte_at(mm, msg->req_addr, pte,
-                                swp_entry_to_pte( dsm_descriptor_to_swp_entry(svm->descriptor, 0)));
+                                dsm_descriptor_to_pte(svm->descriptor, 0));
 
                         // forward msg
                         // DSM1: fwd message RDMA function call.

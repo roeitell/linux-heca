@@ -143,8 +143,7 @@ retry:
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, addr, pte, swp_entry_to_pte(
-                    dsm_descriptor_to_swp_entry(descriptor, 0)));
+            set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(descriptor, 0));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -206,8 +205,7 @@ retry:
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte,
-            swp_entry_to_pte(dsm_descriptor_to_swp_entry( descriptor, 0)));
+    set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(descriptor, 0));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);

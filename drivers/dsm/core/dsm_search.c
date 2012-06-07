@@ -332,13 +332,13 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
     spin_unlock(&sdsc_lock);
     return i;
 }
-;
 EXPORT_SYMBOL(dsm_get_descriptor);
 
-inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags)
+inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
 {
     u64 val = dsc;
-    return val_to_dsm_entry((val << 24) | flags);
+    swp_entry_t swp_e = val_to_dsm_entry((val << 24) | flags);
+    return swp_entry_to_pte(swp_e);
 }
 
 inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
@@ -390,7 +390,6 @@ void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
 
     clear_bit(pos, (volatile long unsigned int *) &flags);
     val = val >> 24;
-    set_pte_at(mm, addr, pte,
-            swp_entry_to_pte(dsm_descriptor_to_swp_entry(val, flags)));
+    set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(val, flags));
 }
 EXPORT_SYMBOL(clear_dsm_swp_entry_flag);

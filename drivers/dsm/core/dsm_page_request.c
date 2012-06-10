@@ -466,65 +466,70 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
 }
 EXPORT_SYMBOL(dsm_extract_page_from_remote);
 
-struct page *dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
-        struct svm_list svms, struct mm_struct *mm, unsigned long addr,
-        u32 descriptor)
+/* this function is purely for development, used in the PUSH ioctl */
+struct page *dsm_find_normal_page(struct mm_struct *mm, unsigned long addr)
+{
+    struct page *page = NULL;
+    struct dsm_pte_data pd;
+    pte_t pte_entry, *pte;
+    spinlock_t *ptl;
+
+    if (dsm_extract_pte_data(&pd, mm, addr))
+        goto out;
+
+    pte_entry = *(pd.pte);
+    if (!pte_present(pte_entry))
+        goto out;
+
+retry:
+    pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
+    if (!pte_same(*pte, pte_entry)) {
+        pte_unmap_unlock(pte, ptl);
+        goto retry;
+    }
+    page = vm_normal_page(pd.vma, addr, *pte);
+    pte_unmap_unlock(pte, ptl);
+
+out:
+    return page;
+}
+EXPORT_SYMBOL(dsm_find_normal_page);
+
+int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
+        struct svm_list svms, struct page *page, unsigned long addr,
+        struct mm_struct *mm, u32 descriptor)
 {
     struct dsm_pte_data pd;
     struct dsm_page_cache *dpc;
     pte_t pte_entry, *pte;
-    swp_entry_t swp_e;
-    struct page *page = NULL;
     spinlock_t *ptl;
-    int i = 0, r, j;
+    int i, r;
 
     BUG_ON(!local_svm);
 
-retry:
     /*
      * We only change pte when the first response returns, in order to keep the
      * page accessible; therefore someone might ask us to re-push a page before
      * any response has even returned.
      */
     if (dsm_push_cache_lookup(local_svm, addr))
-        goto out;
+        return -EEXIST;
 
-    if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
-        goto out;
-
-    pte_entry = *(pd.pte);
-    if (unlikely(!pte_present(pte_entry))) {
-        if (!pte_none(pte_entry)) {
-            BUG_ON(pte_file(pte_entry));
-            swp_e = pte_to_swp_entry(pte_entry);
-            if (non_swap_entry(swp_e) && is_migration_entry(swp_e)) {
-                migration_entry_wait(mm, pd.pmd, addr);
-                goto retry;
-            }
-        }
-        /*
-         * Cannot swap-out: page isn't here
-         */
-        goto out;
-    }
-
+retry:
     dpc = dsm_alloc_dpc(local_svm, addr, svms, 1, descriptor);
     if (unlikely(!dpc))
-        goto out;
+        return -ENOMEM;
+
+    /* we're trying to swap out an active page, everything should be here */
+    dsm_extract_pte_data(&pd, mm, addr);
+    BUG_ON(!pd.pte);
+    pte_entry = *(pd.pte);
+    BUG_ON(!pte_present(pte_entry));
 
     pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
     if (unlikely(!pte_same(*pte, pte_entry))) {
         pte_unmap_unlock(pte, ptl);
         goto retry;
-    }
-
-    BUG_ON(!pte);
-    page = vm_normal_page(pd.vma, addr, *pte);
-    if (!page) {
-        // DSM3: follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf
-        if (pte_pfn(*pte) == (unsigned long) (void *) ZERO_PAGE(0))
-            goto bad_page;
-        page = pte_page(*pte);
     }
 
     if (unlikely(PageTransHuge(page) && !PageHuge(page) && PageAnon(page))) {
@@ -533,22 +538,10 @@ retry:
     }
 
     if (unlikely(PageKsm(page))) {
-        BUG_ON(!pd.vma);
         if (ksm_madvise(pd.vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE,
                 &pd.vma->vm_flags))
             goto bad_page;
     }
-
-    /*
-     * TODO: This is used for debugging; after deprecating the syscall for PUSH
-     * we can discard the next line, and replace with:
-     *   BUG_ON(test_bit(PG_locked, &page->flags))
-     *
-     * --> native swap: we arrive with page locked from lru funcs
-     * --> ioctl (debugging): we need to lock the page ourselves
-     */
-    if (trylock_page(page))
-        i = 1;
 
     r = dsm_push_cache_add(dpc, local_svm, addr);
     if (unlikely(r))
@@ -563,27 +556,19 @@ retry:
      *  1 from home --> mapped to a process (released after page_remove_rmap)
      */
     page_cache_get(page);
-    for_each_valid_svm(svms, j) {
+    for_each_valid_svm(svms, i) {
         page_cache_get(page);
-        dpc->bitmap += (1 << j);
+        dpc->bitmap += (1 << i);
     }
     set_page_private(page, ULONG_MAX);
 
-    /*
-     * TODO: This is also used for debugging only. Remove along with the
-     * trylock_page statement.
-     */
-    if (i)
-        unlock_page(page);
-
     pte_unmap_unlock(pte, ptl);
-    return page;
+    return 0;
     
 bad_page: 
     dsm_dealloc_dpc(&dpc);
     pte_unmap_unlock(pte, ptl);
-out: 
-    return NULL;
+    return -EFAULT;
 }
 EXPORT_SYMBOL(dsm_prepare_page_for_push);
 
@@ -591,27 +576,16 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
         struct page *page)
 {
     struct dsm_page_cache *dpc = dsm_push_cache_get(svm, addr, NULL);
-    int i = 0;
+    int i;
 
     if (unlikely(!dpc))
         return -1;
 
     dsm_push_cache_release(svm, &dpc);
-
-    /*
-     * TODO: debugging, see comment above.
-     */
-    if (trylock_page(page))
-        i = 1;
-
     page_cache_release(page);
+    for_each_valid_svm(dpc->svms, i)
+        page_cache_release(page);
     set_page_private(page, 0);
-
-    /*
-     * TODO: debugging
-     */
-    if (i)
-        unlock_page(page);
 
     return 0;
 }
@@ -767,7 +741,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
         if (!mr || mr->local == LOCAL)
             continue;
 
-        dsm_request_page_pull_op(svm->dsm, vma->vm_mm, svm, address, mr);
+        dsm_request_page_pull_op(svm->dsm, svm, page, address, vma->vm_mm, mr);
         dsm_stats_inc(&svm->svm_sysfs.nb_push_attempt);
         ret = 1;
         break;

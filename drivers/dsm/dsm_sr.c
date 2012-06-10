@@ -539,13 +539,12 @@ int dsm_recv_info(struct conn_element *ele)
     return ib_post_recv(ele->cm_id->qp, &rid->recv_wr, &rid->recv_bad_wr);
 }
 
-int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
-        struct subvirtual_machine *fault_svm, unsigned long request_addr,
+int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
+        struct page *page, unsigned long request_addr, struct mm_struct *mm,
         struct memory_region *mr)
 {
     unsigned long addr = request_addr & PAGE_MASK;
     struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);
-    struct page *page;
     int ret = 0, i;
 
     BUG_ON(!mr);
@@ -561,13 +560,17 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
             return -ENOMEM;
     }
 
-    page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
-    if (likely(page)) {
-        ret = send_request_dsm_page_pull(fault_svm, svms,
-                addr - fault_svm->priv->offset);
-        if (unlikely(ret == -ENOMEM))
-            dsm_cancel_page_push(fault_svm, addr, page);
-    }
+    ret = dsm_prepare_page_for_push(fault_svm, svms, page, addr, mm,
+            mr->descriptor);
+    if (unlikely(ret))
+        goto out;
+
+    ret = send_request_dsm_page_pull(fault_svm, svms,
+            addr - fault_svm->priv->offset);
+    if (unlikely(ret == -ENOMEM))
+        dsm_cancel_page_push(fault_svm, addr, page);
+
+out:
     return ret;
 }
 

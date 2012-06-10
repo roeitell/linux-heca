@@ -700,12 +700,18 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
 }
 EXPORT_SYMBOL(dsm_update_pte_entry);
 
+static inline int wait_for_page_push(void *x)
+{
+    schedule();
+    return 0;
+}
+
 /*
  * Return 0 => page dsm or not dsm_remote => try to swap out
  * Return 1 => page is dsm => do not swap out (not necessarily scheduled yet to
  *             be pushed back, could only be done in next cycle)
  */
-static int _push_back_if_remote_dsm_page(struct page *page)
+static int _push_back_if_remote_dsm_page(struct page *page, int sync)
 {
     struct anon_vma *anon_vma;
     struct anon_vma_chain *avc;
@@ -714,9 +720,19 @@ static int _push_back_if_remote_dsm_page(struct page *page)
     if (unlikely(!get_dsm_module_state()))
         goto out;
 
-    /* we're already pushing this page */
-    if (page_private(page) == ULONG_MAX)
+    /* 
+     * FIXME: we need to flag/detect pushed pages better.
+     *  - page_private perhaps unreliable, we're not sure if some will grab it
+     *  - PageWriteback (the correct flag) causes diff flows, so we can't use it
+     */
+    if (page_private(page) == ULONG_MAX) {
+        if (sync) {
+            wait_on_bit(&(page_private(page)), 0, wait_for_page_push,
+                    TASK_INTERRUPTIBLE);
+            return 2;
+        }
         return 1;
+    }
 
     anon_vma = page_lock_anon_vma(page);
     if (!anon_vma)
@@ -753,13 +769,13 @@ out:
 }
 
 #ifdef CONFIG_DSM_CORE
-int push_back_if_remote_dsm_page(struct page *page)
+int push_back_if_remote_dsm_page(struct page *page, int sync)
 {
-    return _push_back_if_remote_dsm_page(page);
+    return _push_back_if_remote_dsm_page(page, sync);
 }
 
 #else
-int push_back_if_remote_dsm_page(struct page *page)
+int push_back_if_remote_dsm_page(struct page *page, int sync)
 {
     return 0;
 }

@@ -846,14 +846,21 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		 * Try to allocate it some swap space here.
 		 */
 		if (PageAnon(page) && !PageSwapCache(page)) {
+			int r;
+
 			if (!(sc->gfp_mask & __GFP_IO))
 				goto keep_locked;
-			if (push_back_if_remote_dsm_page(page)) {
+			r = push_back_if_remote_dsm_page(page,
+					sc->reclaim_mode & RECLAIM_MODE_SYNC);
+			if (r) {
 				nr_dirty++;
+				if (r > 1)
+					nr_reclaimed++;
 				if (PageSwapCache(page))
 					try_to_free_swap(page);
-				goto keep_locked;
-            }
+				unlock_page(page);
+				goto keep_lumpy;
+			}
 			if (!add_to_swap(page))
 				goto activate_locked;
 			may_enter_fs = 1;

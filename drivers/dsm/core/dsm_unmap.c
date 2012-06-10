@@ -9,19 +9,6 @@
 
 struct dsm_functions *funcs = NULL;
 
-void lazy_free_swap(struct page *page)
-{
-    int unlock;
-
-    if (likely(!page_mapped(page))) {
-        unlock = trylock_page(page);
-        try_to_free_swap(page);
-        if (unlock)
-            unlock_page(page);
-    }
-}
-EXPORT_SYMBOL(lazy_free_swap);
-
 void reg_dsm_functions(
         int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
                 struct subvirtual_machine *, uint64_t,

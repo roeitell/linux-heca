@@ -544,11 +544,12 @@ int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
         struct memory_region *mr)
 {
     unsigned long addr = request_addr & PAGE_MASK;
-    struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);
+    struct svm_list svms;
     int ret = 0, i;
 
-    BUG_ON(!mr);
-    BUG_ON(!svms.num);
+    rcu_read_lock();
+    svms = dsm_descriptor_to_svms(mr->descriptor);
+    rcu_read_unlock();
 
     /*
      * This is a useful heuristic; it's possible that tx_elms have been freed in

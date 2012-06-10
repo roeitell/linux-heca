@@ -20,6 +20,6 @@ int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *, unsigned long,
 /*
  * VM scan hook for swap push back
  */
-int push_back_if_remote_dsm_page(struct page *);
+int push_back_if_remote_dsm_page(struct page *, int);
 
 #endif /* DSM_MEM_H_ */

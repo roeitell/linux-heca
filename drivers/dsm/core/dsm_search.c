@@ -339,14 +339,10 @@ inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
     return swp_entry_to_pte(swp_e);
 }
 
+/* caller must validate that preemption is disabled */
 inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
 {
-    struct svm_list svms;
-
-    rcu_read_lock();
-    svms = rcu_dereference(sdsc)[dsc];
-    rcu_read_unlock();
-    return svms;
+    return rcu_dereference(sdsc)[dsc];
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svms);
 
@@ -357,6 +353,8 @@ inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry)
     int i;
 
     dsd.flags = val & 0xFFFFFF;
+
+    rcu_read_lock();
     dsd.svms = dsm_descriptor_to_svms(val >> 24);
     for_each_valid_svm(dsd.svms, i) {
         dsd.dsm = dsd.svms.pp[i]->dsm;
@@ -365,6 +363,7 @@ inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry)
     dsd.dsm = NULL;
 
 out:
+    rcu_read_unlock();
     return dsd;
 }
 
@@ -389,3 +388,4 @@ void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
     set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(val, flags));
 }
 EXPORT_SYMBOL(clear_dsm_swp_entry_flag);
+

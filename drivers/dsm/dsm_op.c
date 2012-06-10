@@ -745,10 +745,8 @@ void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e)
                     PAGE_SIZE, DMA_BIDIRECTIONAL);
             ppe->page_buf = NULL;
         }
-        if (ppe->mem_page) {
-            lazy_free_swap(ppe->mem_page);
+        if (ppe->mem_page)
             page_cache_release(ppe->mem_page);
-        }
         llist_add(&ppe->llnode, &pp->page_empty_pool_list);
     }
 }

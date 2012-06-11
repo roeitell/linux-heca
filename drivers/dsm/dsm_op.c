@@ -745,10 +745,8 @@ void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e)
                     PAGE_SIZE, DMA_BIDIRECTIONAL);
             ppe->page_buf = NULL;
         }
-        if (ppe->mem_page) {
-            lazy_free_swap(ppe->mem_page);
+        if (ppe->mem_page)
             page_cache_release(ppe->mem_page);
-        }
         llist_add(&ppe->llnode, &pp->page_empty_pool_list);
     }
 }
@@ -1073,45 +1071,42 @@ int destroy_connection(struct conn_element *ele)
     return ret;
 }
 
-static inline u32 *svm_ids_without_svm(struct svm_list svms, u32 svm_id)
-{
-    u32 *svm_ids;
-    int i, j;
+static void replace_mr_descriptor(struct dsm *dsm, struct memory_region *mr,
+        struct svm_list svms, u32 svm_id) {
+    int i, j = 0;
+    u32 svm_ids[svms.num-1];
 
-    svm_ids = kmalloc(sizeof(u32) * svms.num - 1, GFP_KERNEL);
-    for (i = 0; i < svms.num; i++)
-        if (svms.pp[i] && svms.pp[i]->svm_id != svm_id)
+    for_each_valid_svm(svms, i) {
+        if (svms.pp[i]->svm_id != svm_id)
             svm_ids[j++] = svms.pp[i]->svm_id;
+    }
     svm_ids[j] = 0;
-    return svm_ids;
+
+    mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
 }
 
 void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
 {
-    struct dsm *dsm = svm->dsm;
-    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_root *root = &svm->dsm->mr_tree_root;
     struct rb_node *node;
-    struct memory_region *mr;
-    struct svm_list svms;
     int i;
-    u32 *svm_ids;
 
-    write_seqlock(&dsm->mr_seq_lock);
+    write_seqlock(&svm->dsm->mr_seq_lock);
     for (node = rb_first(root); node; node = rb_next(node)) {
+        struct memory_region *mr;
+        struct svm_list svms;
+
         mr = rb_entry(node, struct memory_region, rb_node);
         svms = dsm_descriptor_to_svms(mr->descriptor);
 
-        for (i = 0; i < svms.num; i++) {
-            if (svms.pp[i] && svms.pp[i]->svm_id == svm->svm_id) {
-
-                svm_ids = svm_ids_without_svm(svms, svm->svm_id);
-                if (svm_ids[0]) {
-                    mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
+        for_each_valid_svm(svms, i) {
+            if (svms.pp[i]->svm_id == svm->svm_id) {
+                if (svms.num > 1) {
+                    replace_mr_descriptor(svm->dsm, mr, svms, svm->svm_id);
                 } else {
                     rb_erase(&mr->rb_node, root);
                     kfree(mr);
                 }
-                kfree(svm_ids);
 
                 /*
                  * We can either walk the entire page table, removing references
@@ -1125,119 +1120,174 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
             }
         }
     }
-    write_sequnlock(&dsm->mr_seq_lock);
+    write_sequnlock(&svm->dsm->mr_seq_lock);
 }
 
-static void release_dpc_element(struct subvirtual_machine *svm,
-        struct dsm_page_cache *dpc, struct tx_buf_ele *tx_e)
+static inline void dealloc_push_dpc(struct dsm_page_cache *dpc)
+{
+    set_page_private(dpc->pages[0], 0);
+    page_cache_release(dpc->pages[0]);
+    rb_erase(&dpc->rb_node, &dpc->svm->push_cache);
+    dsm_dealloc_dpc(&dpc);
+}
+
+static int surrogate_remote_response_push(struct dsm_page_cache *dpc,
+        struct subvirtual_machine *remote_svm)
+{
+    int i;
+
+    if (remote_svm) {
+        for_each_valid_svm(dpc->svms, i) {
+            if (dpc->svms.pp[i] == remote_svm)
+                goto surrogate;
+        }
+        return -EINVAL;
+    }
+
+surrogate:
+    if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
+        page_cache_release(dpc->pages[0]);
+        atomic_dec(&dpc->nproc);
+        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1 &&
+                find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num)
+            dealloc_push_dpc(dpc);
+        return 1;
+    }
+    return 0;
+}
+
+static inline void surrogate_remote_response_pull(struct dsm_page_cache *dpc)
 {
     int i;
 
     atomic_dec(&dpc->nproc);
     if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-        if (atomic_cmpxchg(&dpc->found, -1, -2) == -1) {
-            for (i = 0; i < dpc->svms.num; i++) {
-                page_cache_release(dpc->pages[i]);
-                set_page_private(dpc->pages[i], 0);
-                SetPageUptodate(dpc->pages[i]);
-            }
-            unlock_page(dpc->pages[0]);
-        }
-        dsm_cache_release(dpc->svm, dpc->addr);
-        page_cache_release(dpc->pages[0]);
+        BUG_ON(atomic_read(&dpc->found) < 0);
+        for_each_valid_svm(dpc->svms, i)
+            page_cache_release(dpc->pages[i]);
         dsm_dealloc_dpc(&dpc);
     }
-    if (tx_e && tx_e->wrk_req->dst_addr)
-        ((struct page_pool_ele *) tx_e->wrk_req->dst_addr)->mem_page = 0;
 }
 
-void release_push_elements(struct subvirtual_machine *svm,
+void release_svm_push_elements(struct subvirtual_machine *svm,
         struct subvirtual_machine *remote_svm)
 {
     struct rb_node *node;
-    struct dsm_page_cache *dpc;
-    int i;
 
     write_seqlock(&svm->push_cache_lock);
     for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
+        struct dsm_page_cache *dpc;
+
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
-        if (!remote_svm)
-            goto release;
+        if (remote_svm) {
+            surrogate_remote_response_push(dpc, remote_svm);
+        } else {
+            int i;
 
-        for (i = 0; i < dpc->svms.num; i++) {
-            if (dpc->svms.pp[i] == remote_svm)
-                goto surrogate;
-        }
-        continue;
-
-surrogate: 
-        if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
-            atomic_dec(&dpc->nproc);
-release: 
-            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                rb_erase(&dpc->rb_node, &svm->push_cache);
-                page_cache_release(dpc->pages[0]);
-                set_page_private(dpc->pages[0], 0);
-                dsm_dealloc_dpc(&dpc);
+            for_each_valid_svm(dpc->svms, i) {
+                if (1 << i & dpc->bitmap)
+                    page_cache_release(dpc->pages[0]);
             }
+            dealloc_push_dpc(dpc);
+            continue;
         }
     }
     write_sequnlock(&svm->push_cache_lock);
 }
 
+/*
+ * pull ops tx_elements are only released after a response has returned.
+ * therefore we can catch them and surrogate for them by iterating the tx
+ * buffer.
+ */
 void release_svm_tx_elements(struct subvirtual_machine *svm,
         struct conn_element *ele)
 {
-    struct tx_buf_ele *tx_buf = ele->tx_buffer.tx_buf;
-    struct dsm_message *msg;
+    struct tx_buf_ele *tx_buf;
     int i;
 
-    for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
-        msg = tx_buf[i].dsm_msg;
+    /* killed before it was first connected */
+    if (!ele || !ele->tx_buffer.tx_buf)
+        return;
 
-        if (msg->dsm_id == svm->dsm->dsm_id && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) && atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
-            release_dpc_element(svm, tx_buf[i].wrk_req->dpc, &tx_buf[i]);
+    tx_buf = ele->tx_buffer.tx_buf;
+
+    for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
+        struct dsm_message *msg = tx_buf[i].dsm_msg;
+
+        if (msg->dsm_id == svm->dsm->dsm_id &&
+                (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) &&
+                (msg->type == REQUEST_PAGE || msg->type == TRY_REQUEST_PAGE) &&
+                atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
+            tx_buf[i].wrk_req->dst_addr->mem_page = NULL;
             release_ppe(ele, &tx_buf[i]);
             release_tx_element(ele, &tx_buf[i]);
+            surrogate_remote_response_pull(tx_buf[i].wrk_req->dpc);
         }
     }
 }
 
-void release_svm_tx_requests(struct subvirtual_machine *svm,
+void release_svm_queued_requests(struct subvirtual_machine *svm,
         struct tx_buffer *tx)
 {
-    /*
-     * FIXME: re-implement for llist, same as flush_dsm_request_queue
-     *
-    struct list_head del_queue;
-    struct list_head *pos, *n;
+    struct llist_head del_queue;
+    struct llist_node *head, *node, *last = NULL;
+    struct dsm_request *req;
 
     BUG_ON(!svm);
     BUG_ON(!tx);
 
-    INIT_LIST_HEAD(&del_queue);
+    if (llist_empty(&tx->request_queue))
+        return;
 
-    spin_lock(&tx->request_queue_lock);
-    list_for_each_safe(pos, n, &tx->request_queue) {
-	struct dsm_request *req;
+    /* TODO: improve handling? */
+    while (atomic_cmpxchg(&tx->request_queue_lock, 0, 1))
+        cond_resched();
 
-        req = list_entry(pos, struct dsm_request, queue);
-	BUG_ON(!req);
+    head = llist_del_all(&tx->request_queue);
+    if (unlikely(!head))
+        goto unlock;
+
+    /* remove elements to be released from llist */
+    init_llist_head(&del_queue);
+    for (node = head; node; node = llist_next(node)) {
+        req = llist_entry(node, struct dsm_request, lnode);
         if (req->svm == svm || req->fault_svm == svm) {
-            list_del(&req->queue);
-            list_add_tail(&req->queue, &del_queue);
-	}
+            if (node == head)
+                head = node->next;
+            else {
+                last->next = node->next;
+                req = llist_entry(node, struct dsm_request, lnode);
+                req->next = llist_entry(last, struct dsm_request, lnode);
+            }
+            llist_add(node, &del_queue);
+        } else {
+            last = node;
+        }
     }
-    spin_unlock(&tx->request_queue_lock);
 
-    list_for_each_safe(pos, n, &del_queue) {
-	struct dsm_request *req;
+    /* re-insert all other elements into llist */
+    if (llist_empty(&tx->request_queue)) {
+        if (!cmpxchg(&tx->request_queue.first, NULL, head))
+            return;
+    }
+    for (node = tx->request_queue.first; node; node = llist_next(node))
+        last = node;
+    last->next = head;
+    req = llist_entry(head, struct dsm_request, lnode);
+    req->next = llist_entry(last, struct dsm_request, lnode);
 
-        req = list_entry(pos, struct dsm_request, queue);
-	BUG_ON(!req);
-        release_dpc_element(svm, req->dpc, NULL);
+    /* handle all requests on remove list */
+    node = llist_del_all(&del_queue);
+    while (node) {
+        req = llist_entry(node, struct dsm_request, lnode);
+        if (req->dpc->tag == PULL_TAG)
+            surrogate_remote_response_pull(req->dpc);
+        node = llist_next(node);
         release_dsm_request(req);
     }
-    */
+
+unlock:
+    atomic_set(&tx->request_queue_lock, 0);
 }
 

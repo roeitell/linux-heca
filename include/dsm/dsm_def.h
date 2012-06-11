@@ -368,7 +368,7 @@ struct dsm_request {
     struct dsm_message dsm_msg;
     struct dsm_page_cache *dpc;
 
-    struct llist_node prev;
+    struct llist_node lnode;
     struct dsm_request *next;
 };
 

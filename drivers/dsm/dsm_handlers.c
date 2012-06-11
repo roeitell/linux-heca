@@ -96,22 +96,35 @@ static int process_dsm_request(struct conn_element *ele,
     return 0;
 }
 
+static inline void dsm_request_set_next(struct llist_node *head,
+        struct llist_node *tail)
+{
+    struct dsm_request *head_req, *tail_req;
+    
+    head_req = llist_entry(head, struct dsm_request, lnode);
+    tail_req = llist_entry(tail, struct dsm_request, lnode);
+    if (!tail_req->next)
+        tail_req->next = head_req;
+}
+
 static inline struct llist_node *llist_get_tail(struct llist_node *node)
 {
     struct llist_node *it;
 
-    do {
+    while (1) {
         it = node;
         node = llist_next(node);
-    } while(node);
+        if (!node)
+            break;
+        dsm_request_set_next(it, node);
+    }
 
     return it;
 }
 
 static inline void concat_dsm_request_queue(struct tx_buffer *tx,
-        struct llist_node *tail, struct llist_node *head)
+        struct llist_node *head, struct llist_node *tail)
 {
-    struct dsm_request *head_req;
     struct llist_node *cur_tail;
 
     tail->next = NULL;
@@ -120,17 +133,17 @@ static inline void concat_dsm_request_queue(struct tx_buffer *tx,
             return;
     }
 
+    /* current llist isn't empty */
     cur_tail = llist_get_tail(tx->request_queue.first);
     cur_tail->next = head;
-    head_req = llist_entry(head, struct dsm_request, prev);
-    head_req->next = llist_entry(cur_tail, struct dsm_request, prev);
+    dsm_request_set_next(cur_tail, head);
 }
 
 static int flush_dsm_request_queue(struct conn_element *ele)
 {
     struct tx_buffer *tx = &ele->tx_buffer;
-    struct dsm_request *req, *head_req;
-    struct llist_node *head;
+    struct dsm_request *req;
+    struct llist_node *head, *tail;
     int ret = -EFAULT;
 
     if (llist_empty(&tx->request_queue))
@@ -140,40 +153,22 @@ static int flush_dsm_request_queue(struct conn_element *ele)
         goto out;
 
     if (atomic_cmpxchg(&tx->request_queue_lock, 0, 1))
-        goto unlock;
+        goto out; 
 
     head = llist_del_all(&tx->request_queue);
     if (unlikely(!head))
         goto unlock;
 
-    /*
-     * trick with head_req is used since after llist_add we unsafely change the
-     * req->next pointer, which could create a race condition with us for the
-     * last added entry.
-     */
-    head_req = llist_entry(head, struct dsm_request, prev);
-    for (req = llist_entry(llist_get_tail(head), struct dsm_request, prev); 
-            req && req != head_req; req = req->next) {
+    tail = llist_get_tail(head);
+    for (req = llist_entry(tail, struct dsm_request, lnode); req;
+            req = req->next) {
         ret = process_dsm_request(ele, req);
-        if (ret)
-            goto fail;
+        if (ret == -ENOMEM) {
+            concat_dsm_request_queue(tx, head, &req->lnode);
+            break;
+        }
     }
 
-    /* 
-     * TODO: handle race condition; it's ok for pointers to be different, we 
-     * just need to make sure queue_dsm_request isn't using it anymore.
-     */
-    if (req != head_req)
-        ;
-
-    ret = process_dsm_request(ele, head_req);
-    if (!ret)
-        goto unlock;
-
-    req = head_req;
-
-fail:
-    concat_dsm_request_queue(tx, &req->prev, head);
 unlock:
     atomic_set(&tx->request_queue_lock, 0);
 out:
@@ -245,7 +240,6 @@ static int dsm_send_message_handler(struct conn_element *ele,
             release_ppe(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
             dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
-
             break;
         }
         case REQUEST_PAGE: {

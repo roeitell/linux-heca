@@ -62,9 +62,10 @@ int setup_recv_wr(struct conn_element *);
 int refill_recv_wr(struct conn_element *, struct rx_buf_ele *);
 void reg_rem_info(struct conn_element *);
 void release_svm_from_mr_descriptors(struct subvirtual_machine *);
-void release_svm_tx_requests(struct subvirtual_machine *, struct tx_buffer *);
+void release_svm_queued_requests(struct subvirtual_machine *,
+        struct tx_buffer *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
-void release_push_elements(struct subvirtual_machine *,
+void release_svm_push_elements(struct subvirtual_machine *,
         struct subvirtual_machine *);
 
 /*
@@ -126,8 +127,9 @@ int dsm_recv_info(struct conn_element *);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
         struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
         int, struct dsm_page_cache *);
-int dsm_request_page_pull(struct dsm *, struct mm_struct *,
-        struct subvirtual_machine *, unsigned long, struct memory_region *);
+int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
+        struct page *, unsigned long, struct mm_struct *,
+        struct memory_region *);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 
 /*

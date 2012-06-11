@@ -54,12 +54,10 @@ void dsm_dealloc_dpc(struct dsm_page_cache **dpc)
 {
     int i;
 
-    if (*dpc) {
-        for (i = 0; i < (*dpc)->svms.num; i++)
-            (*dpc)->pages[i] = 0;
-        kmem_cache_free(dsm_cache_kmem, *dpc);
-        *dpc = NULL;
-    }
+    for (i = 0; i < (*dpc)->svms.num; i++)
+        (*dpc)->pages[i] = 0;
+    kmem_cache_free(dsm_cache_kmem, *dpc);
+    *dpc = NULL;
 }
 EXPORT_SYMBOL(dsm_dealloc_dpc);
 

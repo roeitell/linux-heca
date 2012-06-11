@@ -72,6 +72,7 @@ static struct subvirtual_machine *_find_svm_in_tree(
     struct subvirtual_machine *svm;
     struct subvirtual_machine **svmp;
 
+    rcu_read_lock();
 repeat:
     svm = NULL;
     svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root,
@@ -87,44 +88,27 @@ repeat:
     }
 
 out: 
+    rcu_read_unlock();
     return svm;
 }
 
-struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id)
+inline struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id)
 {
-    struct subvirtual_machine *svm;
-
-    rcu_read_lock();
-    svm = _find_svm_in_tree(&dsm->svm_tree_root, (unsigned long) svm_id);
-    rcu_read_unlock();
-
-    return svm;
+    return _find_svm_in_tree(&dsm->svm_tree_root, (unsigned long) svm_id);
 }
 EXPORT_SYMBOL(find_svm);
 
-struct subvirtual_machine *find_local_svm_in_dsm(struct dsm * dsm,
+inline struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *dsm,
         struct mm_struct *mm)
 {
-    struct subvirtual_machine *svm;
-
-    rcu_read_lock();
-    svm = _find_svm_in_tree(&dsm->svm_mm_tree_root, (unsigned long) mm);
-    rcu_read_unlock();
-
-    return svm;
+    return _find_svm_in_tree(&dsm->svm_mm_tree_root, (unsigned long) mm);
 }
 EXPORT_SYMBOL(find_local_svm_in_dsm);
 
-struct subvirtual_machine *find_local_svm(struct mm_struct *mm)
+inline struct subvirtual_machine *find_local_svm(struct mm_struct *mm)
 {
-    struct subvirtual_machine *svm;
-
-    rcu_read_lock();
-    svm = _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
+    return _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
             (unsigned long) mm);
-    rcu_read_unlock();
-
-    return svm;
 }
 EXPORT_SYMBOL(find_local_svm);
 
@@ -253,10 +237,8 @@ int destroy_mrs(struct dsm *dsm, int force)
         mr = rb_entry(node, struct memory_region, rb_node);
         svms = dsm_descriptor_to_svms(mr->descriptor);
         if (!force) {
-            for (i = 0; i < svms.num; i++) {
-                if (svms.pp[i])
-                    goto next;
-            }
+            for_each_valid_svm(svms, i)
+                goto next;
         }
 
         printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr + mr->sz);
@@ -333,10 +315,8 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
 
     spin_lock(&sdsc_lock);
     for (i = 0; i < sdsc_max && sdsc[i].num; i++) {
-        for (j = 0;
-                j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] && sdsc[i].pp[j]->svm_id == svm_ids[j];
-                j++)
-            ;
+        for (j = 0; j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] &&
+                sdsc[i].pp[j]->svm_id == svm_ids[j]; j++);
         if (j == sdsc[i].num && !svm_ids[j])
             break;
     }
@@ -350,23 +330,19 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
     spin_unlock(&sdsc_lock);
     return i;
 }
-;
 EXPORT_SYMBOL(dsm_get_descriptor);
 
-inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags)
+inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
 {
     u64 val = dsc;
-    return val_to_dsm_entry((val << 24) | flags);
+    swp_entry_t swp_e = val_to_dsm_entry((val << 24) | flags);
+    return swp_entry_to_pte(swp_e);
 }
 
+/* caller must validate that preemption is disabled */
 inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
 {
-    struct svm_list svms;
-
-    rcu_read_lock();
-    svms = rcu_dereference(sdsc)[dsc];
-    rcu_read_unlock();
-    return svms;
+    return rcu_dereference(sdsc)[dsc];
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svms);
 
@@ -377,16 +353,17 @@ inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry)
     int i;
 
     dsd.flags = val & 0xFFFFFF;
+
+    rcu_read_lock();
     dsd.svms = dsm_descriptor_to_svms(val >> 24);
-    for (i = 0; i < dsd.svms.num; i++) {
-        if (dsd.svms.pp[i]) {
-            dsd.dsm = dsd.svms.pp[i]->dsm;
-            goto out;
-        }
+    for_each_valid_svm(dsd.svms, i) {
+        dsd.dsm = dsd.svms.pp[i]->dsm;
+        goto out;
     }
     dsd.dsm = NULL;
 
 out:
+    rcu_read_unlock();
     return dsd;
 }
 
@@ -408,7 +385,7 @@ void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
 
     clear_bit(pos, (volatile long unsigned int *) &flags);
     val = val >> 24;
-    set_pte_at(mm, addr, pte,
-            swp_entry_to_pte(dsm_descriptor_to_swp_entry(val, flags)));
+    set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(val, flags));
 }
 EXPORT_SYMBOL(clear_dsm_swp_entry_flag);
+

@@ -9,26 +9,14 @@
 
 struct dsm_functions *funcs = NULL;
 
-void lazy_free_swap(struct page *page)
-{
-    int unlock;
-
-    if (likely(!page_mapped(page))) {
-        unlock = trylock_page(page);
-        try_to_free_swap(page);
-        if (unlock)
-            unlock_page(page);
-    }
-}
-EXPORT_SYMBOL(lazy_free_swap);
-
 void reg_dsm_functions(
         int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
                 struct subvirtual_machine *, uint64_t,
                 int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *),
-        int (*dsm_request_page_pull)(struct dsm *, struct mm_struct *,
-                struct subvirtual_machine *, unsigned long,
-                struct memory_region *)) {
+        int (*dsm_request_page_pull)(struct dsm *, struct subvirtual_machine *,
+                struct page *, unsigned long, struct mm_struct *,
+                struct memory_region *))
+{
     struct dsm_functions *tmp;
 
     tmp = kmalloc(sizeof(*funcs), GFP_KERNEL);
@@ -57,11 +45,15 @@ inline int request_dsm_page_op(struct page *page,
     return -1;
 }
 
-inline int dsm_request_page_pull_op(struct dsm *dsm, struct mm_struct *mm,
-        struct subvirtual_machine *svm, unsigned long addr,
-        struct memory_region *mr) {
-    if (likely(funcs))
-        return funcs->dsm_request_page_pull(dsm, mm, svm, addr, mr);
+inline int dsm_request_page_pull_op(struct dsm *dsm,
+        struct subvirtual_machine *fault_svm, struct page *page,
+        unsigned long request_addr, struct mm_struct *mm,
+        struct memory_region *mr)
+{
+    if (likely(funcs)) {
+        return funcs->dsm_request_page_pull(dsm, fault_svm, page, request_addr,
+                    mm, mr);
+    }
     return -1;
 }
 
@@ -141,8 +133,7 @@ retry:
 
     if (!pte_present(pte_entry)) {
         if (pte_none(pte_entry)) {
-            set_pte_at(mm, addr, pte, swp_entry_to_pte(
-                    dsm_descriptor_to_swp_entry(descriptor, 0)));
+            set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(descriptor, 0));
             goto out_pte_unlock;
         } else {
             swp_e = pte_to_swp_entry(pte_entry);
@@ -204,8 +195,7 @@ retry:
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
     ptep_clear_flush_notify(vma, addr, pte);
-    set_pte_at(mm, addr, pte,
-            swp_entry_to_pte(dsm_descriptor_to_swp_entry( descriptor, 0)));
+    set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(descriptor, 0));
     page_remove_rmap(page);
 
     dec_mm_counter(mm, MM_ANONPAGES);

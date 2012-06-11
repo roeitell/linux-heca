@@ -29,13 +29,7 @@ void release_dsm_request(struct dsm_request *req)
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
-    struct dsm_request *prev;
-
-    llist_add(&req->prev, &ele->tx_buffer.request_queue);
-    if (req->prev.next != NULL) {
-        prev = llist_entry(req->prev.next, struct dsm_request, prev);
-        prev->next = req;
-    }
+    llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     ele->tx_buffer.request_queue_sz++; /* this doesn't need to be precise */
 }
 
@@ -97,11 +91,9 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
     struct dsm_request *reqs[svms.num];
     int i, j, r = 0;
 
-    for (i = 0; i < svms.num; i++) {
+    for_each_valid_svm(svms, i) {
         tx_elms[i] = NULL;
         reqs[i] = NULL;
-        if (unlikely(!svms.pp[i]))
-            continue;
 
         if (request_queue_empty(svms.pp[i]->ele))
             tx_elms[i] = try_get_next_empty_tx_ele(svms.pp[i]->ele);
@@ -113,10 +105,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
         }
     }
 
-    for (i = 0; i < svms.num; i++) {
-        if (unlikely(!svms.pp[i]))
-            continue;
-
+    for_each_valid_svm(svms, i) {
         if (tx_elms[i]) {
             create_page_pull_request(svms.pp[i]->ele, tx_elms[i],
                     fault_svm->dsm->dsm_id, fault_svm->svm_id,
@@ -377,8 +366,9 @@ retry:
             BUG();
     }
 
-    /*
-     * TODO: Change to a queued request?
+    /* 
+     * we have no other choice but to postpone and try again (no memory for a
+     * queued request). this should happen mainly with softiwarp.
      */
     if (unlikely(ret == -ENOMEM)) {
         cond_resched();
@@ -549,35 +539,39 @@ int dsm_recv_info(struct conn_element *ele)
     return ib_post_recv(ele->cm_id->qp, &rid->recv_wr, &rid->recv_bad_wr);
 }
 
-int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
-        struct subvirtual_machine *fault_svm, unsigned long request_addr,
+int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
+        struct page *page, unsigned long request_addr, struct mm_struct *mm,
         struct memory_region *mr)
 {
     unsigned long addr = request_addr & PAGE_MASK;
-    struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);
-    struct page *page;
+    struct svm_list svms;
     int ret = 0, i;
 
-    BUG_ON(!mr);
-    BUG_ON(!svms.num);
+    rcu_read_lock();
+    svms = dsm_descriptor_to_svms(mr->descriptor);
+    rcu_read_unlock();
 
     /*
      * This is a useful heuristic; it's possible that tx_elms have been freed in
      * the meanwhile, but we don't have to use them now as a work thread will 
      * use them anyway to free the req_queue.
      */
-    for (i = 0; i < svms.num; i++) {
+    for_each_valid_svm(svms, i) {
         if (request_queue_full(svms.pp[i]->ele))
             return -ENOMEM;
     }
 
-    page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
-    if (likely(page)) {
-        ret = send_request_dsm_page_pull(fault_svm, svms,
-                addr - fault_svm->priv->offset);
-        if (unlikely(ret == -ENOMEM))
-            dsm_cancel_page_push(fault_svm, addr, page);
-    }
+    ret = dsm_prepare_page_for_push(fault_svm, svms, page, addr, mm,
+            mr->descriptor);
+    if (unlikely(ret))
+        goto out;
+
+    ret = send_request_dsm_page_pull(fault_svm, svms,
+            addr - fault_svm->priv->offset);
+    if (unlikely(ret == -ENOMEM))
+        dsm_cancel_page_push(fault_svm, addr, page);
+
+out:
     return ret;
 }
 

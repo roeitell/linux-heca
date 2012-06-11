@@ -53,6 +53,13 @@ void remove_svm(u32 dsm_id, u32 svm_id)
     }
 
     release_svm_from_mr_descriptors(svm);
+
+    /*
+     * there are three ways of catching and releasing hanged ops:
+     *  - queued requests
+     *  - tx elements (e.g, requests that were sent but not yet freed)
+     *  - push cache
+     */
     if (svm->priv) {
         struct rb_root *root;
         struct rb_node *node;
@@ -64,15 +71,17 @@ void remove_svm(u32 dsm_id, u32 svm_id)
 
             ele = rb_entry(node, struct conn_element, rb_node);
             BUG_ON(!ele);
-            release_svm_tx_requests(svm, &ele->tx_buffer);
+            release_svm_queued_requests(svm, &ele->tx_buffer);
             release_svm_tx_elements(svm, ele);
         }
-        release_push_elements(svm, NULL);
+        release_svm_push_elements(svm, NULL);
     } else if (svm->ele) {
         struct list_head *pos;
 
-        release_svm_tx_requests(svm, &svm->ele->tx_buffer);
+        release_svm_queued_requests(svm, &svm->ele->tx_buffer);
         release_svm_tx_elements(svm, svm->ele);
+
+        /* potentially very expensive way to do this */
         list_for_each (pos, &svm->dsm->svm_list) {
             struct subvirtual_machine *local_svm;
 
@@ -80,7 +89,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             BUG_ON(!local_svm);
             if (!local_svm->priv)
                 continue;
-            release_push_elements(local_svm, svm);
+            release_svm_push_elements(local_svm, svm);
         }
     }
 
@@ -448,6 +457,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
     struct dsm *dsm;
     struct unmap_data udata;
     struct memory_region *mr;
+    struct page *page;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
@@ -457,7 +467,12 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
 
     addr = udata.addr & PAGE_MASK;
     mr = search_mr(dsm, addr);
-    r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr, mr);
+    page = dsm_find_normal_page(current->mm, addr);
+    if (!page)
+        goto out;
+
+    r = dsm_request_page_pull(dsm, priv_data->svm, page, udata.addr,
+            current->mm, mr);
 
 out: 
     return r;

@@ -856,8 +856,6 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 				nr_dirty++;
 				if (r > 1)
 					nr_reclaimed++;
-				if (PageSwapCache(page))
-					try_to_free_swap(page);
 				unlock_page(page);
 				goto keep_lumpy;
 			}

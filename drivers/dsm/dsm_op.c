@@ -1163,8 +1163,8 @@ static inline void surrogate_remote_response_pull(struct dsm_page_cache *dpc)
     atomic_dec(&dpc->nproc);
     if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
         BUG_ON(atomic_read(&dpc->found) < 0);
-        for_each_valid_svm(dpc->svms, i)
-            page_cache_release(dpc->pages[i]);
+        dsm_push_finish_notify(dpc->pages[0]);
+        page_cache_release(dpc->pages[i]);
         dsm_dealloc_dpc(&dpc);
     }
 }
@@ -1184,6 +1184,7 @@ void release_svm_push_elements(struct subvirtual_machine *svm,
         } else {
             int i;
 
+            dsm_push_finish_notify(dpc->pages[0]);
             for_each_valid_svm(dpc->svms, i) {
                 if (1 << i & dpc->bitmap)
                     page_cache_release(dpc->pages[0]);

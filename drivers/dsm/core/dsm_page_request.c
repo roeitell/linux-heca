@@ -15,6 +15,17 @@ struct dsm_pte_data {
     pte_t *pte;
 };
 
+inline void dsm_push_finish_notify(struct page *page)
+{
+    struct zone *zone = page_zone(page);
+    wait_queue_head_t *waitqueue =
+        &zone->wait_table[hash_ptr(page, zone->wait_table_bits)];
+    rotate_reclaimable_page(page);
+    TestClearPageWriteback(page);
+    __wake_up_bit(waitqueue, &page->flags, PG_writeback);
+}
+EXPORT_SYMBOL(dsm_push_finish_notify);
+
 static int dsm_push_cache_add(struct dsm_page_cache *dpc,
         struct subvirtual_machine *svm, unsigned long addr)
 {
@@ -390,6 +401,8 @@ retry:
         ptep_clear_flush_notify(pd.vma, addr, pd.pte);
         set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(dpc->tag,
                     (dpc->svms.num == 1)? 0 : DSM_PUSHING));
+        if (dpc->svms.num == 1)
+            dsm_push_finish_notify(page);
         page_remove_rmap(page);
         page_cache_release(page);
         dec_mm_counter(mm, MM_ANONPAGES);
@@ -424,6 +437,7 @@ noop:
                 if (likely(pte_same(*(pd.pte), pte_entry)))
                     clear_dsm_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
                 pte_unmap_unlock(pd.pte, ptl);
+                dsm_push_finish_notify(page);
                 dsm_stats_inc(&local_svm->svm_sysfs.nb_push_success);
             }
         }
@@ -560,6 +574,7 @@ retry:
         page_cache_get(page);
         dpc->bitmap += (1 << i);
     }
+    TestSetPageWriteback(page);
     set_page_private(page, ULONG_MAX);
 
     pte_unmap_unlock(pte, ptl);
@@ -586,6 +601,7 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
     for_each_valid_svm(dpc->svms, i)
         page_cache_release(page);
     set_page_private(page, 0);
+    dsm_push_finish_notify(page);
 
     return 0;
 }
@@ -720,20 +736,6 @@ static int _push_back_if_remote_dsm_page(struct page *page, int sync)
     if (unlikely(!get_dsm_module_state()))
         goto out;
 
-    /* 
-     * FIXME: we need to flag/detect pushed pages better.
-     *  - page_private perhaps unreliable, we're not sure if some will grab it
-     *  - PageWriteback (the correct flag) causes diff flows, so we can't use it
-     */
-    if (page_private(page) == ULONG_MAX) {
-        if (sync) {
-            wait_on_bit(&(page_private(page)), 0, wait_for_page_push,
-                    TASK_INTERRUPTIBLE);
-            return 2;
-        }
-        return 1;
-    }
-
     anon_vma = page_lock_anon_vma(page);
     if (!anon_vma)
         goto out;
@@ -758,6 +760,9 @@ static int _push_back_if_remote_dsm_page(struct page *page, int sync)
             continue;
 
         dsm_request_page_pull_op(svm->dsm, svm, page, address, vma->vm_mm, mr);
+        if (PageSwapCache(page))
+            try_to_free_swap(page);
+
         dsm_stats_inc(&svm->svm_sysfs.nb_push_attempt);
         ret = 1;
         break;

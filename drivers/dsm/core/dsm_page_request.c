@@ -21,6 +21,7 @@ inline void dsm_push_finish_notify(struct page *page)
     wait_queue_head_t *waitqueue =
         &zone->wait_table[hash_ptr(page, zone->wait_table_bits)];
     rotate_reclaimable_page(page);
+    ClearPageDirty(page);
     TestClearPageWriteback(page);
     __wake_up_bit(waitqueue, &page->flags, PG_writeback);
 }
@@ -574,6 +575,7 @@ retry:
         page_cache_get(page);
         dpc->bitmap += (1 << i);
     }
+    SetPageDirty(page);
     TestSetPageWriteback(page);
     set_page_private(page, ULONG_MAX);
 

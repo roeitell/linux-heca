@@ -727,7 +727,7 @@ static inline int wait_for_page_push(void *x)
  * Return 1 => page is dsm => do not swap out (not necessarily scheduled yet to
  *             be pushed back, could only be done in next cycle)
  */
-static int _push_back_if_remote_dsm_page(struct page *page, int sync)
+static int _push_back_if_remote_dsm_page(struct page *page)
 {
     struct anon_vma *anon_vma;
     struct anon_vma_chain *avc;
@@ -774,13 +774,13 @@ out:
 }
 
 #ifdef CONFIG_DSM_CORE
-int push_back_if_remote_dsm_page(struct page *page, int sync)
+int push_back_if_remote_dsm_page(struct page *page)
 {
-    return _push_back_if_remote_dsm_page(page, sync);
+    return _push_back_if_remote_dsm_page(page);
 }
 
 #else
-int push_back_if_remote_dsm_page(struct page *page, int sync)
+int push_back_if_remote_dsm_page(struct page *page)
 {
     return 0;
 }

@@ -458,7 +458,7 @@ fail:
 static struct dsm_page_cache *dsm_cache_add_send(
         struct subvirtual_machine *fault_svm, struct svm_list svms,
         unsigned long addr, unsigned long norm_addr, int nproc, int tag,
-        struct vm_area_struct *vma, struct mm_struct *mm, int private,
+        struct vm_area_struct *vma, struct mm_struct *mm, unsigned long private,
         int prefetch, pte_t orig_pte, pte_t *page_table)
 {
     struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;

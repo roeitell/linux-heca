@@ -431,7 +431,7 @@ noop:
             atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
         dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
-            set_page_private(page, 0);
+
             page_cache_release(page);
             if (likely(clear_pte_flag)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -577,7 +577,6 @@ retry:
     }
     SetPageDirty(page);
     TestSetPageWriteback(page);
-    set_page_private(page, ULONG_MAX);
 
     pte_unmap_unlock(pte, ptl);
     return 0;
@@ -602,7 +601,7 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
     page_cache_release(page);
     for_each_valid_svm(dpc->svms, i)
         page_cache_release(page);
-    set_page_private(page, 0);
+
     dsm_push_finish_notify(page);
 
     return 0;

@@ -1125,7 +1125,6 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
 
 static inline void dealloc_push_dpc(struct dsm_page_cache *dpc)
 {
-    set_page_private(dpc->pages[0], 0);
     page_cache_release(dpc->pages[0]);
     rb_erase(&dpc->rb_node, &dpc->svm->push_cache);
     dsm_dealloc_dpc(&dpc);

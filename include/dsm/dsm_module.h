@@ -15,6 +15,7 @@
 #include <linux/ioctl.h>
 #include <linux/byteorder/generic.h>
 #include <linux/miscdevice.h>
+#include <linux/hash.h>
 
 #include <linux/fs.h>
 #include <linux/rculist.h>

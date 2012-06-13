@@ -103,6 +103,7 @@ int dsm_cancel_page_push(struct subvirtual_machine *, unsigned long,
         struct page *);
 struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,
         unsigned long);
+void dsm_push_finish_notify(struct page *);
 
 /* dsm_page_fault.c */
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,

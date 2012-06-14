@@ -712,7 +712,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         }
     }
 
-
+retry:
     dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,
@@ -731,9 +731,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
     }
 
-    if (unlikely(dpc->tag != PULL_TAG))
-        dpc->tag = PULL_TAG;
-
     /*
      * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
      * so we just re-throw immediately. Otherwise, we wait until the bitlock is
@@ -747,6 +744,17 @@ lock:
 
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
+
+         /*
+          * the try pull failed so we need to rethrow the request
+          *
+          * FIXME issue : two thread can keep looping for a while here ..
+          */
+        if (dpc->tag == PULL_TRY_TAG) {
+          unlock_page(dpc->pages[0]);
+          dpc_nproc_dec(&dpc, 1);
+          goto retry;
+        }
         ret = VM_FAULT_ERROR;
         goto out;
     }

@@ -747,12 +747,16 @@ lock:
 
          /*
           * the try pull failed so we need to rethrow the request
-          *
-          * FIXME issue : two thread can keep looping for a while here ..
           */
         if (dpc->tag == PULL_TRY_TAG) {
-          unlock_page(dpc->pages[0]);
-          dpc_nproc_dec(&dpc, 1);
+          int i;
+          i=0;
+          dpc->tag = PULL_TAG;
+          for_each_valid_svm(dsd.svms, i) {
+              get_remote_dsm_page(vma, norm_addr, dpc, fault_svm,
+                      dsd.svms.pp[i],  PULL_TAG, i);
+          }
+
           goto retry;
         }
         ret = VM_FAULT_ERROR;

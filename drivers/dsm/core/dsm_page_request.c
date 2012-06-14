@@ -431,7 +431,6 @@ noop:
             atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
         dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
-            set_page_private(page, 0);
             page_cache_release(page);
             if (likely(clear_pte_flag)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -564,20 +563,25 @@ retry:
 
     dpc->bitmap = 0;
     dpc->pages[0] = page;
+
     /*
      * refcount is as follows:
      *  1 for being in dpc (released upon dealloc)
-     *  1 for every svm sent to (released on page_release_work)
-     *  1 from home --> mapped to a process (released after page_remove_rmap)
+     *  1 for every svm sent to (released on release_ppe)
      */
     page_cache_get(page);
     for_each_valid_svm(svms, i) {
         page_cache_get(page);
         dpc->bitmap += (1 << i);
     }
+
+    /*
+     * PageWriteback signals shrink_page_list it can either synchronously wait
+     * for op to complete, or just ignore the page and continue. It also gives
+     * __isolate_lru_page a chance to bail.
+     */
     SetPageDirty(page);
     TestSetPageWriteback(page);
-    set_page_private(page, ULONG_MAX);
 
     pte_unmap_unlock(pte, ptl);
     return 0;
@@ -602,7 +606,6 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
     page_cache_release(page);
     for_each_valid_svm(dpc->svms, i)
         page_cache_release(page);
-    set_page_private(page, 0);
     dsm_push_finish_notify(page);
 
     return 0;

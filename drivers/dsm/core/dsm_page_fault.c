@@ -466,7 +466,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
         struct subvirtual_machine *fault_svm, struct svm_list svms,
         unsigned long addr, unsigned long norm_addr, int nproc, int tag,
         struct vm_area_struct *vma, struct mm_struct *mm,
-        int prefetch, pte_t orig_pte, pte_t *page_table)
+         pte_t orig_pte, pte_t *page_table)
 {
     struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
     struct page *page = NULL;
@@ -511,17 +511,6 @@ static struct dsm_page_cache *dsm_cache_add_send(
                 get_remote_dsm_page(vma, norm_addr, new_dpc, fault_svm,
                         svms.pp[r],  tag, r);
             }
-
-            /*
-             * Naive prefetch disabled; will be re-inserted via John's code
-             *
-            if (prefetch) {
-                for (r = 1; r < 40; r++) {
-                    get_dsm_page(mm, addr + r * PAGE_SIZE, fault_svm, 0,
-                            PREFETCH_TAG);
-                }
-            }
-             */
             return new_dpc;
         }
     } while (r != -ENOMEM);
@@ -587,7 +576,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 dsd = swp_entry_to_dsm_data(swp_e);
                 if (!(dsd.flags & DSM_INFLIGHT)) {
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
-                            2, tag, vma, mm,  0, pte_entry, pte);
+                            2, tag, vma, mm,   pte_entry, pte);
                     dsm_stats_inc(&fault_svm->svm_sysfs.nb_soft_pull_attempt);
                 }
             }
@@ -716,8 +705,7 @@ retry:
     dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,
-                PULL_TAG, vma, mm,  flags & FAULT_FLAG_ALLOW_RETRY, orig_pte,
-                page_table);
+                PULL_TAG, vma, mm, orig_pte, page_table);
         dsm_stats_inc(&fault_svm->svm_sysfs.nb_remote_fault);
         if (unlikely(!dpc)) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
@@ -738,6 +726,17 @@ retry:
      */
 lock:
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
+
+        /*
+         * Naive prefetch disabled; will be re-inserted via John's code
+         *
+        if (dpc->tag == PULL_TAG) {
+            for (r = 1; r < 40; r++) {
+                get_dsm_page(mm, addr + r * PAGE_SIZE, fault_svm, 0,
+                        PREFETCH_TAG);
+            }
+        }
+         */
         ret |= VM_FAULT_RETRY;
         goto out;
     }

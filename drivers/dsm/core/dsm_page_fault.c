@@ -732,7 +732,7 @@ lock:
          */
         if (dpc->tag == PULL_TAG) {
             for (j = 1; j < 4; j++) {
-                get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm, 0,
+                get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
                         PREFETCH_TAG);
             }
         }

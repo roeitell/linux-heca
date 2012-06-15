@@ -253,33 +253,6 @@ static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
             return;
     }
 
-    /* 
-     * if a page has been prefetched, find it and fault it in; otherwise, we
-     * must wait until the concurrent fault that's happening is finished.
-     */
-    dpc = dsm_cache_get_hold(local_svm, addr);
-    if (dpc && dpc->tag == PREFETCH_TAG) {
-        struct page *page;
-        int i;
-       
-        i = atomic_read(&dpc->found);
-        if (i >= 0) {
-            page = dpc->pages[i];
-            if (likely(page))
-                dsm_extract_do_gup(page, mm, addr);
-
-            atomic_dec(&dpc->nproc);
-            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-                for (i = 0; i < dpc->svms.num; i++) {
-                    if (likely(dpc->pages[i]))
-                        page_cache_release(dpc->pages[i]);
-                }
-                dsm_dealloc_dpc(&dpc);
-            }
-            return;
-        }
-    }
-
 fault_page:
     dsm_extract_do_gup(NULL, mm, addr);
     return;

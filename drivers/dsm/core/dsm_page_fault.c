@@ -578,9 +578,11 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 if (!(dsd.flags & DSM_INFLIGHT)) {
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                             2, tag, vma, mm,   pte_entry, pte);
-                    if (tag == PREFETCH_TAG)
+                    if (tag == PREFETCH_TAG){
                         dsm_stats_inc(
                                 &fault_svm->svm_sysfs.nb_prefetch);
+                        printk("[Prefetching] addr : %p\n", addr);
+                    }
                     else
                         dsm_stats_inc(
                                 &fault_svm->svm_sysfs.nb_soft_pull_attempt);

@@ -41,6 +41,8 @@ DECLARE_SVM_SYSFS_ATTR(nb_answer_fault);
 DECLARE_SVM_SYSFS_ATTR(nb_answer_fault_fail);
 DECLARE_SVM_SYSFS_ATTR(nb_answer_soft_pull);
 DECLARE_SVM_SYSFS_ATTR(nb_answer_soft_pull_fail);
+DECLARE_SVM_SYSFS_ATTR(nb_prefetch);
+DECLARE_SVM_SYSFS_ATTR(nb_prefetch_success);
 
 DECLARE_TXRX_SYSFS_ATTR(request_page);
 DECLARE_TXRX_SYSFS_ATTR(request_page_pull);
@@ -56,7 +58,7 @@ static struct attribute *svm_attrs[] = { &nb_remote_fault.attr,
     &nb_soft_pull_attempt.attr, &nb_soft_pull_response.attr,
     &nb_soft_pull_response_fail.attr, &nb_answer_fault.attr,
     &nb_answer_soft_pull.attr, &nb_answer_fault_fail.attr,
-    &nb_answer_soft_pull_fail.attr, NULL,
+    &nb_answer_soft_pull_fail.attr, &nb_prefetch.attr ,&nb_prefetch_success.attr, NULL,
 };
 static struct attribute *tx_attrs[] = { &tx_request_page.attr,
     &tx_request_page_pull.attr, &tx_page_request_reply.attr,
@@ -128,6 +130,8 @@ static void reset_svm_stats(struct subvirtual_machine *svm)
     dsm_stats_set(&stats->nb_answer_fault_fail, 0);
     dsm_stats_set(&stats->nb_answer_soft_pull, 0);
     dsm_stats_set(&stats->nb_answer_soft_pull_fail, 0);
+    dsm_stats_set(&stats->nb_prefetch, 0);
+    dsm_stats_set(&stats->nb_prefetch_success, 0);
 }
 
 static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state)

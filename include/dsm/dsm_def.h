@@ -102,6 +102,8 @@ struct svm_sysfs {
     atomic64_t nb_answer_fault_fail;
     atomic64_t nb_answer_soft_pull;
     atomic64_t nb_answer_soft_pull_fail;
+    atomic64_t nb_prefetch;
+    atomic64_t nb_prefetch_success;
 };
 
 struct dsm {

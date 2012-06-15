@@ -327,6 +327,7 @@ unlock:
             get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
             up_read(&mm->mmap_sem);
             unuse_mm(mm);
+            dsm_stats_inc(&dpc->svm->svm_sysfs.nb_prefetch_success);
         }
 
     }
@@ -577,7 +578,12 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 if (!(dsd.flags & DSM_INFLIGHT)) {
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                             2, tag, vma, mm,   pte_entry, pte);
-                    dsm_stats_inc(&fault_svm->svm_sysfs.nb_soft_pull_attempt);
+                    if (tag == PREFETCH_TAG)
+                        dsm_stats_inc(
+                                &fault_svm->svm_sysfs.nb_prefetch);
+                    else
+                        dsm_stats_inc(
+                                &fault_svm->svm_sysfs.nb_soft_pull_attempt);
                 }
             }
         }

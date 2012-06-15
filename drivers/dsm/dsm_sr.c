@@ -286,19 +286,8 @@ retry:
             msg->type, &tx_e->reply_work_req->pte);
 
     if (unlikely(!page)) {
-        release_tx_element_reply(ele, tx_e);
         ret = -EINVAL;
-
-        /*
-         * Too many consecutive failures to grab pages; seems that svm is
-         *  offline. Send a status update message to client.
-         *
-         */
-        if (atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) > 
-                MAX_CONSECUTIVE_SVM_FAILURES) {
-            remove_svm(dsm->dsm_id, local_svm->svm_id);
-            goto no_svm;
-        }
+        release_tx_element_reply(ele, tx_e);
 
         if (msg->type == TRY_REQUEST_PAGE) {
             if (request_queue_empty(ele)) {
@@ -316,10 +305,7 @@ retry:
         }
         goto fail;
     }
-    /*
-     * Page grabbed successfully, seems that the local svm is still online.
-     */
-    atomic_set(&local_svm->status, DSM_SVM_ONLINE);
+
     ppe = create_new_page_pool_element_from_page(ele, page);
     BUG_ON(!ppe);
 

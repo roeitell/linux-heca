@@ -60,7 +60,6 @@ static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
 
     count = page_mapcount(page);
     if (count == 0 && !PageWriteback(page)) {
-
         page_cache_release(page);
         dsm_cache_release(svm, addr);
         if (!PageSwapBacked(page))
@@ -309,9 +308,8 @@ unlock:
         page_cache_get(page);
         lru_cache_add_anon(page);
         for (i = 0; i < dpc->svms.num; i++) {
-            if (likely(dpc->pages[i])) {
+            if (likely(dpc->pages[i]))
                 SetPageUptodate(dpc->pages[i]);
-            }
         }
         unlock_page(dpc->pages[0]);
         lru_add_drain();
@@ -346,23 +344,25 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
     int r = 0, i;
     struct subvirtual_machine *svm = dpc->svm;
 
-    /*
-     * Pull try only happens when pushing to us - meaning we're only trying to
-     * pull from a single svm. If fail, we can discard the whole operation.
-     *
-     */
+    /* either someone failed to push to us, or we failed prefetching */
     if (unlikely(tx_e->dsm_msg->type == TRY_REQUEST_PAGE_FAIL)) {
-        for (i = 0; i < dpc->svms.num; i++) {
-            if (dpc->pages[i] == page) {
-                r = 1;
-                break;
-            }
-        }
+        r = 1;
+        dsm_stats_inc(&dpc->svm->svm_sysfs.nb_soft_pull_response_fail);
 
-        if (likely(r)) {
+        if (atomic_read(&dpc->found) >= 0)
+            goto out;
+
+        for (i = 0; i < dpc->svms.num; i++) {
+            if (dpc->pages[i] == page)
+                break;
+        }
+        BUG_ON(i == dpc->svms.num);
+
+        /* last failure should also account for the gup refcount */
+        dpc_nproc_dec(&dpc, 0);
+        if (atomic_read(&dpc->nproc) == 2) {
             SetPageUptodate(page);
             unlock_page(dpc->pages[0]);
-            dsm_stats_inc(&dpc->svm->svm_sysfs.nb_soft_pull_response_fail);
             dsm_cache_release(dpc->svm, addr);
             dpc_nproc_dec(&dpc, 1);
         }
@@ -375,7 +375,6 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
     /*
      * Get_user_pages for addr will trigger a page fault, and the faulter
      * will find the updated page and set the pte.
-     *
      */
     if (likely(r)) {
         use_mm(mm);
@@ -406,7 +405,6 @@ static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
 
     func = (tag == PULL_TRY_TAG)?
         dsm_try_pull_req_complete : dsm_pull_req_complete;
-
 
     SetPageSwapBacked(page);
     request_dsm_page_op(page, remote_svm, fault_svm,
@@ -576,6 +574,11 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
             if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
                 dsd = swp_entry_to_dsm_data(swp_e);
                 if (!(dsd.flags & DSM_INFLIGHT)) {
+                    /*
+                     * refcount for dpc:
+                     *  +1 for every svm we send to
+                     *  +1 for the fault that comes after fetching
+                     */
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                             2, tag, vma, mm,   pte_entry, pte);
                     if (tag == PREFETCH_TAG){
@@ -626,6 +629,8 @@ static struct dsm_page_cache *convert_push_dpc(
 
         SetPageSwapBacked(page);
         SetPageUptodate(page);
+        ClearPageDirty(page);
+        TestClearPageWriteback(page);
 
         addr = push_dpc->addr;
         if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)
@@ -711,6 +716,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 retry:
     dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
+        /*
+         * refcount for dpc:
+         *  +1 for every svm sent to
+         *  +1 for the current do_dsm_page_fault
+         *  +1 for the final, successful do_dsm_page_fault
+         */
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,
                 PULL_TAG, vma, mm, orig_pte, page_table);
         dsm_stats_inc(&fault_svm->svm_sysfs.nb_remote_fault);
@@ -753,7 +764,6 @@ lock:
 
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
-
          /*
           * the try pull failed so we need to rethrow the request
           */
@@ -768,6 +778,7 @@ lock:
 
           goto retry;
         }
+        /* TODO: detect failed prefetch attempts! */
         ret = VM_FAULT_ERROR;
         goto out;
     }
@@ -867,23 +878,17 @@ out:
     return ret;
 }
 
-#ifdef CONFIG_DSM_CORE
 int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned long address, pte_t *page_table, pmd_t *pmd,
         unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
+#ifdef CONFIG_DSM_CORE
     return do_dsm_page_fault(mm, vma, address, page_table, pmd, flags,
             orig_pte, entry);
-}
 #else
-int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
-        unsigned long address, pte_t *page_table, pmd_t *pmd,
-        unsigned int flags, pte_t orig_pte, swp_entry_t entry)
-{
     return 0;
+#endif
 }
-
-#endif /* CONFIG_DSM */
 
 int dsm_trigger_page_pull(struct dsm *dsm, struct subvirtual_machine *local_svm,
         unsigned long norm_addr)

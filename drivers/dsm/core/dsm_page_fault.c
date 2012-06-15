@@ -677,7 +677,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 //we need to use the page addr and not the fault address in order to have a unique reference
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
-    int ret = 0, i = -1, exclusive = 0;
+    int ret = 0, i = -1, exclusive = 0, j;
     struct dsm_page_cache *dpc = NULL;
     struct page *found_page, *swapcache = NULL;
     struct mem_cgroup *ptr;
@@ -728,15 +728,15 @@ lock:
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
 
         /*
-         * Naive prefetch disabled; will be re-inserted via John's code
-         *
+         * Naive prefetch
+         */
         if (dpc->tag == PULL_TAG) {
-            for (r = 1; r < 40; r++) {
-                get_dsm_page(mm, addr + r * PAGE_SIZE, fault_svm, 0,
+            for (j = 1; j < 4; j++) {
+                get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm, 0,
                         PREFETCH_TAG);
             }
         }
-         */
+
         ret |= VM_FAULT_RETRY;
         goto out;
     }

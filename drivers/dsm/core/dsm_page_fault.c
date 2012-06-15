@@ -739,9 +739,12 @@ lock:
          * Naive prefetch
          */
         if (dpc->tag == PULL_TAG) {
-            for (j = 1; j < 4; j++) {
+            for (j = 1; j < 2; j++) {
                 get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
                         PREFETCH_TAG);
+                if (address > (j * PAGE_SIZE))
+                    get_dsm_page(mm, address - j * PAGE_SIZE, fault_svm,
+                            PREFETCH_TAG);
             }
         }
 

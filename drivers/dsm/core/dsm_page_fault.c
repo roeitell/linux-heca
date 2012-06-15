@@ -581,7 +581,6 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                     if (tag == PREFETCH_TAG){
                         dsm_stats_inc(
                                 &fault_svm->svm_sysfs.nb_prefetch);
-                        printk("[Prefetching] addr : %p\n", addr);
                     }
                     else
                         dsm_stats_inc(

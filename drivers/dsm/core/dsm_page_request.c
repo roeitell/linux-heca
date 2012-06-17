@@ -713,10 +713,15 @@ static int _push_back_if_remote_dsm_page(struct page *page)
     if (unlikely(!get_dsm_module_state()))
         goto out;
 
+    /* don't push pages that belong to more than one process, avoid pitfalls */
+    if (page_mapcount(page) > 1)
+        goto out;
+
     anon_vma = page_lock_anon_vma(page);
     if (!anon_vma)
         goto out;
 
+    /* note: should actually find only one relevant vma */
     list_for_each_entry(avc, &anon_vma->head, same_anon_vma)
     {
         struct vm_area_struct *vma = avc->vma;

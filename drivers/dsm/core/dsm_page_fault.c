@@ -730,12 +730,13 @@ retry:
      */
 lock:
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
-
-        /*
-         * Naive prefetch
-         */
+        /* Naive prefetch */
         if (dpc->tag == PULL_TAG) {
             for (j = 1; j < 2; j++) {
+                /* original fault already finished, bail out */
+                if (atomic_read(&dpc->found) >= 0)
+                    break;
+
                 get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
                         PREFETCH_TAG);
                 if (address > (j * PAGE_SIZE))
@@ -750,21 +751,16 @@ lock:
 
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
-         /*
-          * the try pull failed so we need to rethrow the request
-          */
+         /* the try pull failed so we need to rethrow the request */
         if (dpc->tag == PULL_TRY_TAG) {
-          int i;
-          i=0;
-          dpc->tag = PULL_TAG;
-          for_each_valid_svm(dsd.svms, i) {
-              get_remote_dsm_page(vma, norm_addr, dpc, fault_svm,
-                      dsd.svms.pp[i], PULL_TAG, i);
-          }
+            dpc->tag = PULL_TAG;
+            for_each_valid_svm(dsd.svms, i) {
+                get_remote_dsm_page(vma, norm_addr, dpc, fault_svm,
+                        dsd.svms.pp[i], PULL_TAG, i);
+            }
 
-          goto retry;
+            goto retry;
         }
-        /* TODO: detect failed prefetch attempts! */
         ret = VM_FAULT_ERROR;
         goto out;
     }

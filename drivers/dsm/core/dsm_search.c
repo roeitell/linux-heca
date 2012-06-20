@@ -237,10 +237,8 @@ int destroy_mrs(struct dsm *dsm, int force)
         mr = rb_entry(node, struct memory_region, rb_node);
         svms = dsm_descriptor_to_svms(mr->descriptor);
         if (!force) {
-            for (i = 0; i < svms.num; i++) {
-                if (svms.pp[i])
-                    goto next;
-            }
+            for_each_valid_svm(svms, i)
+                goto next;
         }
 
         printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr + mr->sz);
@@ -367,27 +365,23 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
 }
 EXPORT_SYMBOL(dsm_get_descriptor);
 
-inline swp_entry_t dsm_descriptor_to_swp_entry(u32 desc, u32 flags)
+inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
 {
-    u64 val = desc;
-    return val_to_dsm_entry((val << 24) | flags);
+    u64 val = dsc;
+    swp_entry_t swp_e = val_to_dsm_entry((val << 24) | flags);
+    return swp_entry_to_pte(swp_e);
 }
 
-struct svm_list dsm_descriptor_to_svms(u32 desc)
+struct svm_list dsm_descriptor_to_svms(u32 dsc)
 {
-    struct svm_list svms;
-
-    rcu_read_lock();
-    svms = rcu_dereference(sdsc)[desc];
-    rcu_read_unlock();
-    return svms;
+    return rcu_dereference(sdsc)[dsc];
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svms);
 
 int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 {
     u32 desc = dsm_entry_to_desc(entry);
-    int i;
+    int i, ret = 0;
 
     BUG_ON(!dsd);
     memset(dsd, 0, sizeof (*dsd));
@@ -395,15 +389,18 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 
     rcu_read_lock();
     dsd->svms = dsm_descriptor_to_svms(desc);
-    rcu_read_unlock();
     BUG_ON(!dsd->svms.num);
     for (i = 0; i < dsd->svms.num; i++) {
         BUG_ON(!dsd->svms.pp[i]);
         BUG_ON(!dsd->svms.pp[i]->dsm);
         dsd->dsm = dsd->svms.pp[i]->dsm;
-        return 0;
+        goto out;
     }
-    return -ENODATA;
+    ret = -ENODATA;
+
+out:
+    rcu_read_unlock();
+    return ret;
 }
 EXPORT_SYMBOL(swp_entry_to_dsm_data);
 
@@ -425,7 +422,7 @@ void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
     u32 flags = dsm_entry_to_flags(entry);
 
     clear_bit(pos, (volatile long unsigned int *) &flags);
-    set_pte_at(mm, addr, pte,
-            swp_entry_to_pte(dsm_descriptor_to_swp_entry(desc, flags)));
+    set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(desc, flags));
 }
 EXPORT_SYMBOL(dsm_clear_swp_entry_flag);
+

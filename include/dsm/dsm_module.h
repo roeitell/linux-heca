@@ -13,6 +13,7 @@
 #include <linux/ioctl.h>
 #include <linux/byteorder/generic.h>
 #include <linux/miscdevice.h>
+#include <linux/hash.h>
 
 #include <linux/fs.h>
 #include <linux/rculist.h>
@@ -132,8 +133,9 @@ int dsm_recv_info(struct conn_element *);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
         struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
         int, struct dsm_page_cache *);
-int dsm_request_page_pull(struct dsm *, struct mm_struct *,
-        struct subvirtual_machine *, unsigned long, struct memory_region *);
+int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
+        struct page *, unsigned long, struct mm_struct *,
+        struct memory_region *);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 
 /*

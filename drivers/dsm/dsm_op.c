@@ -736,10 +736,8 @@ void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e)
                     PAGE_SIZE, DMA_BIDIRECTIONAL);
             ppe->page_buf = NULL;
         }
-        if (ppe->mem_page) {
-            lazy_free_swap(ppe->mem_page);
+        if (ppe->mem_page)
             page_cache_release(ppe->mem_page);
-        }
         llist_add(&ppe->llnode, &pp->page_empty_pool_list);
     }
 }
@@ -1118,7 +1116,6 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
 
 static inline void dealloc_push_dpc(struct dsm_page_cache *dpc)
 {
-    set_page_private(dpc->pages[0], 0);
     page_cache_release(dpc->pages[0]);
     rb_erase(&dpc->rb_node, &dpc->svm->push_cache);
     dsm_dealloc_dpc(&dpc);
@@ -1151,13 +1148,11 @@ surrogate:
 
 static inline void surrogate_remote_response_pull(struct dsm_page_cache *dpc)
 {
-    int i;
-
     atomic_dec(&dpc->nproc);
     if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
         BUG_ON(atomic_read(&dpc->found) < 0);
-        for_each_valid_svm(dpc->svms, i)
-            page_cache_release(dpc->pages[i]);
+        dsm_push_finish_notify(dpc->pages[0]);
+        page_cache_release(dpc->pages[0]);
         dsm_dealloc_dpc(&dpc);
     }
 }
@@ -1177,7 +1172,8 @@ void release_svm_push_elements(struct subvirtual_machine *svm,
         } else {
             int i;
 
-            for (i = 0; i < dpc->svms.num; i++) {
+            dsm_push_finish_notify(dpc->pages[0]);
+            for_each_valid_svm(dpc->svms, i) {
                 if (1 << i & dpc->bitmap)
                     page_cache_release(dpc->pages[0]);
             }

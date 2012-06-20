@@ -283,19 +283,8 @@ retry:
             msg->type, &tx_e->reply_work_req->pte);
 
     if (unlikely(!page)) {
-        release_tx_element_reply(ele, tx_e);
         ret = -EINVAL;
-
-        /*
-         * Too many consecutive failures to grab pages; seems that svm is
-         *  offline. Send a status update message to client.
-         *
-         */
-        if (atomic_add_unless(&local_svm->status, 1, DSM_SVM_OFFLINE) > 
-                MAX_CONSECUTIVE_SVM_FAILURES) {
-            remove_svm(dsm->dsm_id, local_svm->svm_id);
-            goto no_svm;
-        }
+        release_tx_element_reply(ele, tx_e);
 
         if (msg->type == TRY_REQUEST_PAGE) {
             if (request_queue_empty(ele)) {
@@ -313,10 +302,7 @@ retry:
         }
         goto fail;
     }
-    /*
-     * Page grabbed successfully, seems that the local svm is still online.
-     */
-    atomic_set(&local_svm->status, DSM_SVM_ONLINE);
+
     ppe = create_new_page_pool_element_from_page(ele, page);
     BUG_ON(!ppe);
 
@@ -540,17 +526,17 @@ int dsm_recv_info(struct conn_element *ele)
     return ib_post_recv(ele->cm_id->qp, &rid->recv_wr, &rid->recv_bad_wr);
 }
 
-int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
-        struct subvirtual_machine *fault_svm, unsigned long request_addr,
+int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
+        struct page *page, unsigned long request_addr, struct mm_struct *mm,
         struct memory_region *mr)
 {
     unsigned long addr = request_addr & PAGE_MASK;
-    struct svm_list svms = dsm_descriptor_to_svms(mr->descriptor);
-    struct page *page;
+    struct svm_list svms;
     int ret = 0, i;
 
-    BUG_ON(!mr);
-    BUG_ON(!svms.num);
+    rcu_read_lock();
+    svms = dsm_descriptor_to_svms(mr->descriptor);
+    rcu_read_unlock();
 
     /*
      * This is a useful heuristic; it's possible that tx_elms have been freed in
@@ -562,13 +548,17 @@ int dsm_request_page_pull(struct dsm *dsm, struct mm_struct *mm,
             return -ENOMEM;
     }
 
-    page = dsm_prepare_page_for_push(fault_svm, svms, mm, addr, mr->descriptor);
-    if (likely(page)) {
-        ret = send_request_dsm_page_pull(fault_svm, svms,
-                addr - fault_svm->priv->offset);
-        if (unlikely(ret == -ENOMEM))
-            dsm_cancel_page_push(fault_svm, addr, page);
-    }
+    ret = dsm_prepare_page_for_push(fault_svm, svms, page, addr, mm,
+            mr->descriptor);
+    if (unlikely(ret))
+        goto out;
+
+    ret = send_request_dsm_page_pull(fault_svm, svms,
+            addr - fault_svm->priv->offset);
+    if (unlikely(ret == -ENOMEM))
+        dsm_cancel_page_push(fault_svm, addr, page);
+
+out:
     return ret;
 }
 

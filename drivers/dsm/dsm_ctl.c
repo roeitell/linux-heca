@@ -551,6 +551,7 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
     struct dsm *dsm;
     struct unmap_data udata;
     struct memory_region *mr;
+    struct page *page;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
@@ -560,7 +561,12 @@ static int pushback_page(struct private_data *priv_data, void __user *argp)
 
     addr = udata.addr & PAGE_MASK;
     mr = search_mr(dsm, addr);
-    r = dsm_request_page_pull(dsm, current->mm, priv_data->svm, udata.addr, mr);
+    page = dsm_find_normal_page(current->mm, addr);
+    if (!page)
+        goto out;
+
+    r = dsm_request_page_pull(dsm, priv_data->svm, page, udata.addr,
+            current->mm, mr);
 
 out: 
     return r;

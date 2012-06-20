@@ -101,12 +101,12 @@ void insert_mr(struct dsm *, struct memory_region *);
 struct memory_region *search_mr(struct dsm *, unsigned long);
 int destroy_mrs(struct dsm *, int);
 int remove_svm_from_mrs(struct dsm *, u32);
-void clear_dsm_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
+void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
 
 /*
  * handler
  */
-int connection_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
+int client_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
 void listener_cq_handle(struct ib_cq *, void *);
 int server_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
 void recv_cq_handle(struct ib_cq *, void *);

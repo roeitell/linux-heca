@@ -400,7 +400,7 @@ noop:
             if (likely(clear_pte_flag)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
                 if (likely(pte_same(*(pd.pte), pte_entry)))
-                    clear_dsm_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
+                    dsm_clear_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
                 pte_unmap_unlock(pd.pte, ptl);
                 dsm_stats_inc(&local_svm->svm_sysfs.nb_push_success);
             }
@@ -665,8 +665,9 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
             if (!non_swap_entry(swp_e)) {
                 if (is_dsm_entry(swp_e)) {
                     // store old dest
-                    struct dsm_swp_data old = swp_entry_to_dsm_data(
-                            pte_to_swp_entry(pte_entry));
+                    struct dsm_swp_data old;
+                    swp_entry_to_dsm_data(pte_to_swp_entry(pte_entry), &old);
+                    BUG_ON(!old.dsm);
 
                     if (old.dsm->dsm_id != dsm->dsm_id && old.svms.pp[0]->svm_id != svm_id) {
                         // update pte

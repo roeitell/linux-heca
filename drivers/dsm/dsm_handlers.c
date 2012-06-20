@@ -175,12 +175,13 @@ out:
     return ret;
 }
 
-static int dsm_recv_message_handler(struct conn_element *ele,
+int dsm_recv_message_handler(struct conn_element *ele,
         struct rx_buf_ele *rx_e)
 {
     struct tx_buf_ele *tx_e = NULL;
+    int type = rx_e->dsm_buf->type;
 
-    switch (rx_e->dsm_buf->type) {
+    switch (type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
@@ -228,13 +229,14 @@ static int dsm_recv_message_handler(struct conn_element *ele,
 err: 
     return 1;
 }
+EXPORT_SYMBOL(dsm_recv_message_handler);
 
-static int dsm_send_message_handler(struct conn_element *ele,
+int dsm_send_message_handler(struct conn_element *ele,
         struct tx_buf_ele *tx_buf_e) {
 
     switch (tx_buf_e->dsm_buf->type) {
         case PAGE_REQUEST_REPLY: {
-            clear_dsm_swp_entry_flag(tx_buf_e->reply_work_req->mm,
+            dsm_clear_swp_entry_flag(tx_buf_e->reply_work_req->mm,
                     tx_buf_e->reply_work_req->addr,
                     tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
             release_ppe(ele, tx_buf_e);
@@ -275,6 +277,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
     }
     return 0;
 }
+EXPORT_SYMBOL(dsm_send_message_handler);
 
 void dsm_cq_event_handler(struct ib_event *event, void *data)
 {
@@ -347,7 +350,6 @@ static void dsm_recv_poll(struct ib_cq *cq)
             } else {
                 dsm_printk(KERN_ERR "rx id %llx status %d vendor_err %x",
                     wc.wr_id, wc.status, wc.vendor_err);
-                BUG();
             }
             continue;
         }
@@ -406,7 +408,7 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context)
  * This one is specific to the client part
  * It triggers the connection in the first place and handles the reaction of the remote node.
  */
-int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
+int client_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 {
     int ret = 0, err = 0;
     struct conn_element *ele = id->context;
@@ -453,23 +455,20 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
         case RDMA_CM_EVENT_CONNECT_ERROR:
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
-            printk("[connection_event_handler] Could not connect, %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR, "could not connect, %d\n", event->event);
             complete(&ele->completion);
             break;
 
         case RDMA_CM_EVENT_DEVICE_REMOVAL:
         case RDMA_CM_EVENT_ADDR_CHANGE:
-            printk(">>>>[connection_event_handler] - Unexpected event: %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR "unexpected event: %d", event->event);
             ret = rdma_disconnect(id);
             if (unlikely(ret))
                 goto disconnect_err;
             break;
 
         default:
-            printk(">>>>[connection_event_handler] - Unhandled event: %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR "no special handling: %d", event->event);
             break;
     }
 
@@ -486,16 +485,17 @@ err2:
 err1: 
     err++;
     ret = rdma_disconnect(id);
-    printk(">[connection_event_handler] - ERROR %d\n", err);
+    dsm_printk(KERN_ERR, "fatal error %d", err);
     if (unlikely(ret))
         goto disconnect_err;
 
     return ret;
 
 disconnect_err: 
-    printk("*** DISCONNECTION FAILED *** \n");
+    dsm_printk(KERN_ERR, "disconection failed");
     return ret;
 }
+EXPORT_SYMBOL(client_event_handler);
 
 /*
  * this one is for the server part
@@ -556,8 +556,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
         case RDMA_CM_EVENT_ADDR_CHANGE:
-            printk("[server_event_handler] - Unexpected event: %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR "unexpected event: %d", event->event);
 
             ret = rdma_disconnect(id);
             if (unlikely(ret))
@@ -565,6 +564,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
             break;
 
         default:
+            dsm_printk(KERN_ERR "no special handling: %d", event->event);
             break;
     }
 
@@ -572,10 +572,11 @@ out:
     return ret;
 
 disconnect_err: 
-    printk("*** DISCONNECTION FAILED *** \n");
+    dsm_printk(KERN_ERR "disconnect failed");
 err: 
     vfree(ele);
     ele = 0;
     return ret;
 }
+EXPORT_SYMBOL(server_event_handler);
 

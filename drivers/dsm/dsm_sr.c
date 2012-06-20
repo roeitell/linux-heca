@@ -344,9 +344,10 @@ fail:
 int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e)
 {
     int ret;
+    int type = tx_e->dsm_buf->type;
 
 retry:
-    switch (tx_e->dsm_buf->type) {
+    switch (type) {
         case REQUEST_PAGE:
         case REQUEST_PAGE_PULL:
         case TRY_REQUEST_PAGE:
@@ -372,9 +373,13 @@ retry:
         goto retry;
     }
 
-    BUG_ON(ret && ret != -ENOTCONN);
+    if (ret && ret != -ENOTCONN) {
+        dsm_printk("ib_post_send() returned %d on type 0x%x", ret, type);
+        BUG();
+    }
     return ret;
 }
+EXPORT_SYMBOL(tx_dsm_send);
 
 /**
  * Before the connection can be used, the nodes need to have these information about each other :

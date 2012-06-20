@@ -260,10 +260,11 @@ EXPORT_SYMBOL(destroy_mrs);
 static struct svm_list *sdsc;
 static u32 sdsc_max;
 static struct mutex sdsc_lock;
+#define SDSC_MIN 0x10
 
-static void dsm_descriptors_realloc(void)
+static u64 dsm_descriptors_realloc(void)
 {
-    struct svm_list *new_sdsc, *tmp = NULL;
+    struct svm_list *new_sdsc, *old_sdsc = NULL;
     u32 new_sdsc_max;
 
     new_sdsc_max = sdsc_max + 256;
@@ -272,21 +273,22 @@ static void dsm_descriptors_realloc(void)
 
     if (sdsc) {
         memcpy(new_sdsc, sdsc, sizeof(struct svm_list) * sdsc_max);
-        tmp = sdsc;
+        old_sdsc = sdsc;
     }
 
     rcu_assign_pointer(sdsc, new_sdsc);
     sdsc_max = new_sdsc_max;
 
-    if (tmp) {
+    if (old_sdsc) {
         synchronize_rcu();
-        kfree(tmp);
+        kfree(old_sdsc);
     }
+    return sdsc_max;
 }
 
 void dsm_init_descriptors(void) {
     mutex_init(&sdsc_lock);
-    dsm_descriptors_realloc();
+    (void) dsm_descriptors_realloc();
 }
 EXPORT_SYMBOL(dsm_init_descriptors);
 
@@ -294,35 +296,59 @@ void dsm_destroy_descriptors(void)
 {
     int i;
 
-    for (i = 0; i < sdsc_max; i++)
-        if (sdsc[i].pp)
+    for (i = SDSC_MIN; i < sdsc_max; i++)
+        if (sdsc[i].pp) {
             kfree(sdsc[i].pp);
+            sdsc[i].pp = NULL;
+        }
     kfree(sdsc);
+    sdsc = NULL;
+    sdsc_max = 0;
 }
 EXPORT_SYMBOL(dsm_destroy_descriptors);
 
-static inline void dsm_add_descriptor(struct dsm *dsm, u32 i, u32 *svm_ids) {
+void dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids) {
     u32 j;
 
     for (j = 0; svm_ids[j]; j++)
         ;
-    sdsc[i].num = j;
-    sdsc[i].pp = kmalloc(sizeof(struct subvirtual_machine *) * j, GFP_KERNEL);
-    BUG_ON(!sdsc[i].pp); /* TODO: handle failure! */
-    for (j = 0; svm_ids[j]; j++)
-        sdsc[i].pp[j] = find_svm(dsm, svm_ids[j]);
+    sdsc[desc].num = j;
+    BUG_ON(!sdsc[desc].num);
+    sdsc[desc].pp = 
+        kzalloc(sizeof(struct subvirtual_machine *) * j, GFP_KERNEL);
+    BUG_ON(!sdsc[desc].pp); /* TODO: handle failure! */
+    for (j = 0; svm_ids[j]; j++) {
+        struct subvirtual_machine *svm = find_svm(dsm, svm_ids[j]);
+        BUG_ON(!svm);
+        BUG_ON(!svm->dsm);
+        sdsc[desc].pp[j] = svm;
+    }
 }
+EXPORT_SYMBOL(dsm_add_descriptor);
 
-/*
- * svm_ids should be NULL terminated
- *
- */
+u32 dsm_entry_to_desc(swp_entry_t entry)
+{
+    u64 val = dsm_entry_to_val(entry);
+    u32 desc = (u32) (val >> 24);
+    BUG_ON(desc < SDSC_MIN);
+    return desc;
+}
+EXPORT_SYMBOL(dsm_entry_to_desc);
+
+u32 dsm_entry_to_flags(swp_entry_t entry)
+{
+    u64 val = dsm_entry_to_val(entry);
+    u32 flags = val & 0xFFFFFF;
+    return flags;
+}
+EXPORT_SYMBOL(dsm_entry_to_flags);
+
 u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
 {
     u32 i, j;
 
     mutex_lock(&sdsc_lock);
-    for (i = 0; i < sdsc_max && sdsc[i].num; i++) {
+    for (i = SDSC_MIN; i < sdsc_max && sdsc[i].num; i++) {
         for (j = 0; j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] &&
                 sdsc[i].pp[j]->svm_id == svm_ids[j]; j++)
             ;
@@ -330,8 +356,8 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
             break;
     }
 
-    if (i == sdsc_max)
-        dsm_descriptors_realloc();
+    if (i >= sdsc_max)
+        (void) dsm_descriptors_realloc();
 
     if (!sdsc[i].num)
         dsm_add_descriptor(dsm, i, svm_ids);
@@ -339,65 +365,67 @@ u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
     mutex_unlock(&sdsc_lock);
     return i;
 }
-;
 EXPORT_SYMBOL(dsm_get_descriptor);
 
-inline swp_entry_t dsm_descriptor_to_swp_entry(u32 dsc, u32 flags)
+inline swp_entry_t dsm_descriptor_to_swp_entry(u32 desc, u32 flags)
 {
-    u64 val = dsc;
+    u64 val = desc;
     return val_to_dsm_entry((val << 24) | flags);
 }
 
-inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
+struct svm_list dsm_descriptor_to_svms(u32 desc)
 {
     struct svm_list svms;
 
     rcu_read_lock();
-    svms = rcu_dereference(sdsc)[dsc];
+    svms = rcu_dereference(sdsc)[desc];
     rcu_read_unlock();
     return svms;
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svms);
 
-inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t entry)
+int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 {
-    struct dsm_swp_data dsd;
-    u64 val = dsm_entry_to_val(entry);
+    u32 desc = dsm_entry_to_desc(entry);
     int i;
 
-    dsd.flags = val & 0xFFFFFF;
-    dsd.svms = dsm_descriptor_to_svms(val >> 24);
-    for (i = 0; i < dsd.svms.num; i++) {
-        if (dsd.svms.pp[i]) {
-            dsd.dsm = dsd.svms.pp[i]->dsm;
-            goto out;
-        }
+    BUG_ON(!dsd);
+    memset(dsd, 0, sizeof (*dsd));
+    dsd->flags = dsm_entry_to_flags(entry);
+
+    rcu_read_lock();
+    dsd->svms = dsm_descriptor_to_svms(desc);
+    rcu_read_unlock();
+    BUG_ON(!dsd->svms.num);
+    for (i = 0; i < dsd->svms.num; i++) {
+        BUG_ON(!dsd->svms.pp[i]);
+        BUG_ON(!dsd->svms.pp[i]->dsm);
+        dsd->dsm = dsd->svms.pp[i]->dsm;
+        return 0;
     }
-    dsd.dsm = NULL;
-
-out:
-    return dsd;
+    return -ENODATA;
 }
+EXPORT_SYMBOL(swp_entry_to_dsm_data);
 
-inline int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2)
+int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2)
 {
-    u64 val = dsm_entry_to_val(entry) >> 24;
-    u64 val2 = dsm_entry_to_val(entry2) >> 24;
-    return val == val2;
+    u32 desc = dsm_entry_to_desc(entry);
+    u32 desc2 = dsm_entry_to_desc(entry2);
+    return desc == desc2;
 }
+EXPORT_SYMBOL(dsm_swp_entry_same);
 
-void clear_dsm_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
+void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
         pte_t *pte, int pos)
 {
     pte_t tmp_pte = *pte;
     swp_entry_t arch = __pte_to_swp_entry(tmp_pte);
     swp_entry_t entry = swp_entry(__swp_type(arch), __swp_offset(arch));
-    u64 val = dsm_entry_to_val(entry);
-    u32 flags = val & 0xFFFFFF;
+    u64 desc = dsm_entry_to_desc(entry);
+    u32 flags = dsm_entry_to_flags(entry);
 
     clear_bit(pos, (volatile long unsigned int *) &flags);
-    val = val >> 24;
     set_pte_at(mm, addr, pte,
-            swp_entry_to_pte(dsm_descriptor_to_swp_entry(val, flags)));
+            swp_entry_to_pte(dsm_descriptor_to_swp_entry(desc, flags)));
 }
-EXPORT_SYMBOL(clear_dsm_swp_entry_flag);
+EXPORT_SYMBOL(dsm_clear_swp_entry_flag);

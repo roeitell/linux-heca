@@ -213,6 +213,16 @@ failed:
     return r;
 }
 
+int is_svm_local(struct subvirtual_machine *svm)
+{
+    return !!svm->priv;
+}
+
+int is_svm_current(struct subvirtual_machine *svm)
+{
+    return !!(svm->priv && svm->priv->mm == current->mm);
+}
+
 static int register_svm(struct private_data *priv_data, void __user *argp)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -267,12 +277,9 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
         priv_data->svm = new_svm;
         priv_data->offset = svm_info.offset;
         new_svm->dsm->nb_local_svm++;
-    } else {
-        u32 svm_id[] = {new_svm->svm_id, 0};
-        new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
     }
 
-    /* register new svm to radix trees */
+   /* register new svm to radix trees */
     while (1) {
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
         if (!r)
@@ -292,23 +299,44 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     spin_lock(&dsm_lock);
     r = radix_tree_insert(&dsm->svm_tree_root,
             (unsigned long) new_svm->svm_id, new_svm);
-    if (svm->priv && !r) {
+
+    if (r) {
+        dsm_printk(KERN_ERR "failed radix_tree_insert %d", r);
+        goto end_radix;
+    }
+
+    if (is_svm_local(new_svm)) {
+        /* XXX: must come before dsm_get_descriptor() */
         r = radix_tree_insert(&dsm->svm_mm_tree_root,
-            (unsigned long) new_svm->priv->mm, new_svm);
-        if (!r) {
-            r = radix_tree_insert(&dsm_state->mm_tree_root,
-                    (unsigned long) new_svm->priv->mm, new_svm);
+                (unsigned long) new_svm->priv->mm, new_svm);
+
+        if (r) {
+            dsm_printk(KERN_ERR "failed radix_tree_insert %d", r);
+            goto end_radix;
+        }
+
+        r = radix_tree_insert(&dsm_state->mm_tree_root,
+                (unsigned long) new_svm->priv->mm, new_svm);
+        if (r) {
+            dsm_printk(KERN_ERR "failed radix_tree_insert %d", r);
+            goto end_radix;
         }
     }
+
+end_radix:
     spin_unlock(&dsm_lock);
     radix_tree_preload_end();
 
     if (r) {
-        dsm_printk(KERN_ERR "failed radix_tree_insert %d", r);
         goto err_delete;
     }
 
     /* update state */
+    if (!is_svm_local(new_svm)) {
+        /* XXX: only after svm_mm_tree_root update */
+        u32 svm_id[] = {new_svm->svm_id, 0};
+        new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
+    }
     atomic_set(&new_svm->status, DSM_SVM_ONLINE);
     r = create_svm_sysfs_entry(new_svm);
     if (r) {
@@ -317,14 +345,11 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     }
 
     list_add(&new_svm->svm_ptr, &dsm->svm_list);
-    dsm_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u\n",
-            new_svm, r, svm_info.dsm_id, svm_info.svm_id);
-    mutex_unlock(&dsm->dsm_mutex);
-    return r;
+    goto do_unlock;
 
 err_delete:
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) new_svm->svm_id);
-    if (svm->priv) {
+    if (is_svm_local(new_svm)) {
         radix_tree_delete(&dsm->svm_mm_tree_root,
                 (unsigned long) new_svm->priv->mm);
         radix_tree_delete(&dsm_state->mm_tree_root,
@@ -332,8 +357,12 @@ err_delete:
     }
 do_unlock:
     mutex_unlock(&dsm->dsm_mutex);
+
 free_out:
-    kfree(new_svm);
+    if (r)
+        kfree(new_svm);
+    dsm_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d",
+            new_svm, r, svm_info.dsm_id, svm_info.svm_id, r);
     return r;
 }
 
@@ -365,21 +394,21 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     svm = find_svm(dsm, svm_info.svm_id);
     if (!svm) {
         dsm_printk(KERN_ERR "Can't find svm %d", svm_info.svm_id);
-        goto out;
+        goto failed;
     }
 
     ip_addr = inet_addr(svm_info.ip);
     cele = search_rb_conn(ip_addr);
     if (cele) {
-        dsm_printk(KERN_ERR "has existing connection to %d", ip_addr);
-        BUG_ON(svm->ele != cele);
-        goto out;
+        dsm_printk(KERN_ERR "has existing connection to %pI4", &ip_addr);
+        /* BUG_ON(svm->ele != cele); */
+        goto done;
     }
 
     r = create_connection(dsm_state->rcm, &svm_info);
     if (r) {
         dsm_printk(KERN_ERR "create_connection failed %d", r);
-        goto out;
+        goto failed;
     }
 
     might_sleep();
@@ -387,22 +416,23 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     if (!cele) {
         dsm_printk(KERN_ERR "conneciton does not exist", r);
         r = -ENOLINK;
-        goto out;
+        goto failed;
     }
 
     wait_for_completion(&cele->completion);
     if (!atomic_read(&cele->alive)) {
         dsm_printk(KERN_ERR "conneciton is not alive ... aborting");
         r = -ENOLINK;
-        goto out;
+        goto failed;
     }
 
+done:
     svm->ele = cele;
 
-out:
+failed:
     mutex_unlock(&dsm->dsm_mutex);
-    dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %d: %d",
-        svm_info.dsm_id, svm_info.svm_id, ip_addr, r);
+    dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
+        svm_info.dsm_id, svm_info.svm_id, &ip_addr, r);
     return r;
 }
 
@@ -451,17 +481,12 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
 
-    dsm_printk(KERN_INFO "addr [0x%lx] sz [0x%lx] svm[0] [0x%x]\n",
-        udata.addr, udata.sz, *udata.svm_ids);
-
     dsm = find_dsm(udata.dsm_id);
     if (!dsm) {
         dsm_printk(KERN_ERR "can't find dsm %d", udata.dsm_id);
         ret = -EFAULT;
         goto out;
     }
-
-    /* TODO: lock dsm mutex! */
 
     if (search_mr(dsm, udata.addr)) {
         dsm_printk(KERN_ERR "can't find MR of addr 0x%lx", udata.addr);
@@ -486,19 +511,22 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     }
 
     insert_mr(dsm, mr);
+
     for (i = 0; udata.svm_ids[i]; i++) {
         struct subvirtual_machine *svm;
         u32 svm_id = udata.svm_ids[i];
 
         svm = find_svm(dsm, svm_id);
         if (!svm) {
-            dsm_printk(KERN_ERR "can't find svm %d", svm_id);
+            dsm_printk(KERN_ERR "[i=%d] can't find svm %d", i, svm_id);
             ret = -EFAULT;
             goto out;
         }
 
-        if (svm->priv && svm->priv->mm == current->mm) {
+        if (is_svm_local(svm) && is_svm_current(svm)) {
             mr->local = LOCAL;
+            dsm_printk(KERN_INFO "[i=%d] svm is current %d - existing", i,
+                 svm_id);
             goto out;
         }
     }
@@ -509,6 +537,10 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     }
 
 out: 
+    dsm_printk(KERN_INFO 
+        "register_mr: addr [0x%lx] sz [0x%lx] svm[0] [0x%x] --> ret %d",
+        udata.addr, udata.sz, *udata.svm_ids, ret);
+
     return ret;
 }
 

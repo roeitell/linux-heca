@@ -457,7 +457,7 @@ static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id) {
         (struct ib_sge *) &tx_ele->wrk_req->wr_ele->sg;
 
     tx_ele->wrk_req->wr_ele->sg.addr = tx_ele->dsm_dma.addr;
-    tx_ele->wrk_req->wr_ele->sg.length = tx_ele->dsm_dma.addr;
+    tx_ele->wrk_req->wr_ele->sg.length = tx_ele->dsm_dma.size; 
     tx_ele->wrk_req->wr_ele->sg.lkey = lkey;
 
     tx_ele->wrk_req->wr_ele->wr.next = NULL;
@@ -556,19 +556,7 @@ static int create_tx_buffer(struct conn_element *ele) {
             ret = -ENOMEM;
             goto err;
         }
-        dsm_printk(KERN_INFO "before dma_sync_single_range_for_cpu");
-        dma_sync_single_range_for_cpu(ele->cm_id->device->dma_device,
-            tx_buff_e[i].dsm_dma.addr, 0, tx_buff_e[i].dsm_dma.size,
-            tx_buff_e[i].dsm_dma.dir);
-        
-        dsm_printk(KERN_INFO "before init_tx_ele %d", i);
         init_tx_ele(&tx_buff_e[i], ele, i);
-        dsm_printk(KERN_INFO "after init_tx_ele %d", i);
-
-        dsm_printk(KERN_INFO "before dma_sync_single_range_for_device");
-        dma_sync_single_range_for_device(ele->cm_id->device->dma_device,
-            tx_buff_e[i].dsm_dma.addr, 0, tx_buff_e[i].dsm_dma.size,
-            tx_buff_e[i].dsm_dma.dir);
     }
     goto done;
 
@@ -706,7 +694,7 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data)
     insert_rb_conn(ele);
 
     ele->rcm = rcm;
-    ele->cm_id = rdma_create_id(connection_event_handler, ele, RDMA_PS_TCP,
+    ele->cm_id = rdma_create_id(client_event_handler, ele, RDMA_PS_TCP,
             IB_QPT_RC);
     if (IS_ERR(ele->cm_id))
         goto err1;

@@ -380,14 +380,14 @@ out:
     return r;
 }
 
-static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
+struct page *dsm_get_remote_page(struct vm_area_struct *vma,
         unsigned long addr, struct dsm_page_cache *dpc,
         struct subvirtual_machine *fault_svm,
         struct subvirtual_machine *remote_svm, unsigned long private, int tag,
         int i)
 {
     int (*func)(struct tx_buf_ele *);
-    struct page *page;
+    struct page *page = NULL;
 
     if (unlikely(!remote_svm))
         goto out;
@@ -411,6 +411,7 @@ static struct page *get_remote_dsm_page(struct vm_area_struct *vma,
 out: 
     return page;
 }
+EXPORT_SYMBOL(dsm_get_remote_page);
 
 static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
         struct subvirtual_machine *fault_svm, unsigned long private, int tag);
@@ -507,7 +508,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
                 goto fail;
             }
             for (r = 0; r < svms.num; r++) {
-                get_remote_dsm_page(vma, norm_addr, new_dpc, fault_svm,
+                dsm_get_remote_page(vma, norm_addr, new_dpc, fault_svm,
                         svms.pp[r], private, tag, r);
             }
 
@@ -549,7 +550,6 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
     struct vm_area_struct *vma;
     unsigned long norm_addr = addr & PAGE_MASK;
     struct dsm_page_cache *dpc = NULL;
-    struct dsm_swp_data dsd;
 
     dpc = dsm_cache_get(fault_svm, norm_addr);
     if (!dpc) {
@@ -583,7 +583,9 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
         if (!pte_present(pte_entry) && !pte_none(pte_entry)) {
             swp_e = pte_to_swp_entry(pte_entry);
             if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
-                dsd = swp_entry_to_dsm_data(swp_e);
+                struct dsm_swp_data dsd;
+                if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
+                    BUG();
                 if (!(dsd.flags & DSM_INFLIGHT)) {
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                             2, tag, vma, mm, private, 0, pte_entry, pte);
@@ -646,7 +648,6 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
 {
     pte_t pte;
     swp_entry_t swp_entry;
-    struct dsm_swp_data tmp_dsd;
     int ret = 0;
 
     do {
@@ -662,7 +663,9 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                 swp_entry = pte_to_swp_entry(pte);
                 if (non_swap_entry(swp_entry) && is_dsm_entry(swp_entry) &&
                         dsm_swp_entry_same(swp_entry, *entry)) {
-                    tmp_dsd = swp_entry_to_dsm_data(swp_entry);
+                    struct dsm_swp_data tmp_dsd;
+                    if (swp_entry_to_dsm_data(swp_entry, &tmp_dsd) < 0)
+                        BUG();
                     if (tmp_dsd.flags & DSM_INFLIGHT) {
                         continue;
                     } else {
@@ -683,9 +686,12 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned long address, pte_t *page_table, pmd_t *pmd,
         unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
-    struct dsm_swp_data dsd = swp_entry_to_dsm_data(entry);
-    struct subvirtual_machine *fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
-//we need to use the page addr and not the fault address in order to have a unique reference
+    struct dsm_swp_data dsd;
+    struct subvirtual_machine *fault_svm;
+    /*
+     * FIXME: we need to use the page addr and not the fault address in order
+     * to have a unique reference
+     */
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
     int ret = 0, i = -1, exclusive = 0;
@@ -693,6 +699,10 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct page *found_page, *swapcache = NULL;
     struct mem_cgroup *ptr;
     pte_t pte;
+
+    if (swp_entry_to_dsm_data(entry, &dsd) < 0)
+        BUG();
+    fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
 
     /*
      * If page is currently being pushed, halt the push, re-claim the page and

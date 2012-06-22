@@ -39,8 +39,7 @@
  * dsm_utils
  */
 
-void __dsm_printk(int level, const char *path, int line, const char *format,
-        ...);
+void __dsm_printk(unsigned int, const char *, int, const char *, ...);
 #define dsm_printk(fmt, args...) \
     __dsm_printk(0, __FILE__, __LINE__, fmt, ##args);
 

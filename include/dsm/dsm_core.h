@@ -45,6 +45,8 @@
     for (i = 0; i < (svms).num; i++)        \
         if (likely((svms).pp[i]))
 
+
+
 /* dsm_search */
 inline int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
 int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
@@ -96,7 +98,7 @@ int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32, unsigned long);
 /* dsm_page_request.c */
 struct page *dsm_extract_page_from_remote(struct dsm *,
         struct subvirtual_machine *, struct subvirtual_machine *, unsigned long,
-        u16, pte_t ** );
+        u16, pte_t **);
 int dsm_prepare_page_for_push(struct subvirtual_machine *, struct svm_list,
         struct page *, unsigned long, struct mm_struct *, u32);
 struct page *dsm_find_normal_page(struct mm_struct *, unsigned long);

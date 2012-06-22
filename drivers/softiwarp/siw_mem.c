@@ -180,6 +180,20 @@ struct ib_dma_mapping_ops siw_dma_mapping_ops = {
 	.free_coherent		= siw_dma_free_coherent
 };
 
+static void *siw_dma_generic_alloc(struct device *dev, size_t size,
+        dma_addr_t *dma_handle, gfp_t gfp,
+        struct dma_attrs *attrs)
+{
+    return siw_dma_alloc_coherent(NULL, size, dma_handle, gfp);
+}
+
+static void siw_dma_generic_free(struct device *dev, size_t size,
+        void *vaddr, dma_addr_t dma_handle,
+        struct dma_attrs *attrs)
+{
+    siw_dma_free_coherent(NULL, size, vaddr, dma_handle);
+}
+
 static void *siw_dma_generic_alloc_coherent(struct device *dev, size_t size,
 					    dma_addr_t *dma_handle, gfp_t gfp)
 {
@@ -282,8 +296,8 @@ static int siw_dma_generic_set_mask(struct device *dev, u64 mask)
 }
 
 struct dma_map_ops siw_dma_generic_ops = {
-	.alloc_coherent		= siw_dma_generic_alloc_coherent,
-	.free_coherent		= siw_dma_generic_free_coherent,
+	.alloc		= siw_dma_generic_alloc,
+	.free		= siw_dma_generic_free,
 	.map_page		= siw_dma_generic_map_page,
 	.unmap_page		= siw_dma_generic_unmap_page,
 	.map_sg			= siw_dma_generic_map_sg,

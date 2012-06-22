@@ -20,7 +20,7 @@ static const char *sanity_file_name(const char *path)
 #endif
 
 
-void __snd_printk(unsigned int level, const char *path, int line,
+void __dsm_printk(unsigned int level, const char *path, int line,
                   const char *format, ...)
 {
 #if defined(CONFIG_DSM_DEBUG) || defined(CONFIG_DSM_VERBOSE_PRINTK)

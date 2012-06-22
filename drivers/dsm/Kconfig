@@ -19,11 +19,11 @@ config DSM_DEBUG
 	depends on DSM_CORE
 	default n
 	help
-		DSM_DEBUG provides debug functionallity for DSM 
+		DSM_DEBUG provides debug functionality for DSM 
 		
 config DSM_VERBOSE_PRINTK
 	bool "DSM_VERBOSE_PRINTK"
-	depends on DSM_DEBUG
+	depends on DSM_CORE
 	default n
 	help
 		DSM_VERBOSE_PRINTK provide verbose functionality 	

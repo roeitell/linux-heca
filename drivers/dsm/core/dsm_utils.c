@@ -50,5 +50,5 @@ void __snd_printk(unsigned int level, const char *path, int line,
 #endif
         va_end(args);
 }
-EXPORT_SYMBOL_GPL(__dsm_printk);
+EXPORT_SYMBOL(__dsm_printk);
 #endif

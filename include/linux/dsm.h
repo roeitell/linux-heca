@@ -16,7 +16,6 @@ struct svm_data {
     unsigned long offset;
     char ip[MAX_ADDR_STR];
     int port;
-    int local_port;
 };
 
 #define MAX_SVM_IDS 3 /* This actually means 2, as the arr is null terminated */

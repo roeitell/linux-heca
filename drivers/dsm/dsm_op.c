@@ -198,8 +198,8 @@ static int create_qp(struct conn_element *ele)
     attr.sq_sig_type = IB_SIGNAL_ALL_WR;
     attr.cap.max_send_wr = MAX_CAP_SCQ;
     attr.cap.max_recv_wr = MAX_CAP_RCQ;
-    attr.cap.max_send_sge = 4;
-    attr.cap.max_recv_sge = 4;
+    attr.cap.max_send_sge = MAX_SEND_SGE;
+    attr.cap.max_recv_sge = MAX_RECV_SGE;
     attr.qp_type = IB_QPT_RC;
     attr.port_num = ele->cm_id->port_num;
     attr.qp_context = (void *) ele;

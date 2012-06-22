@@ -31,8 +31,10 @@
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
-#define MAX_CAP_SCQ 4096
-#define MAX_CAP_RCQ 8192    /* Heuristic; perhaps raise in the future */
+#define MAX_CAP_SCQ 256
+#define MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
+#define MAX_SEND_SGE 4
+#define MAX_RECV_SGE 4
 
 #define TX_BUF_ELEMENTS_NUM MAX_CAP_SCQ / 2
 #define RX_BUF_ELEMENTS_NUM MAX_CAP_RCQ

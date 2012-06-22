@@ -47,7 +47,8 @@
 
 /* dsm_search */
 inline int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
-inline struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t);
+int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
+inline swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
 
 /* dsm_cache.c */
@@ -114,7 +115,6 @@ void dsm_init_descriptors(void);
 void dsm_destroy_descriptors(void);
 swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
 struct svm_list dsm_descriptor_to_svms(u32);
-struct dsm_swp_data swp_entry_to_dsm_data(swp_entry_t);
 u32 dsm_get_descriptor(struct dsm *, u32 *);
 
 #endif /* DSM_PAGE_FAULT_H_ */

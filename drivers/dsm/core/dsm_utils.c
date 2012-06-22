@@ -19,7 +19,6 @@ static const char *sanity_file_name(const char *path)
 }
 #endif
 
-
 void __dsm_printk(unsigned int level, const char *path, int line,
                   const char *format, ...)
 {

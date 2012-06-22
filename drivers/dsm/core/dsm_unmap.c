@@ -85,7 +85,7 @@ retry:
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
-        if (!retry) {
+        if (likely(!retry)) {
             get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
             retry = 1;
             goto retry;
@@ -96,7 +96,7 @@ retry:
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        if (!retry) {
+        if (likely(!retry)) {
             get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
             retry = 1;
             goto retry;

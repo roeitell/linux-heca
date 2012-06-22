@@ -34,7 +34,7 @@ EXPORT_SYMBOL(destroy_dsm_cache_kmem);
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
         unsigned long addr, struct svm_list svms, int nproc, int tag)
 {
-    struct dsm_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_KERNEL);
+    struct dsm_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_ATOMIC);
     if (unlikely(!dpc))
         goto out;
 

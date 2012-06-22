@@ -75,14 +75,14 @@ static int process_dsm_request(struct conn_element *ele,
                     req->fault_svm->svm_id, req->svm->svm_id, req->addr);
             break;
         case TRY_REQUEST_PAGE_FAIL:
-            memcpy(tx_e->dsm_msg, &req->dsm_msg,
+            memcpy(tx_e->dsm_buf, &req->dsm_buf,
                     sizeof(struct dsm_message));
-            tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
+            tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
             break;
         case SVM_STATUS_UPDATE:
-            memcpy(tx_e->dsm_msg, &req->dsm_msg,
+            memcpy(tx_e->dsm_buf, &req->dsm_buf,
                     sizeof(struct dsm_message));
-            tx_e->dsm_msg->type = SVM_STATUS_UPDATE;
+            tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
             break;
 
         default:
@@ -175,13 +175,15 @@ out:
     return ret;
 }
 
-static int dsm_recv_message_handler(struct conn_element *ele,
+int dsm_recv_message_handler(struct conn_element *ele,
         struct rx_buf_ele *rx_e)
 {
     struct tx_buf_ele *tx_e = NULL;
-    switch (rx_e->dsm_msg->type) {
+    int type = rx_e->dsm_buf->type;
+
+    switch (type) {
         case PAGE_REQUEST_REPLY: {
-            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
+            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                 dsm_stats_inc(&ele->sysfs.rx_stats.page_request_reply);
                 process_page_response(ele, tx_e); // client got its response
@@ -189,9 +191,9 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
-            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_msg->offset];
+            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                tx_e->dsm_msg->type = TRY_REQUEST_PAGE_FAIL;
+                tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
                 process_page_response(ele, tx_e);
                 dsm_stats_inc(&ele->sysfs.rx_stats.try_request_page_fail);
             }
@@ -215,9 +217,8 @@ static int dsm_recv_message_handler(struct conn_element *ele,
 
         default: {
             dsm_stats_inc(&ele->sysfs.rx_stats.err);
-            printk(
-                    "[dsm_recv_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
-                    rx_e, rx_e->dsm_msg->type, rx_e->id);
+            printk("[dsm_recv_poll] unhandled message stats addr: %p, status %d"
+                    " id %d\n", rx_e, rx_e->dsm_buf->type, rx_e->id);
             goto err;
 
         }
@@ -228,13 +229,14 @@ static int dsm_recv_message_handler(struct conn_element *ele,
 err: 
     return 1;
 }
+EXPORT_SYMBOL(dsm_recv_message_handler);
 
-static int dsm_send_message_handler(struct conn_element *ele,
-        struct tx_buf_ele *tx_buf_e)
-{
-    switch (tx_buf_e->dsm_msg->type) {
+int dsm_send_message_handler(struct conn_element *ele,
+        struct tx_buf_ele *tx_buf_e) {
+
+    switch (tx_buf_e->dsm_buf->type) {
         case PAGE_REQUEST_REPLY: {
-            clear_dsm_swp_entry_flag(tx_buf_e->reply_work_req->mm,
+            dsm_clear_swp_entry_flag(tx_buf_e->reply_work_req->mm,
                     tx_buf_e->reply_work_req->addr,
                     tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
             release_ppe(ele, tx_buf_e);
@@ -267,14 +269,15 @@ static int dsm_send_message_handler(struct conn_element *ele,
         }
         default: {
             dsm_stats_inc(&ele->sysfs.tx_stats.err);
-            printk(
-                    "[dsm_send_poll] unhandled message stats  addr: %p ,status %d , id %d \n",
-                    tx_buf_e, tx_buf_e->dsm_msg->type, tx_buf_e->id);
+            printk("[dsm_send_poll] unhandled message stats  addr: %p, "
+                    "status %d , id %d \n", tx_buf_e, tx_buf_e->dsm_buf->type,
+                    tx_buf_e->id);
             return 1;
         }
     }
     return 0;
 }
+EXPORT_SYMBOL(dsm_send_message_handler);
 
 void dsm_cq_event_handler(struct ib_event *event, void *data)
 {
@@ -333,11 +336,25 @@ static void dsm_recv_poll(struct ib_cq *cq)
     struct ib_wc wc;
     struct conn_element *ele = (struct conn_element *) cq->cq_context;
 
-    while (ib_poll_cq(cq, 1, &wc) > 0) {
-        if (unlikely(wc.status != IB_WC_SUCCESS || wc.opcode != IB_WC_RECV))
+    while (ib_poll_cq(cq, 1, &wc) == 1) {
+        if (likely(wc.status == IB_WC_SUCCESS)) {
+            if (unlikely(wc.opcode != IB_WC_RECV)) {
+                dsm_printk(KERN_INFO "expected opcode %d got %d",
+                        IB_WC_RECV, wc.opcode);
+                continue;
+            }
+        } else {
+            if (wc.status == IB_WC_WR_FLUSH_ERR) {
+                dsm_printk(KERN_INFO "rx id %llx status %d vendor_err %x",
+                    wc.wr_id, wc.status, wc.vendor_err);
+            } else {
+                dsm_printk(KERN_ERR "rx id %llx status %d vendor_err %x",
+                    wc.wr_id, wc.status, wc.vendor_err);
+            }
             continue;
-
-        if (unlikely(ele->rid.remote_info->flag)) {
+        }
+            
+        if (ele->rid.remote_info->flag) {
             BUG_ON(wc.byte_len != sizeof(struct rdma_info));
             reg_rem_info(ele);
             exchange_info(ele, wc.wr_id);
@@ -391,7 +408,7 @@ void recv_cq_handle(struct ib_cq *cq, void *cq_context)
  * This one is specific to the client part
  * It triggers the connection in the first place and handles the reaction of the remote node.
  */
-int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
+int client_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
 {
     int ret = 0, err = 0;
     struct conn_element *ele = id->context;
@@ -438,23 +455,20 @@ int connection_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
         case RDMA_CM_EVENT_CONNECT_ERROR:
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
-            printk("[connection_event_handler] Could not connect, %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR, "could not connect, %d\n", event->event);
             complete(&ele->completion);
             break;
 
         case RDMA_CM_EVENT_DEVICE_REMOVAL:
         case RDMA_CM_EVENT_ADDR_CHANGE:
-            printk(">>>>[connection_event_handler] - Unexpected event: %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR "unexpected event: %d", event->event);
             ret = rdma_disconnect(id);
             if (unlikely(ret))
                 goto disconnect_err;
             break;
 
         default:
-            printk(">>>>[connection_event_handler] - Unhandled event: %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR "no special handling: %d", event->event);
             break;
     }
 
@@ -471,16 +485,17 @@ err2:
 err1: 
     err++;
     ret = rdma_disconnect(id);
-    printk(">[connection_event_handler] - ERROR %d\n", err);
+    dsm_printk(KERN_ERR, "fatal error %d", err);
     if (unlikely(ret))
         goto disconnect_err;
 
     return ret;
 
 disconnect_err: 
-    printk("*** DISCONNECTION FAILED *** \n");
+    dsm_printk(KERN_ERR, "disconection failed");
     return ret;
 }
+EXPORT_SYMBOL(client_event_handler);
 
 /*
  * this one is for the server part
@@ -541,8 +556,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
         case RDMA_CM_EVENT_ADDR_CHANGE:
-            printk("[server_event_handler] - Unexpected event: %d\n",
-                    event->event);
+            dsm_printk(KERN_ERR "unexpected event: %d", event->event);
 
             ret = rdma_disconnect(id);
             if (unlikely(ret))
@@ -550,6 +564,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *event)
             break;
 
         default:
+            dsm_printk(KERN_ERR "no special handling: %d", event->event);
             break;
     }
 
@@ -557,10 +572,11 @@ out:
     return ret;
 
 disconnect_err: 
-    printk("*** DISCONNECTION FAILED *** \n");
+    dsm_printk(KERN_ERR "disconnect failed");
 err: 
     vfree(ele);
     ele = 0;
     return ret;
 }
+EXPORT_SYMBOL(server_event_handler);
 

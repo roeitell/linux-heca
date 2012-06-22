@@ -12,3 +12,18 @@ config DSM_CORE
 	default y
 	help
 		DSM_CORE provides an interface to necessary kernel memory operations required from the operation of DSM.	
+		
+		
+config DSM_DEBUG
+	bool "DSM_DEBUG"
+	depends on DSM_CORE
+	default n
+	help
+		DSM_DEBUG provides debug functionallity for DSM 
+		
+config DSM_VERBOSE_PRINTK
+	bool "DSM_VERBOSE_PRINTK"
+	depends on DSM_DEBUG
+	default n
+	help
+		DSM_VERBOSE_PRINTK provide verbose functionality 	

@@ -1,7 +1,6 @@
 #include <dsm/dsm_module.h>
 
-#define CONFIG_DSM_DEBUG
-#define CONFIG_DSM_VERBOSE_PRINTK
+
 
 #ifdef CONFIG_DSM_DEBUG
 static int debug = 1;
@@ -20,10 +19,11 @@ static const char *sanity_file_name(const char *path)
 }
 #endif
 
-#if defined(CONFIG_DSM_DEBUG) || defined(CONFIG_DSM_VERBOSE_PRINTK)
-void __snd_printk(unsigned int level, const char *path, int line,
+
+void __dsm_printk(unsigned int level, const char *path, int line,
                   const char *format, ...)
 {
+#if defined(CONFIG_DSM_DEBUG) || defined(CONFIG_DSM_VERBOSE_PRINTK)
         va_list args;
 #ifdef CONFIG_DSM_VERBOSE_PRINTK
         struct va_format vaf;
@@ -49,6 +49,7 @@ void __snd_printk(unsigned int level, const char *path, int line,
         vprintk(format, args);
 #endif
         va_end(args);
+#endif
 }
 EXPORT_SYMBOL(__dsm_printk);
-#endif
+

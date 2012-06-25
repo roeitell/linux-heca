@@ -306,8 +306,6 @@ retry:
             goto bad_page;
     }
 
-    if (unlikely(!trylock_page(page)))
-        goto bad_page;
 
     page_cache_get(page);
 
@@ -321,7 +319,7 @@ retry:
     dec_mm_counter(mm, MM_ANONPAGES);
 
     *return_pte = pd.pte;
-    unlock_page(page);
+
     pte_unmap_unlock(pd.pte, ptl);
 out: 
     return page;

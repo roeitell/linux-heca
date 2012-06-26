@@ -1056,7 +1056,6 @@ int destroy_connection(struct conn_element *ele)
         destroy_tx_buffer(ele);
         free_rdma_info(ele);
         rdma_destroy_id(ele->cm_id);
-        kfree(ele->qp_attr);
     }
 
     erase_rb_conn(ele);

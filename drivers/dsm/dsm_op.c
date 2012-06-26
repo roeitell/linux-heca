@@ -139,7 +139,7 @@ static int create_rx_buffer(struct conn_element *ele)
             goto err1;
 
         rx[i].dsm_dma.size = sizeof(struct dsm_message);
-        rx[i].dsm_dma.dir = DMA_BIDIRECTIONAL; 
+        rx[i].dsm_dma.dir = DMA_BIDIRECTIONAL;
         rx[i].dsm_dma.addr = ib_dma_map_single(
                 ele->cm_id->device, rx[i].dsm_buf, rx[i].dsm_dma.size,
                 rx[i].dsm_dma.dir);
@@ -174,7 +174,7 @@ err1:
     memset(rx, 0, sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM);
     kfree(rx);
     ele->rx_buffer.rx_buf = 0;
-err_buf: 
+err_buf:
     printk(">[create_rx_buffer] - RX BUFFER NOT CREATED\n");
     return -1;
 }
@@ -187,31 +187,43 @@ err_buf:
  */
 static int create_qp(struct conn_element *ele)
 {
-    int ret = 0;
-    struct ib_qp_init_attr attr;
+    int ret = -1;
+    struct ib_qp_init_attr * attr;
 
+    kmalloc(sizeof *attr, GFP_KERNEL);
+    if(!attr)
+        goto exit;
     memset(&attr, 0, sizeof attr);
 
 //The attribute shall be modifiable
-    attr.send_cq = ele->send_cq;
-    attr.recv_cq = ele->recv_cq;
-    attr.sq_sig_type = IB_SIGNAL_ALL_WR;
-    attr.cap.max_send_wr = MAX_CAP_SCQ;
-    attr.cap.max_recv_wr = MAX_CAP_RCQ;
-    attr.cap.max_send_sge = MAX_SEND_SGE;
-    attr.cap.max_recv_sge = MAX_RECV_SGE;
-    attr.qp_type = IB_QPT_RC;
-    attr.port_num = ele->cm_id->port_num;
-    attr.qp_context = (void *) ele;
+    attr->send_cq = ele->send_cq;
+    attr->recv_cq = ele->recv_cq;
+    attr->sq_sig_type = IB_SIGNAL_ALL_WR;
+    attr->cap.max_send_wr = MAX_CAP_SCQ;
+    attr->cap.max_recv_wr = MAX_CAP_RCQ;
+    attr->cap.max_send_sge = MAX_SEND_SGE;
+    attr->cap.max_recv_sge = MAX_RECV_SGE;
+    attr->qp_type = IB_QPT_RC;
+    attr->port_num = ele->cm_id->port_num;
+    attr->qp_context = (void *) ele;
 
     if (unlikely(!ele->cm_id))
-        goto err;
+        goto free_attr;
 
     if (unlikely(!ele->pd))
-        goto err;
+        goto free_attr;
 
-    ret = rdma_create_qp(ele->cm_id, ele->pd, &attr);
-err: 
+
+    ret = rdma_create_qp(ele->cm_id, ele->pd, attr);
+    if(ret)
+        goto free_attr;
+
+    ele->qp_attr =attr;
+    return ret;
+
+free_attr:
+    kfree(attr);
+exit:
     return ret;
 }
 
@@ -270,7 +282,7 @@ err3:
 err2:
     ret++;
     ib_destroy_cq(ele->send_cq);
-err1: 
+err1:
     ret++;
     printk(">[setup_qp] - Could not setup the qp, error %d occurred\n", ret);
     return ret;
@@ -457,7 +469,7 @@ static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id) {
         (struct ib_sge *) &tx_ele->wrk_req->wr_ele->sg;
 
     tx_ele->wrk_req->wr_ele->sg.addr = tx_ele->dsm_dma.addr;
-    tx_ele->wrk_req->wr_ele->sg.length = tx_ele->dsm_dma.size; 
+    tx_ele->wrk_req->wr_ele->sg.length = tx_ele->dsm_dma.size;
     tx_ele->wrk_req->wr_ele->sg.lkey = lkey;
 
     tx_ele->wrk_req->wr_ele->wr.next = NULL;
@@ -649,19 +661,19 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port)
     dsm_state->rcm = rcm;
     return ret;
 
-err_mr: 
-err_notify: 
+err_mr:
+err_notify:
     ib_destroy_cq(rcm->listen_cq);
-err_cq: 
+err_cq:
     ib_dealloc_pd(rcm->pd);
-err_pd: 
-err_bind: 
+err_pd:
+err_bind:
     rdma_destroy_id(rcm->cm_id);
-err_cm_id: 
+err_cm_id:
     printk(">[create_rcm] Failed.\n");
     return ret;
 
-nodevice: 
+nodevice:
     printk(">[create_rcm] - NO DEVICE\n");
     return ret;
 }
@@ -706,10 +718,10 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data)
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
             (struct sockaddr*) &dst, 2000);
 
-err1: 
+err1:
     erase_rb_conn(ele);
     vfree(ele);
-err: 
+err:
     return -1;
 }
 
@@ -914,26 +926,26 @@ int setup_connection(struct conn_element *ele, int type)
     }
 
     return ret;
-    
-err10: 
+
+err10:
     err++;
-err9: 
+err9:
     err++;
-err8: 
+err8:
     err++;
-err7: 
+err7:
     err++;
-err6: 
+err6:
     err++;
-err5: 
+err5:
     err++;
-err4: 
+err4:
     err++;
 /*err3: -unused-*/
     err++;
-err2: 
+err2:
     err++;
-err1: 
+err1:
     err++;
     printk(">[setup_connection] - Could not setup connection: error %d\n", err);
     return err;
@@ -1053,6 +1065,7 @@ int destroy_connection(struct conn_element *ele)
         destroy_tx_buffer(ele);
         free_rdma_info(ele);
         rdma_destroy_id(ele->cm_id);
+        kfree(ele->attr);
     }
 
     erase_rb_conn(ele);

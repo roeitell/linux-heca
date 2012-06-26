@@ -203,6 +203,23 @@ err_buf:
     return -1;
 }
 
+
+static int setup_qp_attr(struct conn_element *ele){
+    struct ib_qp_init_attr * attr = &ele->qp_attr;
+    int ret = -1;
+    attr->sq_sig_type = IB_SIGNAL_ALL_WR;
+    attr->cap.max_send_wr = MAX_CAP_SCQ;
+    attr->cap.max_recv_wr = MAX_CAP_RCQ;
+    attr->cap.max_send_sge = MAX_SEND_SGE;
+    attr->cap.max_recv_sge = MAX_RECV_SGE;
+    attr->qp_type = IB_QPT_RC;
+    attr->port_num = ele->cm_id->port_num;
+    attr->qp_context = (void *) ele;
+    ret = 0;
+    return ret;
+
+}
+
 /*
  * Creates the qp and links it to the two cq
  *
@@ -216,24 +233,11 @@ static int create_qp(struct conn_element *ele)
 
     attr = &ele->qp_attr;
 
-
-//The attribute shall be modifiable
-
-    attr->sq_sig_type = IB_SIGNAL_ALL_WR;
-    attr->cap.max_send_wr = MAX_CAP_SCQ;
-    attr->cap.max_recv_wr = MAX_CAP_RCQ;
-    attr->cap.max_send_sge = MAX_SEND_SGE;
-    attr->cap.max_recv_sge = MAX_RECV_SGE;
-    attr->qp_type = IB_QPT_RC;
-    attr->port_num = ele->cm_id->port_num;
-    attr->qp_context = (void *) ele;
-
     if (unlikely(!ele->cm_id))
         goto exit;
 
     if (unlikely(!ele->pd))
         goto exit;
-
 
     ret = rdma_create_qp(ele->cm_id, ele->pd, attr);
 
@@ -913,7 +917,8 @@ int setup_connection(struct conn_element *ele, int type)
             IB_ACCESS_LOCAL_WRITE | IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
     if (!ele->mr)
         goto err2;
-
+    if (setup_qp_attr(ele))
+        goto err3;
     reset_dsm_connection_stats(&ele->sysfs);
     if (setup_qp(ele))
         goto err4;
@@ -955,7 +960,7 @@ err5:
     err++;
 err4:
     err++;
-/*err3: -unused-*/
+err3:
     err++;
 err2:
     err++;

@@ -194,8 +194,7 @@ static int create_qp(struct conn_element *ele)
 
 
 //The attribute shall be modifiable
-    attr->send_cq = ele->send_cq;
-    attr->recv_cq = ele->recv_cq;
+
     attr->sq_sig_type = IB_SIGNAL_ALL_WR;
     attr->cap.max_send_wr = MAX_CAP_SCQ;
     attr->cap.max_recv_wr = MAX_CAP_RCQ;
@@ -232,26 +231,26 @@ static int setup_qp(struct conn_element *ele)
     INIT_WORK(&ele->send_work, send_cq_handle_work);
     INIT_WORK(&ele->recv_work, recv_cq_handle_work);
 
-    ele->send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle,
+    ele->qp_attr.send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle,
             dsm_cq_event_handler, (void *) ele, MAX_CAP_SCQ, 0);
-    if (IS_ERR(ele->send_cq)) {
+    if (IS_ERR(ele->qp_attr.send_cq)) {
         printk(">[setup_qp] - Cannot create cq\n");
         goto err1;
     }
 
-    if (ib_req_notify_cq(ele->send_cq, IB_CQ_NEXT_COMP)) {
+    if (ib_req_notify_cq(ele->qp_attr.send_cq, IB_CQ_NEXT_COMP)) {
         printk(">[setup_qp] - Cannot notify cq\n");
         goto err2;
     }
 
-    ele->recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle,
+    ele->qp_attr.recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle,
             dsm_cq_event_handler, (void *) ele, MAX_CAP_RCQ, 0);
-    if (IS_ERR(ele->recv_cq)) {
+    if (IS_ERR(ele->qp_attr.recv_cq)) {
         printk(">[setup_qp] - Cannot create cq\n");
         goto err3;
     }
 
-    if (ib_req_notify_cq(ele->recv_cq, IB_CQ_NEXT_COMP)) {
+    if (ib_req_notify_cq(ele->qp_attr.recv_cq, IB_CQ_NEXT_COMP)) {
         printk(">[setup_qp] - Cannot notify cq\n");
         goto err4;
     }
@@ -267,12 +266,12 @@ err5:
     ret++;
 err4:
     ret++;
-    ib_destroy_cq(ele->recv_cq);
+    ib_destroy_cq(ele->qp_attr.recv_cq);
 err3:
     ret++;
 err2:
     ret++;
-    ib_destroy_cq(ele->send_cq);
+    ib_destroy_cq(ele->qp_attr.send_cq);
 err1:
     ret++;
     printk(">[setup_qp] - Could not setup the qp, error %d occurred\n", ret);
@@ -1040,11 +1039,11 @@ int destroy_connection(struct conn_element *ele)
         if (likely(ele->cm_id->qp))
             ret |= ib_destroy_qp(ele->cm_id->qp);
 
-        if (likely(ele->send_cq))
-            ret |= ib_destroy_cq(ele->send_cq);
+        if (likely(ele->qp_attr.send_cq))
+            ret |= ib_destroy_cq(ele->qp_attr.send_cq);
 
-        if (likely(ele->recv_cq))
-            ret |= ib_destroy_cq(ele->recv_cq);
+        if (likely(ele->qp_attr.recv_cq))
+            ret |= ib_destroy_cq(ele->qp_attr.recv_cq);
 
         if (likely(ele->mr))
             ret |= ib_dereg_mr(ele->mr);

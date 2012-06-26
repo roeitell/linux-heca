@@ -214,8 +214,6 @@ struct conn_element {
     struct ib_mr *mr;
     struct ib_pd *pd;
     struct rdma_cm_id *cm_id;
-    struct ib_cq *send_cq;
-    struct ib_cq *recv_cq;
 
     struct work_struct send_work;
     struct work_struct recv_work;

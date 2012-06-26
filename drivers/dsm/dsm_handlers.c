@@ -371,10 +371,10 @@ void send_cq_handle_work(struct work_struct *work)
             send_work);
     int ret = 0;
 
-    dsm_send_poll(ele->send_cq);
-    ret = ib_req_notify_cq(ele->send_cq,
+    dsm_send_poll(ele->qp_attr.send_cq);
+    ret = ib_req_notify_cq(ele->qp_attr.send_cq,
             IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-    dsm_send_poll(ele->send_cq);
+    dsm_send_poll(ele->qp_attr.send_cq);
     if (ret > 0)
         queue_send_work(ele);
 }
@@ -385,10 +385,10 @@ void recv_cq_handle_work(struct work_struct *work)
             recv_work);
     int ret = 0;
 
-    dsm_recv_poll(ele->recv_cq);
-    ret = ib_req_notify_cq(ele->recv_cq,
+    dsm_recv_poll(ele->qp_attr.recv_cq);
+    ret = ib_req_notify_cq(ele->qp_attr.recv_cq,
             IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
-    dsm_recv_poll(ele->recv_cq);
+    dsm_recv_poll(ele->qp_attr.recv_cq);
     flush_dsm_request_queue(ele);
     if (ret > 0)
         queue_recv_work(ele);

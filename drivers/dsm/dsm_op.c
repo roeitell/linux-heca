@@ -6,6 +6,30 @@
 #include <linux/list.h>
 #include <dsm/dsm_module.h>
 
+int get_nb_tx_buff_elements(struct conn_element *ele) {
+
+    return ele->qp_attr.cap.max_send_wr >> 1;
+
+}
+
+int get_nb_rx_buff_elements(struct conn_element *ele) {
+
+    return ele->qp_attr.cap.max_recv_wr;
+
+}
+
+int get_page_pool_size(struct conn_element *ele) {
+
+    return (get_nb_rx_buff_elements(ele) + get_nb_tx_buff_elements(ele)) << 1;
+
+}
+
+int get_max_pushed_reqs(struct conn_element *ele) {
+
+    return get_nb_tx_buff_elements(ele) << 2;
+}
+
+
 static int rcm_disconnect(struct rcm *rcm)
 {
     struct rb_root *root = &rcm->root_conn;
@@ -34,7 +58,7 @@ static void destroy_tx_buffer(struct conn_element *ele)
     if (!tx_buf)
         return;
 
-    for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
+    for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
         if (tx_buf[i].dsm_dma.addr) {
             ib_dma_unmap_single(ele->cm_id->device, tx_buf[i].dsm_dma.addr,
                     tx_buf[i].dsm_dma.size, tx_buf[i].dsm_dma.dir);
@@ -56,7 +80,7 @@ static void destroy_rx_buffer(struct conn_element *ele)
     if (!rx)
         return;
 
-    for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
+    for (i = 0; i < get_nb_rx_buff_elements(ele); ++i) {
         if (rx[i].dsm_dma.addr) {
             ib_dma_unmap_single(ele->cm_id->device, rx[i].dsm_dma.addr,
                     rx[i].dsm_dma.size, rx[i].dsm_dma.dir);
@@ -126,14 +150,14 @@ static int create_rx_buffer(struct conn_element *ele)
     int i;
     int undo = 0;
     struct rx_buf_ele *rx = kzalloc(
-            (sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM), GFP_KERNEL);
+            (sizeof(struct rx_buf_ele) * get_nb_tx_buff_elements(ele)), GFP_KERNEL);
 
     if (!rx)
         goto err_buf;
 
     ele->rx_buffer.rx_buf = rx;
 
-    for (i = 0; i < RX_BUF_ELEMENTS_NUM; ++i) {
+    for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
         rx[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (!rx[i].dsm_buf)
             goto err1;
@@ -171,7 +195,7 @@ err1:
         kfree(rx[undo].dsm_buf);
         kfree(rx[undo].recv_wrk_rq_ele);
     }
-    memset(rx, 0, sizeof(struct rx_buf_ele) * RX_BUF_ELEMENTS_NUM);
+    memset(rx, 0, sizeof(struct rx_buf_ele) * get_nb_tx_buff_elements(ele));
     kfree(rx);
     ele->rx_buffer.rx_buf = 0;
 err_buf:
@@ -283,7 +307,7 @@ static void format_rdma_info(struct conn_element *ele) {
     ele->rid.send_buf->node_ip = htonl(ele->rcm->node_ip);
     ele->rid.send_buf->buf_rx_addr = htonll((u64) ele->rx_buffer.rx_buf);
     ele->rid.send_buf->buf_msg_addr = htonll((u64) ele->tx_buffer.tx_buf);
-    ele->rid.send_buf->rx_buf_size = htonl(RX_BUF_ELEMENTS_NUM);
+    ele->rid.send_buf->rx_buf_size = htonl(get_nb_tx_buff_elements(ele));
     ele->rid.send_buf->rkey_msg = htonl(ele->mr->rkey);
     ele->rid.send_buf->rkey_rx = htonl(ele->mr->rkey);
     ele->rid.send_buf->flag = RDMA_INFO_CL;
@@ -313,7 +337,7 @@ static int create_page_pool(struct conn_element *ele)
 
     init_llist_head(&pp->page_empty_pool_list);
 
-    for (i = 0; i < PAGE_POOL_SIZE; i++) {
+    for (i = 0; i < get_page_pool_size(ele); i++) {
         ret = create_new_empty_page_pool_element(ele);
         if (ret)
             break;
@@ -389,8 +413,8 @@ static int init_tx_lists(struct conn_element *ele)
 {
     int i;
     struct tx_buffer *tx = &ele->tx_buffer;
-    int max_tx_send = TX_BUF_ELEMENTS_NUM / 3;
-    int max_tx_reply = TX_BUF_ELEMENTS_NUM;
+    int max_tx_send = get_nb_tx_buff_elements(ele) / 3;
+    int max_tx_reply = get_nb_tx_buff_elements(ele);
 
     tx->request_queue_sz = 0;
     init_llist_head(&tx->request_queue);
@@ -499,7 +523,7 @@ static int create_tx_buffer(struct conn_element *ele) {
     BUG_ON(!ele->cm_id->device);
     might_sleep();
 
-    tx_buff_e = kzalloc((sizeof(struct tx_buf_ele) * TX_BUF_ELEMENTS_NUM),
+    tx_buff_e = kzalloc((sizeof(struct tx_buf_ele) * get_nb_tx_buff_elements(ele)),
         GFP_KERNEL);
     if (unlikely(!tx_buff_e)) {
         dsm_printk(KERN_ERR "Can't allocate memory");
@@ -507,7 +531,7 @@ static int create_tx_buffer(struct conn_element *ele) {
     }
     ele->tx_buffer.tx_buf = tx_buff_e;
 
-    for (i = 0; i < TX_BUF_ELEMENTS_NUM; ++i) {
+    for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
         tx_buff_e[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (!tx_buff_e[i].dsm_buf) {
             dsm_printk(KERN_ERR "Failed to allocate .dsm_buf");
@@ -760,7 +784,7 @@ int setup_recv_wr(struct conn_element *ele)
     if (unlikely(!rx))
         return -1;
 
-    for (i = 0; i < (RX_BUF_ELEMENTS_NUM - 1); ++i) {
+    for (i = 0; i < (get_nb_tx_buff_elements(ele) - 1); ++i) {
         if (refill_recv_wr(ele, &rx[i]))
             return -1;
 
@@ -1203,7 +1227,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
 
     tx_buf = ele->tx_buffer.tx_buf;
 
-    for (i = 0; i < TX_BUF_ELEMENTS_NUM; i++) {
+    for (i = 0; i < get_nb_tx_buff_elements(ele); i++) {
         struct dsm_message *msg = tx_buf[i].dsm_buf;
 
         if (msg->dsm_id == svm->dsm->dsm_id &&

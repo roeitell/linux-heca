@@ -48,6 +48,11 @@ void __dsm_printk(unsigned int, const char *, int, const char *, ...);
  */
 unsigned int inet_addr(char *);
 
+int get_nb_tx_buff_elements(struct conn_element *);
+int get_nb_rx_buff_elements(struct conn_element *);
+int get_page_pool_size(struct conn_element *);
+int get_max_pushed_reqs(struct conn_element *);
+
 int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element *);

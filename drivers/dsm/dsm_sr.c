@@ -79,7 +79,7 @@ static inline int request_queue_empty(struct conn_element *ele)
 
 static inline int request_queue_full(struct conn_element *ele)
 {
-    return ele->tx_buffer.request_queue_sz > MAX_QUEUED_PUSH_REQS;
+    return ele->tx_buffer.request_queue_sz > get_max_pushed_reqs(ele);
 }
 
 static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
@@ -410,7 +410,7 @@ int exchange_info(struct conn_element *ele, int id)
             ele->rid.send_buf->flag = RDMA_INFO_READY_SV;
             ret = setup_recv_wr(ele);
             refill_recv_wr(ele,
-                    &ele->rx_buffer.rx_buf[RX_BUF_ELEMENTS_NUM - 1]);
+                    &ele->rx_buffer.rx_buf[get_nb_tx_buff_elements(ele) - 1]);
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
 
             ele->remote_node_ip = (int) ele->rid.remote_info->node_ip;
@@ -445,7 +445,7 @@ int exchange_info(struct conn_element *ele, int id)
         }
         case RDMA_INFO_READY_SV: {
             refill_recv_wr(ele,
-                    &ele->rx_buffer.rx_buf[RX_BUF_ELEMENTS_NUM - 1]);
+                    &ele->rx_buffer.rx_buf[get_nb_tx_buff_elements(ele) - 1]);
 
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
             //Server acknowledged --> connection is complete.

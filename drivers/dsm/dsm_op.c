@@ -190,10 +190,8 @@ static int create_qp(struct conn_element *ele)
     int ret = -1;
     struct ib_qp_init_attr * attr;
 
-    kmalloc(sizeof *attr, GFP_KERNEL);
-    if(!attr)
-        goto exit;
-    memset(&attr, 0, sizeof attr);
+    attr = &ele->qp_attr;
+
 
 //The attribute shall be modifiable
     attr->send_cq = ele->send_cq;
@@ -208,21 +206,14 @@ static int create_qp(struct conn_element *ele)
     attr->qp_context = (void *) ele;
 
     if (unlikely(!ele->cm_id))
-        goto free_attr;
+        goto exit;
 
     if (unlikely(!ele->pd))
-        goto free_attr;
+        goto exit;
 
 
     ret = rdma_create_qp(ele->cm_id, ele->pd, attr);
-    if(ret)
-        goto free_attr;
 
-    ele->qp_attr =attr;
-    return ret;
-
-free_attr:
-    kfree(attr);
 exit:
     return ret;
 }

@@ -208,7 +208,7 @@ struct conn_element {
 
     int remote_node_ip;
     struct rdma_info_data rid;
-    truct ib_qp_init_attr *qp_attr;
+    struct ib_qp_init_attr *qp_attr;
     struct ib_mr *mr;
     struct ib_pd *pd;
     struct rdma_cm_id *cm_id;

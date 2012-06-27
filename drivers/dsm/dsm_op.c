@@ -190,7 +190,7 @@ static int create_rx_buffer(struct conn_element *ele) {
     return -1;
 }
 
-static inline setup_IB_attr(struct ib_qp_init_attr * attr,
+static inline void  setup_IB_attr(struct ib_qp_init_attr * attr,
         struct ib_device_attr dev_attr) {
     attr->cap.max_send_wr = min(dev_attr.max_qp_wr, IB_MAX_CAP_SCQ);
     attr->cap.max_recv_wr = min(dev_attr.max_qp_wr, IB_MAX_CAP_RCQ);
@@ -199,7 +199,7 @@ static inline setup_IB_attr(struct ib_qp_init_attr * attr,
 
 }
 
-static inline setup_IW_attr(struct ib_qp_init_attr * attr,
+static inline void  setup_IW_attr(struct ib_qp_init_attr * attr,
         struct ib_device_attr dev_attr) {
     attr->cap.max_send_wr = min(dev_attr.max_qp_wr, IW_MAX_CAP_SCQ);
     attr->cap.max_recv_wr = min(dev_attr.max_qp_wr, IW_MAX_CAP_RCQ);
@@ -219,7 +219,7 @@ static inline int setup_qp_attr(struct conn_element *ele) {
     attr->qp_type = IB_QPT_RC;
     attr->port_num = ele->cm_id->port_num;
     attr->qp_context = (void *) ele;
-    if (ele->cm_id->device->node_type == RDMA_NODE_NIC)
+    if (ele->cm_id->device->node_type == RDMA_NODE_RNIC)
         setup_IW_attr(attr, dev_attr);
     else
         setup_IB_attr(attr, dev_attr);
@@ -266,7 +266,7 @@ static int setup_qp(struct conn_element *ele) {
     INIT_WORK(&ele->recv_work, recv_cq_handle_work);
 
     ele->qp_attr.send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle,
-            dsm_cq_event_handler, (void *) ele, MAX_CAP_SCQ, 0);
+            dsm_cq_event_handler, (void *) ele, ele->qp_attr.cap.max_send_wr, 0);
     if (IS_ERR(ele->qp_attr.send_cq)) {
         printk(">[setup_qp] - Cannot create cq\n");
         goto err1;
@@ -278,7 +278,7 @@ static int setup_qp(struct conn_element *ele) {
     }
 
     ele->qp_attr.recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle,
-            dsm_cq_event_handler, (void *) ele, MAX_CAP_RCQ, 0);
+            dsm_cq_event_handler, (void *) ele, ele->qp_attr.cap.max_recv_wr, 0);
     if (IS_ERR(ele->qp_attr.recv_cq)) {
         printk(">[setup_qp] - Cannot create cq\n");
         goto err3;

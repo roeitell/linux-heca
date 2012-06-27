@@ -900,12 +900,12 @@ int setup_connection(struct conn_element *ele, int type) {
         goto err9;
 
     if (type) {
-//        dsm_recv_info(ele);
-//
-//        memset(&conn_param, 0, sizeof(struct rdma_conn_param));
-//        conn_param.responder_resources = 1;
-//        conn_param.initiator_depth = 1;
-//
+        dsm_recv_info(ele);
+
+        memset(&conn_param, 0, sizeof(struct rdma_conn_param));
+        conn_param.responder_resources = 1;
+        conn_param.initiator_depth = 1;
+
 //        if (rdma_accept(ele->cm_id, &conn_param))
 //            goto err10;
     }

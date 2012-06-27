@@ -906,8 +906,8 @@ int setup_connection(struct conn_element *ele, int type) {
         conn_param.responder_resources = 1;
         conn_param.initiator_depth = 1;
 
-//        if (rdma_accept(ele->cm_id, &conn_param))
-//            goto err10;
+        if (rdma_accept(ele->cm_id, &conn_param))
+            goto err10;
     }
 
     return ret;

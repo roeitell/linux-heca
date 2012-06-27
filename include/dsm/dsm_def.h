@@ -31,10 +31,15 @@
 
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
-#define MAX_CAP_SCQ 256
-#define MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
-#define MAX_SEND_SGE 4
-#define MAX_RECV_SGE 4
+#define IB_MAX_CAP_SCQ 256
+#define IB_MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
+#define IB_MAX_SEND_SGE 2
+#define IB_MAX_RECV_SGE 2
+
+#define IW_MAX_CAP_SCQ 256
+#define IW_MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
+#define IW_MAX_SEND_SGE 2
+#define IW_MAX_RECV_SGE 2
 
 
 #define MAX_SVMS_PER_PAGE 2

@@ -15,8 +15,8 @@
 
 
 TRACE_EVENT(do_dsm_page_fault,
-        TP_PROTO(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long address, pte_t *page_table, pmd_t *pmd, unsigned int flags, pte_t orig_pte, swp_entry_t entry),
-        TP_ARGS(mm, vma, address, page_table, pmd, flags, orig_pte, entry),
+        TP_PROTO(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long address, pte_t *page_table, pmd_t *pmd, unsigned int flags, pte_t orig_pte, swp_entry_t swp_entry),
+        TP_ARGS(mm, vma, address, page_table, pmd, flags, orig_pte, swp_entry),
 
         TP_STRUCT__entry( __field(u32 , mm ) __field(unsigned long, fault_addr)  __field(unsigned long, page_addr) __field(unsigned int, flags) ),
 

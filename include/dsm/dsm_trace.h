@@ -24,6 +24,6 @@ TRACE_EVENT(do_dsm_page_fault,
 #endif
 
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH .
+#define TRACE_INCLUDE_PATH include/dsm
 #define TRACE_INCLUDE_FILE dsm_trace
 #include <trace/define_trace.h>

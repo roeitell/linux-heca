@@ -3,6 +3,7 @@
  * Author : benoit.hudzia@sap.com
  */
 
+
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM dsm
 
@@ -10,6 +11,8 @@
 #define DSM_TRACE_H_
 
 #include <linux/tracepoint.h>
+
+
 
 TRACE_EVENT(do_dsm_page_fault,
         TP_PROTO(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long address, pte_t *page_table, pmd_t *pmd, unsigned int flags, pte_t orig_pte, swp_entry_t entry),
@@ -24,6 +27,6 @@ TRACE_EVENT(do_dsm_page_fault,
 #endif
 
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH include/dsm
+#define TRACE_INCLUDE_PATH ../../include/dsm
 #define TRACE_INCLUDE_FILE dsm_trace
 #include <trace/define_trace.h>

@@ -3,14 +3,13 @@
  * Author : benoit.hudzia@sap.com
  */
 
+#undef TRACE_SYSTEM
+#define TRACE_SYSTEM dsm
+
 #if !defined(DSM_TRACE_H_) || defined(TRACE_HEADER_MULTI_READ)
 #define DSM_TRACE_H_
 
 #include <linux/tracepoint.h>
-
-
-#undef TRACE_SYSTEM
-#define TRACE_SYSTEM dsm
 
 TRACE_EVENT(do_dsm_page_fault,
         TP_PROTO(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long address, pte_t *page_table, pmd_t *pmd, unsigned int flags, pte_t orig_pte, swp_entry_t entry),

@@ -7,6 +7,10 @@
 
 #include <dsm/dsm_module.h>
 
+#define CREATE_TRACE_POINTS
+#include <dsm/dsm_trace.h>
+
+
 unsigned long zero_dsm_pfn __read_mostly;
 
 static int __init init_dsm_zero_pfn(void)
@@ -687,9 +691,14 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct mem_cgroup *ptr;
     pte_t pte;
 
+
+    trace_do_dsm_page_fault(mm, vma, address, page_table, pmd, flags, orig_pte,
+            entry);
+
     if (swp_entry_to_dsm_data(entry, &dsd) < 0)
         BUG();
     fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
+
 
     /*
      * If page is currently being pushed, halt the push, re-claim the page and

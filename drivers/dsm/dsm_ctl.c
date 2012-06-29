@@ -729,7 +729,7 @@ static void dsm_exit(void)
 module_exit(dsm_exit);
 
 MODULE_VERSION("0.0.1");
-MODULE_AUTHOR("virtex");
-MODULE_DESCRIPTION("");
+MODULE_AUTHOR("Benoit Hudzia");
+MODULE_DESCRIPTION("Distributed Shared memory Module");
 MODULE_LICENSE("GPL");
 

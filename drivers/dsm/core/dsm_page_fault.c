@@ -324,11 +324,11 @@ unlock:
             unsigned long addr = tx_e->dsm_buf->req_addr +
                 dpc->svm->priv->offset;
 
-            use_mm(dpc->svm->priv->mm);
-            down_read(&mm->mmap_sem);
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            up_read(&mm->mmap_sem);
-            unuse_mm(mm);
+//            use_mm(dpc->svm->priv->mm);
+//            down_read(&mm->mmap_sem);
+//            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+//            up_read(&mm->mmap_sem);
+//            unuse_mm(mm);
 
             dsm_stats_inc(dpc->tag == PREFETCH_TAG?
                     &dpc->svm->svm_sysfs.nb_prefetch_success :
@@ -760,8 +760,8 @@ lock:
         if (dpc->tag == PULL_TAG) {
             for (j = 1; j < 2; j++) {
                 /* original fault already finished, bail out */
-                if (atomic_read(&dpc->found) >= 0)
-                    break;
+//                if (atomic_read(&dpc->found) >= 0)
+//                    break;
                 else {
                     get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
                             PREFETCH_TAG);

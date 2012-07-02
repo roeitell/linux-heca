@@ -22,22 +22,22 @@ TRACE_EVENT(dsm_swap_wrapper,
         TP_printk("Do DSM page fault START for mm %p  at addr : %p in page addr %p with flags %u ", __entry->mm, __entry->fault_addr, __entry->page_addr, __entry->flags ));
 
 TRACE_EVENT(do_dsm_page_fault_svm,
-        TP_PROTO(u32 dsm_id, u32 svm_id, unsigned long address, u32 dsd_flags),
+        TP_PROTO(int dsm_id, int svm_id, unsigned long address, int dsd_flags),
         TP_ARGS(dsm_id, svm_id, address, dsd_flags),
 
         TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(void *, page_addr) __field(u32, flags) ),
 
-        TP_fast_assign( __entry->dsm_id = (int)dsm_id; __entry->svm_id = (int)svm_id; __entry->page_addr = (void *)address ; __entry->flags = dsd_flags ),
+        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->page_addr = (void *)address ; __entry->flags = dsd_flags ),
 
         TP_printk("Do DSM Page Fault called from DSM %d - SVM %d  at page addr %p with dsd flags %u ", __entry->dsm_id, __entry->svm_id, __entry->page_addr, __entry->flags ));
 
 TRACE_EVENT(do_dsm_page_fault_svm_complete,
-        TP_PROTO(u32 dsm_id, u32 svm_id, unsigned long address),
+        TP_PROTO(int dsm_id, int svm_id, unsigned long address),
         TP_ARGS(dsm_id, svm_id, address),
 
         TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(void *, page_addr) ),
 
-        TP_fast_assign( __entry->dsm_id = (int)dsm_id; __entry->svm_id =(int) svm_id; __entry->page_addr = (void *)address ),
+        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->page_addr = (void *)address ),
 
         TP_printk("Do DSM Page Fault Completed from DSM %d - SVM %d  at page addr %p  ", __entry->dsm_id, __entry->svm_id, __entry->page_addr));
 

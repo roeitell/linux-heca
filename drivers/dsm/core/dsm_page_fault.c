@@ -698,6 +698,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         BUG();
     fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
 
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id, norm_addr, dsd.flags);
+
 
     /*
      * If page is currently being pushed, halt the push, re-claim the page and
@@ -855,6 +857,7 @@ lock:
     update_mmu_cache(vma, address, page_table);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
+    trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id, norm_addr);
     goto out;
 
 out_nomap: 

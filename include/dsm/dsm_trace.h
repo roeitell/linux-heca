@@ -19,7 +19,7 @@ TRACE_EVENT(dsm_swap_wrapper,
 
         TP_fast_assign( __entry->mm = (void *) mm; __entry->fault_addr = (void *) address; __entry->page_addr = (void *) (address & PAGE_MASK); __entry->flags = flags ),
 
-        TP_printk("Do DSM page fault START for mm %p  at addr : %p in page addr %p with flags %u ", __entry->mm, __entry->fault_addr, __entry->page_addr, __entry->flags ));
+        TP_printk("Do DSM Swap Wrapper  for mm %p  at addr : %p in page addr %p with flags %u ", __entry->mm, __entry->fault_addr, __entry->page_addr, __entry->flags ));
 
 TRACE_EVENT(do_dsm_page_fault_svm,
         TP_PROTO(int dsm_id, int svm_id, unsigned long address, int dsd_flags),

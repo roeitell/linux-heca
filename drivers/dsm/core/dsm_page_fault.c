@@ -758,15 +758,15 @@ lock:
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         /* Naive prefetch */
         if (dpc->tag == PULL_TAG) {
-            for (j = 1; j < 2; j++) {
-                /* original fault already finished, bail out */
-//                if (atomic_read(&dpc->found) >= 0)
-//                    break;
+            for (j = 1; j < 20; j++) {
                 get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
                         PREFETCH_TAG);
                 if (address > (j * PAGE_SIZE))
                     get_dsm_page(mm, address - j * PAGE_SIZE, fault_svm,
                             PREFETCH_TAG);
+                /* original fault already finished, bail out */
+                if (!(atomic_read(&(dpc->found)) < 0))
+                    break;
 
             }
         }

@@ -338,7 +338,8 @@ unlock:
         }
 
     }
-
+    trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
+            tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
     dpc_nproc_dec(&dpc, 1);
     return 1;
 }
@@ -377,6 +378,9 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
                     dpc->svm->priv->offset);
             dpc_nproc_dec(&dpc, 1);
         }
+        trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
+                dpc->svm->svm_id,
+                tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
         goto out;
     }
 
@@ -404,6 +408,7 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
         dsm_try_pull_req_complete : dsm_pull_req_complete;
 
     SetPageSwapBacked(page);
+    trace_dsm_get_remote_page(fault_svm->dsm->dsm_id , fault_svm->svm_id, remote_svm->dsm->dsm_id , remote_svm->svm_id, tag, i );
     request_dsm_page_op(page, remote_svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag, dpc);
 

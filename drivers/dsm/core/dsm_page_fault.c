@@ -692,8 +692,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     pte_t pte;
 
 
-    trace_do_dsm_page_fault(mm, vma, address, page_table, pmd, flags, orig_pte,
-            entry);
+
 
     if (swp_entry_to_dsm_data(entry, &dsd) < 0)
         BUG();
@@ -884,8 +883,12 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
 #ifdef CONFIG_DSM_CORE
+    trace_do_dsm_page_fault_start(mm, vma, address, page_table, pmd, flags, orig_pte,
+                entry);
     return do_dsm_page_fault(mm, vma, address, page_table, pmd, flags,
             orig_pte, entry);
+    trace_do_dsm_page_fault_end(mm, vma, address, page_table, pmd, flags, orig_pte,
+                entry);
 #else
     return 0;
 #endif

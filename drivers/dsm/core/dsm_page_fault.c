@@ -762,13 +762,12 @@ lock:
                 /* original fault already finished, bail out */
 //                if (atomic_read(&dpc->found) >= 0)
 //                    break;
-                else {
-                    get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
+                get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
+                        PREFETCH_TAG);
+                if (address > (j * PAGE_SIZE))
+                    get_dsm_page(mm, address - j * PAGE_SIZE, fault_svm,
                             PREFETCH_TAG);
-                    if (address > (j * PAGE_SIZE))
-                        get_dsm_page(mm, address - j * PAGE_SIZE, fault_svm,
-                                PREFETCH_TAG);
-                }
+
             }
         }
 

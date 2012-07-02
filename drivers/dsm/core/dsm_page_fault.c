@@ -754,27 +754,39 @@ retry:
      * so we just re-throw immediately. Otherwise, we wait until the bitlock is
      * cleared, then re-throw the fault.
      */
-lock:
-    if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
-        /* Naive prefetch */
-        if (dpc->tag == PULL_TAG) {
-            for (j = 1; j < 20; j++) {
-                get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm,
-                        PREFETCH_TAG);
-                if (address > (j * PAGE_SIZE))
-                    get_dsm_page(mm, address - j * PAGE_SIZE, fault_svm,
-                            PREFETCH_TAG);
-                /* original fault already finished, bail out */
-                if (!(atomic_read(&(dpc->found)) < 0))
-                    break;
 
-            }
+
+    if (flags & FAULT_FLAG_ALLOW_RETRY  && dpc->tag == PULL_TAG)
+    {
+        int max_retry ;
+        /* we want here an optimisation for the nowait option */
+        if(flags & FAULT_FLAG_RETRY_NOWAIT)
+                max_retry = 10;
+        else
+                max_retry = 20;
+        for (j = 1; j < max_retry; j++){
+                get_dsm_page(mm, address + j * PAGE_SIZE,
+                        fault_svm, PREFETCH_TAG);
+                if (address > (j * PAGE_SIZE))
+                        get_dsm_page(mm,
+                        address - j * PAGE_SIZE,
+                        fault_svm,
+                        PREFETCH_TAG);
+        /* original fault already finished, bail out */
+                if (trylock_page(dpc->pages[0]))
+                        goto resolve;
+
         }
 
+    }
+
+lock:
+    if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
         goto out;
     }
 
+resolve:
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
          /* the try pull failed so we need to rethrow the request */

@@ -3,7 +3,7 @@
 
 const struct dsm_hook_struct *dsm_hook;
 EXPORT_SYMBOL(dsm_hook);
-
+#ifdef CONFIG_DSM
 const struct dsm_hook_struct *dsm_hook_read(void)
 {
     const struct dsm_hook_struct *hook;
@@ -77,4 +77,15 @@ EXPORT_SYMBOL(ptep_set_access_flags);
 
 #include "internal.h"
 EXPORT_SYMBOL(munlock_vma_page);
+
+#else
+const struct dsm_hook_struct *dsm_hook_read(void) {
+    return NULL;
+}
+EXPORT_SYMBOL(dsm_hook_read);
+
+void dsm_hook_write(const struct dsm_hook_struct *hook) {
+}
+EXPORT_SYMBOL(dsm_hook_write);
+#endif
 

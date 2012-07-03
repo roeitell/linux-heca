@@ -1,6 +1,6 @@
 config DSM
 	tristate "DSM"
-	depends on RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET && MMU_NOTIFIER && MMU
+	depends on NUMA && RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET && MMU_NOTIFIER && MMU
 	default m
 	help
 	  Enable DSM - running single VM over several linux hosts with qemu/kvm.

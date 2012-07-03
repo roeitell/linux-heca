@@ -47,10 +47,11 @@
 #include <asm/div64.h>
 
 #include <linux/swapops.h>
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#include <linux/dsm_hook.h>
+#endif
 
 #include "internal.h"
-
-#include <dsm/dsm_mem.h>
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/vmscan.h>
@@ -848,11 +849,19 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 		if (PageAnon(page) && !PageSwapCache(page)) {
 			if (!(sc->gfp_mask & __GFP_IO))
 				goto keep_locked;
-			if (push_back_if_remote_dsm_page(page)) {
-				nr_dirty++;
-				unlock_page(page);
-				goto keep_lumpy;
-			}
+
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+            {
+                const struct dsm_hook_struct *hook = dsm_hook_read();
+
+                if (hook && hook->pushback_page(page)) {
+                    nr_dirty++;
+                    unlock_page(page);
+                    goto keep_lumpy;
+                }
+            }
+#endif
+
 			if (!add_to_swap(page))
 				goto activate_locked;
 			may_enter_fs = 1;

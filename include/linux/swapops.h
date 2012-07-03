@@ -192,7 +192,7 @@ static inline int non_swap_entry(swp_entry_t entry)
 }
 #endif
 
-#ifdef CONFIG_DSM_CORE
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
 static inline int is_dsm_entry(swp_entry_t entry)
 {
 	return swp_type(entry) == SWP_DSM;
@@ -213,7 +213,7 @@ static inline int is_dsm_entry(swp_entry_t entry)
 	return 0;
 }
 
-static inline swp_entry_t val_to_dsm_entry(u32 dsm_id, u32 vm_id)
+static inline swp_entry_t val_to_dsm_entry(unsigned long val)
 {
 	return swp_entry(0, 0);
 }
@@ -222,6 +222,6 @@ static inline unsigned long dsm_entry_to_val(swp_entry_t entry)
 {
     return 0;
 }
-#endif /* CONFIG_DSM */
+#endif
 
 #endif /* _LINUX_SWAPOPS_H */

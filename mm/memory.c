@@ -64,10 +64,11 @@
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 #include <asm/pgtable.h>
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#include <linux/dsm_hook.h>
+#endif
 
 #include "internal.h"
-
-#include <dsm/dsm_mem.h>
 
 #ifndef CONFIG_NEED_MULTIPLE_NODES
 /* use the per-pgdat data instead for discontigmem - mbligh */
@@ -2904,10 +2905,22 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			migration_entry_wait(mm, pmd, address);
 		} else if (is_hwpoison_entry(entry)) {
 			ret = VM_FAULT_HWPOISON;
-                } else if (is_dsm_entry(entry)) {
-	                ret = dsm_swap_wrapper(mm, vma, address, page_table, pmd, flags,  orig_pte, entry);
-                        goto out;
-		} else {
+        }
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+        else if (is_dsm_entry(entry)) {
+            const struct dsm_hook_struct *hook = dsm_hook_read();
+
+            if (hook) {
+                ret = hook->fetch_page(mm, vma, address,
+                    page_table, pmd, flags, orig_pte, entry);
+            } else {
+                print_bad_pte(vma, address, orig_pte, NULL);
+                ret = VM_FAULT_SIGBUS;
+            }
+            goto out;
+		}
+#endif
+        else {
 			print_bad_pte(vma, address, orig_pte, NULL);
 			ret = VM_FAULT_SIGBUS;
 		}

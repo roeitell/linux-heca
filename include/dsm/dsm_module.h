@@ -14,13 +14,13 @@
 #include <linux/byteorder/generic.h>
 #include <linux/miscdevice.h>
 #include <linux/hash.h>
-
 #include <linux/fs.h>
 #include <linux/rculist.h>
 #include <linux/socket.h>
 #include <linux/kernel.h>
 #include <linux/stat.h>
 #include <linux/kobject.h>
+#include <linux/writeback.h>
 
 #include <asm/byteorder.h>
 #include <asm/uaccess.h>
@@ -35,12 +35,16 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
+<<<<<<< HEAD
 
 /*
  * dsm_utils
  */
+=======
+>>>>>>> master
 
-void __dsm_printk(unsigned int, const char *, int, const char *, ...);
+void __dsm_printk(unsigned int level, const char *path, int line,
+    const char *format, ...);
 #define dsm_printk(fmt, args...) \
     __dsm_printk(0, __FILE__, __LINE__, fmt, ##args);
 

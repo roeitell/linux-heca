@@ -5,6 +5,8 @@
 
 #include <linux/list.h>
 #include <linux/delay.h>
+#include <linux/dsm_hook.h>
+#include <dsm/dsm_mem.h>
 #include <dsm/dsm_module.h>
 
 static char *ip = 0;
@@ -687,11 +689,17 @@ static struct file_operations rdma_fops = { .owner = THIS_MODULE,
 static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "rdma",
     &rdma_fops, };
 
+const struct dsm_hook_struct my_dsm_hook = {
+    .name = "DSM",
+    .fetch_page = dsm_swap_wrapper,
+    .pushback_page = push_back_if_remote_dsm_page,
+};
+
 static int dsm_init(void)
 {
     struct dsm_module_state *dsm_state = create_dsm_module_state();
 
-    reg_dsm_functions(&request_dsm_page, &dsm_request_page_pull);
+    dsm_zero_pfn_init();
 
     printk("[dsm_init] ip : %s\n", ip);
     printk("[dsm_init] port : %d\n", port);
@@ -700,11 +708,11 @@ static int dsm_init(void)
         goto err;
 
     if (dsm_sysfs_setup(dsm_state)) {
-        dereg_dsm_functions();
         destroy_rcm(dsm_state);
     }
 
     rdma_listen(dsm_state->rcm->cm_id, 2);
+    dsm_hook_write(&my_dsm_hook);
 err: 
     return misc_register(&rdma_misc);
 }
@@ -714,12 +722,16 @@ static void dsm_exit(void)
 {
     struct dsm *dsm = NULL;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
+
+    dsm_hook_write(NULL);
+
+    dsm_zero_pfn_exit();
+
     while (!list_empty(&dsm_state->dsm_list)) {
         dsm = list_first_entry(&dsm_state->dsm_list, struct dsm, dsm_ptr);
         remove_dsm(dsm);
     }
 
-    dereg_dsm_functions();
     dsm_sysfs_cleanup(dsm_state);
     destroy_rcm(dsm_state);
 

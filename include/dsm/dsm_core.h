@@ -5,8 +5,8 @@
  *      Author: Benoit Hudzia
  */
 
-#ifndef DSM_PAGE_FAULT_H_
-#define DSM_PAGE_FAULT_H_
+#ifndef DSM_CORE_H_
+#define DSM_CORE_H_
 
 #include <linux/pagemap.h>
 #include <linux/types.h>
@@ -64,36 +64,12 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *, unsigned long,
         struct svm_list, int, int);
 void dsm_dealloc_dpc(struct dsm_page_cache **);
 
-struct dsm_functions {
-
-    int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
-            struct subvirtual_machine *, uint64_t,
-            int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *);
-    int (*dsm_request_page_pull)(struct dsm *, struct subvirtual_machine *,
-            struct page *, unsigned long, struct mm_struct *,
-            struct memory_region *);
-};
-
-// dsm_unmap
-void reg_dsm_functions(
-        int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
-                struct subvirtual_machine *, uint64_t,
-                int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache*),
-        int (*dsm_request_page_pull)(struct dsm *, struct subvirtual_machine *,
-                struct page *, unsigned long, struct mm_struct *,
-                struct memory_region *));
-
-int request_dsm_page_op(struct page *, struct subvirtual_machine *,
+int request_dsm_page(struct page *, struct subvirtual_machine *,
         struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
         int, struct dsm_page_cache *);
-int dsm_request_page_pull_op(struct dsm *, struct subvirtual_machine *,
+int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct page *, unsigned long, struct mm_struct *,
         struct memory_region *);
-
-/* dsm_unmap.c */
-extern struct dsm_functions *funcs;
-void dereg_dsm_functions(void);
-int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32, unsigned long);
 
 /* dsm_page_request.c */
 struct page *dsm_extract_page_from_remote(struct dsm *,
@@ -108,6 +84,10 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,
         unsigned long);
 void dsm_push_finish_notify(struct page *);
 
+/* dsm_unmap.c */
+int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
+        unsigned long request_addr);
+
 /* dsm_page_fault.c */
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
@@ -119,4 +99,6 @@ swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
 struct svm_list dsm_descriptor_to_svms(u32);
 u32 dsm_get_descriptor(struct dsm *, u32 *);
 
-#endif /* DSM_PAGE_FAULT_H_ */
+int dsm_zero_pfn_init(void);
+void dsm_zero_pfn_exit(void);
+#endif /* DSM_CORE_H_ */

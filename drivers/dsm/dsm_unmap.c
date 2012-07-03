@@ -7,56 +7,6 @@
 
 #include <dsm/dsm_core.h>
 
-struct dsm_functions *funcs = NULL;
-
-void reg_dsm_functions(
-        int (*request_dsm_page)(struct page *, struct subvirtual_machine *,
-                struct subvirtual_machine *, uint64_t,
-                int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *),
-        int (*dsm_request_page_pull)(struct dsm *, struct subvirtual_machine *,
-                struct page *, unsigned long, struct mm_struct *,
-                struct memory_region *))
-{
-    struct dsm_functions *tmp;
-
-    tmp = kmalloc(sizeof(*funcs), GFP_KERNEL);
-    tmp->request_dsm_page = request_dsm_page;
-    tmp->dsm_request_page_pull = dsm_request_page_pull;
-    funcs = tmp;
-
-}
-EXPORT_SYMBOL(reg_dsm_functions);
-
-void dereg_dsm_functions(void)
-{
-    struct dsm_functions * tmp = funcs;
-    funcs = NULL;
-    kfree(tmp);
-}
-EXPORT_SYMBOL(dereg_dsm_functions);
-
-inline int request_dsm_page_op(struct page *page,
-        struct subvirtual_machine *svm, struct subvirtual_machine *svm2,
-        uint64_t addr, int (*func)(struct tx_buf_ele *), int tag,
-        struct dsm_page_cache *dpc)
-{
-    if (likely(funcs))
-        return funcs->request_dsm_page(page, svm, svm2, addr, func, tag, dpc);
-    return -1;
-}
-
-inline int dsm_request_page_pull_op(struct dsm *dsm,
-        struct subvirtual_machine *fault_svm, struct page *page,
-        unsigned long request_addr, struct mm_struct *mm,
-        struct memory_region *mr)
-{
-    if (likely(funcs)) {
-        return funcs->dsm_request_page_pull(dsm, fault_svm, page, request_addr,
-                    mm, mr);
-    }
-    return -1;
-}
-
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         unsigned long request_addr)
 {

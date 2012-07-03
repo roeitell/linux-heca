@@ -343,7 +343,7 @@ unlock:
         }
 
     }
-    trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
+    trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,0,0,
             tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
     dpc_nproc_dec(&dpc, 1);
     return 1;
@@ -384,7 +384,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
             dpc_nproc_dec(&dpc, 1);
         }
         trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
-                dpc->svm->svm_id,
+                dpc->svm->svm_id,0,0,
                 tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
         goto out;
     }
@@ -415,7 +415,7 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
     SetPageSwapBacked(page);
 
     trace_dsm_get_remote_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
-            remote_svm->dsm->dsm_id, remote_svm->svm_id, addr, tag, i);
+            remote_svm->dsm->dsm_id, remote_svm->svm_id, addr, tag);
     request_dsm_page(page, remote_svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag, dpc);
 
@@ -710,7 +710,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         BUG();
     fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
 
-    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id, norm_addr, dsd.flags);
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dsd.flags);
 
 
     /*
@@ -881,7 +881,7 @@ resolve:
     update_mmu_cache(vma, address, page_table);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
-    trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id, norm_addr);
+    trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, flags);
     goto out;
 
 out_nomap: 
@@ -911,8 +911,6 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
 {
 
 #if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
-    trace_dsm_swap_wrapper(mm, vma, address, page_table, pmd, flags, orig_pte,
-            entry);
     return do_dsm_page_fault(mm, vma, address, page_table, pmd, flags,
             orig_pte, entry);
 

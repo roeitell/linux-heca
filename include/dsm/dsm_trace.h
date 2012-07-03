@@ -11,84 +11,51 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(dsm_swap_wrapper,
-        TP_PROTO(struct mm_struct *mm, struct vm_area_struct *vma, unsigned long address, pte_t *page_table, pmd_t *pmd, unsigned int flags, pte_t orig_pte, swp_entry_t swp_entry),
-        TP_ARGS(mm, vma, address, page_table, pmd, flags, orig_pte, swp_entry),
+#define DSM_PAGE_FAULT                  0
+#define DSM_PAGE_FAULT_SUCCESS          1
+#define DSM_GET_REMOTE_PAGE             2
+#define DSM_PULL_REQ_COMPLETE           3
+#define DSM_PULL_REQ_COMPLETE_FAIL      4
+#define DSM_PAGE_FAULT_SUCCESS          5
 
-        TP_STRUCT__entry( __field(void *, mm ) __field(void *, fault_addr) __field(void *, page_addr) __field(unsigned int, flags) ),
+#define DSM_EVENTS \
+    { DSM_PAGE_FAULT,               "do_dsm_page_fault" }, \
+    { DSM_PAGE_FAULT_SUCCESS,       "do_dsm_page_fault_success" }\
+    { DSM_GET_REMOTE_PAGE,          "dsm_get_remote_page" }, \
+    { DSM_PULL_REQ_COMPLETE,        "dsm_pull_req_complete" }\
+    { DSM_PULL_REQ_COMPLETE_FAIL,   "dsm_try_pull_req_complete_fail" }
 
-        TP_fast_assign( __entry->mm = (void *) mm; __entry->fault_addr = (void *) address; __entry->page_addr = (void *) (address & PAGE_MASK); __entry->flags = flags ),
+#define show_event_name(val) __print_symbolic(val, DSM_EVENTS)
 
-        TP_printk("Do DSM Swap Wrapper  for mm %p  at addr : %p in page addr %p with flags %u ", __entry->mm, __entry->fault_addr, __entry->page_addr, __entry->flags ));
+DECLARE_EVENT_CLASS(dsm_page_fault_template,
+        TP_PROTO(int event, int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag,int nb_request_for_page ),
+        TP_ARGS(event, dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag),
 
-TRACE_EVENT(do_dsm_page_fault_svm,
-        TP_PROTO(int dsm_id, int svm_id, unsigned long address, int dsd_flags),
-        TP_ARGS(dsm_id, svm_id, address, dsd_flags),
+        TP_STRUCT__entry( __field(int, event ) __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, tag) ),
 
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(void *, page_addr) __field(int, flags) ),
+        TP_fast_assign( __entry->event = event; __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->tag = tag ),
 
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->page_addr = (void *)address ; __entry->flags = dsd_flags ),
+        TP_printk("%s | %p | %d | %d | %d | %d | %d",show_event_name(__entry->event ), __entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->tag ));
 
-        TP_printk("Do DSM Page Fault called from DSM %d - SVM %d  at page addr %p with dsd flags %u ", __entry->dsm_id, __entry->svm_id, __entry->page_addr, __entry->flags ));
+DEFINE_EVENT(dsm_page_fault_template, do_dsm_page_fault_svm,
+        TP_PROTO(int event, int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag,int nb_request_for_page ),
+        TP_ARGS(event, dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
-TRACE_EVENT(do_dsm_page_fault_svm_complete,
-        TP_PROTO(int dsm_id, int svm_id, unsigned long address),
-        TP_ARGS(dsm_id, svm_id, address),
+DEFINE_EVENT(dsm_page_fault_template, do_dsm_page_fault_svm_complete,
+        TP_PROTO(int event, int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag,int nb_request_for_page ),
+        TP_ARGS(event, dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(void *, page_addr) ),
+DEFINE_EVENT(dsm_page_fault_template, dsm_get_remote_page,
+        TP_PROTO(int event, int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag,int nb_request_for_page ),
+        TP_ARGS(event, dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->page_addr = (void *)address ),
+DEFINE_EVENT(dsm_page_fault_template, dsm_pull_req_complete,
+        TP_PROTO(int event, int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag,int nb_request_for_page ),
+        TP_ARGS(event, dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
-        TP_printk("Do DSM Page Fault Completed from DSM %d - SVM %d  at page addr %p  ", __entry->dsm_id, __entry->svm_id, __entry->page_addr));
-
-TRACE_EVENT(dsm_get_remote_page,
-        TP_PROTO(int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag,int nb_request_for_page ),
-        TP_ARGS(dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag, nb_request_for_page),
-
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, tag) __field(int, nb_request_for_page)),
-
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->tag = tag ;__entry->nb_request_for_page = nb_request_for_page ),
-
-        TP_printk("Requesting page addr %p  for DSM %d - SVM %d from DSM %d - SVM %d with Tag %d and request nb %d  ",__entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->tag, __entry->nb_request_for_page ));
-
-TRACE_EVENT(dsm_pull_req_complete,
-        TP_PROTO(int dsm_id, int svm_id, unsigned long address, int dpc_tag),
-        TP_ARGS(dsm_id, svm_id, address, dpc_tag),
-
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(void *, page_addr) __field(int, dpc_tag) ),
-
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->page_addr = (void *)address ; __entry->dpc_tag = dpc_tag ),
-
-        TP_printk("DSM page Pull Success for DSM %d - SVM %d  at page addr %p with dpc tag %u ", __entry->dsm_id, __entry->svm_id, __entry->page_addr, __entry->dpc_tag ));
-
-TRACE_EVENT(dsm_try_pull_req_complete_fail,
-        TP_PROTO(int dsm_id, int svm_id, unsigned long address, int dpc_tag),
-        TP_ARGS(dsm_id, svm_id, address, dpc_tag),
-
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(void *, page_addr) __field(int, dpc_tag) ),
-
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->page_addr = (void *)address ; __entry->dpc_tag = dpc_tag ),
-
-        TP_printk("DSM TRY page Pull Failure for DSM %d - SVM %d  at page addr %p with dpc tag %u ", __entry->dsm_id, __entry->svm_id, __entry->page_addr, __entry->dpc_tag ));
-
-TRACE_EVENT(process_page_request,
-        TP_PROTO(int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag),
-        TP_ARGS(dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag),
-
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, tag) ),
-
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->tag = tag ),
-
-        TP_printk("Processing Request for  page addr %p  for DSM %d - SVM %d from DSM %d - SVM %d with type %d  ",__entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->tag));
-TRACE_EVENT(process_page_request_complete,
-        TP_PROTO(int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag),
-        TP_ARGS(dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag),
-
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, tag) ),
-
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->tag = tag ),
-
-        TP_printk("Processing Request for  page addr %p  for DSM %d - SVM %d from DSM %d - SVM %d with type %d  ",__entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->tag));
+DEFINE_EVENT(dsm_page_fault_template, dsm_try_pull_req_complete_fail,
+        TP_PROTO(int event, int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag,int nb_request_for_page ),
+        TP_ARGS(event, dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
 #endif
 

@@ -4,8 +4,7 @@
  */
 
 #include <dsm/dsm_module.h>
-#define CREATE_TRACE_POINTS
-#include <dsm/dsm_trace.h>
+
 
 static struct kmem_cache *kmem_request_cache;
 

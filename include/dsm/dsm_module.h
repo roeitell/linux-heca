@@ -6,6 +6,10 @@
 #ifndef DSM_MODULE_H_
 #define DSM_MODULE_H_
 
+
+#define CREATE_TRACE_POINTS
+#include <dsm/dsm_trace.h>
+
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/sysfs.h>

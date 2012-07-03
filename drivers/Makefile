@@ -25,7 +25,6 @@ obj-$(CONFIG_DMA_ENGINE)	+= dma/
 
 obj-$(CONFIG_VIRTIO)		+= virtio/
 obj-$(CONFIG_XEN)		+= xen/
-obj-$(CONFIG_DSM_CORE)  	+= dsm/core/
 obj-$(CONFIG_DSM)               += dsm/
 obj-$(CONFIG_SOFTIWARP)         += softiwarp/
 

@@ -881,7 +881,7 @@ resolve:
     update_mmu_cache(vma, address, page_table);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
-    trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, flags);
+    trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dpc->tag);
     goto out;
 
 out_nomap: 

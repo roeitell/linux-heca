@@ -478,7 +478,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
     struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
     struct page *page = NULL;
     int r;
-    trace_dsm_cache_add_send(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, PULL_TAG);
+    trace_dsm_cache_add_send(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, tag);
     do {
         found_dpc = dsm_cache_get_hold(fault_svm, norm_addr);
         if (unlikely(found_dpc))

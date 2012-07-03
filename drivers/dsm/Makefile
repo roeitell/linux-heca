@@ -1,5 +1,3 @@
-CFLAGS_dsm_page_fault.o := -I../../../include/dsm
-
 dsm_rdma-y := dsm_sysfs.o dsm_ctl.o dsm_op.o dsm_handlers.o dsm_sr.o \
     dsm_search.o dsm_cache.o dsm_page_fault.o \
     dsm_page_request.o dsm_unmap.o dsm_utils.o

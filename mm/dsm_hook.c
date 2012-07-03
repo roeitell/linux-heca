@@ -3,7 +3,7 @@
 
 const struct dsm_hook_struct *dsm_hook;
 EXPORT_SYMBOL(dsm_hook);
-#ifdef CONFIG_DSM
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
 const struct dsm_hook_struct *dsm_hook_read(void)
 {
     const struct dsm_hook_struct *hook;

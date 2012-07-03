@@ -38,7 +38,8 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
-
+#define CREATE_TRACE_POINTS
+#include <dsm/dsm_trace.h>
 
 /*
  * dsm_utils

@@ -35,13 +35,12 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
-<<<<<<< HEAD
+
 
 /*
  * dsm_utils
  */
-=======
->>>>>>> master
+
 
 void __dsm_printk(unsigned int level, const char *path, int line,
     const char *format, ...);

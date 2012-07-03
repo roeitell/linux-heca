@@ -265,8 +265,8 @@ int process_page_request(struct conn_element *ele,
 
     norm_addr = msg->req_addr + local_svm->priv->offset;
 
-    trace_process_page_request(local_svm->dsm->dsm_id, local_svm->svm_id,
-            remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
+//    trace_process_page_request(local_svm->dsm->dsm_id, local_svm->svm_id,
+//            remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
 retry:
     tx_e = try_get_next_empty_tx_reply_ele(ele);
     if (unlikely(!tx_e)) {
@@ -311,8 +311,8 @@ retry:
 
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
-    trace_process_page_request_complete(local_svm->dsm->dsm_id, local_svm->svm_id,
-                remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
+//    trace_process_page_request_complete(local_svm->dsm->dsm_id, local_svm->svm_id,
+//                remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
     tx_dsm_send(ele, tx_e);
     return ret;
 

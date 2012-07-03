@@ -5,7 +5,7 @@
 
 #include <dsm/dsm_module.h>
 
-
+#include <dsm/dsm_trace.h>
 
 static struct kmem_cache *kmem_request_cache;
 

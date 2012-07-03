@@ -1,14 +1,7 @@
 config DSM
 	tristate "DSM"
-	depends on DSM_CORE && RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET
+	depends on RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET && MMU_NOTIFIER && MMU
 	default m
 	help
 	  Enable DSM - running single VM over several linux hosts with qemu/kvm.
 
-	  
-config DSM_CORE
-	bool "DSM_CORE"
-	depends on MMU_NOTIFIER && MMU
-	default y
-	help
-		DSM_CORE provides an interface to necessary kernel memory operations required from the operation of DSM.	

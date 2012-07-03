@@ -9,12 +9,18 @@
 
 unsigned long zero_dsm_pfn __read_mostly;
 
-static int __init init_dsm_zero_pfn(void)
+int dsm_zero_pfn_init(void)
 {
     zero_dsm_pfn = page_to_pfn(ZERO_PAGE(0));
     return 0;
 }
-core_initcall(init_dsm_zero_pfn);
+EXPORT_SYMBOL(dsm_zero_pfn_init);
+
+void dsm_zero_pfn_exit(void)
+{
+    zero_dsm_pfn = 0;
+}
+EXPORT_SYMBOL(dsm_zero_pfn_exit);
 
 static inline int is_dsm_zero_pfn(unsigned long pfn)
 {
@@ -400,7 +406,7 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
         dsm_try_pull_req_complete : dsm_pull_req_complete;
 
     SetPageSwapBacked(page);
-    request_dsm_page_op(page, remote_svm, fault_svm,
+    request_dsm_page(page, remote_svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag, dpc);
 
 out: 
@@ -438,7 +444,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
         radix_tree_preload_end();
         if (likely(!r)) {
             for_each_valid_svm(svms, i) {
-                request_dsm_page_op(new_dpc->pages[0], svms.pp[i], fault_svm,
+                request_dsm_page(new_dpc->pages[0], svms.pp[i], fault_svm,
                         (uint64_t) (addr - fault_svm->priv->offset), NULL,
                         PULL_TRY_TAG, NULL);
             }
@@ -874,12 +880,8 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned long address, pte_t *page_table, pmd_t *pmd,
         unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
-#ifdef CONFIG_DSM_CORE
     return do_dsm_page_fault(mm, vma, address, page_table, pmd, flags,
             orig_pte, entry);
-#else
-    return 0;
-#endif
 }
 
 int dsm_trigger_page_pull(struct dsm *dsm, struct subvirtual_machine *local_svm,

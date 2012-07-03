@@ -743,7 +743,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
         if (!mr || mr->local == LOCAL)
             continue;
 
-        dsm_request_page_pull_op(svm->dsm, svm, page, address, vma->vm_mm, mr);
+        dsm_request_page_pull(svm->dsm, svm, page, address, vma->vm_mm, mr);
         if (PageSwapCache(page))
             try_to_free_swap(page);
 
@@ -757,15 +757,8 @@ out:
     return ret;
 }
 
-#ifdef CONFIG_DSM_CORE
 int push_back_if_remote_dsm_page(struct page *page)
 {
     return _push_back_if_remote_dsm_page(page);
 }
 
-#else
-int push_back_if_remote_dsm_page(struct page *page)
-{
-    return 0;
-}
-#endif

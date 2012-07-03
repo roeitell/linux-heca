@@ -69,14 +69,12 @@ static inline int current_is_kswapd(void)
 /*
  * DSM support
  */
-#ifdef CONFIG_DSM_CORE
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
 #define SWP_DSM_NUM 1
 #define SWP_DSM (MAX_SWAPFILES + SWP_HWPOISON_NUM + SWP_MIGRATION_NUM)
 #else
 #define SWP_DSM_NUM 0
-#endif /* CONFIG_DSM_CORE */
-
-
+#endif
 
 #define MAX_SWAPFILES \
         ((1 << MAX_SWAPFILES_SHIFT) - SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - SWP_DSM_NUM)

@@ -417,7 +417,7 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
 
     trace_dsm_get_remote_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
             remote_svm->dsm->dsm_id, remote_svm->svm_id, addr, tag, i);
-    request_dsm_page_op(page, remote_svm, fault_svm,
+    request_dsm_page(page, remote_svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag, dpc);
 
 out: 

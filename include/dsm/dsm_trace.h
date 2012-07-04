@@ -9,7 +9,6 @@
 #if !defined(DSM_TRACE_H_) || defined(TRACE_HEADER_MULTI_READ)
 #define DSM_TRACE_H_
 
-
 #include <linux/tracepoint.h>
 #include <dsm/dsm_def.h>
 
@@ -55,56 +54,18 @@ DEFINE_EVENT(dsm_page_fault_template, process_page_request,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag ),
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
-#define DSM_MSG_TYPE \
-    { REQUEST_PAGE_TYPE,            "REQUEST_PAGE" }, \
-    { REQUEST_PAGE_PULL_TYPE,            "REQUEST_PAGE_PULL" },\
-    { PAGE_REQUEST_REPLY_TYPE,            "PAGE_REQUEST_REPLY" }, \
-    { PAGE_REQUEST_REDIRECT_TYPE,            "PAGE_REQUEST_REDIRECT" },\
-    { PAGE_INFO_UPDATE_TYPE,            "PAGE_INFO_UPDATE" }, \
-    { REQUEST_PAGE_PULL_TYPE,            "REQUEST_PAGE_PULL" },\
-    { TRY_REQUEST_PAGE_TYPE,            "TRY_REQUEST_PAGE" }, \
-    { TRY_REQUEST_PAGE_FAIL_TYPE,            "TRY_REQUEST_PAGE_FAIL" },\
-    { SVM_STATUS_UPDATE_TYPE,            "SVM_STATUS_UPDATE" }, \
-    { REQUEST_PAGE_PULL_TYPE,            "REQUEST_PAGE_PULL" },\
-    { DSM_MSG_ERR_TYPE,            "DSM_MSG_ERR" }
-
-
-
-
-#define decode_msg_type(type) ({            \
-    u8 flags = 0xff;                \
-    switch (type) {                 \
-    case REQUEST_PAGE:             \
-        flags = REQUEST_PAGE_TYPE;              \
-        break;                  \
-    case REQUEST_PAGE_PULL:             \
-        flags = REQUEST_PAGE_PULL_TYPE;     \
-        break;                  \
-    case PAGE_REQUEST_REPLY:           \
-        flags = PAGE_REQUEST_REPLY_TYPE;     \
-        break;                  \
-    case PAGE_REQUEST_REDIRECT:           \
-        flags = PAGE_REQUEST_REDIRECT_TYPE ;     \
-        break;                  \
-    case PAGE_INFO_UPDATE:           \
-        flags = PAGE_INFO_UPDATE_TYPE;     \
-        break;                  \
-    case TRY_REQUEST_PAGE:           \
-        flags = TRY_REQUEST_PAGE_TYPE;      \
-        break;                  \
-    case TRY_REQUEST_PAGE_FAIL:           \
-        flags = TRY_REQUEST_PAGE_FAIL_TYPE;     \
-        break;                  \
-    case SVM_STATUS_UPDATE:           \
-        flags = SVM_STATUS_UPDATE_TYPE;      \
-        break;                  \
-    case DSM_MSG_ERR:           \
-        flags = DSM_MSG_ERR_TYPE;     \
-        break;                  \
-    }                       \
-    flags;                      \
-    })
-
+#define dsm_msg_type \
+    { REQUEST_PAGE,            "REQUEST_PAGE" }, \
+    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
+    { PAGE_REQUEST_REPLY,            "PAGE_REQUEST_REPLY" }, \
+    { PAGE_REQUEST_REDIRECT,            "PAGE_REQUEST_REDIRECT" },\
+    { PAGE_INFO_UPDATE,            "PAGE_INFO_UPDATE" }, \
+    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
+    { TRY_REQUEST_PAGE,            "TRY_REQUEST_PAGE" }, \
+    { TRY_REQUEST_PAGE_FAIL,            "TRY_REQUEST_PAGE_FAIL" },\
+    { SVM_STATUS_UPDATE,            "SVM_STATUS_UPDATE" }, \
+    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
+    { DSM_MSG_ERR,            "DSM_MSG_ERR" }
 
 DECLARE_EVENT_CLASS(dsm_message_template,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),
@@ -112,9 +73,9 @@ DECLARE_EVENT_CLASS(dsm_message_template,
 
         TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, type) ),
 
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->type = decode_msg_type(type) ),
+        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->type type ),
 
-        TP_printk(" MSG Type %s  From DSM %d SVM %d To DSM %d SVM   Page Addr %p", __print_symbolic(__entry->type, DSM_MSG_TYPE), __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->page_addr));
+        TP_printk(" MSG Type %s  From DSM %d SVM %d To DSM %d SVM   Page Addr %p", __print_symbolic(__entry->type, dsm_msg_type), __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->page_addr));
 
 DEFINE_EVENT(dsm_page_fault_template, dsm_rx_msg,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),

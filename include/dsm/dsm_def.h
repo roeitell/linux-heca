@@ -57,15 +57,15 @@
  * DSM_MESSAGE
  */
 
-#define REQUEST_PAGE                    0x0000 // We Request a page
-#define REQUEST_PAGE_PULL               0x0001 // We Request a page pull
-#define PAGE_REQUEST_REPLY              0x0002 // We Reply to a page request
-#define PAGE_REQUEST_REDIRECT           0x0004 // We don't have the page  but we know where it is , we redirect
-#define PAGE_INFO_UPDATE                0x0008 // We send an update of the page location
-#define TRY_REQUEST_PAGE                0x0010 // We try to pull the page
-#define TRY_REQUEST_PAGE_FAIL           0x0020 // We try to get the page failed
-#define SVM_STATUS_UPDATE               0x0030 // The svm is down
-#define DSM_MSG_ERR                     0x8000 // ERROR
+#define REQUEST_PAGE                    (1 << 0) // We Request a page
+#define REQUEST_PAGE_PULL               (1 << 1) // We Request a page pull
+#define PAGE_REQUEST_REPLY              (1 << 2) // We Reply to a page request
+#define PAGE_REQUEST_REDIRECT           (1 << 3) // We don't have the page  but we know where it is , we redirect
+#define PAGE_INFO_UPDATE                (1 << 4) // We send an update of the page location
+#define TRY_REQUEST_PAGE                (1 << 5) // We try to pull the page
+#define TRY_REQUEST_PAGE_FAIL           (1 << 6) // We try to get the page failed
+#define SVM_STATUS_UPDATE               (1 << 7) // The svm is down
+#define DSM_MSG_ERR                     (1 << 8) // ERROR
 /*
  * DSM DATA structure
  */

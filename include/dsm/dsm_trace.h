@@ -73,7 +73,7 @@ DECLARE_EVENT_CLASS(dsm_message_template,
 
         TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, type) ),
 
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->type type ),
+        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->type = type ),
 
         TP_printk(" MSG Type %s  From DSM %d SVM %d To DSM %d SVM %d  Page Addr %p", __print_symbolic(__entry->type, dsm_msg_type), __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->page_addr));
 

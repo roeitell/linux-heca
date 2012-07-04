@@ -77,11 +77,11 @@ DECLARE_EVENT_CLASS(dsm_message_template,
 
         TP_printk(" MSG Type %s  From DSM %d SVM %d To DSM %d SVM %d  Page Addr %p", __print_symbolic(__entry->type, dsm_msg_type), __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->page_addr));
 
-DEFINE_EVENT(dsm_page_fault_template, dsm_rx_msg,
+DEFINE_EVENT(dsm_message_template, dsm_rx_msg,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, type));
 
-DEFINE_EVENT(dsm_page_fault_template, dsm_tx_msg,
+DEFINE_EVENT(dsm_message_template, dsm_tx_msg,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, type));
 

@@ -433,11 +433,13 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
     mm = local_svm->priv->mm;
     BUG_ON(!mm);
 
+    use_mm(mm);
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte);
     up_read(&mm->mmap_sem);
+    unuse_mm(mm);
 
     dsm_stats_inc( tag == TRY_REQUEST_PAGE?   /* keep conditions in macro */
         (page? 

@@ -378,7 +378,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
                 if (dpf) {
                     free_dsm_prefetch_cache_elm(&dpf);
                 } else {
-                    use_mm(dpc->svm->priv->mm);
+                    use_mm(mm);
                     down_read(&mm->mmap_sem);
                     get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
                     up_read(&mm->mmap_sem);
@@ -389,7 +389,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
             case PULL_TRY_TAG:
                 mm = dpc->svm->priv->mm;
                 addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
-                use_mm(dpc->svm->priv->mm);
+                use_mm(mm);
                 down_read(&mm->mmap_sem);
                 get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
                 up_read(&mm->mmap_sem);

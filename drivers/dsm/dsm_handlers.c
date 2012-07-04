@@ -181,6 +181,10 @@ int dsm_recv_message_handler(struct conn_element *ele,
     struct tx_buf_ele *tx_e = NULL;
     int type = rx_e->dsm_buf->type;
 
+    trace_dsm_rx_msg(rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->src_id,
+                    rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->dest_id,
+                    rx_e->dsm_buf->req_addr, type);
+
     switch (type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
@@ -233,6 +237,11 @@ EXPORT_SYMBOL(dsm_recv_message_handler);
 
 int dsm_send_message_handler(struct conn_element *ele,
         struct tx_buf_ele *tx_buf_e) {
+
+    trace_dsm_rx_msg(tx_buf_e->dsm_buf->dsm_id,
+                    tx_buf_e->dsm_buf->src_id, tx_buf_e->dsm_buf->dsm_id,
+                    tx_buf_e->dsm_buf->dest_id, tx_buf_e->dsm_buf->req_addr,
+                    tx_buf_e->dsm_buf->type);
 
     switch (tx_buf_e->dsm_buf->type) {
         case PAGE_REQUEST_REPLY: {

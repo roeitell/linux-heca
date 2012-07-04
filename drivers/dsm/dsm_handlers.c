@@ -239,7 +239,7 @@ EXPORT_SYMBOL(dsm_recv_message_handler);
 int dsm_send_message_handler(struct conn_element *ele,
         struct tx_buf_ele *tx_buf_e) {
 
-    trace_dsm_rx_msg(tx_buf_e->dsm_buf->dsm_id,
+    trace_dsm_tx_msg(tx_buf_e->dsm_buf->dsm_id,
                     tx_buf_e->dsm_buf->src_id, tx_buf_e->dsm_buf->dsm_id,
                     tx_buf_e->dsm_buf->dest_id, tx_buf_e->dsm_buf->req_addr,
                     tx_buf_e->dsm_buf->type);

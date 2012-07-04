@@ -89,6 +89,8 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         unsigned long request_addr);
 
 /* dsm_page_fault.c */
+void init_dsm_prefetch_cache_kmem(void);
+void destroy_dsm_prefetch_cache_kmem(void) ;
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
 

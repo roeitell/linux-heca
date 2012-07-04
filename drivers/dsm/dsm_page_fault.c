@@ -11,6 +11,25 @@
 #define CREATE_TRACE_POINTS
 #include <dsm/dsm_trace.h>
 
+static struct kmem_cache *dsm_prefetch_cache_kmem;
+
+static inline void init_dsm_prefetch_cache_elm(void *obj) {
+
+}
+
+void init_dsm_prefetch_cache_kmem(void) {
+    dsm_prefetch_cache_kmem = kmem_cache_create("dsm_prefetch_fault_cache",
+            sizeof(struct dsm_prefetch_fault), 0,
+            SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, NULL);
+}
+EXPORT_SYMBOL(init_dsm_prefetch_cache_kmem);
+
+void destroy_dsm_prefetch_cache_kmem(void) {
+    kmem_cache_destroy(dsm_prefetch_cache_kmem);
+}
+EXPORT_SYMBOL(destroy_dsm_prefetch_cache_kmem);
+
+
 unsigned long zero_dsm_pfn __read_mostly;
 
 int dsm_zero_pfn_init(void)
@@ -304,6 +323,8 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct page *page = tx_e->wrk_req->dst_addr->mem_page;
     int i;
+    struct mm_struct *mm ;
+    unsigned long addr ;
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
 
@@ -323,17 +344,20 @@ unlock:
         }
         unlock_page(dpc->pages[0]);
         lru_add_drain();
-        struct mm_struct *mm = dpc->svm->priv->mm;
-        unsigned long addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
+
 
         switch (dpc->tag) {
             case PULL_TAG:
                 dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
                 break;
             case PREFETCH_TAG:
+                mm = dpc->svm->priv->mm;
+                addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
+
                 dsm_stats_inc( &dpc->svm->svm_sysfs.nb_prefetch_success);
                 break;
             case PULL_TRY_TAG:
+
                 use_mm(dpc->svm->priv->mm);
                 down_read(&mm->mmap_sem);
                 get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);

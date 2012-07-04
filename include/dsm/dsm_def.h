@@ -400,6 +400,13 @@ struct dsm_page_cache {
     struct rb_node rb_node;
 };
 
+struct dsm_prefetch_fault{
+    u32 dsm_id;
+    u32 svm_id;
+    unsigned long addr;
+};
+
+
 #define DSM_INFLIGHT            0x04
 #define DSM_INFLIGHT_BITPOS     0x02
 #define DSM_PUSHING             0x08

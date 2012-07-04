@@ -621,6 +621,7 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     BUG_ON(!(rcm));
     init_kmem_request_cache();
     init_dsm_cache_kmem();
+    init_dsm_prefetch_cache_kmem();
     dsm_init_descriptors();
     mutex_init(&rcm->rcm_mutex);
 
@@ -985,6 +986,7 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
     }
 
     destroy_dsm_cache_kmem();
+    destroy_dsm_prefetch_cache_kmem();
     destroy_kmem_request_cache();
     dsm_destroy_descriptors();
 

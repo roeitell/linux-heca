@@ -323,27 +323,31 @@ unlock:
         }
         unlock_page(dpc->pages[0]);
         lru_add_drain();
+        struct mm_struct *mm = dpc->svm->priv->mm;
+        unsigned long addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
 
-        /* when soft pulling, we fault after rdma success, not before */
-        if (dpc->tag != PULL_TAG) {
-            struct mm_struct *mm = dpc->svm->priv->mm;
-            unsigned long addr = tx_e->dsm_buf->req_addr +
-                dpc->svm->priv->offset;
+        switch (dpc->tag) {
+            case PULL_TAG:
+                dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
+                break;
+            case PREFETCH_TAG:
+                dsm_stats_inc( &dpc->svm->svm_sysfs.nb_prefetch_success);
+                break;
+            case PULL_TRY_TAG:
+                use_mm(dpc->svm->priv->mm);
+                down_read(&mm->mmap_sem);
+                get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+                up_read(&mm->mmap_sem);
+                unuse_mm(mm);
+                dsm_stats_inc( &dpc->svm->svm_sysfs.nb_soft_pull_success);
+                break;
 
-//            use_mm(dpc->svm->priv->mm);
-//            down_read(&mm->mmap_sem);
-//            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-//            up_read(&mm->mmap_sem);
-//            unuse_mm(mm);
-
-            dsm_stats_inc(dpc->tag == PREFETCH_TAG?
-                    &dpc->svm->svm_sysfs.nb_prefetch_success :
-                    &dpc->svm->svm_sysfs.nb_soft_pull_success);
-        } else {
-            dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
+            default:
+                BUG();
         }
-
     }
+
+
     trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,0,0,
             tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
     dpc_nproc_dec(&dpc, 1);

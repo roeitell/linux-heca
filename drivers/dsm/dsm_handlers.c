@@ -6,7 +6,7 @@
  */
 
 #include <dsm/dsm_module.h>
-
+#include <dsm/dsm_trace.h>
 
 static void destroy_connection_work(struct work_struct *work)
 {

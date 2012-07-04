@@ -11,7 +11,7 @@
 
 
 #include <linux/tracepoint.h>
-#include "dsm_def.h"
+#include <dsm/dsm_def.h>
 
 DECLARE_EVENT_CLASS(dsm_page_fault_template,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag),

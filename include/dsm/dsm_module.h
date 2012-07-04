@@ -38,7 +38,7 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
-#include <dsm/dsm_trace.h>
+
 
 /*
  * dsm_utils

@@ -363,14 +363,16 @@ retry:
 
     /* first response to arrive and grab the pte lock */
     } else if (pte_present(pte_entry)) {
+        /* make sure shrink_page_list is finished with this page */
+        lock_page(page);
         pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
         if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
+            unlock_page(page);
             pte_unmap_unlock(pd.pte, ptl);
             goto retry;
         }
 
-        /* make sure shrink_page_list is finished with this page */
-        lock_page(page);
+
         flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
         ptep_clear_flush_notify(pd.vma, addr, pd.pte);
         set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(dpc->tag,

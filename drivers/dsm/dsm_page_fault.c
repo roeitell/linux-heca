@@ -345,7 +345,7 @@ void dequeue_and_gup_prefetch(struct subvirtual_machine *svm){
     use_mm(svm->priv->mm);
     down_read(&svm->priv->mm->mmap_sem);
 
-    head = llist_del_all(&svm->dsm);
+    head = llist_del_all(&svm->delayed_prefetch_faults);
     if (unlikely(!head))
         goto out;
 
@@ -354,7 +354,7 @@ void dequeue_and_gup_prefetch(struct subvirtual_machine *svm){
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
         dpc = dsm_cache_get_hold(svm, dpf->addr);
         if (dpc && dpc->tag == PREFETCH_TAG) {
-            dpc_nproc_dec(&dpc,0);
+            dpc_nproc_dec(&dpc, 0);
             get_user_pages(current, svm->priv->mm, dpf->addr, 1, 1, 0, &page,
                     NULL);
         }
@@ -410,7 +410,7 @@ unlock:
                 break;
             }
             case PREFETCH_TAG: {
-                dpf = alloc_dsm_prefetch_cache_elm(dpc->svm, addr);
+                dpf = alloc_dsm_prefetch_cache_elm(addr);
                 if (dpf) {
                     queue_dpf_for_delayed_gup(dpf, dpc->svm);
                     dequeue_and_gup_prefetch(dpc->svm);

@@ -65,7 +65,7 @@ DEFINE_EVENT(dsm_page_fault_template, process_page_request,
     { TRY_REQUEST_PAGE_FAIL,        "TRY_REQUEST_PAGE_FAIL" },\
     { SVM_STATUS_UPDATE,            "SVM_STATUS_UPDATE" }, \
     { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { ACK,                          "ACK" }\
+    { ACK,                          "ACK" },\
     { DSM_MSG_ERR,                  "DSM_MSG_ERR" }
 
 DECLARE_EVENT_CLASS(dsm_message_template,

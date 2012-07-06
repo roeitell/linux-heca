@@ -153,17 +153,7 @@ int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
 /*
  * SYSFS
  */
-#if 1
-#define dsm_stats_inc(s) atomic64_inc(s)
-#define dsm_stats_inc_cond(s,c) if (c) { atomic64_inc(s); }
-#define dsm_stats_read(s) atomic64_read(s)
-#define dsm_stats_set(s,v) atomic64_set(s,v)
-#else
-#define dsm_stats_inc(s) do { } while(0);
-#define dsm_stats_inc_cond(s,c) do { } while(0);
-#define dsm_stats_read(s) 0
-#define dsm_stats_set(s,v) do { } while(0);
-#endif
+
 
 void dsm_sysfs_cleanup(struct dsm_module_state *);
 int dsm_sysfs_setup(struct dsm_module_state *);

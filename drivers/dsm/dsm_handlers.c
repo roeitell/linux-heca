@@ -190,7 +190,6 @@ int dsm_recv_message_handler(struct conn_element *ele,
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                dsm_stats_inc(&ele->sysfs.rx_stats.page_request_reply);
                 process_page_response(ele, tx_e); // client got its response
             }
             break;
@@ -200,19 +199,16 @@ int dsm_recv_message_handler(struct conn_element *ele,
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                 tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
                 process_page_response(ele, tx_e);
-                dsm_stats_inc(&ele->sysfs.rx_stats.try_request_page_fail);
             }
             break;
         }
         case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
             process_page_request(ele, rx_e); // server got a request
-            dsm_stats_inc(&ele->sysfs.rx_stats.request_page);
             break;
         }
         case REQUEST_PAGE_PULL: {
             process_pull_request(ele, rx_e); // server is requested to pull
-            dsm_stats_inc(&ele->sysfs.rx_stats.request_page_pull);
             break;
         }
         case SVM_STATUS_UPDATE: {
@@ -221,11 +217,9 @@ int dsm_recv_message_handler(struct conn_element *ele,
         }
 
         default: {
-            dsm_stats_inc(&ele->sysfs.rx_stats.err);
             printk("[dsm_recv_poll] unhandled message stats addr: %p, status %d"
                     " id %d\n", rx_e, rx_e->dsm_buf->type, rx_e->id);
             goto err;
-
         }
     }
 
@@ -251,34 +245,27 @@ int dsm_send_message_handler(struct conn_element *ele,
                     tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
             release_ppe(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
-            dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
+
             break;
         }
-        case REQUEST_PAGE: {
-            dsm_stats_inc(&ele->sysfs.tx_stats.request_page);
-            break;
-        }
+        case REQUEST_PAGE:
         case TRY_REQUEST_PAGE: {
-            dsm_stats_inc(&ele->sysfs.tx_stats.try_request_page);
             break;
         }
         case REQUEST_PAGE_PULL: {
             release_tx_element(ele, tx_buf_e);
-            dsm_stats_inc(&ele->sysfs.tx_stats.request_page_pull);
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             release_tx_element(ele, tx_buf_e);
-            dsm_stats_inc(&ele->sysfs.tx_stats.try_request_page_fail);
             break;
         }
         case SVM_STATUS_UPDATE: {
             release_tx_element_reply(ele, tx_buf_e);
-            dsm_stats_inc(&ele->sysfs.tx_stats.page_request_reply);
             break;
         }
         default: {
-            dsm_stats_inc(&ele->sysfs.tx_stats.err);
+
             printk("[dsm_send_poll] unhandled message stats  addr: %p, "
                     "status %d , id %d \n", tx_buf_e, tx_buf_e->dsm_buf->type,
                     tx_buf_e->id);

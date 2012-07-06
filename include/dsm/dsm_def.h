@@ -28,7 +28,6 @@
 #include <linux/llist.h>
 #include <linux/dsm.h>
 
-
 #define RDMA_PAGE_SIZE PAGE_SIZE
 
 #define IB_MAX_CAP_SCQ 256
@@ -40,7 +39,6 @@
 #define IW_MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
 #define IW_MAX_SEND_SGE 2
 #define IW_MAX_RECV_SGE 2
-
 
 #define MAX_SVMS_PER_PAGE 2
 
@@ -70,42 +68,12 @@
  * DSM DATA structure
  */
 
-struct msg_stats {
-    atomic64_t request_page;
-    atomic64_t request_page_pull;
-    atomic64_t page_request_reply;
-    atomic64_t page_info_update;
-    atomic64_t page_request_redirect;
-    atomic64_t try_request_page;
-    atomic64_t try_request_page_fail;
-    atomic64_t err;
-};
-
 struct con_element_sysfs {
     struct kobject connection_kobject;
-    struct kobject connection_rx_kobject;
-    struct kobject connection_tx_kobject;
-    struct msg_stats rx_stats;
-    struct msg_stats tx_stats;
 };
 
 struct svm_sysfs {
     struct kobject svm_kobject;
-
-    atomic64_t nb_remote_fault;
-    atomic64_t nb_remote_fault_success;
-    atomic64_t nb_push_attempt;
-    atomic64_t nb_push_success;
-    atomic64_t nb_soft_pull_attempt;
-    atomic64_t nb_soft_pull_success;
-    atomic64_t nb_soft_pull_response_fail;
-    atomic64_t nb_answer_fault;
-    atomic64_t nb_answer_fault_fail;
-    atomic64_t nb_answer_soft_pull;
-    atomic64_t nb_answer_soft_pull_fail;
-    atomic64_t nb_prefetch_attempt;
-    atomic64_t nb_prefetch_success;
-    atomic64_t nb_prefetch_response_fail;
 };
 
 struct dsm {
@@ -200,8 +168,6 @@ struct tx_buffer {
     int request_queue_sz;
     atomic_t request_queue_lock;
 };
-
-
 
 struct conn_element {
     struct rcm *rcm;
@@ -391,7 +357,7 @@ struct dsm_page_cache {
     unsigned long addr;
     u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
-    struct page *pages[MAX_SVMS_PER_PAGE+1];
+    struct page *pages[MAX_SVMS_PER_PAGE + 1];
     struct svm_list svms;
     atomic_t found;
     atomic_t nproc;
@@ -400,12 +366,11 @@ struct dsm_page_cache {
     struct rb_node rb_node;
 };
 
-struct dsm_prefetch_fault{
+struct dsm_prefetch_fault {
     u32 dsm_id;
     u32 svm_id;
     unsigned long addr;
 };
-
 
 #define DSM_INFLIGHT            0x04
 #define DSM_INFLIGHT_BITPOS     0x02

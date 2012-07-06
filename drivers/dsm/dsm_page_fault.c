@@ -370,7 +370,6 @@ unlock:
 
         switch (dpc->tag) {
             case PULL_TAG:
-                dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
                 break;
             case PREFETCH_TAG:
                 addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
@@ -386,7 +385,6 @@ unlock:
                     up_read(&mm->mmap_sem);
                     unuse_mm(mm);
                 }
-                dsm_stats_inc( &dpc->svm->svm_sysfs.nb_prefetch_success);
                 break;
             case PULL_TRY_TAG:
                 mm = dpc->svm->priv->mm;
@@ -396,7 +394,6 @@ unlock:
                 get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
                 up_read(&mm->mmap_sem);
                 unuse_mm(mm);
-                dsm_stats_inc( &dpc->svm->svm_sysfs.nb_soft_pull_success);
                 break;
 
             default:
@@ -422,9 +419,6 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
         int i;
 
         r = 1;
-        dsm_stats_inc(dpc->tag == PREFETCH_TAG?
-                &dpc->svm->svm_sysfs.nb_prefetch_response_fail :
-                &dpc->svm->svm_sysfs.nb_soft_pull_response_fail);
 
         if (atomic_read(&dpc->found) >= 0)
             goto out;
@@ -650,9 +644,6 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                      */
                     dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
                             2, tag, vma, mm, pte_entry, pte);
-                    dsm_stats_inc(tag == PREFETCH_TAG?
-                            &fault_svm->svm_sysfs.nb_prefetch_attempt :
-                            &fault_svm->svm_sysfs.nb_soft_pull_attempt);
                 }
             }
         }
@@ -803,7 +794,6 @@ retry:
          */
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,
                 PULL_TAG, vma, mm, orig_pte, page_table);
-        dsm_stats_inc(&fault_svm->svm_sysfs.nb_remote_fault);
         if (unlikely(!dpc)) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
             if (likely(pte_same(*page_table, orig_pte)))

@@ -382,8 +382,6 @@ retry:
         dec_mm_counter(mm, MM_ANONPAGES);
         pte_unmap_unlock(pd.pte, ptl);
         unlock_page(page);
-        dsm_stats_inc_cond(&local_svm->svm_sysfs.nb_push_success,
-                dpc->svms.num == 1);
     } else {
         if (unlikely(pte_none(pte_entry))) {
             page = NULL;
@@ -411,7 +409,6 @@ noop:
                     dsm_clear_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
                 pte_unmap_unlock(pd.pte, ptl);
                 dsm_push_finish_notify(page);
-                dsm_stats_inc(&local_svm->svm_sysfs.nb_push_success);
             }
         }
     }
@@ -442,14 +439,6 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
-
-    dsm_stats_inc( tag == TRY_REQUEST_PAGE?   /* keep conditions in macro */
-        (page? 
-            &local_svm->svm_sysfs.nb_answer_soft_pull :
-            &local_svm->svm_sysfs.nb_answer_soft_pull_fail) :
-        (page?
-            &local_svm->svm_sysfs.nb_answer_fault :
-            &local_svm->svm_sysfs.nb_answer_fault_fail));
 
     return page;
 }
@@ -749,7 +738,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
         if (PageSwapCache(page))
             try_to_free_swap(page);
 
-        dsm_stats_inc(&svm->svm_sysfs.nb_push_attempt);
+
         ret = 1;
         break;
     }

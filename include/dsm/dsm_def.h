@@ -258,6 +258,9 @@ struct subvirtual_machine {
     seqlock_t push_cache_lock;
 
     struct svm_sysfs svm_sysfs;
+
+
+    struct llist_head delayed_prefetch_faults;
 };
 
 struct work_request_ele {
@@ -368,9 +371,8 @@ struct dsm_page_cache {
 };
 
 struct dsm_prefetch_fault {
-    u32 dsm_id;
-    u32 svm_id;
     unsigned long addr;
+    struct llist_node node;
 };
 
 #define DSM_INFLIGHT            0x04

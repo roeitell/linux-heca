@@ -13,9 +13,7 @@
 
 static struct kmem_cache *dsm_prefetch_cache_kmem;
 
-static inline void init_dsm_prefetch_cache_elm(void *obj) {
 
-}
 
 void init_dsm_prefetch_cache_kmem(void) {
     dsm_prefetch_cache_kmem = kmem_cache_create("dsm_prefetch_fault_cache",
@@ -29,8 +27,7 @@ void destroy_dsm_prefetch_cache_kmem(void) {
 }
 EXPORT_SYMBOL(destroy_dsm_prefetch_cache_kmem);
 
-static struct dsm_prefetch_fault * alloc_dsm_prefetch_cache_elm(u32 dsm_id,
-        u32 svm_id, unsigned long addr) {
+static struct dsm_prefetch_fault * alloc_dsm_prefetch_cache_elm(unsigned long addr) {
 
     struct dsm_prefetch_fault * dpf = kmem_cache_alloc(dsm_prefetch_cache_kmem,
             GFP_KERNEL);
@@ -38,8 +35,6 @@ static struct dsm_prefetch_fault * alloc_dsm_prefetch_cache_elm(u32 dsm_id,
         goto out;
 
     dpf->addr = addr;
-    dpf->dsm_id = dsm_id;
-    dpf->svm_id = svm_id;
 
     out: return dpf;
 
@@ -341,6 +336,46 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
     }
 }
 
+void dequeue_and_gup_prefetch(struct subvirtual_machine *svm){
+    struct dsm_prefetch_fault *dpf;
+    struct dsm_page_cache *dpc;
+    struct page * page;
+    struct llist_node *head, *node;
+
+    use_mm(svm->priv->mm);
+    down_read(&svm->priv->mm->mmap_sem);
+
+    head = llist_del_all(&svm->dsm);
+    if (unlikely(!head))
+        goto out;
+
+    for (node = head; node; node = llist_next(node)) {
+        dpf = llist_entry(node, struct dsm_prefetch_fault, node);
+        /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
+        dpc = dsm_cache_get_hold(svm, dpf->addr);
+        if (dpc && dpc->tag == PREFETCH_TAG) {
+            dpc_nproc_dec(&dpc,0);
+            get_user_pages(current, svm->priv->mm, dpf->addr, 1, 1, 0, &page,
+                    NULL);
+        }
+    }
+out:
+    up_read(&svm->priv->mm->mmap_sem);
+    unuse_mm(svm->priv->mm);
+    for (node = head; node; node = llist_next(node)) {
+        dpf = llist_entry(node, struct dsm_prefetch_fault, node);
+        free_dsm_prefetch_cache_elm(&dpf);
+    }
+
+}
+
+static inline void queue_dpf_for_delayed_gup(struct dsm_prefetch_fault *dpf, struct subvirtual_machine *svm){
+
+    llist_add(&dpf->node, &svm->delayed_prefetch_faults);
+
+}
+
+
 static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct page *page = tx_e->wrk_req->dst_addr->mem_page;
@@ -375,11 +410,10 @@ unlock:
                 break;
             }
             case PREFETCH_TAG: {
-
-                dpf = alloc_dsm_prefetch_cache_elm(dpc->svm->dsm->dsm_id,
-                        dpc->svm->svm_id, addr);
+                dpf = alloc_dsm_prefetch_cache_elm(dpc->svm, addr);
                 if (dpf) {
-                    free_dsm_prefetch_cache_elm(&dpf);
+                    queue_dpf_for_delayed_gup(dpf, dpc->svm);
+                    dequeue_and_gup_prefetch(dpc->svm);
                 } else {
                     /* just in case if we run out of memory for the slab */
                     use_mm(mm);

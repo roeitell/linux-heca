@@ -55,17 +55,18 @@ DEFINE_EVENT(dsm_page_fault_template, process_page_request,
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
 #define dsm_msg_type \
-    { REQUEST_PAGE,            "REQUEST_PAGE" }, \
+    { REQUEST_PAGE,                 "REQUEST_PAGE" }, \
     { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { PAGE_REQUEST_REPLY,            "PAGE_REQUEST_REPLY" }, \
-    { PAGE_REQUEST_REDIRECT,            "PAGE_REQUEST_REDIRECT" },\
-    { PAGE_INFO_UPDATE,            "PAGE_INFO_UPDATE" }, \
+    { PAGE_REQUEST_REPLY,           "PAGE_REQUEST_REPLY" }, \
+    { PAGE_REQUEST_REDIRECT,        "PAGE_REQUEST_REDIRECT" },\
+    { PAGE_INFO_UPDATE,             "PAGE_INFO_UPDATE" }, \
     { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { TRY_REQUEST_PAGE,            "TRY_REQUEST_PAGE" }, \
-    { TRY_REQUEST_PAGE_FAIL,            "TRY_REQUEST_PAGE_FAIL" },\
+    { TRY_REQUEST_PAGE,             "TRY_REQUEST_PAGE" }, \
+    { TRY_REQUEST_PAGE_FAIL,        "TRY_REQUEST_PAGE_FAIL" },\
     { SVM_STATUS_UPDATE,            "SVM_STATUS_UPDATE" }, \
     { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { DSM_MSG_ERR,            "DSM_MSG_ERR" }
+    { ACK,                          "ACK" }\
+    { DSM_MSG_ERR,                  "DSM_MSG_ERR" }
 
 DECLARE_EVENT_CLASS(dsm_message_template,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),

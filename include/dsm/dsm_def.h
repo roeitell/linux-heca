@@ -64,6 +64,7 @@
 #define TRY_REQUEST_PAGE_FAIL           (1 << 6) // We try to get the page failed
 #define SVM_STATUS_UPDATE               (1 << 7) // The svm is down
 #define DSM_MSG_ERR                     (1 << 8) // ERROR
+#define ACK                             (1 << 9) // Msg Acknowledgement
 /*
  * DSM DATA structure
  */

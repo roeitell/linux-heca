@@ -618,9 +618,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     int r = -1;
-    struct conn_element *cele;
-    int ip_addr;
-    struct svm_data svm_info;
 
     if (!dsm_state->rcm)
         goto out;
@@ -645,16 +642,13 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
             if (priv_data->dsm)
                 r = unmap_range(priv_data, argp);
             break;
-
         /*
          * devel/debug
          */
-
         case DSM_TRY_PUSH_BACK_PAGE: {
             r = pushback_page(priv_data, argp);
             break;
         }
-
         default: {
             r = -EFAULT;
             break;

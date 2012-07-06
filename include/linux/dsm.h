@@ -36,8 +36,6 @@ struct unmap_data {
 #define DSM_MR                          _IOW(DSM_IO, 0xA3, struct unmap_data)
 #define DSM_UNMAP_RANGE                 _IOW(DSM_IO, 0xA4, struct unmap_data)
 /* debug/development */
-#define DSM_GET_STAT                    _IOW(DSM_IO, 0xB4, struct svm_data)
-#define DSM_GEN_STAT                    _IOW(DSM_IO, 0xB5, struct svm_data)
 #define DSM_TRY_PUSH_BACK_PAGE          _IOW(DSM_IO, 0xB6, struct unmap_data)
 
 #endif /* DSM_H_ */

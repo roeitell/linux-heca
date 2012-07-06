@@ -347,6 +347,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     int i;
     struct mm_struct *mm;
     unsigned long addr;
+    struct dsm_prefetch_fault *dpf;
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
 
@@ -356,7 +357,8 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     }
     BUG();
 
-    unlock: if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
+unlock:
+    if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
         page_cache_get(page);
         lru_cache_add_anon(page);
         for (i = 0; i < dpc->svms.num; i++) {
@@ -371,7 +373,6 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
                 dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
                 break;
             case PREFETCH_TAG:
-                struct dsm_prefetch_fault *dpf;
                 addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
                 dpf =alloc_dsm_prefetch_cache_elm(
                         dpc->svm->dsm->dsm_id, dpc->svm->svm_id, addr);

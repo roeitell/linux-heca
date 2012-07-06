@@ -26,6 +26,7 @@ void release_dsm_request(struct dsm_request *req)
     kmem_cache_free(kmem_request_cache, req);
 }
 
+
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
@@ -566,4 +567,28 @@ int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
 out:
     return ret;
 }
+
+int ack_msg(struct conn_element *ele, struct rx_buf_ele *rx_e) {
+
+    struct tx_buf_ele *tx_e = NULL;
+    int ret = 0;
+    struct dsm_message *msg = rx_e->dsm_buf;
+
+    if (request_queue_empty(ele)) {
+        tx_e = try_get_next_empty_tx_ele(ele);
+        if (likely(tx_e)) {
+            memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+            tx_e->dsm_buf->type = ACK;
+            tx_e->wrk_req->dst_addr = NULL;
+            tx_e->callback.func = NULL;
+            ret = tx_dsm_send(ele, tx_e);
+        }
+    }
+    if (ret)
+        ret = add_dsm_request_msg(ele, ACK, msg);
+    return ret;
+
+}
+
+
 

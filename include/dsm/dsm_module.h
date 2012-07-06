@@ -149,6 +149,7 @@ int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct page *, unsigned long, struct mm_struct *,
         struct memory_region *);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
+int ack_msg(struct conn_element *, struct rx_buf_ele *);
 
 /*
  * SYSFS

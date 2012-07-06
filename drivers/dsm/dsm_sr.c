@@ -345,6 +345,7 @@ retry:
         case TRY_REQUEST_PAGE:
         case SVM_STATUS_UPDATE:
         case TRY_REQUEST_PAGE_FAIL:
+        case ACK:
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);
             break;

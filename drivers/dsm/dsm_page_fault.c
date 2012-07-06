@@ -358,6 +358,8 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     BUG();
 
 unlock:
+    mm = dpc->svm->priv->mm;
+    addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
         page_cache_get(page);
         lru_cache_add_anon(page);
@@ -369,16 +371,17 @@ unlock:
         lru_add_drain();
 
         switch (dpc->tag) {
-            case PULL_TAG:
+            case PULL_TAG: {
                 break;
-            case PREFETCH_TAG:
-                addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
-                dpf =alloc_dsm_prefetch_cache_elm(
-                        dpc->svm->dsm->dsm_id, dpc->svm->svm_id, addr);
+            }
+            case PREFETCH_TAG: {
+
+                dpf = alloc_dsm_prefetch_cache_elm(dpc->svm->dsm->dsm_id,
+                        dpc->svm->svm_id, addr);
                 if (dpf) {
                     free_dsm_prefetch_cache_elm(&dpf);
                 } else {
-                    mm = dpc->svm->priv->mm;
+                    /* just in case if we run out of memory for the slab */
                     use_mm(mm);
                     down_read(&mm->mmap_sem);
                     get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
@@ -386,23 +389,23 @@ unlock:
                     unuse_mm(mm);
                 }
                 break;
-            case PULL_TRY_TAG:
-                mm = dpc->svm->priv->mm;
-                addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
+            }
+            case PULL_TRY_TAG: {
                 use_mm(mm);
                 down_read(&mm->mmap_sem);
                 get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
                 up_read(&mm->mmap_sem);
                 unuse_mm(mm);
                 break;
-
-            default:
+            }
+            default: {
                 BUG();
+            }
         }
     }
 
     trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
-            tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
+            addr, dpc->tag);
     dpc_nproc_dec(&dpc, 1);
     return 1;
 }

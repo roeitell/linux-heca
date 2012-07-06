@@ -205,13 +205,11 @@ retry:
     return !pd->pte;
 }
 
-static inline void dsm_extract_do_gup(struct page *page, struct mm_struct *mm,
-        unsigned long addr)
-{
-    use_mm(mm);
-    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-    unuse_mm(mm);
-}
+
+
+
+
+
 
 static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
         struct mm_struct *mm, unsigned long addr, pte_t pte_entry,
@@ -219,7 +217,7 @@ static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 {
     swp_entry_t swp_e;
     struct dsm_swp_data dsd;
-
+    struct page *page;
     /* first time dealing with this addr? */
     if (pte_none(pte_entry))
         goto fault_page;
@@ -254,7 +252,8 @@ static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
     }
 
 fault_page:
-    dsm_extract_do_gup(NULL, mm, addr);
+    /* we already use the mm and we already own the mm semaphore */
+    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
     return;
 }
 

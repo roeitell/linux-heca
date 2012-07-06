@@ -294,8 +294,10 @@ retry:
 
     if (unlikely(PageTransHuge(page))) {
         if (!PageHuge(page) && PageAnon(page)) {
+            pte_unmap_unlock(pd.pte, ptl);
             if (unlikely(split_huge_page(page)))
                 goto bad_page;
+            goto retry;
         }
     }
 

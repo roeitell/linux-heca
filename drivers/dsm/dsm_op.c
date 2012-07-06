@@ -886,7 +886,6 @@ int setup_connection(struct conn_element *ele, int type) {
         goto err2;
     if (setup_qp_attr(ele))
         goto err3;
-    reset_dsm_connection_stats(&ele->sysfs);
     if (setup_qp(ele))
         goto err4;
     if (create_tx_buffer(ele))

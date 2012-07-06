@@ -93,7 +93,6 @@ void release_svm_push_elements(struct subvirtual_machine *,
 
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
-void reset_dsm_connection_stats(struct con_element_sysfs *);
 void remove_svm(u32, u32);
 void remove_dsm(struct dsm *);
 

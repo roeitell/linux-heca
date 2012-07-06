@@ -371,13 +371,14 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
                 dsm_stats_inc(&dpc->svm->svm_sysfs.nb_remote_fault_success);
                 break;
             case PREFETCH_TAG:
-                mm = dpc->svm->priv->mm;
+                struct dsm_prefetch_fault *dpf;
                 addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
-                struct dsm_prefetch_fault *dpf = alloc_dsm_prefetch_cache_elm(
+                dpf =alloc_dsm_prefetch_cache_elm(
                         dpc->svm->dsm->dsm_id, dpc->svm->svm_id, addr);
                 if (dpf) {
                     free_dsm_prefetch_cache_elm(&dpf);
                 } else {
+                    mm = dpc->svm->priv->mm;
                     use_mm(mm);
                     down_read(&mm->mmap_sem);
                     get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);

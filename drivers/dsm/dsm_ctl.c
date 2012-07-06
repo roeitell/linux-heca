@@ -647,27 +647,9 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
             break;
 
         /*
-         * Statistics and devel/debug
+         * devel/debug
          */
-        case DSM_GEN_STAT: {
-            if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
-                goto out;
 
-            ip_addr = inet_addr(svm_info.ip);
-            cele = search_rb_conn(ip_addr);
-
-            if (cele)
-                reset_dsm_connection_stats(&cele->sysfs);
-            break;
-        }
-        case DSM_GET_STAT: {
-            if (copy_from_user((void *) &svm_info, argp, sizeof svm_info))
-                goto out;
-
-            ip_addr = inet_addr(svm_info.ip);
-            cele = search_rb_conn(ip_addr);
-            break;
-        }
         case DSM_TRY_PUSH_BACK_PAGE: {
             r = pushback_page(priv_data, argp);
             break;

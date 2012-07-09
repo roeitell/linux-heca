@@ -11,6 +11,15 @@
 
 #include <linux/tracepoint.h>
 #include <dsm/dsm_def.h>
+#include <dsm/dsm_core.h>
+
+
+#define dsm_dpc_tag \
+    { PULL_TAG,                 "PULL_TRY_TAG" }, \
+    { PREFETCH_TAG,             "PREFETCH_TAG" },\
+    { PUSH_TAG,                 "PUSH_TAG" }, \
+    { PULL_TRY_TAG,             "PULL_TRY_TAG" }
+
 
 DECLARE_EVENT_CLASS(dsm_page_fault_template,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag),
@@ -20,7 +29,7 @@ DECLARE_EVENT_CLASS(dsm_page_fault_template,
 
         TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->tag = tag ),
 
-        TP_printk(" Page Addr %p Fault DSM %d SVM %d Remote DSM %d SVM  %d with Flags %d", __entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->tag ));
+        TP_printk(" Page Addr %p Fault DSM %d SVM %d Remote DSM %d SVM  %d with Flags %s", __entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __print_symbolic(__entry->tag, dsm_dpc_tag) ));
 
 DEFINE_EVENT(dsm_page_fault_template, do_dsm_page_fault_svm,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag),
@@ -76,7 +85,7 @@ DECLARE_EVENT_CLASS(dsm_message_template,
 
         TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->type = type ),
 
-        TP_printk(" MSG Type %s  From DSM %d SVM %d To DSM %d SVM %d  Page Addr %p", __print_symbolic(__entry->type, dsm_msg_type), __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __entry->page_addr));
+        TP_printk("  Page Addr %p From DSM %d SVM %d To DSM %d SVM %d MSG Type %s", __entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __print_symbolic(__entry->type, dsm_msg_type)));
 
 DEFINE_EVENT(dsm_message_template, dsm_rx_msg,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),

@@ -850,29 +850,29 @@ retry:
      */
 
 
-    if (flags & FAULT_FLAG_ALLOW_RETRY  && dpc->tag == PULL_TAG)
-    {
-        int max_retry ;
-        /* we want here an optimisation for the nowait option */
-        if(flags & FAULT_FLAG_RETRY_NOWAIT)
-                max_retry = 10;
-        else
-                max_retry = 20;
-        for (j = 1; j < max_retry; j++){
-                get_dsm_page(mm, address + j * PAGE_SIZE,
-                        fault_svm, PREFETCH_TAG);
-                if (address > (j * PAGE_SIZE))
-                        get_dsm_page(mm,
-                        address - j * PAGE_SIZE,
-                        fault_svm,
-                        PREFETCH_TAG);
-        /* original fault already finished, bail out */
-                if (trylock_page(dpc->pages[0]))
-                        goto resolve;
-
-        }
-
-    }
+//    if (flags & FAULT_FLAG_ALLOW_RETRY  && dpc->tag == PULL_TAG)
+//    {
+//        int max_retry ;
+//        /* we want here an optimisation for the nowait option */
+//        if(flags & FAULT_FLAG_RETRY_NOWAIT)
+//                max_retry = 10;
+//        else
+//                max_retry = 20;
+//        for (j = 1; j < max_retry; j++){
+//                get_dsm_page(mm, address + j * PAGE_SIZE,
+//                        fault_svm, PREFETCH_TAG);
+//                if (address > (j * PAGE_SIZE))
+//                        get_dsm_page(mm,
+//                        address - j * PAGE_SIZE,
+//                        fault_svm,
+//                        PREFETCH_TAG);
+//        /* original fault already finished, bail out */
+//                if (trylock_page(dpc->pages[0]))
+//                        goto resolve;
+//
+//        }
+//
+//    }
 
 lock:
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {

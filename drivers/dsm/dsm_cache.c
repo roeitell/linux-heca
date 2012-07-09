@@ -15,6 +15,8 @@ static inline void init_dsm_cache_elm(void *obj)
 
     for (i = 0; i < MAX_SVMS_PER_PAGE; i++)
         dpc->pages[i] = NULL;
+    atomic_set(&dpc->found, -1);
+    atomic_set(&dpc->removing, 0);
 }
 
 void init_dsm_cache_kmem(void)
@@ -38,7 +40,7 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
     if (unlikely(!dpc))
         goto out;
 
-    atomic_set(&dpc->found, -1);
+
     atomic_set(&dpc->nproc, nproc);
     dpc->addr = addr;
     dpc->svms = svms;

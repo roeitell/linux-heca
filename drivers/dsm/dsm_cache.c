@@ -62,14 +62,13 @@ void dsm_dealloc_dpc(struct dsm_page_cache **dpc)
 EXPORT_SYMBOL(dsm_dealloc_dpc);
 
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
-        unsigned long addr)
-{
+        unsigned long addr) {
     void **ppc;
     struct dsm_page_cache *dpc;
 
     rcu_read_lock();
 
-repeat: 
+repeat:
     dpc = NULL;
     ppc = radix_tree_lookup_slot(&svm->page_cache, addr);
     if (ppc) {
@@ -82,7 +81,12 @@ repeat:
                 goto repeat;
             goto out;
         }
+        VM_BUG_ON(in_interrupt());
 #if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
+# ifdef CONFIG_PREEMPT_COUNT
+        VM_BUG_ON(!in_atomic());
+# endif
+        VM_BUG_ON(atomic_read(&dpc->nproc) == 0);
         atomic_inc(&dpc->nproc);
 #else
         if (!atomic_inc_not_zero(&dpc->nproc))

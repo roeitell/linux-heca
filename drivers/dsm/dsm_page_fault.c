@@ -939,7 +939,7 @@ resolve:
      * We should pretty much always get in there unless we read fault. Note
      * that KVM always write faults.
      */
-    if (likely(reuse_dsm_page(fault_svm, found_page, norm_addr))) {
+    if (likely(reuse_dsm_page(fault_svm, found_page, norm_addr,dpc))) {
         pte = maybe_mkwrite(pte_mkdirty(pte), vma);
         flags &= ~FAULT_FLAG_WRITE;
         ret |= VM_FAULT_WRITE;

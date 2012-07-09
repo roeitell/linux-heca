@@ -97,7 +97,7 @@ out:
 }
 
 static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
-        unsigned long addr)
+        unsigned long addr, struct dsm_page_cache *dpc)
 {
     int count;
 
@@ -108,7 +108,7 @@ static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
     count = page_mapcount(page);
     if (count == 0 && !PageWriteback(page)) {
         page_cache_release(page);
-        dsm_cache_release(svm, addr);
+        atomic_set(&dpc->removing,1);
         if (!PageSwapBacked(page))
             SetPageDirty(page);
     }
@@ -134,7 +134,7 @@ static inline void cow_user_page(struct page *dst, struct page *src,
 static int do_wp_dsm_page(struct subvirtual_machine *fault_svm,
         struct mm_struct *mm, struct vm_area_struct *vma, unsigned long address,
         pte_t *page_table, pmd_t *pmd, spinlock_t *ptl, pte_t orig_pte,
-        unsigned long norm_address) __releases(ptl)
+        unsigned long norm_address, struct dsm_page_cache *dpc) __releases(ptl)
 {
     struct page *old_page, *new_page;
     pte_t entry;
@@ -161,7 +161,7 @@ static int do_wp_dsm_page(struct subvirtual_machine *fault_svm,
             }
             page_cache_release(old_page);
         }
-        if (reuse_dsm_page(fault_svm, old_page, norm_address)) {
+        if (reuse_dsm_page(fault_svm, old_page, norm_address,dpc)) {
             page_move_anon_rmap(old_page, vma, address);
             unlock_page(old_page);
             goto reuse;
@@ -214,6 +214,8 @@ reuse:
         entry = maybe_mkwrite(pte_mkdirty(entry), vma);
         if (ptep_set_access_flags(vma, address, page_table, entry, 1))
             update_mmu_cache(vma, address, page_table);
+        if(atomic_read(&dpc->removing))
+            dsm_cache_release(fault_svm,norm_address);
         pte_unmap_unlock(page_table, ptl);
         ret |= VM_FAULT_WRITE;
 
@@ -960,13 +962,15 @@ resolve:
     }
     if (flags & FAULT_FLAG_WRITE) {
         ret |= do_wp_dsm_page(fault_svm, mm, vma, address, page_table, pmd, ptl,
-                pte, norm_addr);
+                pte, norm_addr,dpc);
         if (ret & VM_FAULT_ERROR)
             ret &= VM_FAULT_ERROR;
         goto out;
     }
 
     update_mmu_cache(vma, address, page_table);
+    if(atomic_read(&dpc->removing))
+        dsm_cache_release(fault_svm,norm_addr);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
     trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dpc->tag);

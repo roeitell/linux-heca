@@ -365,7 +365,6 @@ struct dsm_page_cache {
     struct svm_list svms;
     atomic_t found;
     atomic_t nproc;
-    atomic_t removing;
     unsigned long bitmap;
 
     struct rb_node rb_node;

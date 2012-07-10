@@ -40,7 +40,6 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
         goto out;
 
     atomic_set(&dpc->found, -1);
-    atomic_set(&dpc->removing, 0);
     atomic_set(&dpc->nproc, nproc);
     dpc->addr = addr;
     dpc->svms = svms;

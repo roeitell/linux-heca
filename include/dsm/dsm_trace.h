@@ -15,7 +15,7 @@
 
 
 #define dsm_dpc_tag \
-    { PULL_TAG,                 "PULL_TRY_TAG" }, \
+    { PULL_TAG,                 "PULL_TAG" }, \
     { PREFETCH_TAG,             "PREFETCH_TAG" },\
     { PUSH_TAG,                 "PUSH_TAG" }, \
     { PULL_TRY_TAG,             "PULL_TRY_TAG" }

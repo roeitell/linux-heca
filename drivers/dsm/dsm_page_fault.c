@@ -115,9 +115,7 @@ static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
 
     count = page_mapcount(page);
     if (count == 0 && !PageWriteback(page)) {
-        if (atomic_cmpxchg(&dpc->released, 0 , 1) == 0) {
-            page_cache_release(page);
-        }
+        atomic_cmpxchg(&dpc->released, 0 , 1);
         if (!PageSwapBacked(page))
             SetPageDirty(page);
     }
@@ -917,7 +915,6 @@ resolve:
     found_page = dpc->pages[i];
     if (i)
         __set_page_locked(found_page);
-
     page_cache_get(found_page);
     if (ksm_might_need_to_copy(found_page, vma, address)) {
         swapcache = found_page;
@@ -929,7 +926,6 @@ resolve:
             goto out_page;
         }
     }
-
     if (mem_cgroup_try_charge_swapin(mm, found_page, GFP_KERNEL, &ptr)) {
         ret = VM_FAULT_OOM;
         goto out_page;
@@ -955,6 +951,7 @@ resolve:
         ret |= VM_FAULT_WRITE;
         exclusive = 1;
     }
+
     flush_icache_page(vma, found_page);
     set_pte_at(mm, address, page_table, pte);
 
@@ -981,6 +978,7 @@ resolve:
     update_mmu_cache(vma, address, page_table);
     try_release_dpc(dpc);
     pte_unmap_unlock(pte, ptl);
+    put_page(found_page);
     atomic_dec(&dpc->nproc);
     trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dpc->tag);
     goto out;
@@ -1003,6 +1001,7 @@ out_page:
 out:
     if (likely(dpc))
         dpc_nproc_dec(&dpc, !(ret & VM_FAULT_RETRY));
+
     return ret;
 }
 

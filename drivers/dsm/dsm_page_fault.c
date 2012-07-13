@@ -421,21 +421,21 @@ unlock:
                 break;
             }
             case PREFETCH_TAG:
-//            {
-//                dpf = alloc_dsm_prefetch_cache_elm(addr);
-//                if (dpf) {
-//                    queue_dpf_for_delayed_gup(dpf, dpc->svm);
-//                    dequeue_and_gup_prefetch(dpc->svm);
-//                } else {
-//                    /* just in case if we run out of memory for the slab */
-//                    use_mm(mm);
-//                    down_read(&mm->mmap_sem);
-//                    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-//                    up_read(&mm->mmap_sem);
-//                    unuse_mm(mm);
-//                }
-//                break;
-//            }
+            {
+                dpf = alloc_dsm_prefetch_cache_elm(addr);
+                if (dpf) {
+                    queue_dpf_for_delayed_gup(dpf, dpc->svm);
+                    dequeue_and_gup_prefetch(dpc->svm);
+                } else {
+                    /* just in case if we run out of memory for the slab */
+                    use_mm(mm);
+                    down_read(&mm->mmap_sem);
+                    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+                    up_read(&mm->mmap_sem);
+                    unuse_mm(mm);
+                }
+                break;
+            }
             case PULL_TRY_TAG: {
                 use_mm(mm);
                 down_read(&mm->mmap_sem);

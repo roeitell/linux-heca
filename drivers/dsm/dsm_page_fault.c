@@ -96,8 +96,16 @@ out:
     return dpc;
 }
 
+static int try_release_dpc(struct dsm_page_cache *dpc) {
+    if (atomic_cmpxchg(&dpc->released, 1 , -1) == 1) {
+        dsm_cache_release(dpc->svm, dpc->addr);
+        return 1;
+    }
+    return 0;
+}
+
 static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
-        unsigned long addr)
+        unsigned long addr, struct dsm_page_cache *dpc)
 {
     int count;
 
@@ -107,8 +115,9 @@ static int reuse_dsm_page(struct subvirtual_machine *svm, struct page *page,
 
     count = page_mapcount(page);
     if (count == 0 && !PageWriteback(page)) {
-        page_cache_release(page);
-        dsm_cache_release(svm,addr);
+        if (atomic_cmpxchg(&dpc->released, 0 , 1) == 0) {
+            page_cache_release(page);
+        }
         if (!PageSwapBacked(page))
             SetPageDirty(page);
     }
@@ -161,7 +170,7 @@ static int do_wp_dsm_page(struct subvirtual_machine *fault_svm,
             }
             page_cache_release(old_page);
         }
-        if (reuse_dsm_page(fault_svm, old_page, norm_address)) {
+        if (reuse_dsm_page(fault_svm, old_page, norm_address,dpc)) {
             page_move_anon_rmap(old_page, vma, address);
             unlock_page(old_page);
             goto reuse;
@@ -939,7 +948,7 @@ resolve:
      * We should pretty much always get in there unless we read fault. Note
      * that KVM always write faults.
      */
-    if (likely(reuse_dsm_page(fault_svm, found_page, norm_addr))) {
+    if (likely(reuse_dsm_page(fault_svm, found_page, norm_addr,dpc))) {
         pte = maybe_mkwrite(pte_mkdirty(pte), vma);
         flags &= ~FAULT_FLAG_WRITE;
         ret |= VM_FAULT_WRITE;
@@ -969,7 +978,7 @@ resolve:
     }
 
     update_mmu_cache(vma, address, page_table);
-
+    try_release_dpc(dpc);
     pte_unmap_unlock(pte, ptl);
     atomic_dec(&dpc->nproc);
     trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dpc->tag);

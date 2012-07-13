@@ -41,6 +41,7 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
 
     atomic_set(&dpc->found, -1);
     atomic_set(&dpc->nproc, nproc);
+    atomic_set(&dpc->released, 0);
     dpc->addr = addr;
     dpc->svms = svms;
     dpc->tag = tag;

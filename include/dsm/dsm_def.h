@@ -42,6 +42,8 @@
 
 #define MAX_SVMS_PER_PAGE 2
 
+#define GUP_DELAY  HZ /* GUP delay between receving a prefetch / pulled page and doing a gup */
+
 /**
  * RDMA_INFO
  */
@@ -261,6 +263,8 @@ struct subvirtual_machine {
 
 
     struct llist_head delayed_faults;
+    atomic_t scheduled_delayed_gup;
+    struct delayed_work delayed_gup_work;
 };
 
 struct work_request_ele {

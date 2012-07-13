@@ -346,7 +346,7 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
     }
 }
 
-void dequeue_and_gup(struct subvirtual_machine *svm){
+static inline void dequeue_and_gup(struct subvirtual_machine *svm){
     struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;
     struct page * page;
@@ -354,7 +354,6 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
 
     use_mm(svm->priv->mm);
     down_read(&svm->priv->mm->mmap_sem);
-
     head = llist_del_all(&svm->delayed_faults);
     if (unlikely(!head))
         goto out;
@@ -363,10 +362,10 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
         dpc = dsm_cache_get_hold(svm, ddf->addr);
-        if (dpc && dpc->tag == PREFETCH_TAG) {
-            dpc_nproc_dec(&dpc, 0);
+        if (dpc && (dpc->tag == PREFETCH_TAG || dpc->tag == PULL_TRY_TAG)) {
             get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0, &page,
                     NULL);
+            dpc_nproc_dec(&dpc, 1);
         }
     }
 out:
@@ -379,9 +378,19 @@ out:
 
 }
 
+
+void delayed_gup_work_fn(struct work_struct *w) {
+    struct subvirtual_machine    *svm ;
+    svm == container_of(to_delayed_work(w), struct subvirtual_machine *, delayed_gup_work);
+    atomic_set(&svm->scheduled_delayed_gup,0);
+    dequeue_and_gup(svm);
+}
+
 static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, struct subvirtual_machine *svm){
 
     llist_add(&ddf->node, &svm->delayed_faults);
+    if(!atomic_cmpxchg(&svm->scheduled_delayed_gup,0,1))
+        schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
 
 }
 

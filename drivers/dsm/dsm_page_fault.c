@@ -381,7 +381,7 @@ out:
 
 void delayed_gup_work_fn(struct work_struct *w) {
     struct subvirtual_machine *svm;
-    svm = container_of(to_delayed_work(w), struct subvirtual_machine *, delayed_gup_work);
+    svm = container_of(to_delayed_work(w), struct subvirtual_machine , delayed_gup_work);
     atomic_set(&svm->scheduled_delayed_gup, 0);
     dequeue_and_gup(svm);
 }

@@ -420,21 +420,22 @@ unlock:
             case PULL_TAG: {
                 break;
             }
-            case PREFETCH_TAG: {
-                dpf = alloc_dsm_prefetch_cache_elm(addr);
-                if (dpf) {
-                    queue_dpf_for_delayed_gup(dpf, dpc->svm);
-                    dequeue_and_gup_prefetch(dpc->svm);
-                } else {
-                    /* just in case if we run out of memory for the slab */
-                    use_mm(mm);
-                    down_read(&mm->mmap_sem);
-                    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-                    up_read(&mm->mmap_sem);
-                    unuse_mm(mm);
-                }
-                break;
-            }
+            case PREFETCH_TAG:
+//            {
+//                dpf = alloc_dsm_prefetch_cache_elm(addr);
+//                if (dpf) {
+//                    queue_dpf_for_delayed_gup(dpf, dpc->svm);
+//                    dequeue_and_gup_prefetch(dpc->svm);
+//                } else {
+//                    /* just in case if we run out of memory for the slab */
+//                    use_mm(mm);
+//                    down_read(&mm->mmap_sem);
+//                    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+//                    up_read(&mm->mmap_sem);
+//                    unuse_mm(mm);
+//                }
+//                break;
+//            }
             case PULL_TRY_TAG: {
                 use_mm(mm);
                 down_read(&mm->mmap_sem);
@@ -861,29 +862,29 @@ retry:
      */
 
 
-//    if (flags & FAULT_FLAG_ALLOW_RETRY  && dpc->tag == PULL_TAG)
-//    {
-//        int max_retry ;
-//        /* we want here an optimisation for the nowait option */
-//        if(flags & FAULT_FLAG_RETRY_NOWAIT)
-//                max_retry = 10;
-//        else
-//                max_retry = 20;
-//        for (j = 1; j < max_retry; j++){
-//                get_dsm_page(mm, address + j * PAGE_SIZE,
-//                        fault_svm, PREFETCH_TAG);
-//                if (address > (j * PAGE_SIZE))
-//                        get_dsm_page(mm,
-//                        address - j * PAGE_SIZE,
-//                        fault_svm,
-//                        PREFETCH_TAG);
-//        /* original fault already finished, bail out */
-//                if (trylock_page(dpc->pages[0]))
-//                        goto resolve;
-//
-//        }
-//
-//    }
+    if (flags & FAULT_FLAG_ALLOW_RETRY  && dpc->tag == PULL_TAG)
+    {
+        int max_retry ;
+        /* we want here an optimisation for the nowait option */
+        if(flags & FAULT_FLAG_RETRY_NOWAIT)
+                max_retry = 10;
+        else
+                max_retry = 20;
+        for (j = 1; j < max_retry; j++){
+                get_dsm_page(mm, address + j * PAGE_SIZE,
+                        fault_svm, PREFETCH_TAG);
+                if (address > (j * PAGE_SIZE))
+                        get_dsm_page(mm,
+                        address - j * PAGE_SIZE,
+                        fault_svm,
+                        PREFETCH_TAG);
+        /* original fault already finished, bail out */
+                if (trylock_page(dpc->pages[0]))
+                        goto resolve;
+
+        }
+
+    }
 
 lock:
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {

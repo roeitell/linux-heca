@@ -434,7 +434,6 @@ unlock:
                 ddf = alloc_dsm_delayed_fault_cache_elm(addr);
                 if (ddf) {
                     queue_ddf_for_delayed_gup(ddf, dpc->svm);
-                    dequeue_and_gup(dpc->svm);
                 } else {
                     /* just in case if we run out of memory for the slab */
                     use_mm(mm);

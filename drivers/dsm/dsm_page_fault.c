@@ -11,39 +11,39 @@
 #define CREATE_TRACE_POINTS
 #include <dsm/dsm_trace.h>
 
-static struct kmem_cache *dsm_prefetch_cache_kmem;
+static struct kmem_cache *dsm_delayed_fault_cache_kmem;
 
 
 
 void init_dsm_prefetch_cache_kmem(void) {
-    dsm_prefetch_cache_kmem = kmem_cache_create("dsm_prefetch_fault_cache",
-            sizeof(struct dsm_prefetch_fault), 0,
+    dsm_delayed_fault_cache_kmem = kmem_cache_create("dsm_delayed_fault_cache",
+            sizeof(struct dsm_delayed_fault), 0,
             SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, NULL);
 }
 EXPORT_SYMBOL(init_dsm_prefetch_cache_kmem);
 
 void destroy_dsm_prefetch_cache_kmem(void) {
-    kmem_cache_destroy(dsm_prefetch_cache_kmem);
+    kmem_cache_destroy(dsm_delayed_fault_cache_kmem);
 }
 EXPORT_SYMBOL(destroy_dsm_prefetch_cache_kmem);
 
-static struct dsm_prefetch_fault * alloc_dsm_prefetch_cache_elm(unsigned long addr) {
+static struct dsm_delayed_fault * alloc_dsm_delayed_fault_cache_elm(unsigned long addr) {
 
-    struct dsm_prefetch_fault * dpf = kmem_cache_alloc(dsm_prefetch_cache_kmem,
+    struct dsm_prefetch_fault * ddf = kmem_cache_alloc(dsm_delayed_fault_cache_kmem,
             GFP_KERNEL);
-    if (unlikely(!dpf))
+    if (unlikely(!ddf))
         goto out;
 
-    dpf->addr = addr;
+    ddf->addr = addr;
 
-    out: return dpf;
+    out: return ddf;
 
 }
 
-static void free_dsm_prefetch_cache_elm(struct dsm_prefetch_fault ** dpf) {
+static void free_dsm_delayed_fault_cache_elm(struct dsm_delayed_fault ** ddf) {
 
-    kmem_cache_free(dsm_prefetch_cache_kmem, *dpf);
-    *dpf = NULL;
+    kmem_cache_free(dsm_delayed_fault_cache_kmem, *ddf);
+    *ddf = NULL;
 
 }
 
@@ -345,8 +345,8 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
     }
 }
 
-void dequeue_and_gup_prefetch(struct subvirtual_machine *svm){
-    struct dsm_prefetch_fault *dpf;
+void dequeue_and_gup(struct subvirtual_machine *svm){
+    struct dsm_prefetch_fault *ddf;
     struct dsm_page_cache *dpc;
     struct page * page;
     struct llist_node *head, *node;
@@ -354,17 +354,17 @@ void dequeue_and_gup_prefetch(struct subvirtual_machine *svm){
     use_mm(svm->priv->mm);
     down_read(&svm->priv->mm->mmap_sem);
 
-    head = llist_del_all(&svm->delayed_prefetch_faults);
+    head = llist_del_all(&svm->delayed_faults);
     if (unlikely(!head))
         goto out;
 
     for (node = head; node; node = llist_next(node)) {
-        dpf = llist_entry(node, struct dsm_prefetch_fault, node);
+        ddf = llist_entry(node, struct dsm_delayed_fault, node);
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
-        dpc = dsm_cache_get_hold(svm, dpf->addr);
+        dpc = dsm_cache_get_hold(svm, ddf->addr);
         if (dpc && dpc->tag == PREFETCH_TAG) {
             dpc_nproc_dec(&dpc, 0);
-            get_user_pages(current, svm->priv->mm, dpf->addr, 1, 1, 0, &page,
+            get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0, &page,
                     NULL);
         }
     }
@@ -372,15 +372,15 @@ out:
     up_read(&svm->priv->mm->mmap_sem);
     unuse_mm(svm->priv->mm);
     for (node = head; node; node = llist_next(node)) {
-        dpf = llist_entry(node, struct dsm_prefetch_fault, node);
-        free_dsm_prefetch_cache_elm(&dpf);
+        ddf = llist_entry(node, struct dsm_prefetch_fault, node);
+        free_dsm_prefetch_cache_elm(&ddf);
     }
 
 }
 
-static inline void queue_dpf_for_delayed_gup(struct dsm_prefetch_fault *dpf, struct subvirtual_machine *svm){
+static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, struct subvirtual_machine *svm){
 
-    llist_add(&dpf->node, &svm->delayed_prefetch_faults);
+    llist_add(&ddf->node, &svm->delayed_faults);
 
 }
 
@@ -391,7 +391,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     int i;
     struct mm_struct *mm;
     unsigned long addr;
-    struct dsm_prefetch_fault *dpf;
+    struct dsm_delayed_fault *ddf;
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
 
@@ -418,12 +418,13 @@ unlock:
             case PULL_TAG: {
                 break;
             }
+            case PULL_TRY_TAG:
             case PREFETCH_TAG:
             {
-                dpf = alloc_dsm_prefetch_cache_elm(addr);
-                if (dpf) {
-                    queue_dpf_for_delayed_gup(dpf, dpc->svm);
-                    dequeue_and_gup_prefetch(dpc->svm);
+                ddf = alloc_dsm_delayed_fault_cache_elm(addr);
+                if (ddf) {
+                    queue_ddf_for_delayed_gup(ddf, dpc->svm);
+                    dequeue_and_gup(dpc->svm);
                 } else {
                     /* just in case if we run out of memory for the slab */
                     use_mm(mm);
@@ -432,14 +433,6 @@ unlock:
                     up_read(&mm->mmap_sem);
                     unuse_mm(mm);
                 }
-                break;
-            }
-            case PULL_TRY_TAG: {
-                use_mm(mm);
-                down_read(&mm->mmap_sem);
-                get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-                up_read(&mm->mmap_sem);
-                unuse_mm(mm);
                 break;
             }
             default: {

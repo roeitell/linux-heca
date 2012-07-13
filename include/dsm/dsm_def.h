@@ -42,7 +42,7 @@
 
 #define MAX_SVMS_PER_PAGE 2
 
-#define GUP_DELAY  HZ /* GUP delay between receving a prefetch / pulled page and doing a gup */
+
 
 /**
  * RDMA_INFO

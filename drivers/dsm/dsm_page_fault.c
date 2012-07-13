@@ -382,14 +382,14 @@ out:
 void delayed_gup_work_fn(struct work_struct *w) {
     struct subvirtual_machine *svm;
     svm = container_of(to_delayed_work(w), struct subvirtual_machine , delayed_gup_work);
-    atomic_set(&svm->scheduled_delayed_gup, 0);
+    atomic_cmpxchg(&svm->scheduled_delayed_gup,1,0);
     dequeue_and_gup(svm);
 }
 
 static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, struct subvirtual_machine *svm){
 
     llist_add(&ddf->node, &svm->delayed_faults);
-    if(!atomic_cmpxchg(&svm->scheduled_delayed_gup,0,1))
+    if(atomic_cmpxchg(&svm->scheduled_delayed_gup,0,1)==0)
         schedule_delayed_work(&svm->delayed_gup_work, HZ*10);
 
 }

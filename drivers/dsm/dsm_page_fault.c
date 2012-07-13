@@ -29,14 +29,15 @@ EXPORT_SYMBOL(destroy_dsm_prefetch_cache_kmem);
 
 static struct dsm_delayed_fault * alloc_dsm_delayed_fault_cache_elm(unsigned long addr) {
 
-    struct dsm_prefetch_fault * ddf = kmem_cache_alloc(dsm_delayed_fault_cache_kmem,
+    struct dsm_delayed_fault * ddf = kmem_cache_alloc(dsm_delayed_fault_cache_kmem,
             GFP_KERNEL);
     if (unlikely(!ddf))
         goto out;
 
     ddf->addr = addr;
 
-    out: return ddf;
+out:
+    return ddf;
 
 }
 
@@ -346,7 +347,7 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
 }
 
 void dequeue_and_gup(struct subvirtual_machine *svm){
-    struct dsm_prefetch_fault *ddf;
+    struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;
     struct page * page;
     struct llist_node *head, *node;
@@ -372,8 +373,8 @@ out:
     up_read(&svm->priv->mm->mmap_sem);
     unuse_mm(svm->priv->mm);
     for (node = head; node; node = llist_next(node)) {
-        ddf = llist_entry(node, struct dsm_prefetch_fault, node);
-        free_dsm_prefetch_cache_elm(&ddf);
+        ddf = llist_entry(node, struct dsm_delayed_fault, node);
+        free_dsm_delayed_fault_cache_elm(&ddf);
     }
 
 }

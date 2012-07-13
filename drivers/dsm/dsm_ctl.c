@@ -273,7 +273,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     new_svm->push_cache = RB_ROOT;
     seqlock_init(&new_svm->push_cache_lock);
     INIT_LIST_HEAD(&new_svm->mr_list);
-    init_llist_head(&new_svm->delayed_prefetch_faults);
+    init_llist_head(&new_svm->delayed_faults);
     if (svm_info.offset) {  /* local svm */
         new_svm->priv = priv_data;
         priv_data->svm = new_svm;

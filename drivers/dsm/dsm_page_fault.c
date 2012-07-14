@@ -346,7 +346,7 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
     }
 }
 
-static inline void dequeue_and_gup(struct subvirtual_machine *svm){
+void dequeue_and_gup(struct subvirtual_machine *svm){
     struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;
     struct page * page;

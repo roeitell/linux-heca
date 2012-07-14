@@ -28,30 +28,30 @@
 #include <linux/llist.h>
 #include <linux/dsm.h>
 
-#define RDMA_PAGE_SIZE PAGE_SIZE
+#define RDMA_PAGE_SIZE      PAGE_SIZE
 
-#define IB_MAX_CAP_SCQ 256
-#define IB_MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
-#define IB_MAX_SEND_SGE 2
-#define IB_MAX_RECV_SGE 2
+#define IB_MAX_CAP_SCQ      256
+#define IB_MAX_CAP_RCQ      1024    /* Heuristic; perhaps raise in the future */
+#define IB_MAX_SEND_SGE     2
+#define IB_MAX_RECV_SGE     2
 
-#define IW_MAX_CAP_SCQ 256
-#define IW_MAX_CAP_RCQ 1024    /* Heuristic; perhaps raise in the future */
-#define IW_MAX_SEND_SGE 2
-#define IW_MAX_RECV_SGE 2
+#define IW_MAX_CAP_SCQ      256
+#define IW_MAX_CAP_RCQ      1024    /* Heuristic; perhaps raise in the future */
+#define IW_MAX_SEND_SGE     2
+#define IW_MAX_RECV_SGE     2
 
-#define MAX_SVMS_PER_PAGE 2
+#define MAX_SVMS_PER_PAGE   2
 
-
+#define GUP_DELAY           HZ*5    /* 5 second */
 
 /**
  * RDMA_INFO
  */
-#define RDMA_INFO_CL 4
-#define RDMA_INFO_SV 3
-#define RDMA_INFO_READY_CL 2
-#define RDMA_INFO_READY_SV 1
-#define RDMA_INFO_NULL 0
+#define RDMA_INFO_CL        4
+#define RDMA_INFO_SV        3
+#define RDMA_INFO_READY_CL  2
+#define RDMA_INFO_READY_SV  1
+#define RDMA_INFO_NULL      0
 
 /**
  * DSM_MESSAGE

@@ -390,7 +390,7 @@ static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, stru
 
     llist_add(&ddf->node, &svm->delayed_faults);
     if(atomic_cmpxchg(&svm->scheduled_delayed_gup,0,1)==0)
-        schedule_delayed_work(&svm->delayed_gup_work, HZ*10);
+        schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
 
 }
 

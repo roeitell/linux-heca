@@ -39,6 +39,10 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         goto out;
     }
     if (svm->priv) {
+        atomic_set(&svm->scheduled_delayed_gup,-1);
+        cancel_delayed_work_sync(&svm->delayed_gup_work);
+        // to make sure everything is clean
+        dequeue_and_gup(svm);
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }
@@ -77,10 +81,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             release_svm_tx_elements(svm, ele);
         }
         release_svm_push_elements(svm, NULL);
-        atomic_set(&svm->scheduled_delayed_gup,-1);
-        cancel_delayed_work_sync(&svm->delayed_gup_work);
-        // to make sure everything is clean
-        dequeue_and_gup(svm);
+
     } else if (svm->ele) {
         struct list_head *pos;
 

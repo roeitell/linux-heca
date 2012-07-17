@@ -506,7 +506,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     if (!mr) {
         dsm_printk(KERN_ERR "can't allocate memory for MR");
         ret = -ENOMEM;
-        goto out;
+        goto out_free;
     }
 
     mr->addr = udata.addr;
@@ -515,7 +515,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     if (!mr->descriptor) {
         dsm_printk(KERN_ERR "can't find MR descriptor for svm_ids");
         ret = -EFAULT;
-        goto out;
+        goto out_free;
     }
 
     insert_mr(dsm, mr);
@@ -528,14 +528,14 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
         if (!svm) {
             dsm_printk(KERN_ERR "[i=%d] can't find svm %d", i, svm_id);
             ret = -EFAULT;
-            goto out;
+            goto out_remove_tree;
         }
 
         if (is_svm_local(svm) && is_svm_current(svm)) {
             mr->local = LOCAL;
             dsm_printk(KERN_INFO "[i=%d] svm is current %d - existing", i,
                  svm_id);
-            goto out;
+            goto out_remove_tree;
         }
     }
 
@@ -544,11 +544,24 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
                 udata.addr + udata.sz - 1);
     }
 
-out: 
+
     dsm_printk(KERN_INFO 
         "register_mr: addr [0x%lx] sz [0x%lx] svm[0] [0x%x] --> ret %d",
         udata.addr, udata.sz, *udata.svm_ids, ret);
 
+    return ret;
+
+out_remove_tree:
+    rb_erase(&mr->rb_node, &dsm->mr_tree_root);
+out_free:
+    kfree(mr);
+
+out:
+
+    dsm_printk(KERN_INFO
+            "register_mr failed : addr [0x%lx] sz [0x%lx] svm[0] [0x%x] --> ret %d",
+            udata.addr, udata.sz, *udata.svm_ids, ret);
+    ret =-1;
     return ret;
 }
 

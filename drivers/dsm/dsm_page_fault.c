@@ -376,6 +376,19 @@ out:
 
 }
 
+static struct llist_node *llist_nodes_reverse(struct llist_node *llnode)
+{
+         struct llist_node *next, *tail = NULL;
+
+        while (llnode) {
+                next = llnode->next;
+                 llnode->next = tail;
+               tail = llnode;
+                 llnode = next;
+         }
+
+         return tail;
+}
 
 void dequeue_and_gup(struct subvirtual_machine *svm){
     struct dsm_delayed_fault *ddf;
@@ -389,6 +402,7 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
     if (unlikely(!head))
         goto out;
 
+    head = llist_nodes_reverse(head);
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
@@ -413,8 +427,8 @@ out:
 void delayed_gup_work_fn(struct work_struct *w) {
     struct subvirtual_machine *svm;
     svm = container_of(to_delayed_work(w), struct subvirtual_machine , delayed_gup_work);
-    atomic_cmpxchg(&svm->scheduled_delayed_gup,1,0);
-    dequeue_and_gup(svm);
+    if( atomic_cmpxchg(&svm->scheduled_delayed_gup,1,0) == 1)
+        dequeue_and_gup(svm);
 }
 
 static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, struct subvirtual_machine *svm){
@@ -892,10 +906,15 @@ retry:
      * cleared, then re-throw the fault.
      */
 
-
+    if(dpc->tag == PREFETCH_TAG){
+       dpc->tag = PULL_TAG;
+       if (trylock_page(dpc->pages[0]))
+               goto resolve;
+    }
     if (flags & FAULT_FLAG_ALLOW_RETRY  && dpc->tag == PULL_TAG)
     {
         int max_retry ;
+
         /* we want here an optimisation for the nowait option */
         if(flags & FAULT_FLAG_RETRY_NOWAIT)
                 max_retry = 10;

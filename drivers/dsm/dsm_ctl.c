@@ -42,7 +42,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         atomic_set(&svm->scheduled_delayed_gup,-1);
         cancel_delayed_work_sync(&svm->delayed_gup_work);
         // to make sure everything is clean
-        dequeue_and_gup(svm);
+        dequeue_and_gup_cleanup(svm);
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }

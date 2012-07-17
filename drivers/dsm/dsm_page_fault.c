@@ -346,6 +346,37 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
     }
 }
 
+
+void dequeue_and_gup_cleanup(struct subvirtual_machine *svm){
+    struct dsm_delayed_fault *ddf;
+    struct dsm_page_cache *dpc;
+    struct page * page;
+    struct llist_node *head, *node;
+
+
+    head = llist_del_all(&svm->delayed_faults);
+    if (unlikely(!head))
+        goto out;
+
+    for (node = head; node; node = llist_next(node)) {
+        ddf = llist_entry(node, struct dsm_delayed_fault, node);
+        /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
+        dpc = dsm_cache_get_hold(svm, ddf->addr);
+        if (dpc && (dpc->tag == PREFETCH_TAG || dpc->tag == PULL_TRY_TAG)) {
+            dpc_nproc_dec(&dpc, 1);
+            dpc_nproc_dec(&dpc, 1);
+        }
+    }
+out:
+
+    for (node = head; node; node = llist_next(node)) {
+        ddf = llist_entry(node, struct dsm_delayed_fault, node);
+        free_dsm_delayed_fault_cache_elm(&ddf);
+    }
+
+}
+
+
 void dequeue_and_gup(struct subvirtual_machine *svm){
     struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;

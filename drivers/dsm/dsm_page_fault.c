@@ -395,8 +395,7 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
     struct page * page;
     struct llist_node *head, *node;
 
-    use_mm(svm->priv->mm);
-    down_read(&svm->priv->mm->mmap_sem);
+
     head = llist_del_all(&svm->delayed_faults);
     if (unlikely(!head))
         goto out;
@@ -407,14 +406,17 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
         dpc = dsm_cache_get_hold(svm, ddf->addr);
         if (dpc && (dpc->tag == PREFETCH_TAG || dpc->tag == PULL_TRY_TAG)) {
+            use_mm(svm->priv->mm);
+            down_read(&svm->priv->mm->mmap_sem);
             get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0, &page,
                     NULL);
+            up_read(&svm->priv->mm->mmap_sem);
+            unuse_mm(svm->priv->mm);
             dpc_nproc_dec(&dpc, 1);
         }
     }
 out:
-    up_read(&svm->priv->mm->mmap_sem);
-    unuse_mm(svm->priv->mm);
+
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
         free_dsm_delayed_fault_cache_elm(&ddf);

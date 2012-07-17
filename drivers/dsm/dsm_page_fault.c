@@ -350,7 +350,6 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
 void dequeue_and_gup_cleanup(struct subvirtual_machine *svm){
     struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;
-    struct page * page;
     struct llist_node *head, *node;
 
 

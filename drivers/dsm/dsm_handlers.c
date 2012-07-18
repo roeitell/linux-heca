@@ -140,7 +140,7 @@ static inline void concat_dsm_request_queue(struct tx_buffer *tx,
     dsm_request_set_next(cur_tail, head);
 }
 
-static int flush_dsm_request_queue(struct conn_element *ele)
+int flush_dsm_request_queue(struct conn_element *ele)
 {
     struct tx_buffer *tx = &ele->tx_buffer;
     struct dsm_request *req;

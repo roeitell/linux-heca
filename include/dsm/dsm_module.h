@@ -119,6 +119,7 @@ void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
 /*
  * handler
  */
+int flush_dsm_request_queue(struct conn_element *);
 int client_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
 void listener_cq_handle(struct ib_cq *, void *);
 int server_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);

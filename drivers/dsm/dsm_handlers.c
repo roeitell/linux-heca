@@ -147,11 +147,7 @@ static int flush_dsm_request_queue(struct conn_element *ele)
     struct llist_node *head, *tail;
     int ret = -EFAULT;
 
-    if (llist_empty(&tx->request_queue))
-        goto out;
 
-    if (llist_empty(&tx->tx_free_elements_list))
-        goto out;
 
     if (atomic_cmpxchg(&tx->request_queue_lock, 0, 1))
         goto out; 

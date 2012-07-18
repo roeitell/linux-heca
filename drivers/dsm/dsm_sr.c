@@ -30,8 +30,11 @@ void release_dsm_request(struct dsm_request *req)
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
-    llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     ele->tx_buffer.request_queue_sz++; /* this doesn't need to be precise */
+    /* we need to try flush if it was empty as the llist empty is not accurate */
+    if ( llist_add(&req->lnode, &ele->tx_buffer.request_queue))
+        flush_dsm_request_queue(ele);
+
 }
 
 static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,

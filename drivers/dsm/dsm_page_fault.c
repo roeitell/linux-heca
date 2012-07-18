@@ -405,15 +405,21 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
         dpc = dsm_cache_get_hold(svm, ddf->addr);
-        if (dpc && (dpc->tag == PREFETCH_TAG || dpc->tag == PULL_TRY_TAG)) {
-            use_mm(svm->priv->mm);
-            down_read(&svm->priv->mm->mmap_sem);
-            get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0, &page,
-                    NULL);
-            up_read(&svm->priv->mm->mmap_sem);
-            unuse_mm(svm->priv->mm);
+        if (unlikely(dpc)) {
+            if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
+                trace_delayed_gup(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
+                        dpc->addr, dpc->tag);
+                use_mm(svm->priv->mm);
+                down_read(&svm->priv->mm->mmap_sem);
+                get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0,
+                        &page, NULL);
+                up_read(&svm->priv->mm->mmap_sem);
+                unuse_mm(svm->priv->mm);
+
+            }
             dpc_nproc_dec(&dpc, 1);
         }
+
     }
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);

@@ -377,16 +377,16 @@ out:
 
 static struct llist_node *llist_nodes_reverse(struct llist_node *llnode)
 {
-         struct llist_node *next, *tail = NULL;
+    struct llist_node *next, *tail = NULL;
 
-        while (llnode) {
-                next = llnode->next;
-                 llnode->next = tail;
-               tail = llnode;
-                 llnode = next;
-         }
+    while (llnode) {
+        next = llnode->next;
+        llnode->next = tail;
+        tail = llnode;
+        llnode = next;
+    }
 
-         return tail;
+    return tail;
 }
 
 void dequeue_and_gup(struct subvirtual_machine *svm){
@@ -398,7 +398,7 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
 
     head = llist_del_all(&svm->delayed_faults);
     if (unlikely(!head))
-        goto out;
+        return;
 
     head = llist_nodes_reverse(head);
     for (node = head; node; node = llist_next(node)) {
@@ -415,8 +415,6 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
             dpc_nproc_dec(&dpc, 1);
         }
     }
-out:
-
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
         free_dsm_delayed_fault_cache_elm(&ddf);

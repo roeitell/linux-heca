@@ -477,17 +477,17 @@ unlock:
             case PULL_TRY_TAG:
             case PREFETCH_TAG:
             {
-//                ddf = alloc_dsm_delayed_fault_cache_elm(addr);
-//                if (ddf) {
-//                    queue_ddf_for_delayed_gup(ddf, dpc->svm);
-//                } else {
+                ddf = alloc_dsm_delayed_fault_cache_elm(addr);
+                if (ddf) {
+                    queue_ddf_for_delayed_gup(ddf, dpc->svm);
+                } else {
                     /* just in case if we run out of memory for the slab */
                     use_mm(mm);
                     down_read(&mm->mmap_sem);
                     get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
                     up_read(&mm->mmap_sem);
                     unuse_mm(mm);
-//                }
+                }
                 break;
             }
             default: {
@@ -908,19 +908,12 @@ retry:
      * cleared, then re-throw the fault.
      */
 
-    if (dpc->tag == PREFETCH_TAG) {
-        dpc->tag = PULL_TAG;
-        if (trylock_page(dpc->pages[0]))
-            goto resolve;
-    }
-    if (flags & FAULT_FLAG_ALLOW_RETRY && dpc->tag == PULL_TAG) {
+
+    if (dpc->tag == PULL_TAG && flags & FAULT_FLAG_ALLOW_RETRY )  {
         int max_retry;
 
         /* we want here an optimisation for the nowait option */
-        if (flags & FAULT_FLAG_RETRY_NOWAIT)
-            max_retry = 10;
-        else
-            max_retry = 20;
+        max_retry = 20;
         for (j = 1; j < max_retry; j++) {
             get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm, PREFETCH_TAG);
             if (address > (j * PAGE_SIZE))

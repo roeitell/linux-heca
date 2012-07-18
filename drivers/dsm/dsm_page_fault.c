@@ -354,8 +354,6 @@ void dequeue_and_gup_cleanup(struct subvirtual_machine *svm){
 
 
     head = llist_del_all(&svm->delayed_faults);
-    if (unlikely(!head))
-        goto out;
 
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
@@ -366,10 +364,10 @@ void dequeue_and_gup_cleanup(struct subvirtual_machine *svm){
             dpc_nproc_dec(&dpc, 1);
         }
     }
-out:
 
-    for (node = head; node; node = llist_next(node)) {
+    while (node) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
+        node = llist_next(node);
         free_dsm_delayed_fault_cache_elm(&ddf);
     }
 
@@ -397,31 +395,35 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
 
 
     head = llist_del_all(&svm->delayed_faults);
-//    head = llist_nodes_reverse(head);
-//    for (node = head; node; node = llist_next(node)) {
-//        ddf = llist_entry(node, struct dsm_delayed_fault, node);
-//        /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
-//        dpc = dsm_cache_get_hold(svm, ddf->addr);
-//        if (unlikely(dpc)) {
-//            if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-//                trace_delayed_gup(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
-//                        dpc->addr, dpc->tag);
-//                use_mm(svm->priv->mm);
-//                down_read(&svm->priv->mm->mmap_sem);
-//                get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0,
-//                        &page, NULL);
-//                up_read(&svm->priv->mm->mmap_sem);
-//                unuse_mm(svm->priv->mm);
-//
-//            }
-//            dpc_nproc_dec(&dpc, 1);
-//        }
-//
-//    }
+    head = llist_nodes_reverse(head);
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
+        /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
+        dpc = dsm_cache_get_hold(svm, ddf->addr);
+        if (unlikely(dpc)) {
+            if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
+                trace_delayed_gup(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
+                        dpc->addr, dpc->tag);
+                use_mm(svm->priv->mm);
+                down_read(&svm->priv->mm->mmap_sem);
+                get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0,
+                        &page, NULL);
+                up_read(&svm->priv->mm->mmap_sem);
+                unuse_mm(svm->priv->mm);
+
+            }
+            dpc_nproc_dec(&dpc, 1);
+        }
+
+    }
+    node = head ;
+    while (node) {
+        ddf = llist_entry(node, struct dsm_delayed_fault, node);
+        node = llist_next(node);
         free_dsm_delayed_fault_cache_elm(&ddf);
     }
+
+
 
 }
 

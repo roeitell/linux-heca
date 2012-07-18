@@ -187,10 +187,13 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
+            trace_send_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,
+                        ret, ret, addr, tag);
             goto out;
         }
     }
-
+    trace_queued_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,
+            0, 0, addr, tag);
     ret = add_dsm_request(NULL, ele, req_tag, fault_svm, remote_svm,
             addr, func, dpc, page);
     BUG_ON(ret); /* FIXME: Handle req alloc failure */

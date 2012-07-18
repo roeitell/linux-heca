@@ -278,13 +278,13 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     new_svm->push_cache = RB_ROOT;
     seqlock_init(&new_svm->push_cache_lock);
     INIT_LIST_HEAD(&new_svm->mr_list);
-    init_llist_head(&new_svm->delayed_faults);
-    INIT_DELAYED_WORK(&new_svm->delayed_gup_work, delayed_gup_work_fn);
     if (svm_info.offset) {  /* local svm */
         new_svm->priv = priv_data;
         priv_data->svm = new_svm;
         priv_data->offset = svm_info.offset;
         new_svm->dsm->nb_local_svm++;
+        init_llist_head(&new_svm->delayed_faults);
+        INIT_DELAYED_WORK(&new_svm->delayed_gup_work, delayed_gup_work_fn);
     }
 
    /* register new svm to radix trees */

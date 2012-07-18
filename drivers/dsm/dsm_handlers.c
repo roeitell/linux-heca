@@ -159,6 +159,8 @@ int flush_dsm_request_queue(struct conn_element *ele)
     tail = llist_get_tail(head);
     for (req = llist_entry(tail, struct dsm_request, lnode); req;
             req = req->next) {
+        trace_flushing_requests(req->dpc->svm->dsm->dsm_id, req->dpc->svm->svm_id,
+                  0,0, req->dpc->addr, req->dpc->tag);
         ret = process_dsm_request(ele, req);
         if (ret == -ENOMEM) {
             concat_dsm_request_queue(tx, head, &req->lnode);

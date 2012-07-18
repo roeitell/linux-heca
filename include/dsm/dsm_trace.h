@@ -77,6 +77,10 @@ DEFINE_EVENT(dsm_page_fault_template, delayed_gup,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag ),
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
+DEFINE_EVENT(dsm_page_fault_template, flushing_requests,
+        TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag ),
+        TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
+
 #define dsm_msg_type \
     { REQUEST_PAGE,                 "REQUEST_PAGE" }, \
     { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\

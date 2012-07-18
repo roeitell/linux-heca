@@ -481,12 +481,12 @@ unlock:
 //                if (ddf) {
 //                    queue_ddf_for_delayed_gup(ddf, dpc->svm);
 //                } else {
-//                    /* just in case if we run out of memory for the slab */
-//                    use_mm(mm);
-//                    down_read(&mm->mmap_sem);
-//                    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-//                    up_read(&mm->mmap_sem);
-//                    unuse_mm(mm);
+                    /* just in case if we run out of memory for the slab */
+                    use_mm(mm);
+                    down_read(&mm->mmap_sem);
+                    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+                    up_read(&mm->mmap_sem);
+                    unuse_mm(mm);
 //                }
                 break;
             }

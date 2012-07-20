@@ -1127,7 +1127,7 @@ static int surrogate_remote_response_push(struct dsm_page_cache *dpc,
     return 0;
 }
 
-static inline void surrogate_remote_response_pull(struct dsm_page_cache *dpc) {
+void surrogate_remote_response_pull(struct dsm_page_cache *dpc) {
     atomic_dec(&dpc->nproc);
     if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
         BUG_ON(atomic_read(&dpc->found) < 0);

@@ -122,7 +122,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
 
     head = llist_del_all(&tx->request_queue);
     if (head)
-        add_to_ordered_queue(head, &tx->ordered_request_queue);
+        add_to_ordered_queue(head, ele);
 
     while (!list_empty(&tx->ordered_request_queue)) {
 
@@ -170,7 +170,7 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,struct conn_elem
 
     head = llist_del_all(&tx->request_queue);
     if (head)
-        add_to_ordered_queue(head , &tx->ordered_request_queue);
+        add_to_ordered_queue(head , ele);
 
 retry:
     list= &tx->ordered_request_queue;

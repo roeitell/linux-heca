@@ -463,8 +463,9 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
             goto unlock;
     }
     BUG();
-    dsm_printk(" req start %p " , addr);
+
 unlock:
+    dsm_printk(" req start %p " , addr);
     mm = dpc->svm->priv->mm;
     addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {

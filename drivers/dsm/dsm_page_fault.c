@@ -400,14 +400,13 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
         might_sleep();
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
-
+        trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, 0, 0, ddf->addr, 0);
         dpc = dsm_cache_get(svm, ddf->addr);
         if (unlikely(dpc)) {
             dpc = dsm_cache_get_hold(svm, ddf->addr);
-            if (unlikely(dpc)) {
+            if (dpc) {
                 if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                    trace_delayed_gup(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
-                            0, 0, dpc->addr, dpc->tag);
+                    trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, 0, 0, dpc->addr, dpc->tag);
                     use_mm(svm->priv->mm);
                     down_read(&svm->priv->mm->mmap_sem);
                     get_user_pages(NULL, svm->priv->mm, ddf->addr, 1, 1, 0,

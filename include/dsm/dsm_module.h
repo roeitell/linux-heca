@@ -123,7 +123,6 @@ void schedule_delayed_request_flush(struct conn_element *);
 void delayed_request_flush_work_fn(struct work_struct *);
 void release_svm_queued_requests(struct subvirtual_machine *,
         struct tx_buffer *);
-int flush_dsm_request_queue(struct conn_element *);
 int client_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
 void listener_cq_handle(struct ib_cq *, void *);
 int server_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);

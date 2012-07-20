@@ -55,7 +55,7 @@ static void destroy_tx_buffer(struct conn_element *ele) {
 
     if (!tx_buf)
         return;
-    cancel_work_sync(&ele->tx_buffer.delayed_request_flush_work);
+    cancel_work_sync(&ele->delayed_request_flush_work);
     for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
         if (tx_buf[i].dsm_dma.addr) {
             ib_dma_unmap_single(ele->cm_id->device, tx_buf[i].dsm_dma.addr,
@@ -424,7 +424,7 @@ static int init_tx_lists(struct conn_element *ele) {
     spin_lock_init(&tx->tx_free_elements_list_lock);
     spin_lock_init(&tx->tx_free_elements_list_reply_lock);
     INIT_LIST_HEAD(&tx->ordered_request_queue);
-    INIT_WORK(&tx->delayed_request_flush_work, delayed_request_flush_work_fn);
+    INIT_WORK(&ele->delayed_request_flush_work, delayed_request_flush_work_fn);
     atomic_set(&tx->schedule_flush, 0);
 
     for (i = 0; i < max_tx_send; ++i)

@@ -171,9 +171,8 @@ struct tx_buffer {
     struct llist_head request_queue;
     atomic_t schedule_flush;
     struct list_head ordered_request_queue;
-    struct work_struct delayed_request_flush_work;
     int request_queue_sz;
-
+    struct work_struct delayed_request_flush_work;
 };
 
 struct conn_element {
@@ -199,7 +198,7 @@ struct conn_element {
     struct con_element_sysfs sysfs;
 
     struct completion completion;
-
+    struct work_struct delayed_request_flush_work;
 };
 
 struct rdma_info {

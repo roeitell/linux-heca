@@ -97,7 +97,7 @@ static int process_dsm_request(struct conn_element *ele,
 void schedule_delayed_request_flush(struct conn_element *ele) {
 
     if (atomic_cmpxchg(&ele->tx_buffer.schedule_flush, 0, 1) == 0)
-        schedule_work(&ele->tx_buffer.delayed_request_flush_work);
+        schedule_work(&ele->delayed_request_flush_work);
 
 }
 
@@ -111,12 +111,12 @@ void delayed_request_flush_work_fn(struct work_struct *w) {
 
 }
 
-static inline void add_to_ordered_queue(struct conn_element *ele, struct llist_node *llnode  ) {
+static inline void add_to_ordered_queue(struct llist_node *llnode,
+        struct conn_element *ele) {
 
     struct dsm_request *request;
     struct list_head *head = &ele->tx_buffer.ordered_request_queue;
     struct list_head *previous = head;
-
 
     while (llnode) {
         request = container_of(llnode, struct dsm_request , lnode);
@@ -158,12 +158,12 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
 
 
 
-void release_svm_queued_requests(struct subvirtual_machine *svm,
-        struct tx_buffer *tx) {
+void release_svm_queued_requests(struct subvirtual_machine *svm,struct conn_element *ele
+       ) {
     struct list_head *list;
     struct llist_node *head;
     struct dsm_request *req;
-
+    struct tx_buffer *tx = &ele->tx_buffer;
     BUG_ON(!svm);
     BUG_ON(!tx);
 
@@ -176,7 +176,7 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,
 
 retry:
     list= &tx->ordered_request_queue;
-    list_for_each_entry_from(req; list; ordered_list)
+    list_for_each_entry_from(req, list, ordered_list)
     {
         if(req->svm == svm || req->fault_svm == svm) {
             if (req->dpc->tag == PULL_TAG)
@@ -190,7 +190,7 @@ retry:
     }
 
     atomic_set(&tx->schedule_flush, 1);
-        schedule_work(&tx->delayed_request_flush_work);
+        schedule_work(&ele->delayed_request_flush_work);
 }
 
 

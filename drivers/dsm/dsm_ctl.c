@@ -77,7 +77,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
 
             ele = rb_entry(node, struct conn_element, rb_node);
             BUG_ON(!ele);
-            release_svm_queued_requests(svm, &ele->tx_buffer);
+            release_svm_queued_requests(svm, ele);
             release_svm_tx_elements(svm, ele);
         }
         release_svm_push_elements(svm, NULL);
@@ -85,7 +85,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
     } else if (svm->ele) {
         struct list_head *pos;
 
-        release_svm_queued_requests(svm, &svm->ele->tx_buffer);
+        release_svm_queued_requests(svm, &svm->ele);
         release_svm_tx_elements(svm, svm->ele);
 
         /* potentially very expensive way to do this */

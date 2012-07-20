@@ -1084,9 +1084,11 @@ int dsm_trigger_page_pull(struct dsm *dsm, struct subvirtual_machine *local_svm,
     struct mm_struct *mm;
 
     mm = local_svm->priv->mm;
+    use_mm(mm);
     down_read(&mm->mmap_sem);
     r = get_dsm_page(mm, norm_addr, local_svm, PULL_TRY_TAG);
     up_read(&mm->mmap_sem);
+    unuse_mm(mm);
 
     return r;
 }

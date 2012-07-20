@@ -210,6 +210,8 @@ int dsm_recv_message_handler(struct conn_element *ele,
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                 process_page_response(ele, tx_e); // client got its response
+            }else{
+                dsm_printk("problem not the right used value");
             }
             break;
         }
@@ -218,6 +220,8 @@ int dsm_recv_message_handler(struct conn_element *ele,
             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                 tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
                 process_page_response(ele, tx_e);
+            }else{
+                dsm_printk("problem not the right used value");
             }
             break;
         }

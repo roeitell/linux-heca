@@ -409,7 +409,7 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
                     trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, 0, 0, dpc->addr, dpc->tag);
                     use_mm(svm->priv->mm);
                     down_read(&svm->priv->mm->mmap_sem);
-                    get_user_pages(NULL, svm->priv->mm, ddf->addr, 1, 1, 0,
+                    get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0,
                             &page, NULL);
                     up_read(&svm->priv->mm->mmap_sem);
                     unuse_mm(svm->priv->mm);
@@ -889,7 +889,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             }
         }
     }
-
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,2,0, norm_addr, dsd.flags);
 retry:
     dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
@@ -912,7 +912,7 @@ retry:
         count_vm_event(PGMAJFAULT);
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
     }
-
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,3,0, norm_addr, dsd.flags);
     /*
      * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
      * so we just re-throw immediately. Otherwise, we wait until the bitlock is
@@ -937,7 +937,7 @@ retry:
         }
 
     }
-
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,4,1, norm_addr, dsd.flags);
 lock:
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
@@ -945,6 +945,7 @@ lock:
     }
 
 resolve:
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,5,1, norm_addr, dsd.flags);
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
          /* the try pull failed so we need to rethrow the request */
@@ -960,7 +961,7 @@ resolve:
         ret = VM_FAULT_ERROR;
         goto out;
     }
-
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,6,1, norm_addr, dsd.flags);
     /*
      * In this critical section, we lock the updated page (if it's the
      * first one, it was locked in advance), increment its refcount, the

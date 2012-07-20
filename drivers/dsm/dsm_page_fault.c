@@ -410,7 +410,7 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
                             0, 0, dpc->addr, dpc->tag);
                     use_mm(svm->priv->mm);
                     down_read(&svm->priv->mm->mmap_sem);
-                    get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0,
+                    get_user_pages(NULL, svm->priv->mm, ddf->addr, 1, 1, 0,
                             &page, NULL);
                     up_read(&svm->priv->mm->mmap_sem);
                     unuse_mm(svm->priv->mm);

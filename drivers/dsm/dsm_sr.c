@@ -26,14 +26,11 @@ void release_dsm_request(struct dsm_request *req)
     kmem_cache_free(kmem_request_cache, req);
 }
 
-
 static inline void queue_dsm_request(struct conn_element *ele,
-        struct dsm_request *req)
-{
-    ele->tx_buffer.request_queue_sz++; /* this doesn't need to be precise */
-    /* we need to try flush if it was empty as the llist empty is not accurate */
-    if ( llist_add(&req->lnode, &ele->tx_buffer.request_queue))
-        flush_dsm_request_queue(ele);
+        struct dsm_request *req) {
+
+    llist_add(&req->lnode, &ele->tx_buffer.request_queue);
+    schedule_delayed_request_flush(ele);
 
 }
 
@@ -56,7 +53,7 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
     req->func = func;
     req->dpc = dpc;
     req->page = page;
-    req->next = NULL;
+
     queue_dsm_request(ele, req);
 
     return 0;
@@ -71,7 +68,7 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
     trace_add_dsm_request_msg(0, 0,0, 0, 0, 0);
     req->type = type;
     req->func = NULL;
-    req->next = NULL;
+
     memcpy(&req->dsm_buf, msg, sizeof(struct dsm_message));
     queue_dsm_request(ele, req);
 
@@ -80,6 +77,9 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
 
 static inline int request_queue_empty(struct conn_element *ele)
 {
+    /* we are not 100% accurate but that's ok we can have a few send sneaking in */
+    if (list_empty(&ele->tx_buffer.ordered_request_queue))
+        return 1;
     return llist_empty(&ele->tx_buffer.request_queue);
 }
 

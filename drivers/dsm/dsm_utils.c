@@ -48,5 +48,6 @@ void __dsm_printk(unsigned int level, const char *path, int line, const char *fo
     va_end(args);
 #endif
 }
+
 EXPORT_SYMBOL(__dsm_printk);
 

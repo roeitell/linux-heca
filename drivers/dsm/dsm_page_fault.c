@@ -373,7 +373,7 @@ void dequeue_and_gup_cleanup(struct subvirtual_machine *svm){
 
 }
 
-static struct llist_node *llist_nodes_reverse(struct llist_node *llnode)
+static inline struct llist_node *llist_nodes_reverse(struct llist_node *llnode)
 {
     struct llist_node *next, *tail = NULL;
 
@@ -549,6 +549,9 @@ out:
     return r;
 }
 
+
+
+
 struct page *dsm_get_remote_page(struct vm_area_struct *vma,
         unsigned long addr, struct dsm_page_cache *dpc,
         struct subvirtual_machine *fault_svm,
@@ -562,16 +565,17 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
     page = dpc->pages[i];
     if (unlikely(!page))
         goto out;
-
+    SetPageSwapBacked(page);
     func = (tag == PULL_TRY_TAG)?
         dsm_try_pull_req_complete : dsm_pull_req_complete;
 
-    SetPageSwapBacked(page);
+
 
     trace_dsm_get_remote_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
             remote_svm->dsm->dsm_id, remote_svm->svm_id, addr, tag);
     request_dsm_page(page, remote_svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), func, tag, dpc);
+
 
 out:
     return page;

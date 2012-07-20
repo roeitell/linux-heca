@@ -43,6 +43,7 @@
 #define MAX_SVMS_PER_PAGE   2
 
 #define GUP_DELAY           HZ*5    /* 5 second */
+#define REQUEST_FLUSH_DELAY 50       /* 50 usec delay */
 
 /**
  * RDMA_INFO
@@ -168,8 +169,11 @@ struct tx_buffer {
     spinlock_t tx_free_elements_list_reply_lock;
 
     struct llist_head request_queue;
+    atomic_t schedule_flush;
+    struct list_head ordered_request_queue;
+    struct work_struct delayed_request_flush_work;
     int request_queue_sz;
-    atomic_t request_queue_lock;
+
 };
 
 struct conn_element {
@@ -340,7 +344,7 @@ struct dsm_request {
     struct dsm_page_cache *dpc;
 
     struct llist_node lnode;
-    struct dsm_request *next;
+    struct list_head ordered_list;
 };
 
 struct dsm_module_state {

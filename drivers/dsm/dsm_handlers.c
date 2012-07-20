@@ -54,11 +54,8 @@ static inline void queue_send_work(struct conn_element *ele)
 }
 
 static int process_dsm_request(struct conn_element *ele,
-        struct dsm_request *req)
+        struct dsm_request *req  ,  struct tx_buf_ele *tx_e )
 {
-    struct tx_buf_ele *tx_e = try_get_next_empty_tx_ele(ele);
-    if (!tx_e)
-        return -ENOMEM;
 
     switch (req->type) {
         case REQUEST_PAGE:
@@ -97,81 +94,107 @@ static int process_dsm_request(struct conn_element *ele,
     return 0;
 }
 
-static inline void dsm_request_set_next(struct llist_node *head,
-        struct llist_node *tail)
-{
-    struct dsm_request *head_req, *tail_req;
-    
-    head_req = llist_entry(head, struct dsm_request, lnode);
-    tail_req = llist_entry(tail, struct dsm_request, lnode);
-    if (!tail_req->next)
-        tail_req->next = head_req;
+void schedule_delayed_request_flush(struct conn_element *ele) {
+
+    if (atomic_cmpxchg(&ele->tx_buffer.schedule_flush, 0, 1) == 0)
+        schedule_work(&ele->tx_buffer.delayed_request_flush_work);
+
 }
 
-static inline struct llist_node *llist_get_tail(struct llist_node *node)
-{
-    struct llist_node *it;
+void delayed_request_flush_work_fn(struct work_struct *w) {
+    struct conn_element *ele;
+    udelay(REQUEST_FLUSH_DELAY);
+    ele = container_of(w, struct conn_element , delayed_request_flush_work);
+    if (atomic_cmpxchg(&ele->tx_buffer.schedule_flush, 1, 0))
+        if (flush_dsm_request_queue(ele))
+            schedule_delayed_request_flush(ele);
 
-    while (1) {
-        it = node;
-        node = llist_next(node);
-        if (!node)
-            break;
-        dsm_request_set_next(it, node);
+}
+
+static inline void add_to_ordered_queue(struct conn_element *ele, struct llist_node *llnode  ) {
+
+    struct dsm_request *request;
+    struct list_head *head = &ele->tx_buffer.ordered_request_queue;
+    struct list_head *previous = head;
+
+
+    while (llnode) {
+        request = container_of(llnode, struct dsm_request , lnode);
+        if (previous != head)
+            list_add(&request->ordered_list, previous);
+        else
+            list_add_tail(&request->ordered_list, previous);
+
+        previous = &request->ordered_list;
+        llnode = llnode->next;
+        ele->tx_buffer.request_queue_sz++;
     }
-
-    return it;
 }
 
-static inline void concat_dsm_request_queue(struct tx_buffer *tx,
-        struct llist_node *head, struct llist_node *tail)
-{
-    struct llist_node *cur_tail;
-
-    tail->next = NULL;
-    if (llist_empty(&tx->request_queue)) {
-        if (!cmpxchg(&tx->request_queue.first, NULL, head))
-            return;
-    }
-
-    /* current llist isn't empty */
-    cur_tail = llist_get_tail(tx->request_queue.first);
-    cur_tail->next = head;
-    dsm_request_set_next(cur_tail, head);
-}
-
-int flush_dsm_request_queue(struct conn_element *ele)
-{
+static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct tx_buffer *tx = &ele->tx_buffer;
     struct dsm_request *req;
     struct llist_node *head, *tail;
-    int ret = -EFAULT;
-
-
-
-    if (atomic_cmpxchg(&tx->request_queue_lock, 0, 1))
-        goto out; 
+    struct tx_buf_ele *tx_e = NULL;
 
     head = llist_del_all(&tx->request_queue);
-    if (unlikely(!head))
-        goto unlock;
+    if (head)
+        add_to_ordered_queue(head, &tx->ordered_request_queue);
 
-    tail = llist_get_tail(head);
-    req = llist_entry(tail, struct dsm_request, lnode);
-    for (; req; req = req->next) {
+    while (!list_empty(&tx->ordered_request_queue)) {
+
+        tx_e = try_get_next_empty_tx_ele(ele);
+        if (!tx_e)
+            return 1;
         trace_flushing_requests(0, 0, 0, 0, 0, 0);
-        ret = process_dsm_request(ele, req);
-        if (ret == -ENOMEM) {
-            concat_dsm_request_queue(tx, head, &req->lnode);
-            break;
-        }
+        req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
+        process_dsm_request(ele, req, tx_e);
+        list_del(&req->ordered_list);
     }
 
-unlock:
-    atomic_set(&tx->request_queue_lock, 0);
-out:
-    return ret;
+    return 0;
+
 }
+
+
+
+void release_svm_queued_requests(struct subvirtual_machine *svm,
+        struct tx_buffer *tx) {
+    struct list_head *list;
+    struct llist_node *head;
+    struct dsm_request *req;
+
+    BUG_ON(!svm);
+    BUG_ON(!tx);
+
+    while (atomic_cmpxchg(&tx->schedule_flush, 0, -1))
+        cond_resched();
+
+    head = llist_del_all(&tx->request_queue);
+    if (head)
+        add_to_ordered_queue(head , &tx->ordered_request_queue);
+
+retry:
+    list= &tx->ordered_request_queue;
+    list_for_each_entry_from(req; list; ordered_list)
+    {
+        if(req->svm == svm || req->fault_svm == svm) {
+            if (req->dpc->tag == PULL_TAG)
+                surrogate_remote_response_pull(req->dpc);
+            list_del(&req->ordered_list);
+            tx->request_queue_sz--;
+            release_dsm_request(req);
+            goto retry;
+        }
+
+    }
+
+    atomic_set(&tx->schedule_flush, 1);
+        schedule_work(&tx->delayed_request_flush_work);
+}
+
+
+
 
 
 int dsm_recv_message_handler(struct conn_element *ele,
@@ -377,7 +400,6 @@ void send_cq_handle_work(struct work_struct *work)
     ret = ib_req_notify_cq(ele->qp_attr.send_cq,
             IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
     dsm_send_poll(ele->qp_attr.send_cq);
-    flush_dsm_request_queue(ele);
     if (ret > 0)
         queue_send_work(ele);
 }
@@ -392,7 +414,6 @@ void recv_cq_handle_work(struct work_struct *work)
     ret = ib_req_notify_cq(ele->qp_attr.recv_cq,
             IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
     dsm_recv_poll(ele->qp_attr.recv_cq);
-    flush_dsm_request_queue(ele);
     if (ret > 0)
         queue_recv_work(ele);
 }

@@ -55,7 +55,7 @@ static void destroy_tx_buffer(struct conn_element *ele) {
 
     if (!tx_buf)
         return;
-
+    cancel_work_sync(&ele->tx_buffer.delayed_request_flush_work);
     for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
         if (tx_buf[i].dsm_dma.addr) {
             ib_dma_unmap_single(ele->cm_id->device, tx_buf[i].dsm_dma.addr,
@@ -423,7 +423,9 @@ static int init_tx_lists(struct conn_element *ele) {
     init_llist_head(&tx->tx_free_elements_list_reply);
     spin_lock_init(&tx->tx_free_elements_list_lock);
     spin_lock_init(&tx->tx_free_elements_list_reply_lock);
-    atomic_set(&tx->request_queue_lock, 0);
+    INIT_LIST_HEAD(&tx->ordered_request_queue);
+    INIT_WORK(&tx->delayed_request_flush_work, delayed_request_flush_work_fn);
+    atomic_set(&tx->schedule_flush, 0);
 
     for (i = 0; i < max_tx_send; ++i)
         release_tx_element(ele, &tx->tx_buf[i]);
@@ -1189,66 +1191,5 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
     }
 }
 
-void release_svm_queued_requests(struct subvirtual_machine *svm,
-        struct tx_buffer *tx) {
-    struct llist_head del_queue;
-    struct llist_node *head, *node, *last = NULL;
-    struct dsm_request *req;
 
-    BUG_ON(!svm);
-    BUG_ON(!tx);
-
-    if (llist_empty(&tx->request_queue))
-        return;
-
-    /* TODO: improve handling? */
-    while (atomic_cmpxchg(&tx->request_queue_lock, 0, 1))
-        cond_resched();
-
-    head = llist_del_all(&tx->request_queue);
-    if (unlikely(!head))
-        goto unlock;
-
-    /* remove elements to be released from llist */
-    init_llist_head(&del_queue);
-    for (node = head; node; node = llist_next(node)) {
-        req = llist_entry(node, struct dsm_request, lnode);
-        if (req->svm == svm || req->fault_svm == svm) {
-            if (node == head)
-                head = node->next;
-            else {
-                last->next = node->next;
-req            = llist_entry(node, struct dsm_request, lnode);
-            req->next = llist_entry(last, struct dsm_request, lnode);
-        }
-        llist_add(node, &del_queue);
-    } else {
-        last = node;
-    }
-}
-
-/* re-insert all other elements into llist */
-    if (llist_empty(&tx->request_queue)) {
-        if (!cmpxchg(&tx->request_queue.first, NULL, head))
-            return;
-    }
-    for (node = tx->request_queue.first; node; node = llist_next(node))
-        last = node;
-    last->next = head;
-    req = llist_entry(head, struct dsm_request, lnode);
-    req->next = llist_entry(last, struct dsm_request, lnode);
-
-    /* handle all requests on remove list */
-    node = llist_del_all(&del_queue);
-    while (node) {
-        req = llist_entry(node, struct dsm_request, lnode);
-        if (req->dpc->tag == PULL_TAG)
-            surrogate_remote_response_pull(req->dpc);
-        node = llist_next(node);
-        release_dsm_request(req);
-    }
-
-    unlock:
-    atomic_set(&tx->request_queue_lock, 0);
-}
 

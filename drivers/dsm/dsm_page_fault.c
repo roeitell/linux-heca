@@ -463,7 +463,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
             goto unlock;
     }
     BUG();
-
+    dsm_printk(" req start %p " , addr);
 unlock:
     mm = dpc->svm->priv->mm;
     addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
@@ -503,7 +503,7 @@ unlock:
             }
         }
     }
-
+    dsm_printk("req comple %p " , addr);
     trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
             addr, dpc->tag);
     dpc_nproc_dec(&dpc, 1);
@@ -871,7 +871,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 
     trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dsd.flags);
 
-
+    dsm_printk("page fault stage 1 %p" ,norm_addr );
     /*
      * If page is currently being pushed, halt the push, re-claim the page and
      * notify other nodes. If page is absent since we're answering a remote
@@ -889,7 +889,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             }
         }
     }
-    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,2,0, norm_addr, dsd.flags);
+    dsm_printk("page fault stage 2 %p" ,norm_addr );
 retry:
     dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
@@ -912,7 +912,7 @@ retry:
         count_vm_event(PGMAJFAULT);
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
     }
-    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,3,0, norm_addr, dsd.flags);
+    dsm_printk("page fault stage 3 %p" ,norm_addr );
     /*
      * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
      * so we just re-throw immediately. Otherwise, we wait until the bitlock is
@@ -937,15 +937,16 @@ retry:
         }
 
     }
-    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,4,1, norm_addr, dsd.flags);
+
 lock:
+    dsm_printk("page fault stage 4 %p" ,norm_addr );
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
         goto out;
     }
 
 resolve:
-    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,5,1, norm_addr, dsd.flags);
+    dsm_printk("page fault stage 5 %p" ,norm_addr );
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
          /* the try pull failed so we need to rethrow the request */
@@ -961,7 +962,7 @@ resolve:
         ret = VM_FAULT_ERROR;
         goto out;
     }
-    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,6,1, norm_addr, dsd.flags);
+    dsm_printk("page fault stage 6 %p" ,norm_addr );
     /*
      * In this critical section, we lock the updated page (if it's the
      * first one, it was locked in advance), increment its refcount, the

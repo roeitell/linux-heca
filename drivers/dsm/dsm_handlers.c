@@ -117,7 +117,7 @@ static inline void add_to_ordered_queue(struct llist_node *llnode,
 static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct tx_buffer *tx = &ele->tx_buffer;
     struct dsm_request *req;
-    struct llist_node *head, *tail;
+    struct llist_node *head;
     struct tx_buf_ele *tx_e = NULL;
 
     head = llist_del_all(&tx->request_queue);
@@ -160,7 +160,7 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,struct conn_elem
        ) {
     struct list_head *list;
     struct llist_node *head;
-    struct dsm_request *req;
+    struct dsm_request *req= NULL;
     struct tx_buffer *tx = &ele->tx_buffer;
     BUG_ON(!svm);
     BUG_ON(!tx);

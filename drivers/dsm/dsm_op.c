@@ -1219,6 +1219,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
             }
         }
     }
+}
 
 
 

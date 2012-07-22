@@ -87,6 +87,7 @@ static int process_dsm_request(struct conn_element *ele,
             BUG();
     }
     tx_e->callback.func = req->func;
+    smp_wmb();
     tx_dsm_send(ele, tx_e);
     release_dsm_request(req);
     ele->tx_buffer.request_queue_sz--;

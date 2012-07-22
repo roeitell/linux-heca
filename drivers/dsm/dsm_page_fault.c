@@ -450,8 +450,8 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     unsigned long addr;
     struct dsm_delayed_fault *ddf;
 
-    tx_e->wrk_req->dst_addr->mem_page = NULL;
 
+    BUG_ON(!page);
     for (i = 0; i < dpc->svms.num; i++) {
         if (dpc->pages[i] == page)
             goto unlock;
@@ -503,6 +503,8 @@ unlock:
     trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
             addr, dpc->tag);
     dpc_nproc_dec(&dpc, 1);
+
+    tx_e->wrk_req->dst_addr->mem_page = NULL;
     return 1;
 }
 

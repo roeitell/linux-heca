@@ -426,7 +426,7 @@ static int init_tx_lists(struct conn_element *ele) {
     spin_lock_init(&tx->tx_free_elements_list_reply_lock);
     INIT_LIST_HEAD(&tx->ordered_request_queue);
     mutex_init(&tx->flush_mutex);
-    atomic_set(ele->flushed,0);
+    atomic_set(&ele->flushed,0);
     INIT_WORK(&ele->delayed_request_flush_work, delayed_request_flush_work_fn);
 
     for (i = 0; i < max_tx_send; ++i)

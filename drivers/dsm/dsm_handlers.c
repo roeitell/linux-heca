@@ -87,11 +87,7 @@ static int process_dsm_request(struct conn_element *ele,
             BUG();
     }
     tx_e->callback.func = req->func;
-    smp_wmb();
     tx_dsm_send(ele, tx_e);
-    release_dsm_request(req);
-    ele->tx_buffer.request_queue_sz--;
-
     return 0;
 }
 
@@ -135,6 +131,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
         }
         trace_flushing_requests(5,5 , 5, 5, 0, 0);
         req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
+
         if (req->dpc)
             trace_flushing_requests(req->dpc->svm->dsm->dsm_id,
                     req->dpc->svm->svm_id, 0, 0, req->dpc->addr, req->dpc->tag);
@@ -142,6 +139,8 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
             trace_flushing_requests(0, 0, 0, 0, req->addr, req->type);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);
+        release_dsm_request(req);
+        tx.request_queue_sz--;
     }
     mutex_unlock(&tx->flush_mutex);
     return ret ;

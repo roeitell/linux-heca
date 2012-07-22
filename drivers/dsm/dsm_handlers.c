@@ -82,6 +82,11 @@ static int process_dsm_request(struct conn_element *ele,
                     sizeof(struct dsm_message));
             tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
             break;
+        case ACK:
+            memcpy(tx_e->dsm_buf, &req->dsm_buf,
+                    sizeof(struct dsm_message));
+            tx_e->dsm_buf->type = ACK;
+            break;
 
         default:
             BUG();

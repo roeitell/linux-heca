@@ -122,8 +122,9 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct tx_buf_ele *tx_e = NULL;
     int ret =0;
 
-    trace_flushing_requests(0, 0, 0, 0, 0, 0);
+    trace_flushing_requests(8, 8, 8, 8, 0, 0);
     mutex_lock(&tx->flush_mutex);
+    trace_flushing_requests(7,7 , 7, 7, 0, 0);
     head = llist_del_all(&tx->request_queue);
     if (head)
         add_to_ordered_queue(head, ele);
@@ -159,7 +160,6 @@ void delayed_request_flush_work_fn(struct work_struct *w) {
     struct conn_element *ele;
     udelay(REQUEST_FLUSH_DELAY);
     ele = container_of(w, struct conn_element , delayed_request_flush_work);
-    trace_flushing_requests(9, 9, 9, 9, 0, 0);
     if (flush_dsm_request_queue(ele))
         schedule_delayed_request_flush(ele);
 

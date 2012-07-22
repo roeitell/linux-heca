@@ -178,18 +178,20 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,struct conn_elem
         add_to_ordered_queue(head, ele);
 
     retry: list = &tx->ordered_request_queue;
-    list_for_each_entry(req, list, ordered_list)
-    {
-        if(req->svm == svm || req->fault_svm == svm) {
-            if(req->dpc && req->dpc->tag == PULL_TAG)
-                surrogate_remote_response_pull(req->dpc);
-            list_del(&req->ordered_list);
-            tx->request_queue_sz--;
-            release_dsm_request(req);
-            goto retry;
+    if(!list_empty(list)){
+        list_for_each_entry(req, list, ordered_list)
+        {
+            if(req->svm == svm || req->fault_svm == svm) {
+                if(req->dpc && req->dpc->tag == PULL_TAG)
+                    surrogate_remote_response_pull(req->dpc);
+                list_del(&req->ordered_list);
+                tx->request_queue_sz--;
+                release_dsm_request(req);
+                goto retry;
+
+            }
 
         }
-
     }
     mutex_unlock(&tx->flush_mutex);
 

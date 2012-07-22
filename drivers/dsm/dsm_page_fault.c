@@ -452,7 +452,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 
 
     if (!page || !dpc) {
-        dsm_printk(" req start %p ", page, dpc);
+        dsm_printk(" req page  %p , dpc %p ", page, dpc);
         return 0;
     }
     for (i = 0; i < dpc->svms.num; i++) {

@@ -122,7 +122,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct tx_buf_ele *tx_e = NULL;
     int ret =0;
 
-
+    trace_flushing_requests(0, 0, 0, 0, 0, 0);
     mutex_lock(&tx->flush_mutex);
     head = llist_del_all(&tx->request_queue);
     if (head)
@@ -133,19 +133,17 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (!tx_e) {
             ret = 1;
-            goto out;
+            break;
         }
-        if(req->dpc)
-            trace_flushing_requests(req->dpc->svm->dsm->dsm_id,req->dpc->svm->svm_id, 0, 0, req->dpc->addr, req->dpc->tag);
+        req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
+        if (req->dpc)
+            trace_flushing_requests(req->dpc->svm->dsm->dsm_id,
+                    req->dpc->svm->svm_id, 0, 0, req->dpc->addr, req->dpc->tag);
         else
             trace_flushing_requests(0, 0, 0, 0, req->addr, req->type);
-        req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);
     }
-
-
-out:
     mutex_unlock(&tx->flush_mutex);
     return ret ;
 
@@ -161,7 +159,7 @@ void delayed_request_flush_work_fn(struct work_struct *w) {
     struct conn_element *ele;
     udelay(REQUEST_FLUSH_DELAY);
     ele = container_of(w, struct conn_element , delayed_request_flush_work);
-
+    trace_flushing_requests(9, 9, 9, 9, 0, 0);
     if (flush_dsm_request_queue(ele))
         schedule_delayed_request_flush(ele);
 
@@ -176,8 +174,8 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,struct conn_elem
     BUG_ON(!svm);
     BUG_ON(!tx);
 
-    head = llist_del_all(&tx->request_queue);
     mutex_lock(&tx->flush_mutex);
+    head = llist_del_all(&tx->request_queue);
     if (head)
         add_to_ordered_queue(head, ele);
 

@@ -512,6 +512,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
 {
     int r;
 
+    BUG_ON(!tx_e->dsm_buf);
     /* either someone failed to push to us, or we failed prefetching */
     if (unlikely(tx_e->dsm_buf->type == TRY_REQUEST_PAGE_FAIL)) {
         struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;

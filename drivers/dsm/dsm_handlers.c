@@ -135,7 +135,10 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
             ret = 1;
             goto out;
         }
-        trace_flushing_requests(req->fault_svm->dsm->dsm_id, req->fault_svm->svm_id, 0, 0, req->addr, req->type);
+        if(req->dpc)
+            trace_flushing_requests(req->dpc->svm->dsm->dsm_id,req->dpc->svm->svm_id, 0, 0, req->dpc->addr, req->dpc->tag);
+        else
+            trace_flushing_requests(0, 0, 0, 0, req->addr, req->type);
         req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);

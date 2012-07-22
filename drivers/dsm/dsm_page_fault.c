@@ -459,7 +459,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
         return 0;
     }
 
-    dpc == tx_e->wrk_req->dpc;
+    dpc = tx_e->wrk_req->dpc;
     page = tx_e->wrk_req->dst_addr->mem_page;
     for (i = 0; i < dpc->svms.num; i++) {
         if (dpc->pages[i] == page)

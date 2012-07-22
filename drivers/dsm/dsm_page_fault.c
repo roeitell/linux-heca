@@ -443,18 +443,24 @@ static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, stru
 
 
 static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
-    struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
-    struct page *page = tx_e->wrk_req->dst_addr->mem_page;
+    struct dsm_page_cache *dpc ;
+    struct page *page ;
     int i;
     struct mm_struct *mm;
     unsigned long addr;
     struct dsm_delayed_fault *ddf;
 
 
-    if (!page || !dpc) {
-        dsm_printk(" ref page %p , req page  %p,  dpc %p ",tx_e->wrk_req->dst_addr->mem_page, page, dpc);
+    if (!tx_e->wrk_req->dst_addr) {
+        dsm_printk(" ppe missing %p  ", tx_e->wrk_req->dst_addr);
+        return 0;
+    } else if (!tx_e->wrk_req->dst_addr->mem_page) {
+        dsm_printk(" ppe page %p  ", tx_e->wrk_req->dst_addr->mem_page);
         return 0;
     }
+
+    dpc == tx_e->wrk_req->dpc;
+    page = tx_e->wrk_req->dst_addr->mem_page;
     for (i = 0; i < dpc->svms.num; i++) {
         if (dpc->pages[i] == page)
             goto unlock;

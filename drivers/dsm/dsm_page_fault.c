@@ -398,7 +398,6 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
     head = llist_nodes_reverse(head);
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
-        might_sleep();
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
         trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, 0, 0, ddf->addr, 0);
         dpc = dsm_cache_get(svm, ddf->addr);
@@ -426,24 +425,19 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
         node = llist_next(node);
         free_dsm_delayed_fault_cache_elm(&ddf);
     }
-
-
-
 }
 
 
 void delayed_gup_work_fn(struct work_struct *w) {
     struct subvirtual_machine *svm;
     svm = container_of(to_delayed_work(w), struct subvirtual_machine , delayed_gup_work);
-    if( atomic_cmpxchg(&svm->scheduled_delayed_gup,1,0) == 1)
-        dequeue_and_gup(svm);
+    dequeue_and_gup(svm);
 }
 
 static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, struct subvirtual_machine *svm){
 
     llist_add(&ddf->node, &svm->delayed_faults);
-    if(atomic_cmpxchg(&svm->scheduled_delayed_gup,0,1)==0)
-        schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
+    schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
 
 }
 

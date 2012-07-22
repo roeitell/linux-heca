@@ -119,30 +119,35 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct dsm_request *req;
     struct llist_node *head;
     struct tx_buf_ele *tx_e = NULL;
-
+    int ret =0
     head = llist_del_all(&tx->request_queue);
+    mutex_lock(&tx->flush_mutex);
     if (head)
         add_to_ordered_queue(head, ele);
 
     while (!list_empty(&tx->ordered_request_queue)) {
 
         tx_e = try_get_next_empty_tx_ele(ele);
-        if (!tx_e)
-            return 1;
+        if (!tx_e) {
+            ret = 1;
+            goto out;
+        }
         trace_flushing_requests(0, 0, 0, 0, 0, 0);
         req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);
     }
 
-    return 0;
+
+out:
+    mutex_unlock(&tx->flush_mutex);
+    return ret ;
 
 }
 
 void schedule_delayed_request_flush(struct conn_element *ele) {
 
-    if (atomic_cmpxchg(&ele->tx_buffer.schedule_flush, 0, 1) == 0)
-        schedule_work(&ele->delayed_request_flush_work);
+    schedule_work(&ele->delayed_request_flush_work);
 
 }
 
@@ -150,9 +155,9 @@ void delayed_request_flush_work_fn(struct work_struct *w) {
     struct conn_element *ele;
     udelay(REQUEST_FLUSH_DELAY);
     ele = container_of(w, struct conn_element , delayed_request_flush_work);
-    if (atomic_cmpxchg(&ele->tx_buffer.schedule_flush, 1, 0))
-        if (flush_dsm_request_queue(ele))
-            schedule_delayed_request_flush(ele);
+
+    if (flush_dsm_request_queue(ele))
+        schedule_delayed_request_flush(ele);
 
 }
 
@@ -165,20 +170,17 @@ void release_svm_queued_requests(struct subvirtual_machine *svm,struct conn_elem
     BUG_ON(!svm);
     BUG_ON(!tx);
 
-    while (atomic_cmpxchg(&tx->schedule_flush, 0, -1))
-        cond_resched();
-
     head = llist_del_all(&tx->request_queue);
+    mutex_lock(&tx->flush_mutex);
     if (head)
-        add_to_ordered_queue(head , ele);
+        add_to_ordered_queue(head, ele);
 
-retry:
-    list= &tx->ordered_request_queue;
+    retry: list = &tx->ordered_request_queue;
     list_for_each_entry_from(req, list, ordered_list)
     {
         if(req->svm == svm || req->fault_svm == svm) {
             if (req->dpc->tag == PULL_TAG)
-                surrogate_remote_response_pull(req->dpc);
+            surrogate_remote_response_pull(req->dpc);
             list_del(&req->ordered_list);
             tx->request_queue_sz--;
             release_dsm_request(req);
@@ -186,9 +188,9 @@ retry:
         }
 
     }
+    mutex_unlock(&tx->flush_mutex);
 
-    atomic_set(&tx->schedule_flush, 1);
-        schedule_work(&ele->delayed_request_flush_work);
+    schedule_work(&ele->delayed_request_flush_work);
 }
 
 
@@ -208,21 +210,14 @@ int dsm_recv_message_handler(struct conn_element *ele,
     switch (type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                process_page_response(ele, tx_e); // client got its response
-            }else{
-                dsm_printk("problem not the right used value");
-            }
+            process_page_response(ele, tx_e); // client got its response
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
-                process_page_response(ele, tx_e);
-            }else{
-                dsm_printk("problem not the right used value");
-            }
+            tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
+            process_page_response(ele, tx_e);
+
             break;
         }
         case TRY_REQUEST_PAGE:
@@ -239,14 +234,11 @@ int dsm_recv_message_handler(struct conn_element *ele,
             process_svm_status(ele, rx_e);
             break;
         }
-        case ACK:{
+        case ACK: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                release_tx_element(ele, tx_e);
-            }
+            release_tx_element(ele, tx_e);
             break;
         }
-
 
         default: {
             printk("[dsm_recv_poll] unhandled message stats addr: %p, status %d"

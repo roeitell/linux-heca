@@ -39,20 +39,20 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         goto out;
     }
     if (svm->priv) {
-        atomic_set(&svm->scheduled_delayed_gup,-1);
-        cancel_delayed_work_sync(&svm->delayed_gup_work);
-        // to make sure everything is clean
-        dequeue_and_gup_cleanup(svm);
+
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
 
-    atomic_set(&svm->status, DSM_SVM_OFFLINE);
+
 
     list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
     if (svm->priv) {
+        cancel_delayed_work_sync(&svm->delayed_gup_work);
+        // to make sure everything is clean
+        dequeue_and_gup_cleanup(svm);
         dsm->nb_local_svm--;
         radix_tree_delete(&dsm->svm_mm_tree_root,
                 (unsigned long) svm->priv->mm);
@@ -345,7 +345,7 @@ end_radix:
         u32 svm_id[] = {new_svm->svm_id, 0};
         new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
     }
-    atomic_set(&new_svm->status, DSM_SVM_ONLINE);
+
     r = create_svm_sysfs_entry(new_svm);
     if (r) {
         dsm_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
@@ -356,6 +356,7 @@ end_radix:
     goto do_unlock;
 
 err_delete:
+
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) new_svm->svm_id);
     if (is_svm_local(new_svm)) {
         radix_tree_delete(&dsm->svm_mm_tree_root,

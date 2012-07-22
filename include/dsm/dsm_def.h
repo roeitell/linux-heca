@@ -169,7 +169,7 @@ struct tx_buffer {
     spinlock_t tx_free_elements_list_reply_lock;
 
     struct llist_head request_queue;
-    atomic_t schedule_flush;
+    struct mutex  flush_mutex;
     struct list_head ordered_request_queue;
     int request_queue_sz;
     struct work_struct delayed_request_flush_work;
@@ -177,6 +177,7 @@ struct tx_buffer {
 
 struct conn_element {
     struct rcm *rcm;
+    /* not 100% sur of this atomic regarding barrier*/
     atomic_t alive;
 
     int remote_node_ip;
@@ -246,9 +247,6 @@ struct private_data {
 
 struct subvirtual_machine {
     u32 svm_id;
-    atomic_t status;
-#define DSM_SVM_ONLINE 0
-#define DSM_SVM_OFFLINE -1
     struct dsm *dsm;
     struct conn_element *ele;
     struct private_data *priv;
@@ -266,7 +264,6 @@ struct subvirtual_machine {
 
 
     struct llist_head delayed_faults;
-    atomic_t scheduled_delayed_gup;
     struct delayed_work delayed_gup_work;
 };
 
@@ -313,8 +310,6 @@ struct tx_callback {
 
 struct tx_buf_ele {
     int id;
-    atomic_t used;
-
     struct dsm_message *dsm_buf;
     struct map_dma dsm_dma;
     struct msg_work_request *wrk_req;
@@ -370,6 +365,7 @@ struct dsm_page_cache {
 
     struct page *pages[MAX_SVMS_PER_PAGE + 1];
     struct svm_list svms;
+    /* memory barrier are ok with these atomic */
     atomic_t found;
     atomic_t nproc;
     atomic_t released;

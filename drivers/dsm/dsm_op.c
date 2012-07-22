@@ -56,6 +56,7 @@ static void destroy_tx_buffer(struct conn_element *ele) {
     if (!tx_buf)
         return;
     cancel_work_sync(&ele->delayed_request_flush_work);
+
     for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
         if (tx_buf[i].dsm_dma.addr) {
             ib_dma_unmap_single(ele->cm_id->device, tx_buf[i].dsm_dma.addr,
@@ -424,8 +425,8 @@ static int init_tx_lists(struct conn_element *ele) {
     spin_lock_init(&tx->tx_free_elements_list_lock);
     spin_lock_init(&tx->tx_free_elements_list_reply_lock);
     INIT_LIST_HEAD(&tx->ordered_request_queue);
+    mutex_init(&tx->flush_mutex);
     INIT_WORK(&ele->delayed_request_flush_work, delayed_request_flush_work_fn);
-    atomic_set(&tx->schedule_flush, 0);
 
     for (i = 0; i < max_tx_send; ++i)
         release_tx_element(ele, &tx->tx_buf[i]);
@@ -603,15 +604,21 @@ int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele * rx_e) {
     return ret;
 }
 
+static inline void reset_tx_element_msg(struct dsm_message *msg) {
+    //we just rest the dsm_id, id 0 can never be used !
+    msg->dsm_id = 0;
+
+}
+
 void release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e) {
     struct tx_buffer *tx = &ele->tx_buffer;
-    atomic_set(&tx_e->used, 0);
+    reset_tx_element_msg(tx_e->dsm_buf);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
 }
 
 void release_tx_element_reply(struct conn_element *ele, struct tx_buf_ele *tx_e) {
     struct tx_buffer *tx = &ele->tx_buffer;
-    atomic_set(&tx_e->used, 0);
+    reset_tx_element_msg(tx_e->dsm_buf);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
 }
 
@@ -935,10 +942,10 @@ struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele) {
     llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
-    if (llnode) {
-tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-                atomic_set(&tx_e->used, 1);
-    }
+    if (llnode)
+        tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+
+
 
     return tx_e;
 }
@@ -951,10 +958,8 @@ struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
     llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list_reply);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
 
-    if (llnode) {
-tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-                atomic_set(&tx_e->used, 1);
-    }
+    if (llnode)
+        tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
 
     return tx_e;
 }
@@ -1182,14 +1187,38 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
     for (i = 0; i < get_nb_tx_buff_elements(ele); i++) {
         struct dsm_message *msg = tx_buf[i].dsm_buf;
 
-        if (msg->dsm_id == svm->dsm->dsm_id && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) && (msg->type == REQUEST_PAGE || msg->type == TRY_REQUEST_PAGE) && atomic_cmpxchg(&tx_buf[i].used, 1, 2) == 1) {
-            tx_buf[i].wrk_req->dst_addr->mem_page = NULL;
-            release_ppe(ele, &tx_buf[i]);
-            release_tx_element(ele, &tx_buf[i]);
-            surrogate_remote_response_pull(tx_buf[i].wrk_req->dpc);
+        if (msg->dsm_id == svm->dsm->dsm_id
+                && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)) {
+
+            switch (msg->type) {
+                case PAGE_REQUEST_REPLY:
+                case TRY_REQUEST_PAGE_FAIL: {
+
+                    /*unhandled */
+                    break;
+                }
+                case TRY_REQUEST_PAGE:
+                case REQUEST_PAGE: {
+                    tx_buf[i].wrk_req->dst_addr->mem_page = NULL;
+                    surrogate_remote_response_pull(tx_buf[i].wrk_req->dpc);
+                    release_ppe(ele, &tx_buf[i]);
+                    release_tx_element(ele, &tx_buf[i]);
+                    break;
+                }
+                case REQUEST_PAGE_PULL:
+                case SVM_STATUS_UPDATE:
+                case ACK: {
+                    release_tx_element(ele, tx_e);
+                    break;
+                }
+
+                default: {
+                    BUG();
+                    break;
+                }
+            }
         }
     }
-}
 
 
 

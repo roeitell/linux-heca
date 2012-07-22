@@ -100,19 +100,16 @@ static inline void add_to_ordered_queue(struct llist_node *llnode,
 
     struct dsm_request *request;
     struct list_head *head = &ele->tx_buffer.ordered_request_queue;
-    struct list_head *previous = head;
+
 
     while (llnode) {
         request = container_of(llnode, struct dsm_request , lnode);
-        if (previous != head)
-            list_add(&request->ordered_list, previous);
-        else
-            list_add_tail(&request->ordered_list, previous);
-
-        previous = &request->ordered_list;
+        list_add_tail(&request->ordered_list, head);
+        head = &request->ordered_list;
         llnode = llnode->next;
         ele->tx_buffer.request_queue_sz++;
     }
+
 }
 
 static inline int flush_dsm_request_queue(struct conn_element *ele) {
@@ -126,16 +123,16 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     mutex_lock(&tx->flush_mutex);
     trace_flushing_requests(7,7 , 7, 7, 0, 0);
     head = llist_del_all(&tx->request_queue);
-    if (head)
-        add_to_ordered_queue(head, ele);
+    add_to_ordered_queue(head, ele);
 
     while (!list_empty(&tx->ordered_request_queue)) {
-
+        trace_flushing_requests(6,6 , 6, 6, 0, 0);
         tx_e = try_get_next_empty_tx_ele(ele);
         if (!tx_e) {
             ret = 1;
             break;
         }
+        trace_flushing_requests(5,5 , 5, 5, 0, 0);
         req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
         if (req->dpc)
             trace_flushing_requests(req->dpc->svm->dsm->dsm_id,

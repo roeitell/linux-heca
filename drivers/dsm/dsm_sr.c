@@ -78,9 +78,10 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
 static inline int request_queue_empty(struct conn_element *ele)
 {
     /* we are not 100% accurate but that's ok we can have a few send sneaking in */
-    if (list_empty(&ele->tx_buffer.ordered_request_queue))
-        return 1;
-    return llist_empty(&ele->tx_buffer.request_queue);
+    if ( llist_empty(&ele->tx_buffer.request_queue) && list_empty(&ele->tx_buffer.ordered_request_queue) )
+       return 1;
+    return 0;
+
 }
 
 static inline int request_queue_full(struct conn_element *ele)

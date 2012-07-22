@@ -452,6 +452,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 
 
     BUG_ON(!page);
+    BUG_ON(!dpc);
     for (i = 0; i < dpc->svms.num; i++) {
         if (dpc->pages[i] == page)
             goto unlock;
@@ -536,12 +537,12 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
         if (atomic_read(&dpc->nproc) == 2) {
             SetPageUptodate(page);
             unlock_page(dpc->pages[0]);
-            dsm_cache_release(dpc->svm, tx_e->dsm_buf->req_addr +
-                    dpc->svm->priv->offset);
+            dsm_cache_release(dpc->svm,
+                    tx_e->dsm_buf->req_addr + dpc->svm->priv->offset);
             dpc_nproc_dec(&dpc, 1);
         }
         trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
-                dpc->svm->svm_id,0,0,
+                dpc->svm->svm_id, 0, 0,
                 tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
         goto out;
     }
@@ -861,16 +862,14 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct mem_cgroup *ptr;
     pte_t pte;
 
-
-
-
     if (swp_entry_to_dsm_data(entry, &dsd) < 0)
         BUG();
     fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
 
-    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dsd.flags);
+    trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id, 0, 0,
+            norm_addr, dsd.flags);
 
-    dsm_printk("page fault stage 1 %p" ,norm_addr );
+    dsm_printk("page fault stage 1 %p", norm_addr);
     /*
      * If page is currently being pushed, halt the push, re-claim the page and
      * notify other nodes. If page is absent since we're answering a remote
@@ -888,7 +887,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             }
         }
     }
-    dsm_printk("page fault stage 2 %p" ,norm_addr );
+    dsm_printk("page fault stage 2 %p", norm_addr);
 retry:
     dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
@@ -911,15 +910,14 @@ retry:
         count_vm_event(PGMAJFAULT);
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
     }
-    dsm_printk("page fault stage 3 %p" ,norm_addr );
+    dsm_printk("page fault stage 3 %p", norm_addr);
     /*
      * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
      * so we just re-throw immediately. Otherwise, we wait until the bitlock is
      * cleared, then re-throw the fault.
      */
 
-
-    if (dpc->tag == PULL_TAG && flags & FAULT_FLAG_ALLOW_RETRY )  {
+    if (dpc->tag == PULL_TAG && flags & FAULT_FLAG_ALLOW_RETRY) {
         int max_retry;
 
         /* we want here an optimisation for the nowait option */
@@ -938,17 +936,17 @@ retry:
     }
 
 lock:
-    dsm_printk("page fault stage 4 %p" ,norm_addr );
+    dsm_printk("page fault stage 4 %p", norm_addr);
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
         goto out;
     }
 
 resolve:
-    dsm_printk("page fault stage 5 %p" ,norm_addr );
+    dsm_printk("page fault stage 5 %p", norm_addr);
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
-         /* the try pull failed so we need to rethrow the request */
+        /* the try pull failed so we need to rethrow the request */
         if (dpc->tag == PULL_TRY_TAG) {
             dpc->tag = PULL_TAG;
             for_each_valid_svm(dsd.svms, i) {
@@ -961,7 +959,7 @@ resolve:
         ret = VM_FAULT_ERROR;
         goto out;
     }
-    dsm_printk("page fault stage 6 %p" ,norm_addr );
+    dsm_printk("page fault stage 6 %p", norm_addr);
     /*
      * In this critical section, we lock the updated page (if it's the
      * first one, it was locked in advance), increment its refcount, the
@@ -1000,7 +998,7 @@ resolve:
      * We should pretty much always get in there unless we read fault. Note
      * that KVM always write faults.
      */
-    if (likely(reuse_dsm_page(fault_svm, found_page, norm_addr,dpc))) {
+    if (likely(reuse_dsm_page(fault_svm, found_page, norm_addr, dpc))) {
         pte = maybe_mkwrite(pte_mkdirty(pte), vma);
         flags &= ~FAULT_FLAG_WRITE;
         ret |= VM_FAULT_WRITE;
@@ -1024,7 +1022,7 @@ resolve:
     }
     if (flags & FAULT_FLAG_WRITE) {
         ret |= do_wp_dsm_page(fault_svm, mm, vma, address, page_table, pmd, ptl,
-                pte, norm_addr,dpc);
+                pte, norm_addr, dpc);
         if (ret & VM_FAULT_ERROR)
             ret &= VM_FAULT_ERROR;
         goto out;
@@ -1035,7 +1033,8 @@ resolve:
     pte_unmap_unlock(pte, ptl);
     put_page(found_page);
     atomic_dec(&dpc->nproc);
-    trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id, fault_svm->svm_id,0,0, norm_addr, dpc->tag);
+    trace_do_dsm_page_fault_svm_complete(fault_svm->dsm->dsm_id,
+            fault_svm->svm_id, 0, 0, norm_addr, dpc->tag);
     goto out;
 
 out_nomap:

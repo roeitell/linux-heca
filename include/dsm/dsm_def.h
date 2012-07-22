@@ -199,6 +199,7 @@ struct conn_element {
     struct con_element_sysfs sysfs;
 
     struct completion completion;
+    atomic_t flushed;
     struct work_struct delayed_request_flush_work;
 };
 

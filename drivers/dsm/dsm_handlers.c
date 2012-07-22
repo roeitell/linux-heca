@@ -122,8 +122,9 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct tx_buf_ele *tx_e = NULL;
     int ret =0;
 
-    head = llist_del_all(&tx->request_queue);
+
     mutex_lock(&tx->flush_mutex);
+    head = llist_del_all(&tx->request_queue);
     if (head)
         add_to_ordered_queue(head, ele);
 
@@ -134,7 +135,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
             ret = 1;
             goto out;
         }
-        trace_flushing_requests(0, 0, 0, 0, 0, 0);
+        trace_flushing_requests(req->fault_svm->dsm->dsm_id, req->fault_svm->svm_id, 0, 0, req->addr, req->type);
         req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);

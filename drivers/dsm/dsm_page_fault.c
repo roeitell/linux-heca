@@ -452,12 +452,12 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 
 
     if (!tx_e->wrk_req->dst_addr) {
-        dsm_printk(" ppe missing %p / dpc %p  ",
-                tx_e->wrk_req->dst_addr, tx_e->wrk_req->dpc);
+        dsm_printk(" ppe missing %p / dpc %p  address %p",
+                tx_e->wrk_req->dst_addr, tx_e->wrk_req->dpc, tx_e->wrk_req->dpc->addr);
         return 0;
     } else if (!tx_e->wrk_req->dst_addr->mem_page) {
-        dsm_printk(" ppe page %p , dpc %p ",
-                tx_e->wrk_req->dst_addr->mem_page, tx_e->wrk_req->dpc);
+        dsm_printk(" ppe page %p , dpc %p , address %p  ",
+                tx_e->wrk_req->dst_addr->mem_page, tx_e->wrk_req->dpc, tx_e->wrk_req->dpc->addr);
         return 0;
     }
 

@@ -452,10 +452,12 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 
 
     if (!tx_e->wrk_req->dst_addr) {
-        dsm_printk(" ppe missing %p  ", tx_e->wrk_req->dst_addr);
+        dsm_printk(" ppe missing %p / dpc %p  ",
+                tx_e->wrk_req->dst_addr, tx_e->wrk_req->dpc);
         return 0;
     } else if (!tx_e->wrk_req->dst_addr->mem_page) {
-        dsm_printk(" ppe page %p  ", tx_e->wrk_req->dst_addr->mem_page);
+        dsm_printk(" ppe page %p , dpc %p ",
+                tx_e->wrk_req->dst_addr->mem_page, tx_e->wrk_req->dpc);
         return 0;
     }
 
@@ -471,7 +473,6 @@ unlock:
 
     mm = dpc->svm->priv->mm;
     addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
-    dsm_printk(" req start %p " , addr);
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
         page_cache_get(page);
         lru_cache_add_anon(page);
@@ -487,8 +488,7 @@ unlock:
                 break;
             }
             case PULL_TRY_TAG:
-            case PREFETCH_TAG:
-            {
+            case PREFETCH_TAG: {
                 ddf = alloc_dsm_delayed_fault_cache_elm(addr);
                 if (ddf) {
                     queue_ddf_for_delayed_gup(ddf, dpc->svm);
@@ -508,7 +508,6 @@ unlock:
             }
         }
     }
-    dsm_printk("req comple %p " , addr);
     trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
             addr, dpc->tag);
     dpc_nproc_dec(&dpc, 1);

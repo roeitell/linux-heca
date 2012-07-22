@@ -122,7 +122,6 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
 
 
     mutex_lock(&tx->flush_mutex);
-    trace_flushing_requests(7,7 , 7, 7, 0, 0);
     head = llist_del_all(&tx->request_queue);
     add_to_ordered_queue(head, ele);
 

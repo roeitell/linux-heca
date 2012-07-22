@@ -119,7 +119,8 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct dsm_request *req;
     struct llist_node *head;
     struct tx_buf_ele *tx_e = NULL;
-    int ret =0
+    int ret =0;
+
     head = llist_del_all(&tx->request_queue);
     mutex_lock(&tx->flush_mutex);
     if (head)

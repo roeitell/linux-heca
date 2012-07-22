@@ -1208,7 +1208,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
                 case REQUEST_PAGE_PULL:
                 case SVM_STATUS_UPDATE:
                 case ACK: {
-                    release_tx_element(ele, tx_e);
+                    release_tx_element(ele,&tx_buf[i]);
                     break;
                 }
 

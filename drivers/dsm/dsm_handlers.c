@@ -286,12 +286,9 @@ int dsm_send_message_handler(struct conn_element *ele,
             break;
         }
         case ACK:
-        case TRY_REQUEST_PAGE_FAIL: {
+        case TRY_REQUEST_PAGE_FAIL:
+        case SVM_STATUS_UPDATE:{
             release_tx_element(ele, tx_buf_e);
-            break;
-        }
-        case SVM_STATUS_UPDATE: {
-            release_tx_element_reply(ele, tx_buf_e);
             break;
         }
         default: {

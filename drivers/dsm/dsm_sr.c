@@ -319,6 +319,7 @@ retry:
 
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
+
     trace_process_page_request_complete(local_svm->dsm->dsm_id, local_svm->svm_id,
                 remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
     tx_dsm_send(ele, tx_e);

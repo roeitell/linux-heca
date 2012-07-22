@@ -452,7 +452,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
 
 
     if (!page || !dpc) {
-        dsm_printk(" req page  %p , dpc %p ", page, dpc);
+        dsm_printk(" ref page %p , req page  %p,  dpc %p ",tx_e->wrk_req->dst_addr->mem_page, page, dpc);
         return 0;
     }
     for (i = 0; i < dpc->svms.num; i++) {
@@ -515,7 +515,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
 {
     int r;
 
-    BUG_ON(!tx_e->dsm_buf);
+
     /* either someone failed to push to us, or we failed prefetching */
     if (unlikely(tx_e->dsm_buf->type == TRY_REQUEST_PAGE_FAIL)) {
         struct page_pool_ele *ppe = tx_e->wrk_req->dst_addr;
@@ -536,6 +536,9 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
 
         /* last failure should also account for the gup refcount */
         dpc_nproc_dec(&dpc, 0);
+        trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
+                        dpc->svm->svm_id, 0, 0,
+                        tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
         if (atomic_read(&dpc->nproc) == 2) {
             SetPageUptodate(page);
             unlock_page(dpc->pages[0]);
@@ -543,9 +546,7 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
                     tx_e->dsm_buf->req_addr + dpc->svm->priv->offset);
             dpc_nproc_dec(&dpc, 1);
         }
-        trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
-                dpc->svm->svm_id, 0, 0,
-                tx_e->dsm_buf->req_addr + dpc->svm->priv->offset, dpc->tag);
+
         goto out;
     }
 
@@ -634,7 +635,7 @@ fail:
 
 static struct dsm_page_cache *dsm_cache_add_send(
         struct subvirtual_machine *fault_svm, struct svm_list svms,
-        unsigned long addr, unsigned long norm_addr, int nproc, int tag,
+        unsigned long norm_addr, int nproc, int tag,
         struct vm_area_struct *vma, struct mm_struct *mm,
          pte_t orig_pte, pte_t *page_table)
 {
@@ -751,8 +752,8 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                      *  +1 for every svm we send to
                      *  +1 for the fault that comes after fetching
                      */
-                    dsm_cache_add_send(fault_svm, dsd.svms, addr, norm_addr,
-                            2, tag, vma, mm, pte_entry, pte);
+                    dsm_cache_add_send(fault_svm, dsd.svms, norm_addr, 2, tag,
+                            vma, mm, pte_entry, pte);
                 }
             }
         }
@@ -871,7 +872,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id, 0, 0,
             norm_addr, dsd.flags);
 
-    dsm_printk("page fault stage 1 %p", norm_addr);
+
     /*
      * If page is currently being pushed, halt the push, re-claim the page and
      * notify other nodes. If page is absent since we're answering a remote
@@ -889,7 +890,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
             }
         }
     }
-    dsm_printk("page fault stage 2 %p", norm_addr);
+
 retry:
     dpc = dsm_cache_get_hold(fault_svm, norm_addr);
     if (!dpc) {
@@ -899,8 +900,8 @@ retry:
          *  +1 for the current do_dsm_page_fault
          *  +1 for the final, successful do_dsm_page_fault
          */
-        dpc = dsm_cache_add_send(fault_svm, dsd.svms, address, norm_addr, 3,
-                PULL_TAG, vma, mm, orig_pte, page_table);
+        dpc = dsm_cache_add_send(fault_svm, dsd.svms, norm_addr, 3, PULL_TAG,
+                vma, mm, orig_pte, page_table);
         if (unlikely(!dpc)) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
             if (likely(pte_same(*page_table, orig_pte)))
@@ -912,7 +913,7 @@ retry:
         count_vm_event(PGMAJFAULT);
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
     }
-    dsm_printk("page fault stage 3 %p", norm_addr);
+
     /*
      * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
      * so we just re-throw immediately. Otherwise, we wait until the bitlock is
@@ -938,14 +939,14 @@ retry:
     }
 
 lock:
-    dsm_printk("page fault stage 4 %p", norm_addr);
+
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
         goto out;
     }
 
 resolve:
-    dsm_printk("page fault stage 5 %p", norm_addr);
+
     i = atomic_read(&dpc->found);
     if (unlikely(i < 0)) {
         /* the try pull failed so we need to rethrow the request */
@@ -961,7 +962,7 @@ resolve:
         ret = VM_FAULT_ERROR;
         goto out;
     }
-    dsm_printk("page fault stage 6 %p", norm_addr);
+
     /*
      * In this critical section, we lock the updated page (if it's the
      * first one, it was locked in advance), increment its refcount, the

@@ -754,6 +754,7 @@ void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e) {
         if (ppe->mem_page)
             page_cache_release(ppe->mem_page);
         llist_add(&ppe->llnode, &pp->page_empty_pool_list);
+        tx_e->wrk_req->dst_addr = NULL;
     }
 }
 
@@ -846,19 +847,19 @@ void create_page_pull_request(struct conn_element *ele,
 }
 
 struct page_pool_ele *get_empty_page_ele(struct conn_element *ele) {
-    struct page_pool_ele *ppe;
+    struct page_pool_ele *ppe = NULL;
     struct page_pool *pp = &ele->page_pool;
     struct llist_node *llnode = NULL;
 
-    loop: if (llist_empty(&pp->page_empty_pool_list)) {
-        cond_resched();
-        goto loop;
-    }
-    spin_lock(&pp->page_pool_empty_list_lock);
-    llnode = llist_del_first(&pp->page_empty_pool_list);
-    spin_unlock(&pp->page_pool_empty_list_lock);
-    if (!llnode)
-        goto loop;
+    do {
+        while (llist_empty(&pp->page_empty_pool_list))
+            cond_resched();
+
+        spin_lock(&pp->page_pool_empty_list_lock);
+        llnode = llist_del_first(&pp->page_empty_pool_list);
+        spin_unlock(&pp->page_pool_empty_list_lock);
+    } while (!llnode);
+
     ppe = container_of(llnode, struct page_pool_ele, llnode);
 
     return ppe;
@@ -868,11 +869,9 @@ struct page_pool_ele *create_new_page_pool_element_from_page(
         struct conn_element *ele, struct page *page) {
     struct page_pool_ele *ppe;
 
+    BUG_ON(!page);
     ppe = get_empty_page_ele(ele);
     ppe->mem_page = page;
-    if (unlikely(!ppe->mem_page))
-        return NULL;
-
     ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device, ppe->mem_page,
             0, PAGE_SIZE, DMA_BIDIRECTIONAL);
     if (ib_dma_mapping_error(ele->cm_id->device,

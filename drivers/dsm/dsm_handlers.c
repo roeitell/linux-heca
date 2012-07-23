@@ -123,6 +123,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
 
     mutex_lock(&tx->flush_mutex);
     head = llist_del_all(&tx->request_queue);
+    atomic_set(&ele->schedule_flush,0);
     add_to_ordered_queue(head, ele);
 
     while (!list_empty(&tx->ordered_request_queue)) {
@@ -152,7 +153,10 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
 
 void schedule_delayed_request_flush(struct conn_element *ele) {
 
-    schedule_work(&ele->delayed_request_flush_work);
+
+    if (atomic_cmpxchg(&ele->schedule_flush,0,1))
+        schedule_work(&ele->delayed_request_flush_work);
+
 
 }
 
@@ -162,6 +166,7 @@ void delayed_request_flush_work_fn(struct work_struct *w) {
     ele = container_of(w, struct conn_element , delayed_request_flush_work);
     if (flush_dsm_request_queue(ele))
         schedule_delayed_request_flush(ele);
+
 
 }
 

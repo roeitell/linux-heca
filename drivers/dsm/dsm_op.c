@@ -427,6 +427,7 @@ static int init_tx_lists(struct conn_element *ele) {
     INIT_LIST_HEAD(&tx->ordered_request_queue);
     mutex_init(&tx->flush_mutex);
     INIT_WORK(&ele->delayed_request_flush_work, delayed_request_flush_work_fn);
+    atomic_set(&ele->schedule_flush,0);
 
     for (i = 0; i < max_tx_send; ++i)
         release_tx_element(ele, &tx->tx_buf[i]);

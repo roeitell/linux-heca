@@ -45,7 +45,7 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
         if (unlikely(!req))
             return -ENOMEM;
     }
-    trace_add_dsm_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,0, 0, addr, 0);
+
     req->type = type;
     req->fault_svm = fault_svm;
     req->svm = svm;
@@ -65,7 +65,7 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
     struct dsm_request *req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
     if (unlikely(!req))
         return -ENOMEM;
-    trace_add_dsm_request_msg(0, 0,0, 0, 0, 0);
+
     req->type = type;
     req->func = NULL;
 

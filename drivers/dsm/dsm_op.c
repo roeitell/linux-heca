@@ -816,7 +816,7 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
     struct dsm_message *msg = tx_e->dsm_buf;
     struct page_pool_ele *ppe = create_new_page_pool_element_from_page(ele,
             page);
-    dsm_printk("ppe %p / page %p / dpc %p " , ppe , ppe->mem_page, dpc );
+
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->wrk_req->dpc = dpc;
 

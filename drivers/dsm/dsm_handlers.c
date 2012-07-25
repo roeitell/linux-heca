@@ -127,12 +127,15 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     add_to_ordered_queue(head, ele);
 
     while (!list_empty(&tx->ordered_request_queue)) {
+        trace_flushing_requests(0,0,0,0,0,0);
         tx_e = try_get_next_empty_tx_ele(ele);
         if (!tx_e) {
             ret = 1;
             break;
         }
         req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
+
+        trace_flushing_requests(0,0,0,0,req->addr,0);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);
         release_dsm_request(req);

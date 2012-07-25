@@ -605,21 +605,15 @@ int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele * rx_e) {
     return ret;
 }
 
-static inline void reset_tx_element_msg(struct dsm_message *msg) {
-    //we just rest the dsm_id, id 0 can never be used !
-    msg->dsm_id = 0;
 
-}
 
 void release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e) {
     struct tx_buffer *tx = &ele->tx_buffer;
-    reset_tx_element_msg(tx_e->dsm_buf);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
 }
 
 void release_tx_element_reply(struct conn_element *ele, struct tx_buf_ele *tx_e) {
     struct tx_buffer *tx = &ele->tx_buffer;
-    reset_tx_element_msg(tx_e->dsm_buf);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
 }
 

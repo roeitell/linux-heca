@@ -146,7 +146,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
 void schedule_delayed_request_flush(struct conn_element *ele) {
 
 
-    if (atomic_cmpxchg(&ele->schedule_flush,0,1)){
+    if (atomic_cmpxchg(&ele->schedule_flush,0,1)==0){
         trace_flushing_requests(9,9,9,9,0,0);
         schedule_work(&ele->delayed_request_flush_work);
     }

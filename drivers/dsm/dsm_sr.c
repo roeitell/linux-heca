@@ -28,7 +28,7 @@ void release_dsm_request(struct dsm_request *req)
 
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req) {
-
+    trace_queued_request(0, 0, 0, 0, req->addr, req->type);
     llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     schedule_delayed_request_flush(ele);
 
@@ -196,8 +196,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
             goto out;
         }
     }
-    trace_queued_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,
-            0, 0, addr, tag);
+
     ret = add_dsm_request(NULL, ele, req_tag, fault_svm, remote_svm,
             addr, func, dpc, page);
     BUG_ON(ret); /* FIXME: Handle req alloc failure */

@@ -831,7 +831,7 @@ void create_page_pull_request(struct conn_element *ele,
     struct dsm_message *msg = tx_e->dsm_buf;
 
     tx_e->wrk_req->dst_addr = NULL;
-
+    msg->offset = tx_e->id;
     msg->dsm_id = dsm_id;
     msg->dest_id = local_id;
     msg->src_id = remote_id;

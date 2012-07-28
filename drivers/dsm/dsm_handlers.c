@@ -206,7 +206,7 @@ int dsm_recv_message_handler(struct conn_element *ele,
 
     trace_dsm_rx_msg(rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->src_id,
                     rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->dest_id,
-                    rx_e->dsm_buf->req_addr, type);
+                    rx_e->dsm_buf->req_addr, type, rx_e->dsm_buf->offset);
 
     switch (type) {
         case PAGE_REQUEST_REPLY: {
@@ -261,7 +261,7 @@ int dsm_send_message_handler(struct conn_element *ele,
     trace_dsm_tx_msg(tx_buf_e->dsm_buf->dsm_id,
                     tx_buf_e->dsm_buf->src_id, tx_buf_e->dsm_buf->dsm_id,
                     tx_buf_e->dsm_buf->dest_id, tx_buf_e->dsm_buf->req_addr,
-                    tx_buf_e->dsm_buf->type);
+                    tx_buf_e->dsm_buf->type, tx_buf_e->dsm_buf->offset);
 
     switch (tx_buf_e->dsm_buf->type) {
         case PAGE_REQUEST_REPLY: {

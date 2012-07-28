@@ -97,14 +97,14 @@ DEFINE_EVENT(dsm_page_fault_template, flushing_requests,
     { DSM_MSG_ERR,                  "DSM_MSG_ERR" }
 
 DECLARE_EVENT_CLASS(dsm_message_template,
-        TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),
-        TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, type),
+        TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type, int tx_id),
+        TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, type, tx_id ),
 
-        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, type) ),
+        TP_STRUCT__entry( __field(int, dsm_id ) __field(int, svm_id) __field(int, remote_dsm_id ) __field(int, remote_svm_id) __field(void *, page_addr) __field(int, type)  __field(int, tx_id)),
 
-        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->type = type ),
+        TP_fast_assign( __entry->dsm_id = dsm_id; __entry->svm_id = svm_id; __entry->remote_dsm_id = remote_dsm_id; __entry->remote_svm_id = remote_svm_id;__entry->page_addr = (void *)address ; __entry->type = type ; __entry->tx_id = tx_id ),
 
-        TP_printk("Page Addr %p From DSM %d SVM %d To DSM %d SVM %d MSG Type %s", __entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __print_symbolic(__entry->type, dsm_msg_type)));
+        TP_printk("Page Addr %p From DSM %d SVM %d To DSM %d SVM %d MSG Type %s , TX_ID %d ", __entry->page_addr, __entry->dsm_id, __entry->svm_id, __entry->remote_dsm_id, __entry->remote_svm_id, __print_symbolic(__entry->type, dsm_msg_type),__entry->tx_id ));
 
 DEFINE_EVENT(dsm_message_template, dsm_rx_msg,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type),

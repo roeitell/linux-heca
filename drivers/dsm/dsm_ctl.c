@@ -77,15 +77,15 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             ele = rb_entry(node, struct conn_element, rb_node);
             BUG_ON(!ele);
             release_svm_queued_requests(svm, ele);
-            release_svm_tx_elements(svm, ele);
+            //release_svm_tx_elements(svm, ele);
         }
-        release_svm_push_elements(svm, NULL);
+        //release_svm_push_elements(svm, NULL);
 
     } else if (svm->ele) {
         struct list_head *pos;
 
         release_svm_queued_requests(svm, svm->ele);
-        release_svm_tx_elements(svm, svm->ele);
+        //release_svm_tx_elements(svm, svm->ele);
 
         /* potentially very expensive way to do this */
         list_for_each (pos, &svm->dsm->svm_list) {
@@ -95,7 +95,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             BUG_ON(!local_svm);
             if (!local_svm->priv)
                 continue;
-            release_svm_push_elements(local_svm, svm);
+            //release_svm_push_elements(local_svm, svm);
         }
     }
 

@@ -9,11 +9,20 @@
 
 static struct kmem_cache *kmem_request_cache;
 
+
+static inline void init_kmem_request_cache_elm(void *obj) {
+    struct dsm_request *dpc = (struct dsm_request *) obj;
+
+    memset(dpc, 0, sizeof(struct dsm_request));
+
+}
+
+
 void init_kmem_request_cache(void)
 {
     kmem_request_cache = kmem_cache_create("dsm_request",
             sizeof(struct dsm_request), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
-            NULL);
+            init_kmem_request_cache_elm);
 }
 
 void destroy_kmem_request_cache(void)
@@ -67,8 +76,6 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
         return -ENOMEM;
 
     req->type = type;
-    req->func = NULL;
-
     memcpy(&req->dsm_buf, msg, sizeof(struct dsm_message));
     queue_dsm_request(ele, req);
 

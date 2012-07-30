@@ -335,7 +335,7 @@ struct dsm_request {
     struct subvirtual_machine *fault_svm;
     uint64_t addr;
     int (*func)(struct tx_buf_ele *);
-    struct dsm_message *dsm_buf;
+    struct dsm_message dsm_buf;
     struct dsm_page_cache *dpc;
 
     struct llist_node lnode;

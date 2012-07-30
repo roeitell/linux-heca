@@ -115,13 +115,11 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct dsm_request *req;
     struct llist_node *head;
     struct tx_buf_ele *tx_e = NULL;
-    int ret =0;
+    int ret = 0;
 
-    atomic_set(&ele->schedule_flush,0);
     mutex_lock(&tx->flush_mutex);
     head = llist_del_all(&tx->request_queue);
     add_to_ordered_queue(head, ele);
-    trace_flushing_requests(tx->request_queue_sz,0,0,0,0,0);
     while (!list_empty(&tx->ordered_request_queue)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (!tx_e) {
@@ -130,20 +128,18 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
         }
         tx->request_queue_sz--;
         req= list_first_entry(&tx->ordered_request_queue, struct dsm_request, ordered_list);
-        trace_flushing_requests(tx->request_queue_sz,0,0,0,req->addr,0);
+        trace_flushing_requests(tx->request_queue_sz, 0, 0, 0, req->addr, 0);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);
         release_dsm_request(req);
     }
     mutex_unlock(&tx->flush_mutex);
-    return ret ;
+    return ret;
 
 }
 
 void schedule_delayed_request_flush(struct conn_element *ele) {
-
-    if (atomic_cmpxchg(&ele->schedule_flush,0,1)==0)
-        schedule_work(&ele->delayed_request_flush_work);
+    schedule_work(&ele->delayed_request_flush_work);
 }
 
 void delayed_request_flush_work_fn(struct work_struct *w) {

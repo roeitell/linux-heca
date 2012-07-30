@@ -39,7 +39,6 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         goto out;
     }
     if (svm->priv) {
-
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }

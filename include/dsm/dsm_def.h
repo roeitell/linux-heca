@@ -200,7 +200,7 @@ struct conn_element {
 
     struct completion completion;
     struct work_struct delayed_request_flush_work;
-    atomic_t schedule_flush;
+
 };
 
 struct rdma_info {

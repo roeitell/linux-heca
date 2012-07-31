@@ -746,7 +746,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                          * we check if we are running out of space in the QPs first
                          */
                         for_each_valid_svm(dsd.svms, i) {
-                            if (request_queue_full(dsd.svms.pp[i]->ele))
+                            if (!request_queue_empty(dsd.svms.pp[i]->ele))
                                 goto out;
                         }
                     }

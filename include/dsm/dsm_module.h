@@ -128,7 +128,7 @@ void recv_cq_handle_work(struct work_struct *);
 /*
  * SR
  */
-
+int request_queue_empty(struct conn_element *);
 void init_kmem_request_cache(void);
 void destroy_kmem_request_cache(void);
 void release_dsm_request(struct dsm_request *);

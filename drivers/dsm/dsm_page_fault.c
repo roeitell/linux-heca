@@ -738,6 +738,18 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
                     BUG();
                 if (!(dsd.flags & DSM_INFLIGHT)) {
+
+                    if(tag == PREFETCH_TAG)
+                    {
+                        int i;
+                        /*
+                         * we check if we are running out of space in the QPs first
+                         */
+                        for_each_valid_svm(dsd.svms, i) {
+                            if (request_queue_full(dsd.svms.pp[i]->ele))
+                                goto out;
+                        }
+                    }
                     /*
                      * refcount for dpc:
                      *  +1 for every svm we send to
@@ -905,32 +917,42 @@ retry:
         mem_cgroup_count_vm_event(mm, PGMAJFAULT);
     }
 
-    /*
-     * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
-     * so we just re-throw immediately. Otherwise, we wait until the bitlock is
-     * cleared, then re-throw the fault.
-     */
-
+/*
+ * prefetch
+ *
+ */
     if (dpc->tag == PULL_TAG && flags & FAULT_FLAG_ALLOW_RETRY) {
-        int max_retry;
+        int max_retry = 20;
+        int cont_back = 1;
+        int cont_forward = 1;
 
         /* we want here an optimisation for the nowait option */
-        max_retry = 20;
-        for (j = 1; j < max_retry; j++) {
-            get_dsm_page(mm, address + j * PAGE_SIZE, fault_svm, PREFETCH_TAG);
-            if (address > (j * PAGE_SIZE))
-                get_dsm_page(mm, address - j * PAGE_SIZE, fault_svm,
-                        PREFETCH_TAG);
-            /* original fault already finished, bail out */
+        j = 1;
+        do {
+            if (cont_forward)
+                cont_forward = get_dsm_page(mm, address + j * PAGE_SIZE,
+                        fault_svm, PREFETCH_TAG);
+
+            if (cont_back)
+                if (address > (j * PAGE_SIZE))
+                    cont_back = get_dsm_page(mm, address - j * PAGE_SIZE,
+                            fault_svm, PREFETCH_TAG);
+                else
+                    cont_back = 0;
+
             if (trylock_page(dpc->pages[0]))
                 goto resolve;
-
-        }
+            j++;
+        } while ((cont_back || cont_forward) && (j < max_retry));
 
     }
 
 lock:
-
+/*
+ * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
+ * so we just re-throw immediately. Otherwise, we wait until the bitlock is
+ * cleared, then re-throw the fault.
+ */
     if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
         ret |= VM_FAULT_RETRY;
         goto out;

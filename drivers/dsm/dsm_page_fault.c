@@ -69,34 +69,6 @@ static inline int is_dsm_zero_pfn(unsigned long pfn)
     return pfn == zero_dsm_pfn;
 }
 
-static struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
-        unsigned long addr)
-{
-    void **ppc;
-    struct dsm_page_cache *dpc;
-
-    rcu_read_lock();
-repeat:
-    dpc = NULL;
-    ppc = radix_tree_lookup_slot(&svm->page_cache, addr);
-    if (ppc) {
-        dpc = radix_tree_deref_slot(ppc);
-        if (unlikely(!dpc))
-            goto out;
-        if (radix_tree_exception(dpc)) {
-            if (radix_tree_deref_retry(dpc))
-                goto repeat;
-            goto out;
-        }
-        if (unlikely(dpc != *ppc))
-            goto repeat;
-    }
-out:
-    rcu_read_unlock();
-
-    return dpc;
-}
-
 static int try_release_dpc(struct dsm_page_cache *dpc) {
     if (atomic_cmpxchg(&dpc->released, 1 , -1) == 1) {
         dsm_cache_release(dpc->svm, dpc->addr);
@@ -951,13 +923,13 @@ retry:
                 cont_forward = get_dsm_page(mm, address + j * PAGE_SIZE,
                         fault_svm, PREFETCH_TAG);
 
-            if (cont_back)
+            if (cont_back) {
                 if (address > (j * PAGE_SIZE))
                     cont_back = get_dsm_page(mm, address - j * PAGE_SIZE,
                             fault_svm, PREFETCH_TAG);
                 else
                     cont_back = 0;
-
+            }
             if (trylock_page(dpc->pages[0]))
                 goto resolve;
             j++;

@@ -54,6 +54,8 @@ inline swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
 
 /* dsm_cache.c */
+struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *,
+        unsigned long);
 void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);
 struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,

@@ -76,6 +76,10 @@ static int process_dsm_request(struct conn_element *ele,
             memcpy(tx_e->dsm_buf, &req->dsm_buf, sizeof(struct dsm_message));
             tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
             break;
+        case PAGE_REQUEST_REDIRECT:
+            memcpy(tx_e->dsm_buf, &req->dsm_buf, sizeof(struct dsm_message));
+            tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
+            break;
         case SVM_STATUS_UPDATE:
             memcpy(tx_e->dsm_buf, &req->dsm_buf, sizeof(struct dsm_message));
             tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
@@ -207,13 +211,20 @@ int dsm_recv_message_handler(struct conn_element *ele,
             process_page_response(ele, tx_e); // client got its response
             break;
         }
+        case PAGE_REQUEST_REDIRECT:{
+            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
+            tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
+            tx_e->dsm_buf->dest_id =  rx_e->dsm_buf->dest_id;
+            process_page_response(ele, tx_e);
+            break;
+        }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
             process_page_response(ele, tx_e);
-
             break;
         }
+
         case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
             process_page_request(ele, rx_e); // server got a request
@@ -273,7 +284,8 @@ int dsm_send_message_handler(struct conn_element *ele,
         }
         case ACK:
         case TRY_REQUEST_PAGE_FAIL:
-        case SVM_STATUS_UPDATE:{
+        case PAGE_REQUEST_REDIRECT:
+        case SVM_STATUS_UPDATE: {
             release_tx_element(ele, tx_buf_e);
             break;
         }

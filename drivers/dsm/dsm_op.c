@@ -1186,6 +1186,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
 
             switch (msg->type) {
                 case PAGE_REQUEST_REPLY:
+                case PAGE_REQUEST_REDIRECT:
                 case TRY_REQUEST_PAGE_FAIL: {
 
                     /*unhandled */

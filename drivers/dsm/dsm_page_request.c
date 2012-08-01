@@ -211,13 +211,15 @@ retry:
 
 
 
-static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
+static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
         struct mm_struct *mm, unsigned long addr, pte_t pte_entry,
         struct dsm_pte_data *pd)
 {
     swp_entry_t swp_e;
     struct dsm_swp_data dsd;
     struct page *page;
+    int i;
+    struct dsm_page_cache *dpc =NULL;
     /* first time dealing with this addr? */
     if (pte_none(pte_entry))
         goto fault_page;
@@ -229,7 +231,7 @@ static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 
     if (is_migration_entry(swp_e)) {
         migration_entry_wait(mm, pd->pmd, addr);
-        return;
+        return 0;
     }
 
     /* not a swap entry or a migration entry, must be ours */
@@ -237,35 +239,51 @@ static void dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
     if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
         BUG();
 
-    if (unlikely(dsd.flags)) {
-        /* 
-         * FIXME: unhandled; we need to stop the push process, and reclaim the
-         * page, so we can answer the fault. an interesting question is what to
-         * do if we're pushing to the faulting machine anyway.
-         */
-        if (dsd.flags & DSM_PUSHING)
-            BUG();
-
-        /* we're answering another fault, we can't answer this one */
-        else if (dsd.flags & DSM_INFLIGHT)
-            return;
+    // we check if we are already pulling
+    for_each_valid_svm(dsd.svms,i) {
+        dpc = dsm_cache_get(dsd.svms.pp[i], addr);
+        if (unlikely(dpc))
+            goto fault_page;
     }
+    // we can only redirect if we have one location to redirect to!
+    //FIXME enabel RAIM support
+
+    BUG_ON(dsd.svms.num != 1);
+    return dsd.svms.pp[0]->svm_id;
+
+    //FIXME: we do not support mirrored push with redirect... so no active active passive scenario
+
+
+//    if (unlikely(dsd.flags)) {
+//        /*
+//         * FIXME: unhandled; we need to stop the push process, and reclaim the
+//         * page, so we can answer the fault. an interesting question is what to
+//         * do if we're pushing to the faulting machine anyway.
+//         */
+//        if (dsd.flags & DSM_PUSHING)
+//            BUG();
+//
+//        /* we're answering another fault, we can't answer this one */
+//        else if (dsd.flags & DSM_INFLIGHT)
+//            return;
+//    }
 
 fault_page:
     /* we already use the mm and we already own the mm semaphore */
     get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-    return;
+    return 0 ;
 }
 
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
-        unsigned long addr, pte_t **return_pte)
+        unsigned long addr, pte_t **return_pte, u32 *svm_id)
 {
     spinlock_t *ptl;
     int r = 0;
     struct page *page = NULL;
     struct dsm_pte_data pd;
     pte_t pte_entry;
+    *svm_id = 0;
     
 retry:
     if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
@@ -273,7 +291,10 @@ retry:
 
     pte_entry = *(pd.pte);
     if (unlikely(!pte_present(pte_entry))) {
-        dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry, &pd);
+        *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
+                &pd);
+        if (*svm_id)
+            goto out;
         goto retry;
     }
 
@@ -423,7 +444,7 @@ out:
 struct page *dsm_extract_page_from_remote(struct dsm *dsm,
         struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
-        pte_t **pte) {
+        pte_t **pte, u32 * svm_id) {
     struct mm_struct *mm;
     struct page *page = NULL;
 
@@ -437,7 +458,7 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
-        dsm_extract_page(local_svm, remote_svm, mm, addr, pte);
+        dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 

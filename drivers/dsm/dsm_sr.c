@@ -254,6 +254,11 @@ out:
     return 0;
 }
 
+static inline u32 get_redirect_svm_id(pte_t *pte){
+
+    return 0;
+}
+
 int process_page_request(struct conn_element *ele,
         struct rx_buf_ele *rx_buf_e)
 {
@@ -298,26 +303,52 @@ retry:
     tx_e->reply_work_req->addr = norm_addr;
 
     page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
-            msg->type, &tx_e->reply_work_req->pte);
+            msg->type, &tx_e->reply_work_req->pte, &msg->dest_id);
 
     if (unlikely(!page)) {
         ret = -EINVAL;
-        release_tx_element_reply(ele, tx_e);
 
-        if (msg->type == TRY_REQUEST_PAGE) {
-            if (request_queue_empty(ele)) {
-                tx_e = try_get_next_empty_tx_ele(ele);
-                if (likely(tx_e)) {
-                    memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
-                    tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
-                    tx_e->wrk_req->dst_addr = NULL;
-                    tx_e->callback.func = NULL;
-                    ret = tx_dsm_send(ele, tx_e);
+        switch (msg->type) {
+            case REQUEST_PAGE: {
+                release_tx_element_reply(ele, tx_e);
+                if (request_queue_empty(ele)) {
+                    tx_e = try_get_next_empty_tx_ele(ele);
+                    if (likely(tx_e)) {
+                        memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+                        tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
+                        tx_e->wrk_req->dst_addr = NULL;
+                        tx_e->callback.func = NULL;
+                        ret = tx_dsm_send(ele, tx_e);
+                    }
                 }
+                if (ret)
+                    ret = add_dsm_request_msg(ele, PAGE_REQUEST_REDIRECT, msg);
+
+                return ret;
             }
-            if (ret)
-                ret = add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
+            case TRY_REQUEST_PAGE: {
+                release_tx_element_reply(ele, tx_e);
+                if (request_queue_empty(ele)) {
+                    tx_e = try_get_next_empty_tx_ele(ele);
+                    if (likely(tx_e)) {
+                        memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+                        tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
+                        tx_e->wrk_req->dst_addr = NULL;
+                        tx_e->callback.func = NULL;
+                        ret = tx_dsm_send(ele, tx_e);
+                    }
+                }
+                if (ret)
+                    ret = add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
+                break;
+            }
+            default: {
+                dsm_printk("Un-handled type : %d ", msg->type);
+                break;
+            }
+
         }
+
         goto fail;
     }
 
@@ -337,6 +368,7 @@ no_svm:
 fail: 
     printk("[process_page_request] failure to answer page fault\n");
     return ret;
+
 }
 
 /*
@@ -359,6 +391,7 @@ retry:
         case TRY_REQUEST_PAGE:
         case SVM_STATUS_UPDATE:
         case TRY_REQUEST_PAGE_FAIL:
+        case PAGE_REQUEST_REDIRECT:
         case ACK:
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);

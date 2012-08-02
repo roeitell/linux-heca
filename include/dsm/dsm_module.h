@@ -6,9 +6,6 @@
 #ifndef DSM_MODULE_H_
 #define DSM_MODULE_H_
 
-
-
-
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/sysfs.h>
@@ -38,15 +35,12 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
-
-
 /*
  * dsm_utils
  */
 
-
 void __dsm_printk(unsigned int level, const char *path, int line,
-    const char *format, ...);
+        const char *format, ...);
 #define dsm_printk(fmt, args...) \
     __dsm_printk(0, __FILE__, __LINE__, fmt, ##args);
 
@@ -81,10 +75,9 @@ int setup_recv_wr(struct conn_element *);
 int refill_recv_wr(struct conn_element *, struct rx_buf_ele *);
 void reg_rem_info(struct conn_element *);
 void release_svm_from_mr_descriptors(struct subvirtual_machine *);
-void release_svm_queued_requests(struct subvirtual_machine *,
-        struct tx_buffer *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
-void release_svm_push_elements(struct subvirtual_machine *,
+void release_svm_push_elements(struct subvirtual_machine *);
+void surrogate_push_remote_svm(struct subvirtual_machine *,
         struct subvirtual_machine *);
 
 /*
@@ -119,6 +112,10 @@ void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
 /*
  * handler
  */
+void schedule_delayed_request_flush(struct conn_element *);
+void delayed_request_flush_work_fn(struct work_struct *);
+void release_svm_queued_requests(struct subvirtual_machine *,
+        struct tx_buffer *);
 int client_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
 void listener_cq_handle(struct ib_cq *, void *);
 int server_event_handler(struct rdma_cm_id *, struct rdma_cm_event *);
@@ -127,6 +124,7 @@ void send_cq_handle(struct ib_cq *, void *);
 void dsm_cq_event_handler(struct ib_event *, void *);
 void send_cq_handle_work(struct work_struct *);
 void recv_cq_handle_work(struct work_struct *);
+void dsm_request_queue_merge(struct tx_buffer *);
 
 /*
  * SR
@@ -154,7 +152,6 @@ int ack_msg(struct conn_element *, struct rx_buf_ele *);
 /*
  * SYSFS
  */
-
 
 void dsm_sysfs_cleanup(struct dsm_module_state *);
 int dsm_sysfs_setup(struct dsm_module_state *);

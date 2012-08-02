@@ -60,7 +60,7 @@ out:
 static struct dsm_page_cache *dsm_push_cache_lookup(
         struct subvirtual_machine *svm, unsigned long addr)
 {
-    struct dsm_page_cache *dpc;
+    struct dsm_page_cache *dpc = NULL;
     struct rb_node *node;
     int seq;
 
@@ -408,9 +408,9 @@ noop:
             }
             dsm_push_cache_release(local_svm, &dpc, 1);
         } else {
-            write_seqlock(&svm->push_cache_lock);
-            rb_erase(&(*dpc)->rb_node, &svm->push_cache);
-            write_sequnlock(&svm->push_cache_lock);
+            write_seqlock(&local_svm->push_cache_lock);
+            rb_erase(&dpc->rb_node, &local_svm->push_cache);
+            write_sequnlock(&local_svm->push_cache_lock);
             dsm_dealloc_dpc(&dpc);
         }
     }

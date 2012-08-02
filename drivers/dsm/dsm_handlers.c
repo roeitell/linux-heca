@@ -54,11 +54,8 @@ static inline void queue_send_work(struct conn_element *ele)
 }
 
 static int process_dsm_request(struct conn_element *ele,
-        struct dsm_request *req)
+        struct dsm_request *req,  struct tx_buf_ele *tx_e)
 {
-    struct tx_buf_ele *tx_e = try_get_next_empty_tx_ele(ele);
-    if (!tx_e)
-        return -ENOMEM;
 
     switch (req->type) {
         case REQUEST_PAGE:
@@ -75,15 +72,17 @@ static int process_dsm_request(struct conn_element *ele,
             create_page_pull_request(ele, tx_e, req->fault_svm->dsm->dsm_id,
                     req->fault_svm->svm_id, req->svm->svm_id, req->addr);
             break;
-        case TRY_REQUEST_PAGE_FAIL:
-            memcpy(tx_e->dsm_buf, &req->dsm_buf,
-                    sizeof(struct dsm_message));
-            tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
+        case REQUEST_PAGE_FAIL:
+            memcpy(tx_e->dsm_buf, &req->dsm_buf, sizeof(struct dsm_message));
+            tx_e->dsm_buf->type = REQUEST_PAGE_FAIL;
             break;
         case SVM_STATUS_UPDATE:
-            memcpy(tx_e->dsm_buf, &req->dsm_buf,
-                    sizeof(struct dsm_message));
+            memcpy(tx_e->dsm_buf, &req->dsm_buf, sizeof(struct dsm_message));
             tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
+            break;
+        case ACK:
+            memcpy(tx_e->dsm_buf, &req->dsm_buf, sizeof(struct dsm_message));
+            tx_e->dsm_buf->type = ACK;
             break;
 
         default:
@@ -91,104 +90,75 @@ static int process_dsm_request(struct conn_element *ele,
     }
     tx_e->callback.func = req->func;
     tx_dsm_send(ele, tx_e);
-    release_dsm_request(req);
-    ele->tx_buffer.request_queue_sz--;
-
     return 0;
 }
 
-static inline void dsm_request_set_next(struct llist_node *head,
-        struct llist_node *tail)
+void dsm_request_queue_merge(struct tx_buffer *tx)
 {
-    struct dsm_request *head_req, *tail_req;
-    
-    head_req = llist_entry(head, struct dsm_request, lnode);
-    tail_req = llist_entry(tail, struct dsm_request, lnode);
-    if (!tail_req->next)
-        tail_req->next = head_req;
-}
+    struct list_head *head = &tx->ordered_request_queue;
+    struct llist_node *llnode = llist_del_all(&tx->request_queue);
+ 
+    while (llnode) {
+        struct dsm_request *req;
 
-static inline struct llist_node *llist_get_tail(struct llist_node *node)
-{
-    struct llist_node *it;
-
-    while (1) {
-        it = node;
-        node = llist_next(node);
-        if (!node)
-            break;
-        dsm_request_set_next(it, node);
+        req = container_of(llnode, struct dsm_request, lnode);
+        list_add_tail(&req->ordered_list, head);
+        head = &req->ordered_list;
+        llnode = llnode->next;
+        tx->request_queue_sz++;
     }
-
-    return it;
 }
 
-static inline void concat_dsm_request_queue(struct tx_buffer *tx,
-        struct llist_node *head, struct llist_node *tail)
-{
-    struct llist_node *cur_tail;
-
-    tail->next = NULL;
-    if (llist_empty(&tx->request_queue)) {
-        if (!cmpxchg(&tx->request_queue.first, NULL, head))
-            return;
-    }
-
-    /* current llist isn't empty */
-    cur_tail = llist_get_tail(tx->request_queue.first);
-    cur_tail->next = head;
-    dsm_request_set_next(cur_tail, head);
-}
-
-static int flush_dsm_request_queue(struct conn_element *ele)
-{
+static inline int flush_dsm_request_queue(struct conn_element *ele) {
     struct tx_buffer *tx = &ele->tx_buffer;
     struct dsm_request *req;
-    struct llist_node *head, *tail;
-    int ret = -EFAULT;
+    struct tx_buf_ele *tx_e = NULL;
+    int ret = 0;
 
-    if (llist_empty(&tx->request_queue))
-        goto out;
-
-    if (llist_empty(&tx->tx_free_elements_list))
-        goto out;
-
-    if (atomic_cmpxchg(&tx->request_queue_lock, 0, 1))
-        goto out; 
-
-    head = llist_del_all(&tx->request_queue);
-    if (unlikely(!head))
-        goto unlock;
-
-    tail = llist_get_tail(head);
-    for (req = llist_entry(tail, struct dsm_request, lnode); req;
-            req = req->next) {
-        ret = process_dsm_request(ele, req);
-        if (ret == -ENOMEM) {
-            concat_dsm_request_queue(tx, head, &req->lnode);
+    mutex_lock(&tx->flush_mutex);
+    dsm_request_queue_merge(tx);
+    while (!list_empty(&tx->ordered_request_queue)) {
+        tx_e = try_get_next_empty_tx_ele(ele);
+        if (!tx_e) {
+            ret = 1;
             break;
         }
+        tx->request_queue_sz--;
+        req = list_first_entry(&tx->ordered_request_queue, struct dsm_request,
+                ordered_list);
+        trace_flushing_requests(tx->request_queue_sz, 0, 0, 0, req->addr, 0);
+        process_dsm_request(ele, req, tx_e);
+        list_del(&req->ordered_list);
+        release_dsm_request(req);
     }
-
-unlock:
-    atomic_set(&tx->request_queue_lock, 0);
-out:
+    mutex_unlock(&tx->flush_mutex);
     return ret;
+
+}
+
+void schedule_delayed_request_flush(struct conn_element *ele)
+{
+    schedule_work(&ele->delayed_request_flush_work);
+}
+
+void delayed_request_flush_work_fn(struct work_struct *w)
+{
+    struct conn_element *ele;
+    udelay(REQUEST_FLUSH_DELAY);
+    ele = container_of(w, struct conn_element , delayed_request_flush_work);
+    if (flush_dsm_request_queue(ele))
+        schedule_delayed_request_flush(ele);
 }
 
 static inline void handle_tx_element(struct conn_element *ele,
         struct tx_buf_ele *tx_e, int (*callback)(struct conn_element *,
         struct tx_buf_ele *))
 {
-    /* normal behaviour */
-	if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+    /* if tx_e->used == 2, we're racing with release_svm_tx_elements */
+    if (atomic_add_return(1, &tx_e->used) == 2) {
         if (callback)
             callback(ele, tx_e);
 		release_tx_element(ele, tx_e);
-    /* svm removed, racing with release_svm_tx_elements */
-	} else {
-        if (atomic_add_return(1, &tx_e->used) == 4)
-            release_tx_element(ele, tx_e);
 	}
 }
 
@@ -200,7 +170,7 @@ int dsm_recv_message_handler(struct conn_element *ele,
 
     trace_dsm_rx_msg(rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->src_id,
                     rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->dest_id,
-                    rx_e->dsm_buf->req_addr, type);
+                    rx_e->dsm_buf->req_addr, type, rx_e->dsm_buf->offset);
 
     switch (type) {
         case PAGE_REQUEST_REPLY: {
@@ -208,9 +178,9 @@ int dsm_recv_message_handler(struct conn_element *ele,
             handle_tx_element(ele, tx_e, process_page_response);
             break;
         }
-        case TRY_REQUEST_PAGE_FAIL: {
+        case REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-            tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
+            tx_e->dsm_buf->type = REQUEST_PAGE_FAIL;
             handle_tx_element(ele, tx_e, process_page_response);
             break;
         }
@@ -228,12 +198,11 @@ int dsm_recv_message_handler(struct conn_element *ele,
             process_svm_status(ele, rx_e);
             break;
         }
-        case ACK:{
+        case ACK: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             handle_tx_element(ele, tx_e, NULL);
             break;
         }
-
 
         default: {
             printk("[dsm_recv_poll] unhandled message stats addr: %p, status %d"
@@ -250,12 +219,12 @@ err:
 EXPORT_SYMBOL(dsm_recv_message_handler);
 
 int dsm_send_message_handler(struct conn_element *ele,
-        struct tx_buf_ele *tx_buf_e) {
-
+        struct tx_buf_ele *tx_buf_e)
+{
     trace_dsm_tx_msg(tx_buf_e->dsm_buf->dsm_id,
                     tx_buf_e->dsm_buf->src_id, tx_buf_e->dsm_buf->dsm_id,
                     tx_buf_e->dsm_buf->dest_id, tx_buf_e->dsm_buf->req_addr,
-                    tx_buf_e->dsm_buf->type);
+                    tx_buf_e->dsm_buf->type, tx_buf_e->dsm_buf->offset);
 
     switch (tx_buf_e->dsm_buf->type) {
         case PAGE_REQUEST_REPLY: {
@@ -264,7 +233,6 @@ int dsm_send_message_handler(struct conn_element *ele,
                     tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
             release_ppe(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
-
             break;
         }
         case REQUEST_PAGE:
@@ -273,12 +241,9 @@ int dsm_send_message_handler(struct conn_element *ele,
             break;
         }
         case ACK:
-        case TRY_REQUEST_PAGE_FAIL: {
+        case REQUEST_PAGE_FAIL:
+        case SVM_STATUS_UPDATE:{
             release_tx_element(ele, tx_buf_e);
-            break;
-        }
-        case SVM_STATUS_UPDATE: {
-            release_tx_element_reply(ele, tx_buf_e);
             break;
         }
         default: {
@@ -403,7 +368,6 @@ void recv_cq_handle_work(struct work_struct *work)
     ret = ib_req_notify_cq(ele->qp_attr.recv_cq,
             IB_CQ_NEXT_COMP | IB_CQ_REPORT_MISSED_EVENTS);
     dsm_recv_poll(ele->qp_attr.recv_cq);
-    flush_dsm_request_queue(ele);
     if (ret > 0)
         queue_recv_work(ele);
 }

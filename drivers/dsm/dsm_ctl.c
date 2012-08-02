@@ -19,6 +19,11 @@ module_param(port, int, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(port, "The port on the machine running this module - used for"
        " DSM_RDMA communication.");
 
+static inline int is_svm_local(struct subvirtual_machine *svm)
+{
+    return !!svm->priv;
+}
+
 void remove_svm(u32 dsm_id, u32 svm_id)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -38,21 +43,18 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         mutex_unlock(&dsm_state->dsm_state_mutex);
         goto out;
     }
-    if (svm->priv) {
-        atomic_set(&svm->scheduled_delayed_gup,-1);
-        cancel_delayed_work_sync(&svm->delayed_gup_work);
-        // to make sure everything is clean
-        dequeue_and_gup_cleanup(svm);
+    if (is_svm_local(svm)) {
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
 
-    atomic_set(&svm->status, DSM_SVM_OFFLINE);
-
     list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
-    if (svm->priv) {
+    if (is_svm_local(svm)) {
+        cancel_delayed_work_sync(&svm->delayed_gup_work);
+        // to make sure everything is clean
+        dequeue_and_gup_cleanup(svm);
         dsm->nb_local_svm--;
         radix_tree_delete(&dsm->svm_mm_tree_root,
                 (unsigned long) svm->priv->mm);
@@ -66,7 +68,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
      *  - tx elements (e.g, requests that were sent but not yet freed)
      *  - push cache
      */
-    if (svm->priv) {
+    if (is_svm_local(svm)) {
         struct rb_root *root;
         struct rb_node *node;
 
@@ -81,22 +83,16 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             release_svm_tx_elements(svm, ele);
         }
         release_svm_push_elements(svm);
-
     } else if (svm->ele) {
-        struct list_head *pos;
+        struct subvirtual_machine *local_svm;
 
         release_svm_queued_requests(svm, &svm->ele->tx_buffer);
         release_svm_tx_elements(svm, svm->ele);
 
         /* potentially very expensive way to do this */
-        list_for_each (pos, &svm->dsm->svm_list) {
-            struct subvirtual_machine *local_svm;
-
-            local_svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-            BUG_ON(!local_svm);
-            if (!local_svm->priv)
-                continue;
-            surrogate_push_remote_svm(local_svm, svm);
+        list_for_each_entry (local_svm, &svm->dsm->svm_list, svm_ptr) {
+            if (is_svm_local(local_svm))
+                surrogate_push_remote_svm(local_svm, svm);
         }
     }
 
@@ -220,11 +216,6 @@ failed:
     return r;
 }
 
-int is_svm_local(struct subvirtual_machine *svm)
-{
-    return !!svm->priv;
-}
-
 int is_svm_current(struct subvirtual_machine *svm)
 {
     return !!(svm->priv && svm->priv->mm == current->mm);
@@ -278,13 +269,13 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     new_svm->push_cache = RB_ROOT;
     seqlock_init(&new_svm->push_cache_lock);
     INIT_LIST_HEAD(&new_svm->mr_list);
-    init_llist_head(&new_svm->delayed_faults);
-    INIT_DELAYED_WORK(&new_svm->delayed_gup_work, delayed_gup_work_fn);
     if (svm_info.offset) {  /* local svm */
         new_svm->priv = priv_data;
         priv_data->svm = new_svm;
         priv_data->offset = svm_info.offset;
         new_svm->dsm->nb_local_svm++;
+        init_llist_head(&new_svm->delayed_faults);
+        INIT_DELAYED_WORK(&new_svm->delayed_gup_work, delayed_gup_work_fn);
     }
 
    /* register new svm to radix trees */
@@ -345,7 +336,7 @@ end_radix:
         u32 svm_id[] = {new_svm->svm_id, 0};
         new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
     }
-    atomic_set(&new_svm->status, DSM_SVM_ONLINE);
+
     r = create_svm_sysfs_entry(new_svm);
     if (r) {
         dsm_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
@@ -356,6 +347,7 @@ end_radix:
     goto do_unlock;
 
 err_delete:
+
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) new_svm->svm_id);
     if (is_svm_local(new_svm)) {
         radix_tree_delete(&dsm->svm_mm_tree_root,

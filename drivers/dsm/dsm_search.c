@@ -235,7 +235,9 @@ int destroy_mrs(struct dsm *dsm, int force)
     write_seqlock(&dsm->mr_seq_lock);
     for (node = rb_first(root); node; node = rb_next(node)) {
         mr = rb_entry(node, struct memory_region, rb_node);
+        rcu_read_lock();
         svms = dsm_descriptor_to_svms(mr->descriptor);
+        rcu_read_unlock();
         if (!force) {
             for_each_valid_svm(svms, i)
                 goto next;

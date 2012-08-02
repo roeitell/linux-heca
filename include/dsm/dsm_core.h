@@ -83,6 +83,8 @@ int dsm_cancel_page_push(struct subvirtual_machine *, unsigned long,
 struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,
         unsigned long);
 void dsm_push_finish_notify(struct page *);
+void dsm_push_cache_release(struct subvirtual_machine *,
+        struct dsm_page_cache **, int);
 
 /* dsm_unmap.c */
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
@@ -96,6 +98,7 @@ void init_dsm_prefetch_cache_kmem(void);
 void destroy_dsm_prefetch_cache_kmem(void) ;
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
+void dsm_release_pull_dpc(struct dsm_page_cache **);
 
 /* svm_descriptors */
 void dsm_init_descriptors(void);

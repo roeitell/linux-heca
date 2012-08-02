@@ -43,6 +43,7 @@
 #define MAX_SVMS_PER_PAGE   2
 
 #define GUP_DELAY           HZ*5    /* 5 second */
+#define REQUEST_FLUSH_DELAY 50       /* 50 usec delay */
 
 /**
  * RDMA_INFO
@@ -63,7 +64,7 @@
 #define PAGE_REQUEST_REDIRECT           (1 << 3) // We don't have the page  but we know where it is , we redirect
 #define PAGE_INFO_UPDATE                (1 << 4) // We send an update of the page location
 #define TRY_REQUEST_PAGE                (1 << 5) // We try to pull the page
-#define TRY_REQUEST_PAGE_FAIL           (1 << 6) // We try to get the page failed
+#define REQUEST_PAGE_FAIL               (1 << 6) // We Fail to answer a page pull
 #define SVM_STATUS_UPDATE               (1 << 7) // The svm is down
 #define DSM_MSG_ERR                     (1 << 8) // ERROR
 #define ACK                             (1 << 9) // Msg Acknowledgement
@@ -156,11 +157,11 @@ struct page_pool {
 };
 
 struct rx_buffer {
-    struct rx_buf_ele * rx_buf;
+    struct rx_buf_ele *rx_buf;
 };
 
 struct tx_buffer {
-    struct tx_buf_ele * tx_buf;
+    struct tx_buf_ele *tx_buf;
 
     struct llist_head tx_free_elements_list;
     struct llist_head tx_free_elements_list_reply;
@@ -168,12 +169,15 @@ struct tx_buffer {
     spinlock_t tx_free_elements_list_reply_lock;
 
     struct llist_head request_queue;
+    struct mutex  flush_mutex;
+    struct list_head ordered_request_queue;
     int request_queue_sz;
-    atomic_t request_queue_lock;
+    struct work_struct delayed_request_flush_work;
 };
 
 struct conn_element {
     struct rcm *rcm;
+    /* not 100% sur of this atomic regarding barrier*/
     atomic_t alive;
 
     int remote_node_ip;
@@ -195,6 +199,7 @@ struct conn_element {
     struct con_element_sysfs sysfs;
 
     struct completion completion;
+    struct work_struct delayed_request_flush_work;
 
 };
 
@@ -243,9 +248,6 @@ struct private_data {
 
 struct subvirtual_machine {
     u32 svm_id;
-    atomic_t status;
-#define DSM_SVM_ONLINE 0
-#define DSM_SVM_OFFLINE -1
     struct dsm *dsm;
     struct conn_element *ele;
     struct private_data *priv;
@@ -263,7 +265,6 @@ struct subvirtual_machine {
 
 
     struct llist_head delayed_faults;
-    atomic_t scheduled_delayed_gup;
     struct delayed_work delayed_gup_work;
 };
 
@@ -310,8 +311,6 @@ struct tx_callback {
 
 struct tx_buf_ele {
     int id;
-    atomic_t used;
-
     struct dsm_message *dsm_buf;
     struct map_dma dsm_dma;
     struct msg_work_request *wrk_req;
@@ -319,6 +318,7 @@ struct tx_buf_ele {
     struct llist_node tx_buf_ele_ptr;
 
     struct tx_callback callback;
+    atomic_t used;
 };
 
 struct rx_buf_ele {
@@ -336,11 +336,11 @@ struct dsm_request {
     struct subvirtual_machine *fault_svm;
     uint64_t addr;
     int (*func)(struct tx_buf_ele *);
-    struct dsm_message *dsm_buf;
+    struct dsm_message dsm_buf;
     struct dsm_page_cache *dpc;
 
     struct llist_node lnode;
-    struct dsm_request *next;
+    struct list_head ordered_list;
 };
 
 struct dsm_module_state {
@@ -367,6 +367,7 @@ struct dsm_page_cache {
 
     struct page *pages[MAX_SVMS_PER_PAGE + 1];
     struct svm_list svms;
+    /* memory barrier are ok with these atomic */
     atomic_t found;
     atomic_t nproc;
     atomic_t released;

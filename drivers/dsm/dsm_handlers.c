@@ -176,6 +176,21 @@ out:
     return ret;
 }
 
+static inline void handle_tx_element(struct conn_element *ele,
+        struct tx_buf_ele *tx_e, int (*callback)(struct conn_element *,
+        struct tx_buf_ele *))
+{
+    /* normal behaviour */
+	if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+        if (callback)
+            callback(ele, tx_e);
+		release_tx_element(ele, tx_e);
+    /* svm removed, racing with release_svm_tx_elements */
+	} else {
+        if (atomic_add_return(1, &tx_e->used) == 4)
+            release_tx_element(ele, tx_e);
+	}
+}
 
 int dsm_recv_message_handler(struct conn_element *ele,
         struct rx_buf_ele *rx_e)
@@ -190,17 +205,13 @@ int dsm_recv_message_handler(struct conn_element *ele,
     switch (type) {
         case PAGE_REQUEST_REPLY: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                process_page_response(ele, tx_e); // client got its response
-            }
+            handle_tx_element(ele, tx_e, process_page_response);
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-            if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
-                process_page_response(ele, tx_e);
-            }
+            tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
+            handle_tx_element(ele, tx_e, process_page_response);
             break;
         }
         case TRY_REQUEST_PAGE:
@@ -219,9 +230,7 @@ int dsm_recv_message_handler(struct conn_element *ele,
         }
         case ACK:{
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-             if (atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                release_tx_element(ele, tx_e);
-            }
+            handle_tx_element(ele, tx_e, NULL);
             break;
         }
 

@@ -332,12 +332,12 @@ unwritable_page:
     return ret;
 }
 
-static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
+inline void dsm_release_pull_dpc(struct dsm_page_cache **dpc)
 {
-    int i;
-
     atomic_dec(&(*dpc)->nproc);
-    if (dealloc && atomic_cmpxchg(&(*dpc)->nproc, 1, 0) == 1) {
+    if (atomic_cmpxchg(&(*dpc)->nproc, 1, 0) == 1) {
+        int i;
+
         for (i = 0; i < (*dpc)->svms.num; i++) {
             if (likely((*dpc)->pages[i]))
                 page_cache_release((*dpc)->pages[i]);
@@ -345,7 +345,6 @@ static inline void dpc_nproc_dec(struct dsm_page_cache **dpc, int dealloc)
         dsm_dealloc_dpc(dpc);
     }
 }
-
 
 void dequeue_and_gup_cleanup(struct subvirtual_machine *svm){
     struct dsm_delayed_fault *ddf;
@@ -362,8 +361,8 @@ void dequeue_and_gup_cleanup(struct subvirtual_machine *svm){
         /* we need to hold the dpc to guarantee it doesn't disappear while we do the if check */
         dpc = dsm_cache_get_hold(svm, ddf->addr);
         if (dpc && (dpc->tag == PREFETCH_TAG || dpc->tag == PULL_TRY_TAG)) {
-            dpc_nproc_dec(&dpc, 1);
-            dpc_nproc_dec(&dpc, 1);
+            atomic_dec(&dpc->nproc);
+            dsm_release_pull_dpc(&dpc);
         }
     }
 out:
@@ -412,7 +411,7 @@ void dequeue_and_gup(struct subvirtual_machine *svm){
                     NULL);
             up_read(&svm->priv->mm->mmap_sem);
             unuse_mm(svm->priv->mm);
-            dpc_nproc_dec(&dpc, 1);
+            dsm_release_pull_dpc(&dpc);
         }
     }
 out:
@@ -439,7 +438,6 @@ static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, stru
         schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
 
 }
-
 
 static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
@@ -499,7 +497,7 @@ unlock:
 
     trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
             addr, dpc->tag);
-    dpc_nproc_dec(&dpc, 1);
+    dsm_release_pull_dpc(&dpc);
     return 1;
 }
 
@@ -526,13 +524,13 @@ static int dsm_try_pull_req_complete(struct tx_buf_ele *tx_e)
         BUG_ON(i == dpc->svms.num);
 
         /* last failure should also account for the gup refcount */
-        dpc_nproc_dec(&dpc, 0);
+        atomic_dec(&dpc->nproc);
         if (atomic_read(&dpc->nproc) == 2) {
             SetPageUptodate(page);
             unlock_page(dpc->pages[0]);
             dsm_cache_release(dpc->svm, tx_e->dsm_buf->req_addr +
                     dpc->svm->priv->offset);
-            dpc_nproc_dec(&dpc, 1);
+            dsm_release_pull_dpc(&dpc);
         }
         trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
                 dpc->svm->svm_id,0,0,
@@ -1049,8 +1047,12 @@ out_page:
     }
 
 out:
-    if (likely(dpc))
-        dpc_nproc_dec(&dpc, !(ret & VM_FAULT_RETRY));
+    if (likely(dpc)) {
+        if (ret & VM_FAULT_RETRY)
+            atomic_dec(&dpc->nproc);
+        else
+            dsm_release_pull_dpc(&dpc);
+    }
 
     return ret;
 }

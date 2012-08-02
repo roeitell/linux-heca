@@ -231,13 +231,8 @@ int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
 
 int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
-    if (tx_e->callback.func && !tx_e->callback.func(tx_e))
-        goto out;
-
-    release_ppe(ele, tx_e);
-    release_tx_element(ele, tx_e);
-
-out:
+    if (!tx_e->callback.func || tx_e->callback.func(tx_e))
+        release_ppe(ele, tx_e);
     return 0;
 }
 

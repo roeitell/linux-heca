@@ -80,7 +80,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             release_svm_queued_requests(svm, &ele->tx_buffer);
             release_svm_tx_elements(svm, ele);
         }
-        release_svm_push_elements(svm, NULL);
+        release_svm_push_elements(svm);
 
     } else if (svm->ele) {
         struct list_head *pos;
@@ -96,7 +96,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             BUG_ON(!local_svm);
             if (!local_svm->priv)
                 continue;
-            release_svm_push_elements(local_svm, svm);
+            surrogate_push_remote_svm(local_svm, svm);
         }
     }
 

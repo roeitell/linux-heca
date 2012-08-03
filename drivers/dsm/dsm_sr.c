@@ -255,7 +255,7 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
     svm = find_svm(dpc->svm->dsm, redirect_svm_id);
     if (svm)
         ret = request_dsm_page(page, svm, dpc->svm, tx_e->dsm_buf->req_addr,
-                tx_e->callback.func, PULL_TAG, dpc);
+                tx_e->callback.func, dpc->tag, dpc);
     else
         ret = -1;
 

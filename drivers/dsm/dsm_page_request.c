@@ -500,7 +500,7 @@ int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
         struct mm_struct *mm, u32 descriptor)
 {
     struct dsm_pte_data pd;
-    struct dsm_page_cache *dpc= NULL;
+    struct dsm_page_cache *dpc = NULL;
     pte_t pte_entry, *pte;
     spinlock_t *ptl;
     int i, r;

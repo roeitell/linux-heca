@@ -411,18 +411,7 @@ static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf, stru
 
 }
 
-static inline int redirect_request(struct tx_buf_ele *tx_e , struct dsm_page_cache *dpc){
-    int ret = 0;
-    struct subvirtual_machine *svm = NULL;
 
-    svm = find_svm(dpc->svm->dsm, tx_e->dsm_buf->dest_id);
-    if (svm)
-        ret = tx_dsm_send(svm->ele, tx_e);
-    else
-        ret = 1;
-    return ret;
-
-}
 
 static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
@@ -440,13 +429,6 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e) {
     BUG();
 
 unlock:
-
-    if (tx_e->dsm_buf->type == PAGE_REQUEST_REDIRECT) {
-        tx_e->dsm_buf->type = REQUEST_PAGE;
-        // we return 0 so we do not release the elements , 1 if the redirect failed
-        return redirect_request(tx_e, dpc);
-    }
-
     mm = dpc->svm->priv->mm;
     addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
     if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {

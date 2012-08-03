@@ -36,10 +36,10 @@
 
 #include <dsm/dsm_def.h>
 
-#define PULL_TAG        1  /* pulling the page */
-#define PREFETCH_TAG    2  /* pulling the page for prefetch */
-#define PUSH_TAG        4  /* pushing the page */
-#define PULL_TRY_TAG    8  /* pulling the page by request (pushing to us) */
+#define PULL_TAG        (1 << 0)  /* pulling the page */
+#define PREFETCH_TAG    (1 << 1)  /* pulling the page for prefetch */
+#define PUSH_TAG        (1 << 2)  /* pushing the page */
+#define PULL_TRY_TAG    (1 << 3)  /* pulling the page by request (pushing to us) */
 
 #define for_each_valid_svm(svms, i)         \
     for (i = 0; i < (svms).num; i++)        \

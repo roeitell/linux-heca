@@ -242,6 +242,36 @@ int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
     return 1;
 }
 
+
+int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
+        u32 redirect_svm_id) {
+
+    struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+    struct page *page = tx_e->wrk_req->dst_addr->mem_page;
+    struct subvirtual_machine *svm = NULL;
+    int ret = 0;
+    tx_e->wrk_req->dst_addr->mem_page = NULL;
+    release_ppe(ele, tx_e);
+    svm = find_svm(dpc->svm->dsm, redirect_svm_id);
+    if (svm)
+        ret = request_dsm_page(page, svm, dpc->svm, tx_e->dsm_buf->req_addr,
+                tx_e->callback.func, PULL_TAG, dpc);
+    else
+        ret = -1;
+
+    release_tx_element(ele, tx_e);
+    // we need to release the page as something failed..
+    //FIXME: not sure about refcount
+    if (!ret)
+        trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
+                svm->dsm->dsm_id, svm->svm_id, tx_e->dsm_buf->req_addr,
+                dpc->tag);
+    else
+        page_cache_release(page);
+    return ret;
+}
+
+
 int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
     if (tx_e->callback.func && !tx_e->callback.func(tx_e))
@@ -251,11 +281,6 @@ int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
     release_tx_element(ele, tx_e);
 
 out:
-    return 0;
-}
-
-static inline u32 get_redirect_svm_id(pte_t *pte){
-
     return 0;
 }
 

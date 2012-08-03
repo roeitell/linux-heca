@@ -213,9 +213,7 @@ int dsm_recv_message_handler(struct conn_element *ele,
         }
         case PAGE_REQUEST_REDIRECT:{
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
-            tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
-            tx_e->dsm_buf->dest_id =  rx_e->dsm_buf->dest_id;
-            process_page_response(ele, tx_e);
+            process_page_redirect(ele, tx_e, rx_e->dsm_buf->dest_id);
             break;
         }
         case TRY_REQUEST_PAGE_FAIL: {

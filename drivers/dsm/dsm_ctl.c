@@ -394,7 +394,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     svm = find_svm(dsm, svm_info.svm_id);
     if (!svm) {
         dsm_printk(KERN_ERR "Can't find svm %d", svm_info.svm_id);
-        goto failed;
+        goto no_svm;
     }
 
     ip_addr = inet_addr(svm_info.ip);
@@ -431,6 +431,7 @@ done:
 
 failed:
     release_svm(svm);
+no_svm:
     mutex_unlock(&dsm->dsm_mutex);
     dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
         svm_info.dsm_id, svm_info.svm_id, &ip_addr, r);

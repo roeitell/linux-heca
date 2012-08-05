@@ -390,7 +390,8 @@ void dequeue_and_gup(struct subvirtual_machine *svm)
             dpc = dsm_cache_get_hold(svm, ddf->addr);
             if (dpc) {
                 if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                    trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, 0, 0, dpc->addr, dpc->tag);
+                    trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, 0, 0, 
+                            dpc->addr, dpc->tag);
                     use_mm(svm->priv->mm);
                     down_read(&svm->priv->mm->mmap_sem);
                     get_user_pages(current, svm->priv->mm, ddf->addr, 1, 1, 0,
@@ -414,7 +415,8 @@ void dequeue_and_gup(struct subvirtual_machine *svm)
 void delayed_gup_work_fn(struct work_struct *w)
 {
     struct subvirtual_machine *svm;
-    svm = container_of(to_delayed_work(w), struct subvirtual_machine , delayed_gup_work);
+    svm = container_of(to_delayed_work(w), struct subvirtual_machine, 
+            delayed_gup_work);
     dequeue_and_gup(svm);
 }
 
@@ -425,10 +427,13 @@ static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf,
     schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
 }
 
-static int dsm_process_page_answer(struct page *page,
+static int dsm_pull_req_success(struct page *page,
         struct dsm_page_cache *dpc, unsigned long addr)
 {
-    int i;
+    int i, found;
+
+    trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
+            addr, dpc->tag);
 
     for (i = 0; i < dpc->svms.num; i++) {
         if (dpc->pages[i] == page)
@@ -437,7 +442,11 @@ static int dsm_process_page_answer(struct page *page,
     BUG();
 
 unlock:
-    if (atomic_cmpxchg(&dpc->found, -1, i) == -1) {
+    found = atomic_read(&dpc->found);
+    if (found < 0) {
+        if (atomic_cmpxchg(&dpc->found, found, i) != found)
+            goto unlock;
+
         page_cache_get(page);
         lru_cache_add_anon(page);
         for (i = 0; i < dpc->svms.num; i++) {
@@ -470,9 +479,12 @@ unlock:
 }
 
 /* last failure should also account for the fault/gup refcount */
-void dsm_pull_req_failure(struct dsm_page_cache *dpc, unsigned long addr)
+int dsm_pull_req_failure(struct dsm_page_cache *dpc, unsigned long addr)
 {
     int found, i;
+
+    trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
+            dpc->svm->svm_id, 0, 0, addr, dpc->tag);
 
 retry:
     found = atomic_read(&dpc->found);
@@ -490,6 +502,8 @@ retry:
             atomic_dec(&dpc->nproc);
         }
     }
+
+    return -EFAULT;
 }
 
 static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
@@ -497,18 +511,11 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct page *page = tx_e->wrk_req->dst_addr->mem_page;
     unsigned long addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
-    int r = -EFAULT;
+    int r;
 
-    if (unlikely(tx_e->dsm_buf->type == REQUEST_PAGE_FAIL)) {
-        dsm_pull_req_failure(dpc, addr);
-        trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
-                dpc->svm->svm_id, 0, 0, tx_e->dsm_buf->req_addr +
-                dpc->svm->priv->offset, dpc->tag);
-    } else {
-        trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0,
-                0, addr, dpc->tag);
-        r = dsm_process_page_answer(page, dpc, addr);
-    }
+    r = unlikely(tx_e->dsm_buf->type == REQUEST_PAGE_FAIL) ? 
+        dsm_pull_req_failure(dpc, addr) :
+        dsm_pull_req_success(page, dpc, addr);
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
     dsm_release_pull_dpc(&dpc);

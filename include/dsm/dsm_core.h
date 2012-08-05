@@ -100,6 +100,7 @@ void destroy_dsm_prefetch_cache_kmem(void) ;
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
 void dsm_release_pull_dpc(struct dsm_page_cache **);
+void dsm_pull_req_failure(struct dsm_page_cache *, unsigned long);
 
 /* svm_descriptors */
 void dsm_init_descriptors(void);

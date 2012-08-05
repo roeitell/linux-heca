@@ -371,7 +371,7 @@ struct dsm_page_cache {
     /* memory barrier are ok with these atomic */
     atomic_t found;
     atomic_t nproc;
-    atomic_t released;
+    int released;
     unsigned long bitmap;
 
     struct rb_node rb_node;

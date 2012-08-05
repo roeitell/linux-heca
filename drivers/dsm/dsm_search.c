@@ -101,7 +101,7 @@ repeat:
         BUG_ON(!in_atomic());
 # endif
         BUG_ON(atomic_read(&svm->refs) == 0);
-        atomic_inc(&dpc->nproc);
+        atomic_inc(&svm->refs);
 #else
         if (!atomic_inc_not_zero(&svm->refs))
             goto repeat;
@@ -414,9 +414,7 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
     rcu_read_lock();
     dsd->svms = dsm_descriptor_to_svms(desc);
     BUG_ON(!dsd->svms.num);
-    for (i = 0; i < dsd->svms.num; i++) {
-        BUG_ON(!dsd->svms.pp[i]);
-        BUG_ON(!dsd->svms.pp[i]->dsm);
+    for_each_valid_svm(dsd->svms, i) {
         dsd->dsm = dsd->svms.pp[i]->dsm;
         goto out;
     }

@@ -1211,15 +1211,21 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
         struct tx_buf_ele *tx_e = &tx_buf[i];
         struct dsm_message *msg = tx_e->dsm_buf;
 
-        if (msg->dsm_id == svm->dsm->dsm_id && 
+        if (msg->type & (REQUEST_PAGE | TRY_REQUEST_PAGE | REQUEST_PAGE_FAIL) &&
+                msg->dsm_id == svm->dsm->dsm_id && 
                 (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id) &&
-                (msg->type == REQUEST_PAGE || msg->type == TRY_REQUEST_PAGE) &&
                 atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+            struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+            unsigned long addr = tx_e->dsm_buf->req_addr +
+                dpc->svm->priv->offset;
+
+            dsm_pull_req_failure(dpc, addr);
             tx_e->wrk_req->dst_addr->mem_page = NULL;
-            dsm_release_pull_dpc(&tx_e->wrk_req->dpc);
+            dsm_release_pull_dpc(&dpc);
             release_ppe(ele, tx_e);
-            smp_mb();
+
             /* rdma processing already finished, we have to release ourselves */
+            smp_mb();
             if (atomic_read(&tx_e->used) > 2)
                 release_tx_element(ele, tx_e);
         }

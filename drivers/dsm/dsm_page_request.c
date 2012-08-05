@@ -647,6 +647,7 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                 if (is_dsm_entry(swp_e)) {
                     // store old dest
                     struct dsm_swp_data old;
+
                     swp_entry_to_dsm_data(pte_to_swp_entry(pte_entry), &old);
                     BUG_ON(!old.dsm);
 

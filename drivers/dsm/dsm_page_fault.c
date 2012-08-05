@@ -837,10 +837,6 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 {
     struct dsm_swp_data dsd;
     struct subvirtual_machine *fault_svm;
-    /*
-     * FIXME: we need to use the page addr and not the fault address in order
-     * to have a unique reference
-     */
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
     int ret = 0, i = -1, exclusive = 0, j;
@@ -849,9 +845,9 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct mem_cgroup *ptr;
     pte_t pte;
 
-    if (swp_entry_to_dsm_data(entry, &dsd) < 0)
-        BUG();
+    BUG_ON(swp_entry_to_dsm_data(entry, &dsd) < 0);
     fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
+    BUG_ON(!fault_svm);
 
     trace_do_dsm_page_fault_svm(fault_svm->dsm->dsm_id, fault_svm->svm_id, 0, 0,
             norm_addr, dsd.flags);
@@ -890,7 +886,7 @@ retry:
             if (likely(pte_same(*page_table, orig_pte)))
                 ret = VM_FAULT_OOM;
             pte_unmap_unlock(page_table, ptl);
-            return ret;
+            goto out_svm;
         }
         ret = VM_FAULT_MAJOR;
         count_vm_event(PGMAJFAULT);
@@ -1043,6 +1039,8 @@ out:
             dsm_release_pull_dpc(&dpc);
     }
 
+out_svm:
+    release_svm(fault_svm);
     return ret;
 }
 

@@ -263,9 +263,10 @@ struct subvirtual_machine {
 
     struct svm_sysfs svm_sysfs;
 
-
     struct llist_head delayed_faults;
     struct delayed_work delayed_gup_work;
+
+    atomic_t refs;
 };
 
 struct work_request_ele {

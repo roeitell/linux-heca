@@ -96,10 +96,8 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         }
     }
 
-    synchronize_rcu();
-    delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
-
-    kfree(svm);
+    atomic_dec(&svm->refs);
+    release_svm(svm);
 
 out:
     mutex_unlock(&dsm->dsm_mutex);
@@ -256,6 +254,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     /* already exists? */
     found_svm = find_svm(dsm, svm_info.svm_id);
     if (found_svm) {
+        release_svm(found_svm);
         dsm_printk(KERN_ERR "svm %d (dsm %d) already exists",
             svm_info.svm_id, svm_info.dsm_id);
         r = -EEXIST;
@@ -269,6 +268,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     new_svm->push_cache = RB_ROOT;
     seqlock_init(&new_svm->push_cache_lock);
     INIT_LIST_HEAD(&new_svm->mr_list);
+    atomic_set(&new_svm->refs, 2);
     if (svm_info.offset) {  /* local svm */
         new_svm->priv = priv_data;
         priv_data->svm = new_svm;
@@ -430,6 +430,7 @@ done:
     svm->ele = cele;
 
 failed:
+    release_svm(svm);
     mutex_unlock(&dsm->dsm_mutex);
     dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
         svm_info.dsm_id, svm_info.svm_id, &ip_addr, r);
@@ -515,6 +516,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     for (i = 0; udata.svm_ids[i]; i++) {
         struct subvirtual_machine *svm;
         u32 svm_id = udata.svm_ids[i];
+        int local;
 
         svm = find_svm(dsm, svm_id);
         if (!svm) {
@@ -523,9 +525,12 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
             goto out_remove_tree;
         }
 
-        if (is_svm_local(svm) && is_svm_current(svm)) {
+        local = is_svm_local(svm);
+        release_svm(svm);
+
+        if (local) {
             mr->local = LOCAL;
-            dsm_printk(KERN_INFO "[i=%d] svm is current %d - existing", i,
+            dsm_printk(KERN_INFO "[i=%d] svm is local %d - exiting", i,
                  svm_id);
             goto out_remove_tree;
         }

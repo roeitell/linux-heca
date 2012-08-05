@@ -201,6 +201,7 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
     struct subvirtual_machine *local_svm;
     unsigned long norm_addr;
     struct dsm *dsm;
+    int r;
    
     BUG_ON(!rx_buf_e);
     BUG_ON(!rx_buf_e->dsm_buf);
@@ -214,7 +215,9 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
         goto fail;
 
     norm_addr = rx_buf_e->dsm_buf->req_addr + local_svm->priv->offset;
-    return dsm_trigger_page_pull(dsm, local_svm, norm_addr);
+    r = dsm_trigger_page_pull(dsm, local_svm, norm_addr);
+    release_svm(local_svm);
+    return r;
 
 fail:
     return send_svm_status_update(ele, rx_buf_e);
@@ -290,6 +293,8 @@ retry:
             local_svm->svm_id, remote_svm->dsm->dsm_id, remote_svm->svm_id,
             norm_addr, msg->type);
     tx_dsm_send(ele, tx_e);
+    release_svm(local_svm);
+    release_svm(remote_svm);
     return 0;
 
 no_svm: 
@@ -312,6 +317,12 @@ fail:
         if (r)
             add_dsm_request_msg(ele, REQUEST_PAGE_FAIL, msg);
     }
+
+    if (local_svm)
+        release_svm(local_svm);
+    if (remote_svm)
+        release_svm(remote_svm);
+
     return -EINVAL;
 }
 

@@ -66,6 +66,17 @@ out:
 }
 EXPORT_SYMBOL(find_dsm);
 
+inline void release_svm(struct subvirtual_machine *svm)
+{
+    atomic_dec(&svm->refs);
+    if (atomic_cmpxchg(&svm->refs, 1, 0) == 1) {
+        dsm_printk("freeing svm %d\n", svm->svm_id);
+        delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
+        synchronize_rcu();
+        kfree(svm);
+    }
+}
+
 static struct subvirtual_machine *_find_svm_in_tree(
         struct radix_tree_root *root, unsigned long svm_id)
 {
@@ -85,6 +96,16 @@ repeat:
             if (radix_tree_deref_retry(svm))
                 goto repeat;
         }
+#if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
+# ifdef CONFIG_PREEMPT_COUNT
+        BUG_ON(!in_atomic());
+# endif
+        BUG_ON(atomic_read(&svm->refs) == 0);
+        atomic_inc(&dpc->nproc);
+#else
+        if (!atomic_inc_not_zero(&svm->refs))
+            goto repeat;
+#endif
     }
 
 out: 
@@ -322,6 +343,7 @@ void dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids) {
         BUG_ON(!svm);
         BUG_ON(!svm->dsm);
         sdsc[desc].pp[j] = svm;
+        release_svm(svm);
     }
 }
 EXPORT_SYMBOL(dsm_add_descriptor);

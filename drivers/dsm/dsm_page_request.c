@@ -677,9 +677,9 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
 
     pte_unmap_unlock(pte, ptl);
 
-    out:
-
+out:
     up_read(&mm->mmap_sem);
+    release_svm(svm);
 
     return r;
 
@@ -731,13 +731,15 @@ static int _push_back_if_remote_dsm_page(struct page *page)
             continue;
 
         mr = search_mr(svm->dsm, address);
-        if (!mr || mr->local == LOCAL)
+        if (!mr || mr->local == LOCAL) {
+            release_svm(svm);
             continue;
+        }
 
         dsm_request_page_pull(svm->dsm, svm, page, address, vma->vm_mm, mr);
+        release_svm(svm);
         if (PageSwapCache(page))
             try_to_free_swap(page);
-
 
         ret = 1;
         break;

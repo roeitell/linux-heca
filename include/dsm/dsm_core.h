@@ -52,6 +52,7 @@ inline int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
 int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
 inline swp_entry_t dsm_descriptor_to_swp_entry(u32, u32);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
+inline void release_svm(struct subvirtual_machine *);
 
 /* dsm_cache.c */
 void init_dsm_cache_kmem(void);

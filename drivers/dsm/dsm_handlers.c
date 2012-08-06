@@ -229,8 +229,8 @@ int dsm_recv_message_handler(struct conn_element *ele,
             break;
         }
         case REQUEST_PAGE_PULL: {
-            ack_msg(ele, rx_e);
             process_pull_request(ele, rx_e); // server is requested to pull
+            ack_msg(ele, rx_e);
             break;
         }
         case SVM_STATUS_UPDATE: {

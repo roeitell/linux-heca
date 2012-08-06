@@ -893,7 +893,7 @@ retry:
  * prefetch
  *
  */
-    if (dpc->tag == PULL_TAG && flags & FAULT_FLAG_ALLOW_RETRY) {
+    if ((dpc->tag == PULL_TAG) && (flags & FAULT_FLAG_ALLOW_RETRY)) {
         int max_retry = 20;
         int cont_back = 1;
         int cont_forward = 1;
@@ -915,7 +915,7 @@ retry:
             if (trylock_page(dpc->pages[0]))
                 goto resolve;
             j++;
-        } while ((cont_back || cont_forward) && (j < max_retry));
+        } while ((j < max_retry) && (cont_back == 1 || cont_forward == 1));
 
     }
 

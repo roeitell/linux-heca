@@ -737,6 +737,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
             continue;
         }
 
+        BUG_ON(address < svm->priv->offset);
         dsm_request_page_pull(svm->dsm, svm, page, address, vma->vm_mm, mr);
         release_svm(svm);
         if (PageSwapCache(page))

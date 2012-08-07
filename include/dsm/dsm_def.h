@@ -64,7 +64,7 @@
 #define PAGE_REQUEST_REDIRECT           (1 << 3) // We don't have the page  but we know where it is , we redirect
 #define PAGE_INFO_UPDATE                (1 << 4) // We send an update of the page location
 #define TRY_REQUEST_PAGE                (1 << 5) // We try to pull the page
-#define REQUEST_PAGE_FAIL               (1 << 6) // We Fail to answer a page pull
+#define PAGE_REQUEST_FAIL               (1 << 6) // We Fail to answer a page pull
 #define SVM_STATUS_UPDATE               (1 << 7) // The svm is down
 #define DSM_MSG_ERR                     (1 << 8) // ERROR
 #define ACK                             (1 << 9) // Msg Acknowledgement
@@ -158,10 +158,12 @@ struct page_pool {
 
 struct rx_buffer {
     struct rx_buf_ele *rx_buf;
+    int len;
 };
 
 struct tx_buffer {
     struct tx_buf_ele *tx_buf;
+    int len;
 
     struct llist_head tx_free_elements_list;
     struct llist_head tx_free_elements_list_reply;
@@ -332,9 +334,10 @@ struct rx_buf_ele {
 
 struct dsm_request {
     u16 type;
+    u32 dsm_id;
+    u32 local_svm_id;
+    u32 remote_svm_id;
     struct page *page;
-    struct subvirtual_machine *svm;
-    struct subvirtual_machine *fault_svm;
     uint64_t addr;
     int (*func)(struct tx_buf_ele *);
     struct dsm_message dsm_buf;

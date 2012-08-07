@@ -220,12 +220,13 @@ EXPORT_SYMBOL(insert_mr);
 struct memory_region *search_mr(struct dsm *dsm, unsigned long addr)
 {
     struct rb_root *root = &dsm->mr_tree_root;
-    struct rb_node *node = root->rb_node;
+    struct rb_node *node;
     struct memory_region *this = NULL;
     unsigned long seq;
+
     do {
         seq = read_seqbegin(&dsm->mr_seq_lock);
-        while (node) {
+        for (node = root->rb_node; node; this = 0) {
             this = rb_entry(node, struct memory_region, rb_node);
 
             if (addr < this->addr)
@@ -237,7 +238,6 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr)
                     node = node->rb_right;
             else
                 break;
-
         }
     } while (read_seqretry(&dsm->mr_seq_lock, seq));
 

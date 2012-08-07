@@ -513,7 +513,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
     unsigned long addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
     int r;
 
-    r = unlikely(tx_e->dsm_buf->type == REQUEST_PAGE_FAIL) ? 
+    r = unlikely(tx_e->dsm_buf->type == PAGE_REQUEST_FAIL) ? 
         dsm_pull_req_failure(dpc, addr) :
         dsm_pull_req_success(page, dpc, addr);
 
@@ -538,6 +538,7 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
 
     trace_dsm_get_remote_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
             remote_svm->dsm->dsm_id, remote_svm->svm_id, addr, tag);
+    BUG_ON(addr < fault_svm->priv->offset);
     request_dsm_page(page, remote_svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), dsm_pull_req_complete,
             tag, dpc);
@@ -577,6 +578,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
         radix_tree_preload_end();
         if (likely(!r)) {
             for_each_valid_svm(svms, i) {
+                BUG_ON(addr < fault_svm->priv->offset);
                 request_dsm_page(new_dpc->pages[0], svms.pp[i], fault_svm,
                         (uint64_t) (addr - fault_svm->priv->offset), NULL,
                         PULL_TRY_TAG, NULL);

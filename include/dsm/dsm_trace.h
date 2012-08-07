@@ -90,7 +90,7 @@ DEFINE_EVENT(dsm_page_fault_template, flushing_requests,
     { PAGE_INFO_UPDATE,             "PAGE_INFO_UPDATE" }, \
     { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
     { TRY_REQUEST_PAGE,             "TRY_REQUEST_PAGE" }, \
-    { REQUEST_PAGE_FAIL,            "REQUEST_PAGE_FAIL" },\
+    { PAGE_REQUEST_FAIL,            "PAGE_REQUEST_FAIL" },\
     { SVM_STATUS_UPDATE,            "SVM_STATUS_UPDATE" }, \
     { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
     { ACK,                          "ACK" },\

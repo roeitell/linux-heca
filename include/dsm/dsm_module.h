@@ -49,9 +49,6 @@ void __dsm_printk(unsigned int level, const char *path, int line,
  */
 unsigned int inet_addr(char *);
 
-int get_nb_tx_buff_elements(struct conn_element *);
-int get_nb_rx_buff_elements(struct conn_element *);
-int get_page_pool_size(struct conn_element *);
 int get_max_pushed_reqs(struct conn_element *);
 
 int create_rcm(struct dsm_module_state *, char *, int);
@@ -79,6 +76,7 @@ void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
 void release_svm_push_elements(struct subvirtual_machine *);
 void surrogate_push_remote_svm(struct subvirtual_machine *,
         struct subvirtual_machine *);
+void dsm_msg_cpy(struct dsm_message *, struct dsm_message *);
 
 /*
  * CTL

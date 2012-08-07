@@ -40,8 +40,8 @@ static inline void queue_dsm_request(struct conn_element *ele,
 }
 
 static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
-        u16 type, struct subvirtual_machine *fault_svm,
-        struct subvirtual_machine *svm, uint64_t addr,
+        u16 type, struct subvirtual_machine *local_svm,
+        struct subvirtual_machine *remote_svm, uint64_t addr,
         int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
         struct page *page)
 {
@@ -52,13 +52,13 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
     }
 
     req->type = type;
-    req->fault_svm = fault_svm;
-    req->svm = svm;
+    req->dsm_id = local_svm->dsm->dsm_id;
+    req->local_svm_id = local_svm->svm_id;
+    req->remote_svm_id = remote_svm->svm_id;
     req->addr = addr;
     req->func = func;
     req->dpc = dpc;
     req->page = page;
-
     queue_dsm_request(ele, req);
 
     return 0;
@@ -72,7 +72,7 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
         return -ENOMEM;
 
     req->type = type;
-    memcpy(&req->dsm_buf, msg, sizeof(struct dsm_message));
+    dsm_msg_cpy(&req->dsm_buf, msg);
     queue_dsm_request(ele, req);
 
     return 0;
@@ -80,10 +80,9 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
 
 static inline int request_queue_empty(struct conn_element *ele)
 {
-    /* we are not 100% accurate but that's ok we can have a few send sneaking in */
-    if ( llist_empty(&ele->tx_buffer.request_queue) && list_empty(&ele->tx_buffer.ordered_request_queue) )
-       return 1;
-    return 0;
+    /* we are not 100% accurate but it's ok we can have a few sneaking in */
+    return (llist_empty(&ele->tx_buffer.request_queue) &&
+            list_empty(&ele->tx_buffer.ordered_request_queue));
 }
 
 static inline int request_queue_full(struct conn_element *ele)
@@ -150,8 +149,7 @@ static int send_svm_status_update(struct conn_element *ele,
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
-            memcpy(tx_e->dsm_buf, rx_buf_e->dsm_buf,
-                    sizeof(struct dsm_message));
+            dsm_msg_cpy(tx_e->dsm_buf, rx_buf_e->dsm_buf);
             tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
             ret = tx_dsm_send(ele, tx_e);
             goto out;
@@ -223,7 +221,8 @@ fail:
     return send_svm_status_update(ele, rx_buf_e);
 }
 
-int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
+int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
+{
     printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_buf->src_id);
     remove_svm(rx_buf_e->dsm_buf->dsm_id, rx_buf_e->dsm_buf->src_id);
     return 1;
@@ -271,7 +270,7 @@ retry:
     }
     BUG_ON(!tx_e);
 
-    memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+    dsm_msg_cpy(tx_e->dsm_buf, msg);
     tx_e->dsm_buf->type = PAGE_REQUEST_REPLY;
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_buf->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_buf->rkey;
@@ -308,14 +307,14 @@ fail:
 
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
-            memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
-            tx_e->dsm_buf->type = REQUEST_PAGE_FAIL;
+            dsm_msg_cpy(tx_e->dsm_buf, msg);
+            tx_e->dsm_buf->type = PAGE_REQUEST_FAIL;
             tx_e->wrk_req->dst_addr = NULL;
             tx_e->callback.func = NULL;
             r = tx_dsm_send(ele, tx_e);
         }
         if (r)
-            add_dsm_request_msg(ele, REQUEST_PAGE_FAIL, msg);
+            add_dsm_request_msg(ele, PAGE_REQUEST_FAIL, msg);
     }
 
     if (local_svm)
@@ -345,7 +344,7 @@ retry:
         case REQUEST_PAGE_PULL:
         case TRY_REQUEST_PAGE:
         case SVM_STATUS_UPDATE:
-        case REQUEST_PAGE_FAIL:
+        case PAGE_REQUEST_FAIL:
         case ACK:
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);
@@ -417,8 +416,7 @@ int exchange_info(struct conn_element *ele, int id)
         case RDMA_INFO_READY_CL: {
             ele->rid.send_buf->flag = RDMA_INFO_READY_SV;
             ret = setup_recv_wr(ele);
-            refill_recv_wr(ele,
-                    &ele->rx_buffer.rx_buf[get_nb_tx_buff_elements(ele) - 1]);
+            refill_recv_wr(ele, &ele->rx_buffer.rx_buf[ele->rx_buffer.len - 1]);
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
 
             ele->remote_node_ip = (int) ele->rid.remote_info->node_ip;
@@ -452,9 +450,7 @@ int exchange_info(struct conn_element *ele, int id)
 
         }
         case RDMA_INFO_READY_SV: {
-            refill_recv_wr(ele,
-                    &ele->rx_buffer.rx_buf[get_nb_tx_buff_elements(ele) - 1]);
-
+            refill_recv_wr(ele, &ele->rx_buffer.rx_buf[ele->rx_buffer.len - 1]);
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
             //Server acknowledged --> connection is complete.
             //start sending messages.
@@ -573,19 +569,17 @@ out:
 int ack_msg(struct conn_element *ele, struct rx_buf_ele *rx_e)
 {
     struct tx_buf_ele *tx_e = NULL;
-    struct dsm_message *msg = rx_e->dsm_buf;
 
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
-            memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+            dsm_msg_cpy(tx_e->dsm_buf, rx_e->dsm_buf);
             tx_e->dsm_buf->type = ACK;
             tx_e->wrk_req->dst_addr = NULL;
             tx_e->callback.func = NULL;
             return tx_dsm_send(ele, tx_e);
-
         }
     }
-    return add_dsm_request_msg(ele, ACK, msg);
+    return add_dsm_request_msg(ele, ACK, rx_e->dsm_buf);
 }
 

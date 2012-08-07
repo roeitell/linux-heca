@@ -238,17 +238,18 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
     BUG_ON(!is_dsm_entry(swp_e));
     if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
         BUG();
-
+    // we can only redirect if we have one location to redirect to!
+    //FIXME enable RAIM support
+    BUG_ON(dsd.svms.num != 1);
     // we check if we are already pulling
     for_each_valid_svm(dsd.svms,i) {
         dpc = dsm_cache_get(dsd.svms.pp[i], addr);
         if (unlikely(dpc))
             goto fault_page;
     }
-    // we can only redirect if we have one location to redirect to!
-    //FIXME enabel RAIM support
 
-    BUG_ON(dsd.svms.num != 1);
+
+
     return dsd.svms.pp[0]->svm_id;
 
     //FIXME: we do not support mirrored push with redirect... so no active active passive scenario
@@ -270,7 +271,7 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 
 fault_page:
     /* we already use the mm and we already own the mm semaphore */
-    get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+
     return 0 ;
 }
 
@@ -280,29 +281,39 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
 {
     spinlock_t *ptl;
     int r = 0;
-    struct page *page = NULL;
+    struct page *page;
     struct dsm_pte_data pd;
     pte_t pte_entry;
     *svm_id = 0;
     
 retry:
+    page = NULL;
     if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
         goto out;
 
     pte_entry = *(pd.pte);
-    if (unlikely(!pte_present(pte_entry))) {
-        *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
-                &pd);
-        if (*svm_id)
-            goto out;
-        goto retry;
-    }
-
     pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
     if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
         pte_unmap_unlock(pd.pte, ptl);
         goto retry;
     }
+    if (unlikely(!pte_present(pte_entry))) {
+        *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
+                &pd);
+
+        if (*svm_id) {
+            set_pte_at(mm, addr, pd.pte,
+                    dsm_descriptor_to_pte(remote_svm->descriptor, 0));
+            pte_unmap_unlock(pd.pte, ptl);
+            goto out;
+        } else {
+            pte_unmap_unlock(pd.pte, ptl);
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            goto retry;
+        }
+    }
+
+
     page = vm_normal_page(pd.vma, addr, *(pd.pte));
     if (!page) {
         /* DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */

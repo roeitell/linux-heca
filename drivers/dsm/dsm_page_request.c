@@ -60,13 +60,13 @@ out:
 static struct dsm_page_cache *dsm_push_cache_lookup(
         struct subvirtual_machine *svm, unsigned long addr)
 {
-    struct dsm_page_cache *dpc;
+    struct dsm_page_cache *dpc = NULL;
     struct rb_node *node;
     int seq;
 
     do {
         seq = read_seqbegin(&svm->push_cache_lock);
-        for (node = svm->push_cache.rb_node; node; dpc = 0) {
+        for (node = svm->push_cache.rb_node; node; dpc = NULL) {
             dpc = rb_entry(node, struct dsm_page_cache, rb_node);
             BUG_ON(!dpc);
             if (addr < dpc->addr)
@@ -92,7 +92,7 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
 
     do {
         seq = read_seqbegin(&svm->push_cache_lock);
-        for (node = svm->push_cache.rb_node; node; dpc = 0) {
+        for (node = svm->push_cache.rb_node; node; dpc = NULL) {
             dpc = rb_entry(node, struct dsm_page_cache, rb_node);
             BUG_ON(!dpc);
             if (addr < dpc->addr)
@@ -217,7 +217,6 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 {
     swp_entry_t swp_e;
     struct dsm_swp_data dsd;
-    struct page *page;
     int i;
     struct dsm_page_cache *dpc =NULL;
     /* first time dealing with this addr? */

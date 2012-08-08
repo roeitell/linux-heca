@@ -230,7 +230,7 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 
     if (is_migration_entry(swp_e)) {
         migration_entry_wait(mm, pd->pmd, addr);
-        return 0;
+        goto fault_page;
     }
 
     /* not a swap entry or a migration entry, must be ours */
@@ -241,13 +241,10 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
     //FIXME enable RAIM support
     BUG_ON(dsd.svms.num != 1);
     // we check if we are already pulling
-    for_each_valid_svm(dsd.svms,i) {
-        dpc = dsm_cache_get(dsd.svms.pp[i], addr);
-        if (unlikely(dpc))
-            goto fault_page;
-    }
 
-
+    dpc = dsm_cache_get(dsd.svms.pp[0], addr);
+    if (dpc)
+        goto fault_page;
 
     return dsd.svms.pp[0]->svm_id;
 

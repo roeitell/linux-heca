@@ -69,7 +69,10 @@ struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
     struct dsm_page_cache *dpc;
 
     rcu_read_lock();
-    repeat: dpc = NULL;
+
+repeat:
+
+    dpc = NULL;
     ppc = radix_tree_lookup_slot(&svm->page_cache, addr);
     if (ppc) {
         dpc = radix_tree_deref_slot(ppc);
@@ -83,7 +86,10 @@ struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
         if (unlikely(dpc != *ppc))
             goto repeat;
     }
-    out: rcu_read_unlock();
+
+out:
+
+    rcu_read_unlock();
 
     return dpc;
 }

@@ -258,15 +258,12 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
                 tx_e->callback.func, dpc->tag, dpc);
     else
         ret = -1;
-
+    trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, svm->dsm->dsm_id,
+            svm->svm_id, tx_e->dsm_buf->req_addr, dpc->tag);
     release_tx_element(ele, tx_e);
     // we need to release the page as something failed..
     //FIXME: not sure about refcount
-    if (!ret)
-        trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
-                svm->dsm->dsm_id, svm->svm_id, tx_e->dsm_buf->req_addr,
-                dpc->tag);
-    else
+    if (ret != 0)
         page_cache_release(page);
     return ret;
 }

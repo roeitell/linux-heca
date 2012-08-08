@@ -108,7 +108,7 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
         for (i = 0; i < dpc->svms.num; i++) {
             if (dpc->svms.pp[i] == remote_svm) {
                 if (likely(test_and_clear_bit(i, &dpc->bitmap) &&
-                            atomic_add_unless(&dpc->nproc, 1, 0))) {
+                        atomic_add_unless(&dpc->nproc, 1, 0))) {
                     goto out;
                 }
                 break;
@@ -121,12 +121,19 @@ out:
     return dpc;
 }
 
-static inline void dsm_push_cache_release(struct subvirtual_machine *svm,
-        struct dsm_page_cache **dpc)
+inline void dsm_push_cache_release(struct subvirtual_machine *svm,
+        struct dsm_page_cache **dpc, int lock)
 {
-    write_seqlock(&svm->push_cache_lock);
-    rb_erase(&(*dpc)->rb_node, &svm->push_cache);
-    write_sequnlock(&svm->push_cache_lock);
+    page_cache_release((*dpc)->pages[0]);
+    if (likely(lock)) {
+        write_seqlock(&svm->push_cache_lock);
+        rb_erase(&(*dpc)->rb_node, &svm->push_cache);
+        write_sequnlock(&svm->push_cache_lock);
+    } else {
+        /* !lock only when traversing push_cache when removing svms */
+        rb_erase(&(*dpc)->rb_node, &svm->push_cache);
+    }
+    dsm_push_finish_notify((*dpc)->pages[0]);
     dsm_dealloc_dpc(dpc);
 }
 
@@ -204,12 +211,6 @@ retry:
     pd->pte = pte_offset_map(pd->pmd, addr);
     return !pd->pte;
 }
-
-
-
-
-
-
 
 static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
         struct mm_struct *mm, unsigned long addr, pte_t pte_entry,
@@ -396,13 +397,10 @@ retry:
             goto retry;
         }
 
-
         flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
         ptep_clear_flush_notify(pd.vma, addr, pd.pte);
         set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(dpc->tag,
                     (dpc->svms.num == 1)? 0 : DSM_PUSHING));
-        if (dpc->svms.num == 1)
-            dsm_push_finish_notify(page);
         page_remove_rmap(page);
         page_cache_release(page);
         dec_mm_counter(mm, MM_ANONPAGES);
@@ -426,16 +424,19 @@ noop:
     atomic_dec(&dpc->nproc);
     if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num && 
             atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
-        dsm_push_cache_release(local_svm, &dpc);
         if (likely(page)) {
-            page_cache_release(page);
             if (likely(clear_pte_flag)) {
                 pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
                 if (likely(pte_same(*(pd.pte), pte_entry)))
                     dsm_clear_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
                 pte_unmap_unlock(pd.pte, ptl);
-                dsm_push_finish_notify(page);
             }
+            dsm_push_cache_release(local_svm, &dpc, 1);
+        } else {
+            write_seqlock(&local_svm->push_cache_lock);
+            rb_erase(&dpc->rb_node, &local_svm->push_cache);
+            write_sequnlock(&local_svm->push_cache_lock);
+            dsm_dealloc_dpc(&dpc);
         }
     }
 
@@ -592,11 +593,9 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
     if (unlikely(!dpc))
         return -1;
 
-    dsm_push_cache_release(svm, &dpc);
-    page_cache_release(page);
     for_each_valid_svm(dpc->svms, i)
         page_cache_release(page);
-    dsm_push_finish_notify(page);
+    dsm_push_cache_release(svm, &dpc, 1);
 
     return 0;
 }
@@ -673,6 +672,7 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
                 if (is_dsm_entry(swp_e)) {
                     // store old dest
                     struct dsm_swp_data old;
+
                     swp_entry_to_dsm_data(pte_to_swp_entry(pte_entry), &old);
                     BUG_ON(!old.dsm);
 
@@ -703,9 +703,9 @@ int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
 
     pte_unmap_unlock(pte, ptl);
 
-    out:
-
+out:
     up_read(&mm->mmap_sem);
+    release_svm(svm);
 
     return r;
 
@@ -757,13 +757,16 @@ static int _push_back_if_remote_dsm_page(struct page *page)
             continue;
 
         mr = search_mr(svm->dsm, address);
-        if (!mr || mr->local == LOCAL)
+        if (!mr || mr->local == LOCAL) {
+            release_svm(svm);
             continue;
+        }
 
+        BUG_ON(address < svm->priv->offset);
         dsm_request_page_pull(svm->dsm, svm, page, address, vma->vm_mm, mr);
+        release_svm(svm);
         if (PageSwapCache(page))
             try_to_free_swap(page);
-
 
         ret = 1;
         break;

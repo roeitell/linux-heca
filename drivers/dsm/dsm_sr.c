@@ -4,19 +4,15 @@
  */
 
 #include <dsm/dsm_module.h>
-
 #include <dsm/dsm_trace.h>
 
 static struct kmem_cache *kmem_request_cache;
 
-
-static inline void init_kmem_request_cache_elm(void *obj) {
+static inline void init_kmem_request_cache_elm(void *obj)
+{
     struct dsm_request *dpc = (struct dsm_request *) obj;
-
     memset(dpc, 0, sizeof(struct dsm_request));
-
 }
-
 
 void init_kmem_request_cache(void)
 {
@@ -36,16 +32,16 @@ void release_dsm_request(struct dsm_request *req)
 }
 
 static inline void queue_dsm_request(struct conn_element *ele,
-        struct dsm_request *req) {
+        struct dsm_request *req)
+{
     trace_queued_request(0, 0, 0, 0, req->addr, req->type);
     llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     schedule_delayed_request_flush(ele);
-
 }
 
 static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
-        u16 type, struct subvirtual_machine *fault_svm,
-        struct subvirtual_machine *svm, uint64_t addr,
+        u16 type, struct subvirtual_machine *local_svm,
+        struct subvirtual_machine *remote_svm, uint64_t addr,
         int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
         struct page *page)
 {
@@ -56,13 +52,13 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
     }
 
     req->type = type;
-    req->fault_svm = fault_svm;
-    req->svm = svm;
+    req->dsm_id = local_svm->dsm->dsm_id;
+    req->local_svm_id = local_svm->svm_id;
+    req->remote_svm_id = remote_svm->svm_id;
     req->addr = addr;
     req->func = func;
     req->dpc = dpc;
     req->page = page;
-
     queue_dsm_request(ele, req);
 
     return 0;
@@ -76,7 +72,7 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
         return -ENOMEM;
 
     req->type = type;
-    memcpy(&req->dsm_buf, msg, sizeof(struct dsm_message));
+    dsm_msg_cpy(&req->dsm_buf, msg);
     queue_dsm_request(ele, req);
 
     return 0;
@@ -84,11 +80,9 @@ static int add_dsm_request_msg(struct conn_element *ele, u16 type,
 
 inline int request_queue_empty(struct conn_element *ele)
 {
-    /* we are not 100% accurate but that's ok we can have a few send sneaking in */
-    if ( llist_empty(&ele->tx_buffer.request_queue) && list_empty(&ele->tx_buffer.ordered_request_queue) )
-       return 1;
-    return 0;
-
+    /* we are not 100% accurate but it's ok we can have a few sneaking in */
+    return (llist_empty(&ele->tx_buffer.request_queue) &&
+            list_empty(&ele->tx_buffer.ordered_request_queue));
 }
 
 static inline int request_queue_full(struct conn_element *ele)
@@ -155,8 +149,7 @@ static int send_svm_status_update(struct conn_element *ele,
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
-            memcpy(tx_e->dsm_buf, rx_buf_e->dsm_buf,
-                    sizeof(struct dsm_message));
+            dsm_msg_cpy(tx_e->dsm_buf, rx_buf_e->dsm_buf);
             tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
             ret = tx_dsm_send(ele, tx_e);
             goto out;
@@ -173,21 +166,10 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         struct subvirtual_machine *fault_svm, uint64_t addr,
         int (*func)(struct tx_buf_ele *), int tag, struct dsm_page_cache *dpc)
 {
-
-    struct conn_element *ele;
+    struct conn_element *ele = remote_svm->ele;
     struct tx_buf_ele *tx_e;
     int ret = -EINVAL;
     int req_tag = (tag == PULL_TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
-
-    /*
-     * Svm has been fenced out; fail silently (another svm should answer, if
-     * available).
-     *
-     */
-    if (!remote_svm)
-        goto out;
-
-    ele = remote_svm->ele;
 
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
@@ -217,7 +199,8 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
     struct subvirtual_machine *local_svm;
     unsigned long norm_addr;
     struct dsm *dsm;
-   
+    int r = 0;
+
     BUG_ON(!rx_buf_e);
     BUG_ON(!rx_buf_e->dsm_buf);
 
@@ -230,17 +213,22 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
         goto fail;
 
     norm_addr = rx_buf_e->dsm_buf->req_addr + local_svm->priv->offset;
+
     // we get -1 if something bad happened, or >0 if we had dpc or we requested the page
-    if (dsm_trigger_page_pull(dsm, local_svm, norm_addr) >= 0)
-        return 0;
-    return -1;
+    if (dsm_trigger_page_pull(dsm, local_svm, norm_addr) < 0)
+        r = -1;
+    release_svm(local_svm);
+
+    return r;
+
 
 fail:
     return send_svm_status_update(ele, rx_buf_e);
 
 }
 
-int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {
+int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
+{
     printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_buf->src_id);
     remove_svm(rx_buf_e->dsm_buf->dsm_id, rx_buf_e->dsm_buf->src_id);
     return 1;
@@ -280,13 +268,8 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
 
 int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
-    if (tx_e->callback.func && !tx_e->callback.func(tx_e))
-        goto out;
-
-    release_ppe(ele, tx_e);
-    release_tx_element(ele, tx_e);
-
-out:
+    if (!tx_e->callback.func || tx_e->callback.func(tx_e))
+        release_ppe(ele, tx_e);
     return 0;
 }
 
@@ -295,8 +278,7 @@ int process_page_request(struct conn_element *ele,
 {
     struct page_pool_ele *ppe;
     struct tx_buf_ele *tx_e = NULL;
-    struct page * page;
-    int ret = 0;
+    struct page *page;
     struct dsm *dsm;
     struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
@@ -315,9 +297,9 @@ int process_page_request(struct conn_element *ele,
         goto fail;
 
     norm_addr = msg->req_addr + local_svm->priv->offset;
-
     trace_process_page_request(local_svm->dsm->dsm_id, local_svm->svm_id,
             remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
+
 retry:
     tx_e = try_get_next_empty_tx_reply_ele(ele);
     if (unlikely(!tx_e)) {
@@ -326,7 +308,7 @@ retry:
     }
     BUG_ON(!tx_e);
 
-    memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+    dsm_msg_cpy(tx_e->dsm_buf, msg);
     tx_e->dsm_buf->type = PAGE_REQUEST_REPLY;
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_buf->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_buf->rkey;
@@ -336,52 +318,8 @@ retry:
     page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
             msg->type, &tx_e->reply_work_req->pte, &msg->dest_id);
 
-    if (unlikely(!page)) {
-        ret = -EINVAL;
-
-        switch (msg->type) {
-            case REQUEST_PAGE: {
-                release_tx_element_reply(ele, tx_e);
-                if (request_queue_empty(ele)) {
-                    tx_e = try_get_next_empty_tx_ele(ele);
-                    if (likely(tx_e)) {
-                        memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
-                        tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
-                        tx_e->wrk_req->dst_addr = NULL;
-                        tx_e->callback.func = NULL;
-                        ret = tx_dsm_send(ele, tx_e);
-                    }
-                }
-                if (ret)
-                    ret = add_dsm_request_msg(ele, PAGE_REQUEST_REDIRECT, msg);
-
-                return ret;
-            }
-            case TRY_REQUEST_PAGE: {
-                release_tx_element_reply(ele, tx_e);
-                if (request_queue_empty(ele)) {
-                    tx_e = try_get_next_empty_tx_ele(ele);
-                    if (likely(tx_e)) {
-                        memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
-                        tx_e->dsm_buf->type = TRY_REQUEST_PAGE_FAIL;
-                        tx_e->wrk_req->dst_addr = NULL;
-                        tx_e->callback.func = NULL;
-                        ret = tx_dsm_send(ele, tx_e);
-                    }
-                }
-                if (ret)
-                    ret = add_dsm_request_msg(ele, TRY_REQUEST_PAGE_FAIL, msg);
-                break;
-            }
-            default: {
-                dsm_printk("Un-handled type : %d ", msg->type);
-                break;
-            }
-
-        }
-
+    if (unlikely(!page))
         goto fail;
-    }
 
     ppe = create_new_page_pool_element_from_page(ele, page);
     BUG_ON(!ppe);
@@ -389,16 +327,78 @@ retry:
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 
-    trace_process_page_request_complete(local_svm->dsm->dsm_id, local_svm->svm_id,
-                remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
+    trace_process_page_request_complete(local_svm->dsm->dsm_id,
+            local_svm->svm_id, remote_svm->dsm->dsm_id, remote_svm->svm_id,
+            norm_addr, msg->type);
     tx_dsm_send(ele, tx_e);
-    return ret;
+    release_svm(local_svm);
+    release_svm(remote_svm);
+    return 0;
 
 no_svm: 
-    ret = send_svm_status_update(ele, rx_buf_e);
+    send_svm_status_update(ele, rx_buf_e);
 fail: 
-    printk("[process_page_request] failure to answer page fault\n");
-    return ret;
+
+
+    if (tx_e)
+        release_tx_element_reply(ele, tx_e);
+
+    int r = -EINVAL;
+    if (request_queue_empty(ele)) {
+        tx_e = try_get_next_empty_tx_ele(ele);
+        if (likely(tx_e)) {
+            switch (msg->type) {
+                case REQUEST_PAGE: {
+                    if (msg->dest_id) {
+                        memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+                        tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
+                        tx_e->wrk_req->dst_addr = NULL;
+                        tx_e->callback.func = NULL;
+                        r = tx_dsm_send(ele, tx_e);
+                        break;
+                    }
+                }
+                case TRY_REQUEST_PAGE: {
+                    dsm_msg_cpy(tx_e->dsm_buf, msg);
+                    tx_e->dsm_buf->type = PAGE_REQUEST_FAIL;
+                    tx_e->wrk_req->dst_addr = NULL;
+                    tx_e->callback.func = NULL;
+                    r = tx_dsm_send(ele, tx_e);
+                    break;
+                }
+                default: {
+                    dsm_printk("Un-handled type : %d ", msg->type);
+                    r = 0;
+                    break;
+                }
+
+            }
+
+        }
+    }
+    if (r) {
+        switch (msg->type) {
+            case REQUEST_PAGE: {
+                add_dsm_request_msg(ele, PAGE_REQUEST_REDIRECT, msg);
+                break;
+            }
+            case TRY_REQUEST_PAGE: {
+                add_dsm_request_msg(ele, PAGE_REQUEST_FAIL, msg);
+                break;
+            }
+            default: {
+                dsm_printk("Un-handled type : %d ", msg->type);
+                break;
+            }
+        }
+    }
+
+    if (local_svm)
+        release_svm(local_svm);
+    if (remote_svm)
+        release_svm(remote_svm);
+
+    return -EINVAL;
 
 }
 
@@ -410,7 +410,7 @@ fail:
  *  > -EINVAL (or other) - we sent wrong output, shouldn't happen.
  *
  */
-int tx_dsm_send(struct conn_element * ele, struct tx_buf_ele *tx_e)
+int tx_dsm_send(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
     int ret;
     int type = tx_e->dsm_buf->type;
@@ -421,8 +421,9 @@ retry:
         case REQUEST_PAGE_PULL:
         case TRY_REQUEST_PAGE:
         case SVM_STATUS_UPDATE:
-        case TRY_REQUEST_PAGE_FAIL:
         case PAGE_REQUEST_REDIRECT:
+        case PAGE_REQUEST_FAIL:
+
         case ACK:
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);
@@ -494,8 +495,7 @@ int exchange_info(struct conn_element *ele, int id)
         case RDMA_INFO_READY_CL: {
             ele->rid.send_buf->flag = RDMA_INFO_READY_SV;
             ret = setup_recv_wr(ele);
-            refill_recv_wr(ele,
-                    &ele->rx_buffer.rx_buf[get_nb_tx_buff_elements(ele) - 1]);
+            refill_recv_wr(ele, &ele->rx_buffer.rx_buf[ele->rx_buffer.len - 1]);
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
 
             ele->remote_node_ip = (int) ele->rid.remote_info->node_ip;
@@ -529,9 +529,7 @@ int exchange_info(struct conn_element *ele, int id)
 
         }
         case RDMA_INFO_READY_SV: {
-            refill_recv_wr(ele,
-                    &ele->rx_buffer.rx_buf[get_nb_tx_buff_elements(ele) - 1]);
-
+            refill_recv_wr(ele, &ele->rx_buffer.rx_buf[ele->rx_buffer.len - 1]);
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
             //Server acknowledged --> connection is complete.
             //start sending messages.
@@ -647,24 +645,20 @@ out:
     return ret;
 }
 
-int ack_msg(struct conn_element *ele, struct rx_buf_ele *rx_e) {
-
+int ack_msg(struct conn_element *ele, struct rx_buf_ele *rx_e)
+{
     struct tx_buf_ele *tx_e = NULL;
-    struct dsm_message *msg = rx_e->dsm_buf;
 
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
-            memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+            dsm_msg_cpy(tx_e->dsm_buf, rx_e->dsm_buf);
             tx_e->dsm_buf->type = ACK;
             tx_e->wrk_req->dst_addr = NULL;
             tx_e->callback.func = NULL;
             return tx_dsm_send(ele, tx_e);
-
         }
     }
-    return add_dsm_request_msg(ele, ACK, msg);
+    return add_dsm_request_msg(ele, ACK, rx_e->dsm_buf);
 }
-
-
 

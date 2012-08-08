@@ -66,6 +66,17 @@ out:
 }
 EXPORT_SYMBOL(find_dsm);
 
+inline void release_svm(struct subvirtual_machine *svm)
+{
+    atomic_dec(&svm->refs);
+    if (atomic_cmpxchg(&svm->refs, 1, 0) == 1) {
+        dsm_printk("freeing svm %d\n", svm->svm_id);
+        delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
+        synchronize_rcu();
+        kfree(svm);
+    }
+}
+
 static struct subvirtual_machine *_find_svm_in_tree(
         struct radix_tree_root *root, unsigned long svm_id)
 {
@@ -85,6 +96,16 @@ repeat:
             if (radix_tree_deref_retry(svm))
                 goto repeat;
         }
+#if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
+# ifdef CONFIG_PREEMPT_COUNT
+        BUG_ON(!in_atomic());
+# endif
+        BUG_ON(atomic_read(&svm->refs) == 0);
+        atomic_inc(&svm->refs);
+#else
+        if (!atomic_inc_not_zero(&svm->refs))
+            goto repeat;
+#endif
     }
 
 out: 
@@ -199,12 +220,13 @@ EXPORT_SYMBOL(insert_mr);
 struct memory_region *search_mr(struct dsm *dsm, unsigned long addr)
 {
     struct rb_root *root = &dsm->mr_tree_root;
-    struct rb_node *node = root->rb_node;
+    struct rb_node *node;
     struct memory_region *this = NULL;
     unsigned long seq;
+
     do {
         seq = read_seqbegin(&dsm->mr_seq_lock);
-        while (node) {
+        for (node = root->rb_node; node; this = 0) {
             this = rb_entry(node, struct memory_region, rb_node);
 
             if (addr < this->addr)
@@ -216,7 +238,6 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr)
                     node = node->rb_right;
             else
                 break;
-
         }
     } while (read_seqretry(&dsm->mr_seq_lock, seq));
 
@@ -235,7 +256,9 @@ int destroy_mrs(struct dsm *dsm, int force)
     write_seqlock(&dsm->mr_seq_lock);
     for (node = rb_first(root); node; node = rb_next(node)) {
         mr = rb_entry(node, struct memory_region, rb_node);
+        rcu_read_lock();
         svms = dsm_descriptor_to_svms(mr->descriptor);
+        rcu_read_unlock();
         if (!force) {
             for_each_valid_svm(svms, i)
                 goto next;
@@ -320,6 +343,7 @@ void dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids) {
         BUG_ON(!svm);
         BUG_ON(!svm->dsm);
         sdsc[desc].pp[j] = svm;
+        release_svm(svm);
     }
 }
 EXPORT_SYMBOL(dsm_add_descriptor);
@@ -390,9 +414,7 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
     rcu_read_lock();
     dsd->svms = dsm_descriptor_to_svms(desc);
     BUG_ON(!dsd->svms.num);
-    for (i = 0; i < dsd->svms.num; i++) {
-        BUG_ON(!dsd->svms.pp[i]);
-        BUG_ON(!dsd->svms.pp[i]->dsm);
+    for_each_valid_svm(dsd->svms, i) {
         dsd->dsm = dsd->svms.pp[i]->dsm;
         goto out;
     }

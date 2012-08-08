@@ -19,6 +19,11 @@ module_param(port, int, S_IRUGO|S_IWUSR);
 MODULE_PARM_DESC(port, "The port on the machine running this module - used for"
        " DSM_RDMA communication.");
 
+static inline int is_svm_local(struct subvirtual_machine *svm)
+{
+    return !!svm->priv;
+}
+
 void remove_svm(u32 dsm_id, u32 svm_id)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -38,17 +43,15 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         mutex_unlock(&dsm_state->dsm_state_mutex);
         goto out;
     }
-    if (svm->priv) {
+    if (is_svm_local(svm)) {
         radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                 (unsigned long) svm->priv->mm);
     }
     mutex_unlock(&dsm_state->dsm_state_mutex);
 
-
-
     list_del(&svm->svm_ptr);
     radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
-    if (svm->priv) {
+    if (is_svm_local(svm)) {
         cancel_delayed_work_sync(&svm->delayed_gup_work);
         // to make sure everything is clean
         dequeue_and_gup_cleanup(svm);
@@ -65,7 +68,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
      *  - tx elements (e.g, requests that were sent but not yet freed)
      *  - push cache
      */
-    if (svm->priv) {
+    if (is_svm_local(svm)) {
         struct rb_root *root;
         struct rb_node *node;
 
@@ -76,33 +79,25 @@ void remove_svm(u32 dsm_id, u32 svm_id)
 
             ele = rb_entry(node, struct conn_element, rb_node);
             BUG_ON(!ele);
-            release_svm_queued_requests(svm, ele);
-            //release_svm_tx_elements(svm, ele);
+            release_svm_queued_requests(svm, &ele->tx_buffer);
+            release_svm_tx_elements(svm, ele);
         }
-        //release_svm_push_elements(svm, NULL);
-
+        release_svm_push_elements(svm);
     } else if (svm->ele) {
-        struct list_head *pos;
+        struct subvirtual_machine *local_svm;
 
-        release_svm_queued_requests(svm, svm->ele);
-        //release_svm_tx_elements(svm, svm->ele);
+        release_svm_queued_requests(svm, &svm->ele->tx_buffer);
+        release_svm_tx_elements(svm, svm->ele);
 
         /* potentially very expensive way to do this */
-        list_for_each (pos, &svm->dsm->svm_list) {
-            struct subvirtual_machine *local_svm;
-
-            local_svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-            BUG_ON(!local_svm);
-            if (!local_svm->priv)
-                continue;
-            //release_svm_push_elements(local_svm, svm);
+        list_for_each_entry (local_svm, &svm->dsm->svm_list, svm_ptr) {
+            if (is_svm_local(local_svm))
+                surrogate_push_remote_svm(local_svm, svm);
         }
     }
 
-    synchronize_rcu();
-    delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
-
-    kfree(svm);
+    atomic_dec(&svm->refs);
+    release_svm(svm);
 
 out:
     mutex_unlock(&dsm->dsm_mutex);
@@ -219,11 +214,6 @@ failed:
     return r;
 }
 
-int is_svm_local(struct subvirtual_machine *svm)
-{
-    return !!svm->priv;
-}
-
 int is_svm_current(struct subvirtual_machine *svm)
 {
     return !!(svm->priv && svm->priv->mm == current->mm);
@@ -264,6 +254,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     /* already exists? */
     found_svm = find_svm(dsm, svm_info.svm_id);
     if (found_svm) {
+        release_svm(found_svm);
         dsm_printk(KERN_ERR "svm %d (dsm %d) already exists",
             svm_info.svm_id, svm_info.dsm_id);
         r = -EEXIST;
@@ -277,6 +268,7 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
     new_svm->push_cache = RB_ROOT;
     seqlock_init(&new_svm->push_cache_lock);
     INIT_LIST_HEAD(&new_svm->mr_list);
+    atomic_set(&new_svm->refs, 2);
     if (svm_info.offset) {  /* local svm */
         new_svm->priv = priv_data;
         priv_data->svm = new_svm;
@@ -402,7 +394,7 @@ static int connect_svm(struct private_data *priv_data, void __user *argp)
     svm = find_svm(dsm, svm_info.svm_id);
     if (!svm) {
         dsm_printk(KERN_ERR "Can't find svm %d", svm_info.svm_id);
-        goto failed;
+        goto no_svm;
     }
 
     ip_addr = inet_addr(svm_info.ip);
@@ -438,6 +430,8 @@ done:
     svm->ele = cele;
 
 failed:
+    release_svm(svm);
+no_svm:
     mutex_unlock(&dsm->dsm_mutex);
     dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
         svm_info.dsm_id, svm_info.svm_id, &ip_addr, r);
@@ -523,6 +517,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
     for (i = 0; udata.svm_ids[i]; i++) {
         struct subvirtual_machine *svm;
         u32 svm_id = udata.svm_ids[i];
+        int local;
 
         svm = find_svm(dsm, svm_id);
         if (!svm) {
@@ -531,9 +526,12 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
             goto out_remove_tree;
         }
 
-        if (is_svm_local(svm) && is_svm_current(svm)) {
+        local = is_svm_local(svm);
+        release_svm(svm);
+
+        if (local) {
             mr->local = LOCAL;
-            dsm_printk(KERN_INFO "[i=%d] svm is current %d - existing", i,
+            dsm_printk(KERN_INFO "[i=%d] svm is local %d - exiting", i,
                  svm_id);
             goto out_remove_tree;
         }

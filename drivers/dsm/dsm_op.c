@@ -6,37 +6,47 @@
 #include <linux/list.h>
 #include <dsm/dsm_module.h>
 
-int get_nb_tx_buff_elements(struct conn_element *ele) {
-
+static inline int get_nb_tx_buff_elements(struct conn_element *ele)
+{
     return ele->qp_attr.cap.max_send_wr >> 1;
-
 }
 
-int get_nb_rx_buff_elements(struct conn_element *ele) {
-
+static inline int get_nb_rx_buff_elements(struct conn_element *ele)
+{
     return ele->qp_attr.cap.max_recv_wr;
-
 }
 
-int get_page_pool_size(struct conn_element *ele) {
-
+static inline int get_page_pool_size(struct conn_element *ele)
+{
     return (get_nb_rx_buff_elements(ele) + get_nb_tx_buff_elements(ele)) << 1;
-
 }
 
-int get_max_pushed_reqs(struct conn_element *ele) {
-
+int get_max_pushed_reqs(struct conn_element *ele)
+{
     return get_nb_tx_buff_elements(ele) << 2;
 }
 
-static int rcm_disconnect(struct rcm *rcm) {
+inline void dsm_msg_cpy(struct dsm_message *dst, struct dsm_message *orig)
+{
+    dst->dsm_id = orig->dsm_id;
+    dst->src_id = orig->src_id;
+    dst->dest_id = orig->dest_id;
+    dst->type = orig->type;
+    dst->offset = orig->offset;
+    dst->req_addr = orig->req_addr;
+    dst->dst_addr = orig->dst_addr;
+    dst->rkey = orig->rkey;
+}
+
+static int rcm_disconnect(struct rcm *rcm)
+{
     struct rb_root *root = &rcm->root_conn;
-    struct rb_node *node, *next;
+    struct rb_node *node = rb_first(root);
     struct conn_element *ele;
 
-    for (node = rb_first(root); node; node = next) {
+    while (node) {
         ele = rb_entry(node, struct conn_element, rb_node);
-        next = rb_next(node);
+        node = rb_next(node);
         if (atomic_cmpxchg(&ele->alive, 1, 0)) {
             rdma_disconnect(ele->cm_id);
             destroy_connection(ele);
@@ -49,7 +59,8 @@ static int rcm_disconnect(struct rcm *rcm) {
     return 0;
 }
 
-static void destroy_tx_buffer(struct conn_element *ele) {
+static void destroy_tx_buffer(struct conn_element *ele)
+{
     int i;
     struct tx_buf_ele *tx_buf = ele->tx_buffer.tx_buf;
 
@@ -57,7 +68,7 @@ static void destroy_tx_buffer(struct conn_element *ele) {
         return;
     cancel_work_sync(&ele->delayed_request_flush_work);
 
-    for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
+    for (i = 0; i < ele->tx_buffer.len; ++i) {
         if (tx_buf[i].dsm_dma.addr) {
             ib_dma_unmap_single(ele->cm_id->device, tx_buf[i].dsm_dma.addr,
                     tx_buf[i].dsm_dma.size, tx_buf[i].dsm_dma.dir);
@@ -71,14 +82,15 @@ static void destroy_tx_buffer(struct conn_element *ele) {
     ele->tx_buffer.tx_buf = 0;
 }
 
-static void destroy_rx_buffer(struct conn_element *ele) {
+static void destroy_rx_buffer(struct conn_element *ele)
+{
     int i;
     struct rx_buf_ele *rx = ele->rx_buffer.rx_buf;
 
     if (!rx)
         return;
 
-    for (i = 0; i < get_nb_rx_buff_elements(ele); ++i) {
+    for (i = 0; i < ele->rx_buffer.len; ++i) {
         if (rx[i].dsm_dma.addr) {
             ib_dma_unmap_single(ele->cm_id->device, rx[i].dsm_dma.addr,
                     rx[i].dsm_dma.size, rx[i].dsm_dma.dir);
@@ -90,7 +102,8 @@ static void destroy_rx_buffer(struct conn_element *ele) {
     ele->rx_buffer.rx_buf = 0;
 }
 
-static void free_rdma_info(struct conn_element *ele) {
+static void free_rdma_info(struct conn_element *ele)
+{
     if (ele->rid.send_dma.addr) {
         ib_dma_unmap_single(ele->cm_id->device, ele->rid.send_dma.addr,
                 ele->rid.send_dma.size, ele->rid.send_dma.dir);
@@ -110,7 +123,8 @@ static void free_rdma_info(struct conn_element *ele) {
     memset(&ele->rid, 0, sizeof(struct rdma_info_data));
 }
 
-static void init_rx_ele(struct rx_buf_ele *rx_ele, struct conn_element *ele) {
+static void init_rx_ele(struct rx_buf_ele *rx_ele, struct conn_element *ele)
+{
     struct recv_work_req_ele *rwr = rx_ele->recv_wrk_rq_ele;
     struct ib_sge *recv_sge = &rwr->recv_sgl;
 
@@ -139,19 +153,19 @@ static void init_rx_ele(struct rx_buf_ele *rx_ele, struct conn_element *ele) {
  * RETURN 0 if success,
  *               -1 if failure.
  */
-static int create_rx_buffer(struct conn_element *ele) {
+static int create_rx_buffer(struct conn_element *ele)
+{
     int i;
     int undo = 0;
-    struct rx_buf_ele *rx = kzalloc(
-            (sizeof(struct rx_buf_ele) * get_nb_tx_buff_elements(ele)),
-            GFP_KERNEL);
-
+    struct rx_buf_ele *rx;
+    
+    ele->rx_buffer.len = get_nb_rx_buff_elements(ele);
+    rx = kzalloc((sizeof(struct rx_buf_ele) * ele->rx_buffer.len), GFP_KERNEL);
     if (!rx)
         goto err_buf;
-
     ele->rx_buffer.rx_buf = rx;
 
-    for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
+    for (i = 0; i < ele->rx_buffer.len; ++i) {
         rx[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (!rx[i].dsm_buf)
             goto err1;
@@ -169,49 +183,54 @@ static int create_rx_buffer(struct conn_element *ele) {
             goto err3;
 
         rx[i].id = i;
-
         init_rx_ele(&rx[i], ele);
     }
 
     return 0;
 
-    err3: ib_dma_unmap_single(ele->cm_id->device, rx[i].dsm_dma.addr,
+err3:
+    ib_dma_unmap_single(ele->cm_id->device, rx[i].dsm_dma.addr,
             rx[i].dsm_dma.size, rx[i].dsm_dma.dir);
-    err2: kfree(rx[i].dsm_buf);
-    err1: for (undo = 0; undo < i; ++undo) {
+err2:
+    kfree(rx[i].dsm_buf);
+err1:
+    for (undo = 0; undo < i; ++undo) {
         ib_dma_unmap_single(ele->cm_id->device, rx[undo].dsm_dma.addr,
                 rx[undo].dsm_dma.size, rx[undo].dsm_dma.dir);
         kfree(rx[undo].dsm_buf);
         kfree(rx[undo].recv_wrk_rq_ele);
     }
-    memset(rx, 0, sizeof(struct rx_buf_ele) * get_nb_tx_buff_elements(ele));
     kfree(rx);
     ele->rx_buffer.rx_buf = 0;
-    err_buf: printk(">[create_rx_buffer] - RX BUFFER NOT CREATED\n");
+err_buf:
+    printk(">[create_rx_buffer] - RX BUFFER NOT CREATED\n");
     return -1;
 }
 
-static inline void  setup_IB_attr(struct ib_qp_init_attr * attr,
-        struct ib_device_attr dev_attr) {
+static inline void setup_IB_attr(struct ib_qp_init_attr *attr,
+        struct ib_device_attr dev_attr)
+{
     attr->cap.max_send_wr = min(dev_attr.max_qp_wr, IB_MAX_CAP_SCQ);
     attr->cap.max_recv_wr = min(dev_attr.max_qp_wr, IB_MAX_CAP_RCQ);
     attr->cap.max_send_sge = min(dev_attr.max_sge, IB_MAX_SEND_SGE);
     attr->cap.max_recv_sge = min(dev_attr.max_sge, IB_MAX_RECV_SGE);
-
 }
 
-static inline void  setup_IW_attr(struct ib_qp_init_attr * attr,
-        struct ib_device_attr dev_attr) {
+static inline void setup_IW_attr(struct ib_qp_init_attr *attr,
+        struct ib_device_attr dev_attr)
+{
     attr->cap.max_send_wr = min(dev_attr.max_qp_wr, IW_MAX_CAP_SCQ);
     attr->cap.max_recv_wr = min(dev_attr.max_qp_wr, IW_MAX_CAP_RCQ);
     attr->cap.max_send_sge = min(dev_attr.max_sge, IW_MAX_SEND_SGE);
     attr->cap.max_recv_sge = min(dev_attr.max_sge, IW_MAX_RECV_SGE);
 }
 
-static inline int setup_qp_attr(struct conn_element *ele) {
+static inline int setup_qp_attr(struct conn_element *ele)
+{
     struct ib_qp_init_attr * attr = &ele->qp_attr;
     int ret = -1;
     struct ib_device_attr dev_attr;
+
     if (ib_query_device(ele->cm_id->device, &dev_attr)) {
         dsm_printk("Query device failed for %s\n", ele->cm_id->device->name);
         goto out;
@@ -220,14 +239,20 @@ static inline int setup_qp_attr(struct conn_element *ele) {
     attr->qp_type = IB_QPT_RC;
     attr->port_num = ele->cm_id->port_num;
     attr->qp_context = (void *) ele;
-    if (ele->cm_id->device->node_type == RDMA_NODE_RNIC)
-        setup_IW_attr(attr, dev_attr);
-    else
+    switch (rdma_node_get_transport(ele->cm_id->device->node_type)) {
+    case RDMA_TRANSPORT_IB:
         setup_IB_attr(attr, dev_attr);
+        break;
+    case RDMA_TRANSPORT_IWARP:
+        setup_IW_attr(attr, dev_attr);
+        break;
+    default:
+        return -1;
+    }
 
     ret = 0;
-    out: return ret;
-
+out:
+    return ret;
 }
 
 /*
@@ -236,7 +261,8 @@ static inline int setup_qp_attr(struct conn_element *ele) {
  * RETURN 0 if success,
  *               -1 if failure.
  */
-static int create_qp(struct conn_element *ele) {
+static int create_qp(struct conn_element *ele)
+{
     int ret = -1;
     struct ib_qp_init_attr * attr;
 
@@ -250,7 +276,8 @@ static int create_qp(struct conn_element *ele) {
 
     ret = rdma_create_qp(ele->cm_id, ele->pd, attr);
 
-    exit: return ret;
+exit:
+    return ret;
 }
 
 /*
@@ -260,7 +287,8 @@ static int create_qp(struct conn_element *ele) {
  * RETURN 0 if success,
  *               -1 if failure.
  */
-static int setup_qp(struct conn_element *ele) {
+static int setup_qp(struct conn_element *ele)
+{
     int ret = 0;
 
     INIT_WORK(&ele->send_work, send_cq_handle_work);
@@ -308,18 +336,19 @@ static int setup_qp(struct conn_element *ele) {
     return ret;
 }
 
-static void format_rdma_info(struct conn_element *ele) {
-
+static void format_rdma_info(struct conn_element *ele)
+{
     ele->rid.send_buf->node_ip = htonl(ele->rcm->node_ip);
     ele->rid.send_buf->buf_rx_addr = htonll((u64) ele->rx_buffer.rx_buf);
     ele->rid.send_buf->buf_msg_addr = htonll((u64) ele->tx_buffer.tx_buf);
-    ele->rid.send_buf->rx_buf_size = htonl(get_nb_tx_buff_elements(ele));
+    ele->rid.send_buf->rx_buf_size = htonl(ele->rx_buffer.len);
     ele->rid.send_buf->rkey_msg = htonl(ele->mr->rkey);
     ele->rid.send_buf->rkey_rx = htonl(ele->mr->rkey);
     ele->rid.send_buf->flag = RDMA_INFO_CL;
 }
 
-static int create_new_empty_page_pool_element(struct conn_element *ele) {
+static int create_new_empty_page_pool_element(struct conn_element *ele)
+{
     struct page_pool *pp = &ele->page_pool;
     struct page_pool_ele *ppe;
 
@@ -332,7 +361,8 @@ static int create_new_empty_page_pool_element(struct conn_element *ele) {
     return 0;
 }
 
-static int create_page_pool(struct conn_element *ele) {
+static int create_page_pool(struct conn_element *ele)
+{
     int ret = 0;
     int i;
     struct page_pool * pp = &ele->page_pool;
@@ -354,7 +384,8 @@ static int create_page_pool(struct conn_element *ele) {
  * RETURN 0 in case of success,
  *               -1 in case of failure.
  */
-static int create_rdma_info(struct conn_element *ele) {
+static int create_rdma_info(struct conn_element *ele)
+{
     int size = sizeof(struct rdma_info);
     struct rdma_info_data *rid = &ele->rid;
 
@@ -412,11 +443,11 @@ static int create_rdma_info(struct conn_element *ele) {
     return -1;
 }
 
-static int init_tx_lists(struct conn_element *ele) {
+static int init_tx_lists(struct conn_element *ele)
+{
     int i;
     struct tx_buffer *tx = &ele->tx_buffer;
-    int max_tx_send = get_nb_tx_buff_elements(ele) / 3;
-    int max_tx_reply = get_nb_tx_buff_elements(ele);
+    int max_tx_send = ele->tx_buffer.len / 3;
 
     tx->request_queue_sz = 0;
     init_llist_head(&tx->request_queue);
@@ -428,18 +459,18 @@ static int init_tx_lists(struct conn_element *ele) {
     mutex_init(&tx->flush_mutex);
     INIT_WORK(&ele->delayed_request_flush_work, delayed_request_flush_work_fn);
 
-
     for (i = 0; i < max_tx_send; ++i)
         release_tx_element(ele, &tx->tx_buf[i]);
 
-    for (; i < max_tx_reply; ++i)
+    for (; i < ele->tx_buffer.len; ++i)
         release_tx_element_reply(ele, &tx->tx_buf[i]);
 
     return 0;
 }
 
 static void init_reply_wr(struct reply_work_request *rwr, u64 msg_addr,
-        u32 lkey, int id) {
+        u32 lkey, int id)
+{
     struct ib_sge *reply_sge;
 
     BUG_ON(!rwr);
@@ -460,7 +491,8 @@ static void init_reply_wr(struct reply_work_request *rwr, u64 msg_addr,
     rwr->wr_ele->wr.wr_id = id;
 }
 
-static void init_page_wr(struct reply_work_request *rwr, u32 lkey, int id) {
+static void init_page_wr(struct reply_work_request *rwr, u32 lkey, int id)
+{
     rwr->page_sgl.addr = 0;
     rwr->page_sgl.length = PAGE_SIZE;
     rwr->page_sgl.lkey = lkey;
@@ -473,7 +505,8 @@ static void init_page_wr(struct reply_work_request *rwr, u32 lkey, int id) {
     rwr->wr.wr_id = id;
 }
 
-static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id) {
+static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id)
+{
     BUG_ON(!tx_ele);
     BUG_ON(!tx_ele->wrk_req);
     BUG_ON(!tx_ele->wrk_req->wr_ele);
@@ -491,7 +524,8 @@ static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id) {
     tx_ele->wrk_req->wr_ele->wr.next = NULL;
 }
 
-void init_tx_ele(struct tx_buf_ele *tx_ele, struct conn_element *ele, int id) {
+void init_tx_ele(struct tx_buf_ele *tx_ele, struct conn_element *ele, int id)
+{
     BUG_ON(!tx_ele);
     tx_ele->id = id;
     init_tx_wr(tx_ele, ele->mr->lkey, id);
@@ -514,7 +548,8 @@ EXPORT_SYMBOL(init_tx_ele);
  * RETURN 0 if success,
  *               -1 if failure.
  */
-static int create_tx_buffer(struct conn_element *ele) {
+static int create_tx_buffer(struct conn_element *ele)
+{
     int i, ret = 0;
     struct tx_buf_ele *tx_buff_e;
 
@@ -523,8 +558,8 @@ static int create_tx_buffer(struct conn_element *ele) {
     BUG_ON(!ele->cm_id->device);
     might_sleep();
 
-    tx_buff_e = kzalloc(
-            (sizeof(struct tx_buf_ele) * get_nb_tx_buff_elements(ele)),
+    ele->tx_buffer.len = get_nb_tx_buff_elements(ele);
+    tx_buff_e = kzalloc((sizeof(struct tx_buf_ele) * ele->tx_buffer.len),
             GFP_KERNEL);
     if (unlikely(!tx_buff_e)) {
         dsm_printk(KERN_ERR "Can't allocate memory");
@@ -532,7 +567,7 @@ static int create_tx_buffer(struct conn_element *ele) {
     }
     ele->tx_buffer.tx_buf = tx_buff_e;
 
-    for (i = 0; i < get_nb_tx_buff_elements(ele); ++i) {
+    for (i = 0; i < ele->tx_buffer.len; ++i) {
         tx_buff_e[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (!tx_buff_e[i].dsm_buf) {
             dsm_printk(KERN_ERR "Failed to allocate .dsm_buf");
@@ -594,7 +629,8 @@ static int create_tx_buffer(struct conn_element *ele) {
     done: return ret;
 }
 
-int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele * rx_e) {
+int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele *rx_e)
+{
     int ret = 0;
     ret = ib_post_recv(ele->cm_id->qp, &rx_e->recv_wrk_rq_ele->sq_wr,
             &rx_e->recv_wrk_rq_ele->bad_wr);
@@ -605,19 +641,22 @@ int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele * rx_e) {
     return ret;
 }
 
-
-
-void release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e) {
+void release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e)
+{
     struct tx_buffer *tx = &ele->tx_buffer;
+    atomic_set(&tx_e->used, 0);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
 }
 
-void release_tx_element_reply(struct conn_element *ele, struct tx_buf_ele *tx_e) {
+void release_tx_element_reply(struct conn_element *ele, struct tx_buf_ele *tx_e)
+{
     struct tx_buffer *tx = &ele->tx_buffer;
+    atomic_set(&tx_e->used, 0);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
 }
 
-int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
+int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port)
+{
     int ret = 0;
 
     struct rcm *rcm = NULL;
@@ -681,7 +720,8 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port) {
     return ret;
 }
 
-int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
+int create_connection(struct rcm *rcm, struct svm_data *conn_data)
+{
     struct sockaddr_in dst, src;
     struct rdma_conn_param param;
     struct conn_element *ele;
@@ -725,7 +765,8 @@ int create_connection(struct rcm *rcm, struct svm_data *conn_data) {
     err: return -1;
 }
 
-void reg_rem_info(struct conn_element *ele) {
+void reg_rem_info(struct conn_element *ele)
+{
     ele->rid.remote_info->node_ip = ntohl(ele->rid.recv_buf->node_ip);
     ele->rid.remote_info->buf_rx_addr = ntohll(ele->rid.recv_buf->buf_rx_addr);
     ele->rid.remote_info->buf_msg_addr = ntohll(ele->rid.recv_buf->buf_msg_addr);
@@ -735,7 +776,8 @@ void reg_rem_info(struct conn_element *ele) {
     ele->rid.remote_info->flag = ele->rid.recv_buf->flag;
 }
 
-void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e) {
+void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e)
+{
     struct page_pool *pp = &ele->page_pool;
     struct page_pool_ele *ppe;
 
@@ -761,22 +803,24 @@ void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e) {
  *RETURN 0 if success,
  *              -1 if failure.
  */
-int setup_recv_wr(struct conn_element *ele) {
+int setup_recv_wr(struct conn_element *ele)
+{
     int i;
     struct rx_buf_ele *rx = ele->rx_buffer.rx_buf;
 
     if (unlikely(!rx))
         return -1;
 
-    for (i = 0; i < (get_nb_tx_buff_elements(ele) - 1); ++i) {
+    /* last rx elm reserved for initial info exchange */
+    for (i = 0; i < ele->rx_buffer.len - 1; ++i) {
         if (refill_recv_wr(ele, &rx[i]))
             return -1;
-
     }
     return 0;
 }
 
-int connect_client(struct rdma_cm_id *id) {
+int connect_client(struct rdma_cm_id *id)
+{
     int r;
     struct rdma_conn_param param;
 
@@ -792,7 +836,8 @@ int connect_client(struct rdma_cm_id *id) {
     return r;
 }
 
-unsigned int inet_addr(char *addr) {
+unsigned int inet_addr(char *addr)
+{
     unsigned int a, b, c, d;
     char arr[4];
 
@@ -806,11 +851,13 @@ unsigned int inet_addr(char *addr) {
 
 void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
         u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr,
-        struct page *page, u16 type, struct dsm_page_cache *dpc) {
+        struct page *page, u16 type, struct dsm_page_cache *dpc)
+{
     struct dsm_message *msg = tx_e->dsm_buf;
     struct page_pool_ele *ppe = create_new_page_pool_element_from_page(ele,
             page);
 
+    BUG_ON(!ppe);
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->wrk_req->dpc = dpc;
 
@@ -826,8 +873,9 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
 }
 
 void create_page_pull_request(struct conn_element *ele,
-        struct tx_buf_ele * tx_e, u32 dsm_id, u32 local_id, u32 remote_id,
-        uint64_t addr) {
+        struct tx_buf_ele *tx_e, u32 dsm_id, u32 local_id, u32 remote_id,
+        uint64_t addr)
+{
     struct dsm_message *msg = tx_e->dsm_buf;
 
     tx_e->wrk_req->dst_addr = NULL;
@@ -841,7 +889,8 @@ void create_page_pull_request(struct conn_element *ele,
     msg->type = REQUEST_PAGE_PULL;
 }
 
-struct page_pool_ele *get_empty_page_ele(struct conn_element *ele) {
+struct page_pool_ele *get_empty_page_ele(struct conn_element *ele)
+{
     struct page_pool_ele *ppe = NULL;
     struct page_pool *pp = &ele->page_pool;
     struct llist_node *llnode = NULL;
@@ -861,7 +910,8 @@ struct page_pool_ele *get_empty_page_ele(struct conn_element *ele) {
 }
 
 struct page_pool_ele *create_new_page_pool_element_from_page(
-        struct conn_element *ele, struct page *page) {
+        struct conn_element *ele, struct page *page)
+{
     struct page_pool_ele *ppe;
 
     BUG_ON(!page);
@@ -876,7 +926,8 @@ struct page_pool_ele *create_new_page_pool_element_from_page(
     return ppe;
 }
 
-int setup_connection(struct conn_element *ele, int type) {
+int setup_connection(struct conn_element *ele, int type)
+{
     int ret = 0, err = 0;
     struct rdma_conn_param conn_param;
 
@@ -929,36 +980,39 @@ int setup_connection(struct conn_element *ele, int type) {
     return err;
 }
 
-struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele) {
+struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele)
+{
     struct tx_buf_ele *tx_e = NULL;
     struct llist_node *llnode;
     spin_lock(&ele->tx_buffer.tx_free_elements_list_lock);
     llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
-    if (llnode)
+    if (llnode) {
         tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-
-
-
+        atomic_set(&tx_e->used, 1);
+    }
     return tx_e;
 }
 
-struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct conn_element *ele) {
+struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct conn_element *ele)
+{
     struct tx_buf_ele *tx_e = NULL;
-
     struct llist_node *llnode;
+
     spin_lock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
     llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list_reply);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_reply_lock);
 
-    if (llnode)
+    if (llnode) {
         tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-
+        atomic_set(&tx_e->used, 1);
+    }
     return tx_e;
 }
 
-int destroy_rcm(struct dsm_module_state *dsm_state) {
+int destroy_rcm(struct dsm_module_state *dsm_state)
+{
     struct rcm *rcm = dsm_state->rcm;
 
     if (likely(rcm)) {
@@ -993,7 +1047,8 @@ int destroy_rcm(struct dsm_module_state *dsm_state) {
     return 0;
 }
 
-static void remove_svms_for_conn(struct conn_element *ele) {
+static void remove_svms_for_conn(struct conn_element *ele)
+{
     struct dsm *dsm;
     struct subvirtual_machine *svm;
     struct list_head *pos, *n, *it;
@@ -1008,7 +1063,8 @@ static void remove_svms_for_conn(struct conn_element *ele) {
     }
 }
 
-int destroy_connection(struct conn_element *ele) {
+int destroy_connection(struct conn_element *ele)
+{
     int ret = 0;
 
     remove_svms_for_conn(ele);
@@ -1047,7 +1103,8 @@ int destroy_connection(struct conn_element *ele) {
 }
 
 static void replace_mr_descriptor(struct dsm *dsm, struct memory_region *mr,
-        struct svm_list svms, u32 svm_id) {
+        struct svm_list svms, u32 svm_id)
+{
     int i, j = 0;
     u32 svm_ids[svms.num - 1];
 
@@ -1060,18 +1117,22 @@ static void replace_mr_descriptor(struct dsm *dsm, struct memory_region *mr,
     mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
 }
 
-void release_svm_from_mr_descriptors(struct subvirtual_machine *svm) {
+void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
+{
     struct rb_root *root = &svm->dsm->mr_tree_root;
     struct rb_node *node;
     int i;
 
     write_seqlock(&svm->dsm->mr_seq_lock);
-    for (node = rb_first(root); node; node = rb_next(node)) {
+    for (node = rb_first(root); node; ) {
         struct memory_region *mr;
         struct svm_list svms;
 
         mr = rb_entry(node, struct memory_region, rb_node);
+        node = rb_next(node);
+        rcu_read_lock();
         svms = dsm_descriptor_to_svms(mr->descriptor);
+        rcu_read_unlock();
 
         for_each_valid_svm(svms, i) {
             if (svms.pp[i]->svm_id == svm->svm_id) {
@@ -1097,67 +1158,55 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *svm) {
     write_sequnlock(&svm->dsm->mr_seq_lock);
 }
 
-static inline void dealloc_push_dpc(struct dsm_page_cache *dpc) {
-    page_cache_release(dpc->pages[0]);
-    rb_erase(&dpc->rb_node, &dpc->svm->push_cache);
-    dsm_dealloc_dpc(&dpc);
-}
-
-static int surrogate_remote_response_push(struct dsm_page_cache *dpc,
-        struct subvirtual_machine *remote_svm) {
-    int i;
-
-    if (remote_svm) {
-        for_each_valid_svm(dpc->svms, i) {
-            if (dpc->svms.pp[i] == remote_svm)
-                goto surrogate;
-        }
-        return -EINVAL;
-    }
-
-    surrogate: if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
-        page_cache_release(dpc->pages[0]);
-        atomic_dec(&dpc->nproc);
-        if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1 && find_first_bit(
-                &dpc->bitmap, dpc->svms.num) >= dpc->svms.num)
-            dealloc_push_dpc(dpc);
-        return 1;
-    }
-    return 0;
-}
-
-void surrogate_remote_response_pull(struct dsm_page_cache *dpc) {
-    atomic_dec(&dpc->nproc);
-    if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-        BUG_ON(atomic_read(&dpc->found) < 0);
-        dsm_push_finish_notify(dpc->pages[0]);
-        page_cache_release(dpc->pages[0]);
-        dsm_dealloc_dpc(&dpc);
-    }
-}
-
-void release_svm_push_elements(struct subvirtual_machine *svm,
-        struct subvirtual_machine *remote_svm) {
+/*
+ * We dec page's refcount for every missing remote response (it would have
+ * happened in release_ppe after sending an answer to remote svm)
+ */
+void surrogate_push_remote_svm(struct subvirtual_machine *svm,
+        struct subvirtual_machine *remote_svm)
+{
     struct rb_node *node;
 
     write_seqlock(&svm->push_cache_lock);
     for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
         struct dsm_page_cache *dpc;
+        int i;
 
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
-        if (remote_svm) {
-            surrogate_remote_response_push(dpc, remote_svm);
-        } else {
-            int i;
-
-            dsm_push_finish_notify(dpc->pages[0]);
-            for_each_valid_svm(dpc->svms, i) {
-                if (1 << i & dpc->bitmap)
-                    page_cache_release(dpc->pages[0]);
-            }
-            dealloc_push_dpc(dpc);
-            continue;
+        for_each_valid_svm(dpc->svms, i) {
+            if (dpc->svms.pp[i] == remote_svm)
+                goto surrogate;
         }
+        continue;
+
+surrogate:
+        if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
+            page_cache_release(dpc->pages[0]);
+            atomic_dec(&dpc->nproc);
+            if (atomic_cmpxchg(&dpc->nproc, 1, 0) == 1 && find_first_bit(
+                    &dpc->bitmap, dpc->svms.num) >= dpc->svms.num) {
+                dsm_push_cache_release(dpc->svm, &dpc, 0);
+            }
+        }
+    }
+    write_sequnlock(&svm->push_cache_lock);
+}
+
+void release_svm_push_elements(struct subvirtual_machine *svm)
+{
+    struct rb_node *node;
+
+    write_seqlock(&svm->push_cache_lock);
+    for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
+        struct dsm_page_cache *dpc;
+        int i;
+
+        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+        for_each_valid_svm(dpc->svms, i) {
+            if (1 << i & dpc->bitmap)
+                page_cache_release(dpc->pages[0]);
+        }
+        dsm_push_cache_release(dpc->svm, &dpc, 0);
     }
     write_sequnlock(&svm->push_cache_lock);
 }
@@ -1168,7 +1217,8 @@ void release_svm_push_elements(struct subvirtual_machine *svm,
  * buffer.
  */
 void release_svm_tx_elements(struct subvirtual_machine *svm,
-        struct conn_element *ele) {
+        struct conn_element *ele)
+{
     struct tx_buf_ele *tx_buf;
     int i;
 
@@ -1178,43 +1228,45 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
 
     tx_buf = ele->tx_buffer.tx_buf;
 
-    for (i = 0; i < get_nb_tx_buff_elements(ele); i++) {
-        struct dsm_message *msg = tx_buf[i].dsm_buf;
+    for (i = 0; i < ele->tx_buffer.len; i++) {
+        struct tx_buf_ele *tx_e = &tx_buf[i];
+        struct dsm_message *msg = tx_e->dsm_buf;
 
-        if (msg->dsm_id == svm->dsm->dsm_id
-                && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)) {
+        if (msg->type & (REQUEST_PAGE | TRY_REQUEST_PAGE | PAGE_REQUEST_FAIL)
+                && msg->dsm_id == svm->dsm->dsm_id
+                && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)
+                && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
+            struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+            unsigned long addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
 
-            switch (msg->type) {
-                case PAGE_REQUEST_REPLY:
-                case PAGE_REQUEST_REDIRECT:
-                case TRY_REQUEST_PAGE_FAIL: {
+            dsm_pull_req_failure(dpc, addr);
+            tx_e->wrk_req->dst_addr->mem_page = NULL;
+            dsm_release_pull_dpc(&dpc);
+            release_ppe(ele, tx_e);
 
-                    /*unhandled */
-                    break;
-                }
-                case TRY_REQUEST_PAGE:
-                case REQUEST_PAGE: {
-                    tx_buf[i].wrk_req->dst_addr->mem_page = NULL;
-                    surrogate_remote_response_pull(tx_buf[i].wrk_req->dpc);
-                    release_ppe(ele, &tx_buf[i]);
-                    release_tx_element(ele, &tx_buf[i]);
-                    break;
-                }
-                case REQUEST_PAGE_PULL:
-                case SVM_STATUS_UPDATE:
-                case ACK: {
-                    release_tx_element(ele,&tx_buf[i]);
-                    break;
-                }
-
-                default: {
-                    BUG();
-                    break;
-                }
-            }
+            /* rdma processing already finished, we have to release ourselves */smp_mb();
+            if (atomic_read(&tx_e->used) > 2)
+                release_tx_element(ele, tx_e);
         }
     }
 }
 
+void release_svm_queued_requests(struct subvirtual_machine *svm,
+        struct tx_buffer *tx) 
+{
+    struct dsm_request *req, *n;
+    u32 svm_id = svm->svm_id;
 
+    mutex_lock(&tx->flush_mutex);
+    dsm_request_queue_merge(tx);
+    list_for_each_entry_safe (req, n, &tx->ordered_request_queue, ordered_list){
+        if (req->remote_svm_id == svm_id || req->local_svm_id == svm_id) {
+            list_del(&req->ordered_list);
+            if (req->dpc && req->dpc->tag == PULL_TAG)
+                dsm_release_pull_dpc(&req->dpc);
+            release_dsm_request(req);
+        }
+    }
+    mutex_unlock(&tx->flush_mutex);
+}
 

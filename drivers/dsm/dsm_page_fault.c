@@ -661,6 +661,11 @@ fail:
     return found_dpc;
 }
 
+/*
+ * return -1 on fault or stuff missing
+ * return 1 if we send a request
+ *  return 0 if dpc present
+ */
 static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
         struct subvirtual_machine *fault_svm, int tag)
 {
@@ -673,10 +678,11 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
     struct vm_area_struct *vma;
     unsigned long norm_addr = addr & PAGE_MASK;
     struct dsm_page_cache *dpc = NULL;
+    int ret = 0;
 
     dpc = dsm_cache_get(fault_svm, norm_addr);
     if (!dpc) {
-
+        ret = -1;
         vma = find_vma(mm, addr);
         if (unlikely(!vma || vma->vm_start > addr))
             goto out;
@@ -711,15 +717,15 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                     BUG();
                 if (!(dsd.flags & DSM_INFLIGHT)) {
 
-                    if(tag == PREFETCH_TAG)
-                    {
+                    if (tag == PREFETCH_TAG) {
                         int i;
                         /*
                          * we check if we are running out of space in the QPs first in order to bail out early
                          */
                         for_each_valid_svm(dsd.svms, i) {
-                            if (!request_queue_empty(dsd.svms.pp[i]->ele))
+                            if (!request_queue_empty(dsd.svms.pp[i]->ele)) {
                                 goto out;
+                            }
                         }
                     }
                     /*
@@ -729,13 +735,14 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                      */
                     dsm_cache_add_send(fault_svm, dsd.svms, norm_addr, 2, tag,
                             vma, mm, pte_entry, pte);
+                    ret = 1;
                 }
             }
         }
     }
 
 out:
-    return !!dpc;
+    return ret;
 }
 
 static struct dsm_page_cache *convert_push_dpc(
@@ -901,11 +908,11 @@ retry:
         /* we want here an optimisation for the nowait option */
         j = 1;
         do {
-            if (cont_forward)
+            if (cont_forward == 1)
                 cont_forward = get_dsm_page(mm, address + j * PAGE_SIZE,
                         fault_svm, PREFETCH_TAG);
 
-            if (cont_back) {
+            if (cont_back == 1) {
                 if (address > (j * PAGE_SIZE))
                     cont_back = get_dsm_page(mm, address - j * PAGE_SIZE,
                             fault_svm, PREFETCH_TAG);

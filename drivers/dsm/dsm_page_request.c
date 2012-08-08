@@ -217,7 +217,6 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 {
     swp_entry_t swp_e;
     struct dsm_swp_data dsd;
-    int i;
     struct dsm_page_cache *dpc =NULL;
     /* first time dealing with this addr? */
     if (pte_none(pte_entry))

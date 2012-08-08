@@ -230,10 +230,14 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
         goto fail;
 
     norm_addr = rx_buf_e->dsm_buf->req_addr + local_svm->priv->offset;
-    return dsm_trigger_page_pull(dsm, local_svm, norm_addr);
+    // we get -1 if something bad happened, or >0 if we had dpc or we requested the page
+    if (dsm_trigger_page_pull(dsm, local_svm, norm_addr) >= 0)
+        return 0;
+    return -1;
 
 fail:
     return send_svm_status_update(ele, rx_buf_e);
+
 }
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e) {

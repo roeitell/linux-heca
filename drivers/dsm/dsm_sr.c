@@ -254,8 +254,8 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
     int ret = 0;
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
-    release_ppe(ele, tx_e);
-    release_tx_element(ele, tx_e);
+    //release_ppe(ele, tx_e);
+    //release_tx_element(ele, tx_e);
 
     svm = find_svm(dpc->svm->dsm, redirect_svm_id);
     if (svm) {

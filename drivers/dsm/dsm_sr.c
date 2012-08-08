@@ -282,6 +282,7 @@ int process_page_request(struct conn_element *ele,
     struct dsm *dsm;
     struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
+    int r ;
     struct dsm_message *msg = rx_buf_e->dsm_buf;
 
     dsm = find_dsm(msg->dsm_id);
@@ -342,8 +343,7 @@ fail:
 
     if (tx_e)
         release_tx_element_reply(ele, tx_e);
-
-    int r = -EINVAL;
+    r = -EINVAL;
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {

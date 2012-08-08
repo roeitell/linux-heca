@@ -66,35 +66,6 @@ static inline int is_dsm_zero_pfn(unsigned long pfn)
     return pfn == zero_dsm_pfn;
 }
 
-
-static struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
-        unsigned long addr)
-{
-    void **ppc;
-    struct dsm_page_cache *dpc;
-
-    rcu_read_lock();
-repeat:
-    dpc = NULL;
-    ppc = radix_tree_lookup_slot(&svm->page_cache, addr);
-    if (ppc) {
-        dpc = radix_tree_deref_slot(ppc);
-        if (unlikely(!dpc))
-            goto out;
-        if (radix_tree_exception(dpc)) {
-            if (radix_tree_deref_retry(dpc))
-                goto repeat;
-            goto out;
-        }
-        if (unlikely(dpc != *ppc))
-            goto repeat;
-    }
-out:
-    rcu_read_unlock();
-
-    return dpc;
-}
-
 static int reuse_dsm_page(struct page *page, unsigned long addr,
         struct dsm_page_cache *dpc)
 {
@@ -945,7 +916,6 @@ retry:
 
     }
 
-lock:
 /*
  * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
  * so we just re-throw immediately. Otherwise, we wait until the bitlock is

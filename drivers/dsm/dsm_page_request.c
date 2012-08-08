@@ -236,15 +236,13 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
     BUG_ON(!is_dsm_entry(swp_e));
     if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
         BUG();
+    // we check if we are already pulling
+    dpc = dsm_cache_get(local_svm, addr);
+    if (dpc)
+        goto fault_page;
     // we can only redirect if we have one location to redirect to!
     //FIXME enable RAIM support
     BUG_ON(dsd.svms.num != 1);
-    // we check if we are already pulling
-
-    dpc = dsm_cache_get(dsd.svms.pp[0], addr);
-    if (dpc)
-        goto fault_page;
-
     return dsd.svms.pp[0]->svm_id;
 
     //FIXME: we do not support mirrored push with redirect... so no active active passive scenario

@@ -63,11 +63,6 @@ DEFINE_EVENT(dsm_page_fault_template, process_page_request,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag ),
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
 
-DEFINE_EVENT(dsm_page_fault_template, queued_request,
-        TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag ),
-        TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
-
-
 DEFINE_EVENT(dsm_page_fault_template, send_request,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int tag ),
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, tag));
@@ -117,6 +112,21 @@ DEFINE_EVENT(dsm_message_template, dsm_rx_msg,
 DEFINE_EVENT(dsm_message_template, dsm_tx_msg,
         TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type, int tx_id),
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, type, tx_id));
+
+DEFINE_EVENT(dsm_message_template, queued_request,
+        TP_PROTO( int dsm_id, int svm_id,int remote_dsm_id, int remote_svm_id, unsigned long address, int type, int tx_id),
+        TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, type, tx_id));
+
+
+DECLARE_EVENT_CLASS(dsm_tx_template,
+        TP_PROTO(int id),
+        TP_ARGS(id),
+        TP_STRUCT__entry(__field(int, id)),
+        TP_fast_assign(__entry->id = id;),
+        TP_printk("TX_E_ID: %d", __entry->id));
+
+DEFINE_EVENT(dsm_tx_template, tx_e_acquire, TP_PROTO(int id), TP_ARGS(id));
+DEFINE_EVENT(dsm_tx_template, tx_e_release, TP_PROTO(int id), TP_ARGS(id));
 
 #endif
 

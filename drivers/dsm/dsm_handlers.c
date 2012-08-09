@@ -72,7 +72,7 @@ static int process_dsm_request(struct conn_element *ele,
             tx_e->dsm_buf->type = PAGE_REQUEST_FAIL;
             break;
         case PAGE_REQUEST_REDIRECT:
-            memcpy(tx_e->dsm_buf, &req->dsm_buf, sizeof(struct dsm_message));
+            dsm_msg_cpy(tx_e->dsm_buf, &req->dsm_buf);
             tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
             break;
         case SVM_STATUS_UPDATE:
@@ -156,7 +156,7 @@ static inline void handle_tx_element(struct conn_element *ele,
     if (atomic_add_return(1, &tx_e->used) == 2) {
         if (callback)
             callback(ele, tx_e);
-		release_tx_element(ele, tx_e);
+		try_release_tx_element(ele, tx_e);
 	}
 }
 
@@ -227,7 +227,7 @@ err:
 }
 EXPORT_SYMBOL(dsm_recv_message_handler);
 
-int dsm_send_message_handler(struct conn_element *ele,
+static int dsm_send_message_handler(struct conn_element *ele,
         struct tx_buf_ele *tx_buf_e)
 {
     trace_dsm_tx_msg(tx_buf_e->dsm_buf->dsm_id, tx_buf_e->dsm_buf->src_id,
@@ -236,33 +236,28 @@ int dsm_send_message_handler(struct conn_element *ele,
             tx_buf_e->dsm_buf->offset);
 
     switch (tx_buf_e->dsm_buf->type) {
-        case PAGE_REQUEST_REPLY: {
+        case PAGE_REQUEST_REPLY:
             dsm_clear_swp_entry_flag(tx_buf_e->reply_work_req->mm,
                     tx_buf_e->reply_work_req->addr,
                     tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
             release_ppe(ele, tx_buf_e);
             release_tx_element_reply(ele, tx_buf_e);
             break;
-        }
-        case REQUEST_PAGE:
-        case TRY_REQUEST_PAGE:
-        case REQUEST_PAGE_PULL: {
-            break;
-        }
         case ACK:
         case PAGE_REQUEST_FAIL:
-        case SVM_STATUS_UPDATE:{
-
+        case SVM_STATUS_UPDATE:
             release_tx_element(ele, tx_buf_e);
             break;
-        }
-        default: {
-
+        case REQUEST_PAGE:
+        case TRY_REQUEST_PAGE:
+        case REQUEST_PAGE_PULL:
+            try_release_tx_element(ele, tx_buf_e);
+            break;
+        default:
             printk("[dsm_send_poll] unhandled message stats  addr: %p, "
                     "status %d , id %d \n", tx_buf_e, tx_buf_e->dsm_buf->type,
                     tx_buf_e->id);
             return 1;
-        }
     }
     return 0;
 }

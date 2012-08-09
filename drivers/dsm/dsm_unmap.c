@@ -153,7 +153,7 @@ retry:
     // this is a page flagging without data exchange so we can free the page
 
     unlock_page(page);
-    put_page(page);
+    page_cache_release(page);
 
 out_pte_unlock:
     pte_unmap_unlock(pte, ptl);

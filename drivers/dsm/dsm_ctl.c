@@ -704,6 +704,7 @@ static int dsm_init(void)
         destroy_rcm(dsm_state);
     }
 
+    init_dsm_page_buffer();
     rdma_listen(dsm_state->rcm->cm_id, 2);
     dsm_hook_write(&my_dsm_hook);
 err: 

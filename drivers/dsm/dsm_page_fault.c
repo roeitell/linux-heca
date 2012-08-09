@@ -14,6 +14,66 @@
 static struct kmem_cache *dsm_delayed_fault_cache_kmem;
 unsigned long zero_dsm_pfn __read_mostly;
 
+/* TODO: percpu, numa, preemption instead of locking, separate work structs */
+#define DSM_PAGE_BUFFER_SZ 1000
+static struct page *dsm_page_buffer[DSM_PAGE_BUFFER_SZ];
+static int dsm_page_buffer_head;
+static struct work_struct dsm_page_buffer_work;
+static struct mutex dsm_page_buffer_lock;
+
+static void dsm_page_buffer_refill(struct work_struct *work)
+{
+    int i = 0;
+
+    mutex_lock(&dsm_page_buffer_lock);
+    while (dsm_page_buffer_head) {
+        dsm_page_buffer[dsm_page_buffer_head-1] = alloc_pages_current(
+                GFP_KERNEL, 0);
+        if (dsm_page_buffer[dsm_page_buffer_head])
+            dsm_page_buffer_head--;
+        else
+            break;
+
+        if (i++ == DSM_PAGE_BUFFER_SZ / 10)
+            break;
+    }
+    mutex_unlock(&dsm_page_buffer_lock);
+
+    if (dsm_page_buffer_head)
+        schedule_work(&dsm_page_buffer_work);
+}
+
+int init_dsm_page_buffer(void)
+{
+    mutex_init(&dsm_page_buffer_lock);
+    dsm_page_buffer_head = DSM_PAGE_BUFFER_SZ - 1;
+    INIT_WORK(&dsm_page_buffer_work, dsm_page_buffer_refill);
+    flush_work(&dsm_page_buffer_work);
+
+    return 0;
+}
+
+static inline struct page *dsm_alloc_page(struct vm_area_struct *vma,
+        unsigned long addr)
+{
+    struct page *page = NULL;
+
+    /* outer check is a hint to escape lock */
+    if (dsm_page_buffer_head < DSM_PAGE_BUFFER_SZ) {
+        mutex_lock(&dsm_page_buffer_lock);
+        if (dsm_page_buffer_head < DSM_PAGE_BUFFER_SZ)
+            page = dsm_page_buffer[dsm_page_buffer_head++];
+        mutex_unlock(&dsm_page_buffer_lock);
+    }
+
+    if (!page)
+        page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
+
+    schedule_work(&dsm_page_buffer_work);
+
+    return page;
+}
+
 void init_dsm_prefetch_cache_kmem(void)
 {
     dsm_delayed_fault_cache_kmem = kmem_cache_create("dsm_delayed_fault_cache",
@@ -225,7 +285,7 @@ gotten:
         if (!new_page)
             goto oom;
     } else {
-        new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);
+        new_page = dsm_alloc_page(vma, address);
         if (!new_page)
             goto oom;
         cow_user_page(new_page, old_page, address, vma);
@@ -504,7 +564,7 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
     struct page *page = NULL;
 
     if (!dpc->pages[i])
-        dpc->pages[i] = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
+        dpc->pages[i] = dsm_alloc_page(vma, addr);
     page = dpc->pages[i];
     if (unlikely(!page))
         goto out;
@@ -593,7 +653,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
         }
 
         if (!page) {
-            page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, norm_addr);
+            page = dsm_alloc_page(vma, norm_addr);
             if (!page)
                 goto fail;
             __set_page_locked(page);
@@ -884,16 +944,13 @@ retry:
     }
 
 
-/*
- * prefetch
- *
- */
+    /* prefetch *
     if ((dpc->tag == PULL_TAG) && (flags & FAULT_FLAG_ALLOW_RETRY)) {
         int max_retry = 20;
         int cont_back = 1;
         int cont_forward = 1;
 
-        /* we want here an optimisation for the nowait option */
+        * we want here an optimisation for the nowait option *
         j = 1;
         do {
             if (cont_forward == 1)
@@ -908,14 +965,14 @@ retry:
                     cont_back = 0;
             }
             if (trylock_page(dpc->pages[0])){
-                goto resolve;
                 release_svm(fault_svm);
+                goto resolve;
             }
             j++;
         } while ((j < max_retry) && (cont_back == 1 || cont_forward == 1));
 
     }
-
+    */
 /*
  * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
  * so we just re-throw immediately. Otherwise, we wait until the bitlock is

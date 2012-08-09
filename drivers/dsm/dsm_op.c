@@ -5,6 +5,7 @@
 
 #include <linux/list.h>
 #include <dsm/dsm_module.h>
+#include <dsm/dsm_trace.h>
 
 static inline int get_nb_tx_buff_elements(struct conn_element *ele)
 {
@@ -528,7 +529,7 @@ void init_tx_ele(struct tx_buf_ele *tx_ele, struct conn_element *ele, int id)
 {
     BUG_ON(!tx_ele);
     tx_ele->id = id;
-    init_tx_wr(tx_ele, ele->mr->lkey, id);
+    init_tx_wr(tx_ele, ele->mr->lkey, tx_ele->id);
     init_reply_wr(tx_ele->reply_work_req, tx_ele->dsm_dma.addr, ele->mr->lkey,
             tx_ele->id);
     BUG_ON(!ele->mr);
@@ -645,14 +646,23 @@ void release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
     struct tx_buffer *tx = &ele->tx_buffer;
     atomic_set(&tx_e->used, 0);
+    atomic_set(&tx_e->released, 0);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
+    trace_tx_e_release(tx_e->id);
 }
 
 void release_tx_element_reply(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
     struct tx_buffer *tx = &ele->tx_buffer;
     atomic_set(&tx_e->used, 0);
+    atomic_set(&tx_e->released, 0);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
+}
+
+void try_release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e)
+{
+    if (atomic_add_return(1, &tx_e->released) == 2)
+        release_tx_element(ele, tx_e);
 }
 
 int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port)
@@ -984,12 +994,14 @@ struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele)
 {
     struct tx_buf_ele *tx_e = NULL;
     struct llist_node *llnode;
+
     spin_lock(&ele->tx_buffer.tx_free_elements_list_lock);
     llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
     if (llnode) {
         tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
+        trace_tx_e_acquire(tx_e->id);
         atomic_set(&tx_e->used, 1);
     }
     return tx_e;
@@ -1168,11 +1180,12 @@ void surrogate_push_remote_svm(struct subvirtual_machine *svm,
     struct rb_node *node;
 
     write_seqlock(&svm->push_cache_lock);
-    for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
+    for (node = rb_first(&svm->push_cache); node;) {
         struct dsm_page_cache *dpc;
         int i;
 
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+        node = rb_next(node);
         for_each_valid_svm(dpc->svms, i) {
             if (dpc->svms.pp[i] == remote_svm)
                 goto surrogate;
@@ -1197,13 +1210,14 @@ void release_svm_push_elements(struct subvirtual_machine *svm)
     struct rb_node *node;
 
     write_seqlock(&svm->push_cache_lock);
-    for (node = rb_first(&svm->push_cache); node; node = rb_next(node)) {
+    for (node = rb_first(&svm->push_cache); node;) {
         struct dsm_page_cache *dpc;
         int i;
 
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+        node = rb_next(node);
         for_each_valid_svm(dpc->svms, i) {
-            if (1 << i & dpc->bitmap)
+            if (test_and_clear_bit(i, &dpc->bitmap))
                 page_cache_release(dpc->pages[0]);
         }
         dsm_push_cache_release(dpc->svm, &dpc, 0);
@@ -1237,16 +1251,18 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
                 && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)
                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
             struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
-            unsigned long addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
-
+            unsigned long addr;
+            
+            addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
             dsm_pull_req_failure(dpc, addr);
             tx_e->wrk_req->dst_addr->mem_page = NULL;
             dsm_release_pull_dpc(&dpc);
             release_ppe(ele, tx_e);
 
-            /* rdma processing already finished, we have to release ourselves */smp_mb();
+            /* rdma processing already finished, we have to release ourselves */
+            smp_mb();
             if (atomic_read(&tx_e->used) > 2)
-                release_tx_element(ele, tx_e);
+                try_release_tx_element(ele, tx_e);
         }
     }
 }

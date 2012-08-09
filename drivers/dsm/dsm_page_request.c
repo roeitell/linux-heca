@@ -57,6 +57,7 @@ out:
     return r;
 }
 
+/* FIXME: push_cache lookup needs rcu protection */
 static struct dsm_page_cache *dsm_push_cache_lookup(
         struct subvirtual_machine *svm, unsigned long addr)
 {
@@ -306,7 +307,6 @@ retry:
             goto retry;
         }
     }
-
 
     page = vm_normal_page(pd.vma, addr, *(pd.pte));
     if (!page) {
@@ -764,6 +764,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
 
         BUG_ON(address < svm->priv->offset);
         dsm_request_page_pull(svm->dsm, svm, page, address, vma->vm_mm, mr);
+
         release_svm(svm);
         if (PageSwapCache(page))
             try_to_free_swap(page);

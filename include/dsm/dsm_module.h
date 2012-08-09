@@ -68,6 +68,7 @@ struct page_pool_ele * create_new_page_pool_element_from_page(
 void release_ppe(struct conn_element *, struct tx_buf_ele *);
 void release_tx_element(struct conn_element *, struct tx_buf_ele *);
 void release_tx_element_reply(struct conn_element *, struct tx_buf_ele *);
+void try_release_tx_element(struct conn_element *, struct tx_buf_ele *);
 int setup_recv_wr(struct conn_element *);
 int refill_recv_wr(struct conn_element *, struct rx_buf_ele *);
 void reg_rem_info(struct conn_element *);

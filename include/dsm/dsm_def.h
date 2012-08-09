@@ -322,6 +322,7 @@ struct tx_buf_ele {
 
     struct tx_callback callback;
     atomic_t used;
+    atomic_t released;
 };
 
 struct rx_buf_ele {

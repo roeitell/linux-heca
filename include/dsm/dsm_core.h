@@ -103,6 +103,7 @@ int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
         unsigned long);
 void dsm_release_pull_dpc(struct dsm_page_cache **);
 int dsm_pull_req_failure(struct dsm_page_cache *, unsigned long);
+int init_dsm_page_buffer(void);
 
 /* svm_descriptors */
 void dsm_init_descriptors(void);

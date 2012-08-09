@@ -34,7 +34,7 @@ void release_dsm_request(struct dsm_request *req)
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
-    trace_queued_request(0, 0, 0, 0, req->addr, req->type);
+    trace_queued_request(0, 0, 0, 0, req->addr, req->type, -1);
     llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     schedule_delayed_request_flush(ele);
 }
@@ -181,7 +181,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
             trace_send_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,
-                        ret, ret, addr, tag);
+                        tx_e->id, tx_e->dsm_buf->offset, addr, tag);
             goto out;
         }
     }
@@ -350,7 +350,7 @@ fail:
             switch (msg->type) {
                 case REQUEST_PAGE: {
                     if (msg->dest_id) {
-                        memcpy(tx_e->dsm_buf, msg, sizeof(struct dsm_message));
+                        dsm_msg_cpy(tx_e->dsm_buf, msg);
                         tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
                         tx_e->wrk_req->dst_addr = NULL;
                         tx_e->callback.func = NULL;
@@ -423,7 +423,6 @@ retry:
         case SVM_STATUS_UPDATE:
         case PAGE_REQUEST_REDIRECT:
         case PAGE_REQUEST_FAIL:
-
         case ACK:
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);

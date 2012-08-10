@@ -944,13 +944,11 @@ retry:
     }
 
 
-    /* prefetch *
+    /* prefetch */
     if ((dpc->tag == PULL_TAG) && (flags & FAULT_FLAG_ALLOW_RETRY)) {
         int max_retry = 20;
         int cont_back = 1;
         int cont_forward = 1;
-
-        * we want here an optimisation for the nowait option *
         j = 1;
         do {
             if (cont_forward == 1)
@@ -972,7 +970,7 @@ retry:
         } while ((j < max_retry) && (cont_back == 1 || cont_forward == 1));
 
     }
-    */
+
 /*
  * KVM will send a NOWAIT flag and will freeze the faulting thread itself,
  * so we just re-throw immediately. Otherwise, we wait until the bitlock is

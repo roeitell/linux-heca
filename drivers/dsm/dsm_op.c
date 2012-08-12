@@ -17,11 +17,6 @@ static inline int get_nb_rx_buff_elements(struct conn_element *ele)
     return ele->qp_attr.cap.max_recv_wr;
 }
 
-static inline int get_page_pool_size(struct conn_element *ele)
-{
-    return (get_nb_rx_buff_elements(ele) + get_nb_tx_buff_elements(ele)) << 1;
-}
-
 int get_max_pushed_reqs(struct conn_element *ele)
 {
     return get_nb_tx_buff_elements(ele) << 2;
@@ -346,38 +341,6 @@ static void format_rdma_info(struct conn_element *ele)
     ele->rid.send_buf->rkey_msg = htonl(ele->mr->rkey);
     ele->rid.send_buf->rkey_rx = htonl(ele->mr->rkey);
     ele->rid.send_buf->flag = RDMA_INFO_CL;
-}
-
-static int create_new_empty_page_pool_element(struct conn_element *ele)
-{
-    struct page_pool *pp = &ele->page_pool;
-    struct page_pool_ele *ppe;
-
-    ppe = kmalloc(sizeof(struct page_pool_ele), GFP_ATOMIC);
-    if (!ppe)
-        return -1;
-    memset(ppe, 0, sizeof(struct page_pool_ele));
-    llist_add(&ppe->llnode, &pp->page_empty_pool_list);
-
-    return 0;
-}
-
-static int create_page_pool(struct conn_element *ele)
-{
-    int ret = 0;
-    int i;
-    struct page_pool * pp = &ele->page_pool;
-
-    spin_lock_init(&pp->page_pool_empty_list_lock);
-
-    init_llist_head(&pp->page_empty_pool_list);
-
-    for (i = 0; i < get_page_pool_size(ele); i++) {
-        ret = create_new_empty_page_pool_element(ele);
-        if (ret)
-            break;
-    }
-    return ret;
 }
 
 /**
@@ -786,25 +749,6 @@ void reg_rem_info(struct conn_element *ele)
     ele->rid.remote_info->flag = ele->rid.recv_buf->flag;
 }
 
-void release_ppe(struct conn_element *ele, struct tx_buf_ele *tx_e)
-{
-    struct page_pool *pp = &ele->page_pool;
-    struct page_pool_ele *ppe;
-
-    if (likely(tx_e->wrk_req->dst_addr)) {
-        ppe = (struct page_pool_ele *) tx_e->wrk_req->dst_addr;
-        if (ppe->page_buf) {
-            ib_dma_unmap_page(ele->cm_id->device, (u64) ppe->page_buf,
-                    PAGE_SIZE, DMA_BIDIRECTIONAL);
-            ppe->page_buf = NULL;
-        }
-        if (ppe->mem_page)
-            page_cache_release(ppe->mem_page);
-        llist_add(&ppe->llnode, &pp->page_empty_pool_list);
-        tx_e->wrk_req->dst_addr = NULL;
-    }
-}
-
 /*
  * Called once the two nodes have exchanged their rdma info
  * Getting the RX buffer prepared to receiving messages from remote node
@@ -861,13 +805,15 @@ unsigned int inet_addr(char *addr)
 
 void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
         u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr,
-        struct page *page, u16 type, struct dsm_page_cache *dpc)
+        struct page *page, u16 type, struct dsm_page_cache *dpc,
+        struct page_pool_ele *ppe)
 {
     struct dsm_message *msg = tx_e->dsm_buf;
-    struct page_pool_ele *ppe = create_new_page_pool_element_from_page(ele,
-            page);
 
-    BUG_ON(!ppe);
+    if (!ppe)
+        ppe = dsm_prepare_ppe(ele, page);
+    BUG_ON(!ppe); /* TODO: Handle gracefully */
+
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->wrk_req->dpc = dpc;
 
@@ -899,43 +845,6 @@ void create_page_pull_request(struct conn_element *ele,
     msg->type = REQUEST_PAGE_PULL;
 }
 
-struct page_pool_ele *get_empty_page_ele(struct conn_element *ele)
-{
-    struct page_pool_ele *ppe = NULL;
-    struct page_pool *pp = &ele->page_pool;
-    struct llist_node *llnode = NULL;
-
-    do {
-        while (llist_empty(&pp->page_empty_pool_list))
-            cond_resched();
-
-        spin_lock(&pp->page_pool_empty_list_lock);
-        llnode = llist_del_first(&pp->page_empty_pool_list);
-        spin_unlock(&pp->page_pool_empty_list_lock);
-    } while (!llnode);
-
-    ppe = container_of(llnode, struct page_pool_ele, llnode);
-
-    return ppe;
-}
-
-struct page_pool_ele *create_new_page_pool_element_from_page(
-        struct conn_element *ele, struct page *page)
-{
-    struct page_pool_ele *ppe;
-
-    BUG_ON(!page);
-    ppe = get_empty_page_ele(ele);
-    ppe->mem_page = page;
-    ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device, ppe->mem_page,
-            0, PAGE_SIZE, DMA_BIDIRECTIONAL);
-    if (ib_dma_mapping_error(ele->cm_id->device,
-            (u64) (unsigned long) ppe->page_buf))
-        return NULL;
-
-    return ppe;
-}
-
 int setup_connection(struct conn_element *ele, int type)
 {
     int ret = 0, err = 0;
@@ -956,7 +865,7 @@ int setup_connection(struct conn_element *ele, int type)
         goto err5;
     if (create_rx_buffer(ele))
         goto err6;
-    if (create_page_pool(ele))
+    if (dsm_init_page_pool(ele))
         goto err7;
     if (create_rdma_info(ele))
         goto err8;
@@ -1107,6 +1016,8 @@ int destroy_connection(struct conn_element *ele)
         rdma_destroy_id(ele->cm_id);
     }
 
+    /* destroy page pool! */
+
     erase_rb_conn(ele);
     delete_connection_sysfs_entry(&ele->sysfs);
     vfree(ele);
@@ -1172,7 +1083,7 @@ void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
 
 /*
  * We dec page's refcount for every missing remote response (it would have
- * happened in release_ppe after sending an answer to remote svm)
+ * happened in dsm_ppe_clear_release after sending an answer to remote svm)
  */
 void surrogate_push_remote_svm(struct subvirtual_machine *svm,
         struct subvirtual_machine *remote_svm)
@@ -1257,7 +1168,7 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
             dsm_pull_req_failure(dpc, addr);
             tx_e->wrk_req->dst_addr->mem_page = NULL;
             dsm_release_pull_dpc(&dpc);
-            release_ppe(ele, tx_e);
+            dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
 
             /* rdma processing already finished, we have to release ourselves */
             smp_mb();

@@ -558,7 +558,7 @@ retry:
     /*
      * refcount is as follows:
      *  1 for being in dpc (released upon dealloc)
-     *  1 for every svm sent to (released on release_ppe)
+     *  1 for every svm sent to (released on dsm_ppe_clear_release)
      */
     page_cache_get(page);
     for_each_valid_svm(svms, i) {

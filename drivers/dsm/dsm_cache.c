@@ -5,6 +5,7 @@
  */
 
 #include <dsm/dsm_module.h>
+#include <dsm/dsm_trace.h>
 
 static struct kmem_cache *dsm_cache_kmem;
 
@@ -146,4 +147,168 @@ struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
     return dpc;
 }
 EXPORT_SYMBOL(dsm_cache_release);
+
+
+/*
+ * Page pool
+ * TODO: percpu, numa, preemption instead of locking, separate work structs
+ */
+static inline int dsm_map_page_in_ppe(struct page_pool_ele *ppe,
+        struct page *page, struct conn_element *ele)
+{
+    ppe->mem_page = page;
+    ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device,
+            ppe->mem_page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
+    return ib_dma_mapping_error(ele->cm_id->device,
+            (u64) (unsigned long) ppe->page_buf);
+}
+
+static inline void dsm_release_ppe(struct conn_element *ele,
+        struct page_pool_ele *ppe)
+{
+    llist_add(&ppe->llnode, &ele->page_pool_elements);
+}
+
+static inline struct page_pool_ele *dsm_get_ppe(struct conn_element *ele)
+{
+    struct llist_node *llnode = NULL;
+    struct page_pool_ele *ppe;
+
+    do {
+        while (llist_empty(&ele->page_pool_elements))
+            cond_resched();
+
+        spin_lock(&ele->page_pool_elements_lock);
+        llnode = llist_del_first(&ele->page_pool_elements);
+        spin_unlock(&ele->page_pool_elements_lock);
+    } while (!llnode);
+
+    ppe = container_of(llnode, struct page_pool_ele, llnode);
+    return ppe;
+}
+
+static void dsm_page_pool_refill(struct work_struct *work)
+{
+    struct dsm_page_pool *pp = container_of(work, struct dsm_page_pool, work);
+    struct conn_element *ele = pp->ele;
+    int i = 0;
+
+    mutex_lock(&ele->page_pool->lock);
+    while (ele->page_pool->head) {
+        struct page_pool_ele *ppe;
+        struct page *page;
+
+        ppe = dsm_get_ppe(ele);
+        if (!ppe)
+            break;
+
+        page = alloc_pages_current(GFP_HIGHUSER_MOVABLE, 0);
+        if (!page) {
+            dsm_release_ppe(ele, ppe);
+            break;
+        }
+
+        if (dsm_map_page_in_ppe(ppe, page, ele)) {
+            page_cache_release(page);
+            dsm_release_ppe(ele, ppe);
+            break;
+        }
+
+        ele->page_pool->buf[--ele->page_pool->head] = ppe;
+        trace_page_pool_head(ele->page_pool->head);
+
+        if (i++ == DSM_PAGE_POOL_SZ / 10)
+            break;
+    }
+    mutex_unlock(&ele->page_pool->lock);
+
+    if (ele->page_pool->head)
+        schedule_work(&ele->page_pool->work);
+}
+
+int dsm_init_page_pool(struct conn_element *ele)
+{
+    int i;
+
+    /* init elements list */
+    spin_lock_init(&ele->page_pool_elements_lock);
+    init_llist_head(&ele->page_pool_elements);
+    for (i = 0; i < DSM_PAGE_POOL_SZ * 2; i++) {
+        struct page_pool_ele *ppe = kzalloc(sizeof(struct page_pool_ele),
+                GFP_ATOMIC);
+        if (!ppe)
+            goto nomem;
+        llist_add(&ppe->llnode, &ele->page_pool_elements);
+    }
+
+    /* init page pool */
+    ele->page_pool = kzalloc(sizeof(struct dsm_page_pool), GFP_ATOMIC);
+    if (!ele->page_pool)
+        goto nomem;
+
+    mutex_init(&ele->page_pool->lock);
+    ele->page_pool->head = DSM_PAGE_POOL_SZ;
+    trace_page_pool_head(ele->page_pool->head);
+    ele->page_pool->ele = ele; /* for container_of(work_struct) */
+    INIT_WORK(&ele->page_pool->work, dsm_page_pool_refill);
+    flush_work(&ele->page_pool->work);
+    return 0;
+
+nomem:
+    while (!llist_empty(&ele->page_pool_elements)) {
+        struct llist_node *llnode = llist_del_first(&ele->page_pool_elements);
+        struct page_pool_ele *ppe = container_of(llnode, struct page_pool_ele,
+                llnode);
+        kfree(ppe);
+    }
+    return -EFAULT;
+}
+
+struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *ele)
+{
+    struct page_pool_ele *ppe = NULL;
+
+    /* outer check is a hint to escape lock */
+    if (ele->page_pool->head < DSM_PAGE_POOL_SZ) {
+        mutex_lock(&ele->page_pool->lock);
+        if (ele->page_pool->head < DSM_PAGE_POOL_SZ) {
+            ppe = ele->page_pool->buf[ele->page_pool->head++];
+            trace_page_pool_head(ele->page_pool->head);
+        }
+        mutex_unlock(&ele->page_pool->lock);
+    }
+
+    schedule_work(&ele->page_pool->work);
+
+    return ppe;
+}
+
+struct page_pool_ele *dsm_prepare_ppe(struct conn_element *ele,
+        struct page *page)
+{
+    struct page_pool_ele *ppe;
+
+    ppe = dsm_get_ppe(ele);
+    if (dsm_map_page_in_ppe(ppe, page, ele))
+        goto err;
+
+    return ppe;
+
+err:
+    dsm_release_ppe(ele, ppe);
+    return NULL;
+}
+
+void dsm_ppe_clear_release(struct conn_element *ele, struct page_pool_ele **ppe)
+{
+    if ((*ppe)->page_buf) {
+        ib_dma_unmap_page(ele->cm_id->device, (u64) (*ppe)->page_buf,
+                PAGE_SIZE, DMA_BIDIRECTIONAL);
+        (*ppe)->page_buf = NULL;
+    }
+    if ((*ppe)->mem_page)
+        page_cache_release((*ppe)->mem_page);
+    dsm_release_ppe(ele, *ppe);
+    *ppe = NULL;
+}
 

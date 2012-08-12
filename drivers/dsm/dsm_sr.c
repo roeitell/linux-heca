@@ -43,7 +43,7 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
         u16 type, struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, uint64_t addr,
         int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
-        struct page *page)
+        struct page *page, struct page_pool_ele *ppe)
 {
     if (!req) {
         req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
@@ -59,6 +59,7 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
     req->func = func;
     req->dpc = dpc;
     req->page = page;
+    req->ppe = ppe;
     queue_dsm_request(ele, req);
 
     return 0;
@@ -121,7 +122,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
         } else {
             BUG_ON(!reqs[i]);
             r |= add_dsm_request(reqs[i], svms.pp[i]->ele, REQUEST_PAGE_PULL,
-                    fault_svm, svms.pp[i], addr, NULL, NULL, NULL);
+                    fault_svm, svms.pp[i], addr, NULL, NULL, NULL, NULL);
         }
     }
 
@@ -164,7 +165,8 @@ out:
 
 int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         struct subvirtual_machine *fault_svm, uint64_t addr,
-        int (*func)(struct tx_buf_ele *), int tag, struct dsm_page_cache *dpc)
+        int (*func)(struct tx_buf_ele *), int tag, struct dsm_page_cache *dpc,
+        struct page_pool_ele *ppe)
 {
     struct conn_element *ele = remote_svm->ele;
     struct tx_buf_ele *tx_e;
@@ -176,7 +178,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         if (tx_e) {
             create_page_request(ele, tx_e, fault_svm->dsm->dsm_id,
                     fault_svm->svm_id, remote_svm->svm_id, addr, page, req_tag,
-                    dpc);
+                    dpc, ppe);
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
@@ -187,7 +189,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
     }
 
     ret = add_dsm_request(NULL, ele, req_tag, fault_svm, remote_svm,
-            addr, func, dpc, page);
+            addr, func, dpc, page, ppe);
     BUG_ON(ret); /* FIXME: Handle req alloc failure */
 
 out: 
@@ -246,7 +248,7 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
     int ret = 0;
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
-    release_ppe(ele, tx_e);
+    dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
     release_tx_element(ele, tx_e);
 
     svm = find_svm(dpc->svm->dsm, redirect_svm_id);
@@ -254,7 +256,7 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
         trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
                 svm->dsm->dsm_id, svm->svm_id, req_addr, dpc->tag);
         ret = request_dsm_page(page, svm, dpc->svm, req_addr, func, dpc->tag,
-                dpc);
+                dpc, NULL);
     } else
         ret = -1;
 
@@ -269,7 +271,7 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
 int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
     if (!tx_e->callback.func || tx_e->callback.func(tx_e))
-        release_ppe(ele, tx_e);
+        dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
     return 0;
 }
 
@@ -322,8 +324,9 @@ retry:
     if (unlikely(!page))
         goto fail;
 
-    ppe = create_new_page_pool_element_from_page(ele, page);
-    BUG_ON(!ppe);
+    ppe = dsm_prepare_ppe(ele, page);
+    if (!ppe)
+        goto fail;
 
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
@@ -339,8 +342,6 @@ retry:
 no_svm: 
     send_svm_status_update(ele, rx_buf_e);
 fail: 
-
-
     if (tx_e)
         release_tx_element_reply(ele, tx_e);
     r = -EINVAL;

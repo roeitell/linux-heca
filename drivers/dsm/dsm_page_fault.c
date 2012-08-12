@@ -14,66 +14,6 @@
 static struct kmem_cache *dsm_delayed_fault_cache_kmem;
 unsigned long zero_dsm_pfn __read_mostly;
 
-/* TODO: percpu, numa, preemption instead of locking, separate work structs */
-#define DSM_PAGE_BUFFER_SZ 1000
-static struct page *dsm_page_buffer[DSM_PAGE_BUFFER_SZ];
-static int dsm_page_buffer_head;
-static struct work_struct dsm_page_buffer_work;
-static struct mutex dsm_page_buffer_lock;
-
-static void dsm_page_buffer_refill(struct work_struct *work)
-{
-    int i = 0;
-
-    mutex_lock(&dsm_page_buffer_lock);
-    while (dsm_page_buffer_head) {
-        dsm_page_buffer[dsm_page_buffer_head-1] = alloc_pages_current(
-                GFP_KERNEL, 0);
-        if (dsm_page_buffer[dsm_page_buffer_head])
-            dsm_page_buffer_head--;
-        else
-            break;
-
-        if (i++ == DSM_PAGE_BUFFER_SZ / 10)
-            break;
-    }
-    mutex_unlock(&dsm_page_buffer_lock);
-
-    if (dsm_page_buffer_head)
-        schedule_work(&dsm_page_buffer_work);
-}
-
-int init_dsm_page_buffer(void)
-{
-    mutex_init(&dsm_page_buffer_lock);
-    dsm_page_buffer_head = DSM_PAGE_BUFFER_SZ - 1;
-    INIT_WORK(&dsm_page_buffer_work, dsm_page_buffer_refill);
-    flush_work(&dsm_page_buffer_work);
-
-    return 0;
-}
-
-static inline struct page *dsm_alloc_page(struct vm_area_struct *vma,
-        unsigned long addr)
-{
-    struct page *page = NULL;
-
-    /* outer check is a hint to escape lock */
-    if (dsm_page_buffer_head < DSM_PAGE_BUFFER_SZ) {
-        mutex_lock(&dsm_page_buffer_lock);
-        if (dsm_page_buffer_head < DSM_PAGE_BUFFER_SZ)
-            page = dsm_page_buffer[dsm_page_buffer_head++];
-        mutex_unlock(&dsm_page_buffer_lock);
-    }
-
-    if (!page)
-        page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
-
-    schedule_work(&dsm_page_buffer_work);
-
-    return page;
-}
-
 void init_dsm_prefetch_cache_kmem(void)
 {
     dsm_delayed_fault_cache_kmem = kmem_cache_create("dsm_delayed_fault_cache",
@@ -285,7 +225,7 @@ gotten:
         if (!new_page)
             goto oom;
     } else {
-        new_page = dsm_alloc_page(vma, address);
+        new_page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, address);
         if (!new_page)
             goto oom;
         cow_user_page(new_page, old_page, address, vma);
@@ -556,15 +496,19 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
     return r;
 }
 
-struct page *dsm_get_remote_page(struct vm_area_struct *vma,
+static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
         unsigned long addr, struct dsm_page_cache *dpc,
         struct subvirtual_machine *fault_svm,
-        struct subvirtual_machine *remote_svm, int tag, int i)
+        struct subvirtual_machine *remote_svm, int tag, int i,
+        struct page_pool_ele *ppe)
 {
     struct page *page = NULL;
 
-    if (!dpc->pages[i])
-        dpc->pages[i] = dsm_alloc_page(vma, addr);
+    if (!dpc->pages[i]) {
+        ppe = dsm_fetch_ready_ppe(remote_svm->ele);
+        dpc->pages[i] = ppe ?
+            ppe->mem_page : alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
+    }
     page = dpc->pages[i];
     if (unlikely(!page))
         goto out;
@@ -575,7 +519,7 @@ struct page *dsm_get_remote_page(struct vm_area_struct *vma,
     BUG_ON(addr < fault_svm->priv->offset);
     request_dsm_page(page, remote_svm, fault_svm,
             (uint64_t) (addr - fault_svm->priv->offset), dsm_pull_req_complete,
-            tag, dpc);
+            tag, dpc, ppe);
 
 out:
     return page;
@@ -615,7 +559,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
                 BUG_ON(addr < fault_svm->priv->offset);
                 request_dsm_page(new_dpc->pages[0], svms.pp[i], fault_svm,
                         (uint64_t) (addr - fault_svm->priv->offset), NULL,
-                        PULL_TRY_TAG, NULL);
+                        PULL_TRY_TAG, NULL, NULL);
             }
             return new_dpc;
         }
@@ -635,6 +579,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
 {
     struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
     struct page *page = NULL;
+    struct page_pool_ele *ppe = NULL;
     int r;
 
     trace_dsm_cache_add_send(fault_svm->dsm->dsm_id, fault_svm->svm_id, 0, 0,
@@ -645,17 +590,23 @@ static struct dsm_page_cache *dsm_cache_add_send(
         if (unlikely(found_dpc))
             goto fail;
 
-        if (!new_dpc) {
+        if (likely(!new_dpc)) {
             new_dpc = dsm_alloc_dpc(fault_svm, norm_addr, svms,
                     svms.num + nproc, tag);
             if (!new_dpc)
                 goto fail;
         }
 
-        if (!page) {
-            page = dsm_alloc_page(vma, norm_addr);
-            if (!page)
-                goto fail;
+        if (likely(!page)) {
+            if (likely(svms.pp[0]))
+                ppe = dsm_fetch_ready_ppe(svms.pp[0]->ele);
+            if (ppe) {
+                page = ppe->mem_page;
+            } else {
+                page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, norm_addr);
+                if (unlikely(!page))
+                    goto fail;
+            }
             __set_page_locked(page);
             SetPageSwapBacked(page);
             new_dpc->pages[0] = page;
@@ -677,7 +628,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
             }
             for_each_valid_svm(svms, r) {
                 dsm_get_remote_page(vma, norm_addr, new_dpc, fault_svm,
-                        svms.pp[r], tag, r);
+                        svms.pp[r], tag, r, r == 0 ? ppe : NULL);
             }
             return new_dpc;
         }
@@ -688,7 +639,10 @@ fail:
         if (page) {
             ClearPageSwapBacked(page);
             unlock_page(page);
-            page_cache_release(page);
+            if (ppe)
+                dsm_ppe_clear_release(svms.pp[0]->ele, &ppe);
+            else
+                page_cache_release(page);
         }
         dsm_dealloc_dpc(&new_dpc);
     }

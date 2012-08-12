@@ -145,17 +145,6 @@ struct rdma_info_data {
     int exchanged;
 };
 
-struct page_pool_ele {
-    void * page_buf;
-    struct page * mem_page;
-    struct llist_node llnode;
-};
-
-struct page_pool {
-    struct llist_head page_empty_pool_list;
-    spinlock_t page_pool_empty_list_lock;
-};
-
 struct rx_buffer {
     struct rx_buf_ele *rx_buf;
     int len;
@@ -177,6 +166,21 @@ struct tx_buffer {
     struct work_struct delayed_request_flush_work;
 };
 
+#define DSM_PAGE_POOL_SZ 1000
+struct page_pool_ele {
+    void *page_buf;
+    struct page *mem_page;
+    struct llist_node llnode;
+};
+
+struct dsm_page_pool {
+    int cpu;
+    struct page_pool_ele *buf[DSM_PAGE_POOL_SZ];
+    int head;
+    struct conn_element *ele;
+    struct work_struct work;
+};
+
 struct conn_element {
     struct rcm *rcm;
     /* not 100% sur of this atomic regarding barrier*/
@@ -195,14 +199,16 @@ struct conn_element {
     struct rx_buffer rx_buffer;
     struct tx_buffer tx_buffer;
 
-    struct page_pool page_pool;
+    void *page_pool;
+    struct llist_head page_pool_elements;
+    spinlock_t page_pool_elements_lock;
+
     struct rb_node rb_node;
 
     struct con_element_sysfs sysfs;
 
     struct completion completion;
     struct work_struct delayed_request_flush_work;
-
 };
 
 struct rdma_info {
@@ -286,7 +292,7 @@ struct msg_work_request {
 };
 
 struct recv_work_req_ele {
-    struct conn_element * ele;
+    struct conn_element *ele;
     struct ib_recv_wr sq_wr;
     struct ib_recv_wr *bad_wr;
     struct ib_sge recv_sgl;
@@ -339,6 +345,7 @@ struct dsm_request {
     u32 local_svm_id;
     u32 remote_svm_id;
     struct page *page;
+    struct page_pool_ele *ppe;
     uint64_t addr;
     int (*func)(struct tx_buf_ele *);
     struct dsm_message dsm_buf;
@@ -370,7 +377,7 @@ struct dsm_page_cache {
     unsigned long addr;
     u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
-    struct page *pages[MAX_SVMS_PER_PAGE + 1];
+    struct page *pages[MAX_SVMS_PER_PAGE];
     struct svm_list svms;
     /* memory barrier are ok with these atomic */
     atomic_t found;

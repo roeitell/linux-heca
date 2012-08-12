@@ -61,7 +61,7 @@ static int process_dsm_request(struct conn_element *ele,
         case TRY_REQUEST_PAGE:
             create_page_request(ele, tx_e, req->dsm_id, req->local_svm_id,
                     req->remote_svm_id, req->addr, req->page, req->type,
-                    req->dpc);
+                    req->dpc, req->ppe);
             break;
         case REQUEST_PAGE_PULL:
             create_page_pull_request(ele, tx_e, req->dsm_id, req->local_svm_id,
@@ -240,7 +240,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
             dsm_clear_swp_entry_flag(tx_buf_e->reply_work_req->mm,
                     tx_buf_e->reply_work_req->addr,
                     tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
-            release_ppe(ele, tx_buf_e);
+            dsm_ppe_clear_release(ele, &tx_buf_e->wrk_req->dst_addr);
             release_tx_element_reply(ele, tx_buf_e);
             break;
         case ACK:

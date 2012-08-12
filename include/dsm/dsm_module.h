@@ -55,7 +55,8 @@ int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element *);
 void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32,
-        u32, uint64_t, struct page*, u16, struct dsm_page_cache *);
+        u32, uint64_t, struct page*, u16, struct dsm_page_cache *,
+        struct page_pool_ele *);
 void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32,
         u32, u32, uint64_t);
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *);
@@ -63,8 +64,6 @@ struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *);
 int create_connection(struct rcm *, struct svm_data *);
 int setup_connection(struct conn_element *, int);
 int connect_client(struct rdma_cm_id *);
-struct page_pool_ele * create_new_page_pool_element_from_page(
-        struct conn_element *, struct page *);
 void release_ppe(struct conn_element *, struct tx_buf_ele *);
 void release_tx_element(struct conn_element *, struct tx_buf_ele *);
 void release_tx_element_reply(struct conn_element *, struct tx_buf_ele *);
@@ -142,7 +141,7 @@ int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
         struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
-        int, struct dsm_page_cache *);
+        int, struct dsm_page_cache *, struct page_pool_ele *);
 int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct page *, unsigned long, struct mm_struct *,
         struct memory_region *);

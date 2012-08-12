@@ -127,7 +127,6 @@ DECLARE_EVENT_CLASS(dsm_tx_template,
 
 DEFINE_EVENT(dsm_tx_template, tx_e_acquire, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_tx_template, tx_e_release, TP_PROTO(int id), TP_ARGS(id));
-DEFINE_EVENT(dsm_tx_template, page_pool_head, TP_PROTO(int id), TP_ARGS(id));
 
 #endif
 

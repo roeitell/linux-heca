@@ -416,7 +416,6 @@ static int dsm_pull_req_success(struct page *page,
     BUG();
 
 unlock:
-
     found = atomic_read(&dpc->found);
     if (found < 0) {
         if (atomic_cmpxchg(&dpc->found, found, i) != found)
@@ -575,7 +574,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
         struct subvirtual_machine *fault_svm, struct svm_list svms,
         unsigned long norm_addr, int nproc, int tag,
         struct vm_area_struct *vma, struct mm_struct *mm,
-         pte_t orig_pte, pte_t *page_table)
+        pte_t orig_pte, pte_t *page_table, int alloc)
 {
     struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
     struct page *page = NULL;
@@ -602,10 +601,12 @@ static struct dsm_page_cache *dsm_cache_add_send(
                 ppe = dsm_fetch_ready_ppe(svms.pp[0]->ele);
             if (ppe) {
                 page = ppe->mem_page;
-            } else {
+            } else if (alloc) {
                 page = alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, norm_addr);
                 if (unlikely(!page))
                     goto fail;
+            } else {
+                goto fail;
             }
             __set_page_locked(page);
             SetPageSwapBacked(page);
@@ -710,7 +711,8 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                     if (tag == PREFETCH_TAG) {
                         int i;
                         /*
-                         * we check if we are running out of space in the QPs first in order to bail out early
+                         * we check if we are running out of space in the QPs
+                         * first in order to bail out early
                          */
                         for_each_valid_svm(dsd.svms, i) {
                             if (!request_queue_empty(dsd.svms.pp[i]->ele)) {
@@ -724,7 +726,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                      *  +1 for the fault that comes after fetching
                      */
                     dsm_cache_add_send(fault_svm, dsd.svms, norm_addr, 2, tag,
-                            vma, mm, pte_entry, pte);
+                            vma, mm, pte_entry, pte, tag != PREFETCH_TAG);
                     ret = 1;
                 }
             }
@@ -883,7 +885,7 @@ retry:
          *  +1 for the final, successful do_dsm_page_fault
          */
         dpc = dsm_cache_add_send(fault_svm, dsd.svms, norm_addr, 3, PULL_TAG,
-                vma, mm, orig_pte, page_table);
+                vma, mm, orig_pte, page_table, 1);
         if (unlikely(!dpc)) {
             page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
             if (likely(pte_same(*page_table, orig_pte)))
@@ -904,7 +906,6 @@ retry:
         int cont_back = 1;
         int cont_forward = 1;
 
-        * we want here an optimisation for the nowait option *
         j = 1;
         do {
             if (cont_forward == 1)
@@ -924,7 +925,6 @@ retry:
             }
             j++;
         } while ((j < max_retry) && (cont_back == 1 || cont_forward == 1));
-
     }
     */
 /*

@@ -5,7 +5,6 @@
  */
 
 #include <dsm/dsm_module.h>
-#include <dsm/dsm_trace.h>
 
 static struct kmem_cache *dsm_cache_kmem;
 
@@ -72,7 +71,6 @@ struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
     rcu_read_lock();
 
 repeat:
-
     dpc = NULL;
     ppc = radix_tree_lookup_slot(&svm->page_cache, addr);
     if (ppc) {
@@ -89,9 +87,7 @@ repeat:
     }
 
 out:
-
     rcu_read_unlock();
-
     return dpc;
 }
 
@@ -151,7 +147,11 @@ EXPORT_SYMBOL(dsm_cache_release);
 
 /*
  * Page pool
- * TODO: percpu, numa, preemption instead of locking, separate work structs
+ *
+ * Currently doesn't consider user-defined numa policy, as the page pool is
+ * attached to a conn_element, and not to a local svm.
+ * Also, page pool sizes are currently bloated.
+ *
  */
 static inline int dsm_map_page_in_ppe(struct page_pool_ele *ppe,
         struct page *page, struct conn_element *ele)
@@ -169,7 +169,7 @@ static inline void dsm_release_ppe(struct conn_element *ele,
     llist_add(&ppe->llnode, &ele->page_pool_elements);
 }
 
-static inline struct page_pool_ele *dsm_get_ppe(struct conn_element *ele)
+static struct page_pool_ele *dsm_get_ppe(struct conn_element *ele)
 {
     struct llist_node *llnode = NULL;
     struct page_pool_ele *ppe;
@@ -189,12 +189,13 @@ static inline struct page_pool_ele *dsm_get_ppe(struct conn_element *ele)
 
 static void dsm_page_pool_refill(struct work_struct *work)
 {
-    struct dsm_page_pool *pp = container_of(work, struct dsm_page_pool, work);
-    struct conn_element *ele = pp->ele;
-    int i = 0;
+    struct dsm_page_pool *pp;
+    struct conn_element *ele;
 
-    mutex_lock(&ele->page_pool->lock);
-    while (ele->page_pool->head) {
+    get_cpu();
+    pp = container_of(work, struct dsm_page_pool, work);
+    ele = pp->ele;
+    while (pp->head) {
         struct page_pool_ele *ppe;
         struct page *page;
 
@@ -214,16 +215,11 @@ static void dsm_page_pool_refill(struct work_struct *work)
             break;
         }
 
-        ele->page_pool->buf[--ele->page_pool->head] = ppe;
-        trace_page_pool_head(ele->page_pool->head);
-
-        if (i++ == DSM_PAGE_POOL_SZ / 10)
-            break;
+        pp->buf[--pp->head] = ppe;
     }
-    mutex_unlock(&ele->page_pool->lock);
-
-    if (ele->page_pool->head)
-        schedule_work(&ele->page_pool->work);
+    if (pp->head)
+        schedule_work_on(pp->cpu, &pp->work);
+    put_cpu();
 }
 
 int dsm_init_page_pool(struct conn_element *ele)
@@ -233,7 +229,7 @@ int dsm_init_page_pool(struct conn_element *ele)
     /* init elements list */
     spin_lock_init(&ele->page_pool_elements_lock);
     init_llist_head(&ele->page_pool_elements);
-    for (i = 0; i < DSM_PAGE_POOL_SZ * 2; i++) {
+    for (i = 0; i < DSM_PAGE_POOL_SZ * (NR_CPUS + 1); i++) {
         struct page_pool_ele *ppe = kzalloc(sizeof(struct page_pool_ele),
                 GFP_ATOMIC);
         if (!ppe)
@@ -242,16 +238,18 @@ int dsm_init_page_pool(struct conn_element *ele)
     }
 
     /* init page pool */
-    ele->page_pool = kzalloc(sizeof(struct dsm_page_pool), GFP_ATOMIC);
+    ele->page_pool = alloc_percpu(struct dsm_page_pool);
     if (!ele->page_pool)
         goto nomem;
 
-    mutex_init(&ele->page_pool->lock);
-    ele->page_pool->head = DSM_PAGE_POOL_SZ;
-    trace_page_pool_head(ele->page_pool->head);
-    ele->page_pool->ele = ele; /* for container_of(work_struct) */
-    INIT_WORK(&ele->page_pool->work, dsm_page_pool_refill);
-    flush_work(&ele->page_pool->work);
+    for_each_online_cpu(i) {
+        struct dsm_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
+        pp->head = DSM_PAGE_POOL_SZ;
+        pp->ele = ele; /* for container_of(work_struct) */
+        pp->cpu = i;
+        INIT_WORK(&pp->work, dsm_page_pool_refill);
+        schedule_work_on(i, &pp->work);
+    }
     return 0;
 
 nomem:
@@ -266,19 +264,16 @@ nomem:
 
 struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *ele)
 {
+    struct dsm_page_pool *pp;
     struct page_pool_ele *ppe = NULL;
+    int i;
 
-    /* outer check is a hint to escape lock */
-    if (ele->page_pool->head < DSM_PAGE_POOL_SZ) {
-        mutex_lock(&ele->page_pool->lock);
-        if (ele->page_pool->head < DSM_PAGE_POOL_SZ) {
-            ppe = ele->page_pool->buf[ele->page_pool->head++];
-            trace_page_pool_head(ele->page_pool->head);
-        }
-        mutex_unlock(&ele->page_pool->lock);
-    }
-
-    schedule_work(&ele->page_pool->work);
+    i = get_cpu();
+    pp = per_cpu_ptr(ele->page_pool, i);
+    if (pp->head < DSM_PAGE_POOL_SZ)
+        ppe = pp->buf[pp->head++];
+    schedule_work_on(i, &pp->work);
+    put_cpu();
 
     return ppe;
 }

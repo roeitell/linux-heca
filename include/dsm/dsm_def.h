@@ -174,11 +174,11 @@ struct page_pool_ele {
 };
 
 struct dsm_page_pool {
+    int cpu;
     struct page_pool_ele *buf[DSM_PAGE_POOL_SZ];
     int head;
     struct conn_element *ele;
     struct work_struct work;
-    struct mutex lock;
 };
 
 struct conn_element {
@@ -199,7 +199,7 @@ struct conn_element {
     struct rx_buffer rx_buffer;
     struct tx_buffer tx_buffer;
 
-    struct dsm_page_pool *page_pool;
+    void *page_pool;
     struct llist_head page_pool_elements;
     spinlock_t page_pool_elements_lock;
 
@@ -292,7 +292,7 @@ struct msg_work_request {
 };
 
 struct recv_work_req_ele {
-    struct conn_element * ele;
+    struct conn_element *ele;
     struct ib_recv_wr sq_wr;
     struct ib_recv_wr *bad_wr;
     struct ib_sge recv_sgl;

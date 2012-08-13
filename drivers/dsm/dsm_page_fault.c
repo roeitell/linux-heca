@@ -402,12 +402,10 @@ static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf,
 static int dsm_pull_req_success(struct page *page,
         struct dsm_page_cache *dpc, unsigned long addr)
 {
+
     int i, found;
-
-
     trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
-            addr, dpc->tag);
-
+                    addr, dpc->tag);
 
     for (i = 0; i < dpc->svms.num; i++) {
         if (dpc->pages[i] == page)
@@ -426,6 +424,8 @@ unlock:
             if (likely(dpc->pages[i]))
                 SetPageUptodate(dpc->pages[i]);
         }
+        trace_dsm_pull_req_success(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
+                        addr, dpc->tag);
         unlock_page(dpc->pages[0]);
         lru_add_drain();
 

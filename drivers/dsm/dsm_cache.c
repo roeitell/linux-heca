@@ -222,6 +222,32 @@ static void dsm_page_pool_refill(struct work_struct *work)
     put_cpu();
 }
 
+/* svms erased, cm_id destroyed, work cancelled => no race conditions */
+void dsm_destroy_page_pool(struct conn_element *ele)
+{
+    int i;
+    struct page_pool_ele *ppe;
+
+    /* destroy page pool */
+    for_each_online_cpu(i) {
+        struct dsm_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
+        cancel_work_sync(&pp->work); /* work offline, or spin_lock inside */
+        while (pp->head != DSM_PAGE_POOL_SZ) {
+            ppe = pp->buf[pp->head++];
+            if (ppe->mem_page)
+                page_cache_release(ppe->mem_page);
+            kfree(ppe);
+        }
+    }
+
+    /* destroy elements list */
+    while (!llist_empty(&ele->page_pool_elements)) {
+        struct llist_node *llnode = llist_del_first(&ele->page_pool_elements);
+        ppe = container_of(llnode, struct page_pool_ele, llnode);
+        kfree(ppe);
+    }
+}
+
 int dsm_init_page_pool(struct conn_element *ele)
 {
     int i;

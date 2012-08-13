@@ -6,6 +6,7 @@
  */
 
 #include <dsm/dsm_module.h>
+#include <dsm/dsm_trace.h>
 
 struct dsm_pte_data {
     struct vm_area_struct *vma;
@@ -14,6 +15,14 @@ struct dsm_pte_data {
     pmd_t *pmd;
     pte_t *pte;
 };
+
+#define DSM_CONGESTION_THRESHOLD 512 
+static unsigned long congestion = 0;
+inline int dsm_is_congested(void)
+{
+    trace_is_congested(congestion);
+    return congestion > DSM_CONGESTION_THRESHOLD;
+}
 
 inline void dsm_push_finish_notify(struct page *page)
 {
@@ -438,6 +447,7 @@ noop:
             write_sequnlock(&local_svm->push_cache_lock);
             dsm_dealloc_dpc(&dpc);
         }
+        congestion--;
     }
 
     *return_pte = pd.pte;
@@ -575,6 +585,7 @@ retry:
     TestSetPageWriteback(page);
 
     pte_unmap_unlock(pte, ptl);
+    congestion++;
     return 0;
     
 bad_page: 
@@ -597,6 +608,7 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
         page_cache_release(page);
     dsm_push_cache_release(svm, &dpc, 1);
 
+    congestion--;
     return 0;
 }
 EXPORT_SYMBOL(dsm_cancel_page_push);

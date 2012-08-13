@@ -12,6 +12,10 @@
 #include <linux/device.h>
 #include <trace/events/writeback.h>
 
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#include <linux/dsm_hook.h>
+#endif
+
 static atomic_long_t bdi_seq = ATOMIC_LONG_INIT(0);
 
 struct backing_dev_info default_backing_dev_info = {
@@ -856,14 +860,21 @@ long wait_iff_congested(struct zone *zone, int sync, long timeout)
 	unsigned long start = jiffies;
 	DEFINE_WAIT(wait);
 	wait_queue_head_t *wqh = &congestion_wqh[sync];
+    int dsm_congested = 0;
 
+#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+    {
+        const struct dsm_hook_struct *hook = dsm_hook_read();
+        dsm_congested = hook && hook->is_congested();
+    }
+#endif
 	/*
 	 * If there is no congestion, or heavy congestion is not being
 	 * encountered in the current zone, yield if necessary instead
 	 * of sleeping on the congestion queue
 	 */
-	if (atomic_read(&nr_bdi_congested[sync]) == 0 ||
-			!zone_is_reclaim_congested(zone)) {
+	if (!dsm_congested && (atomic_read(&nr_bdi_congested[sync]) == 0 ||
+			!zone_is_reclaim_congested(zone))) {
 		cond_resched();
 
 		/* In case we scheduled, work out time remaining */

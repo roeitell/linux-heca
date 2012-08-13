@@ -92,6 +92,7 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *,
 void dsm_push_finish_notify(struct page *);
 void dsm_push_cache_release(struct subvirtual_machine *,
         struct dsm_page_cache **, int);
+int dsm_is_congested(void);
 
 /* dsm_unmap.c */
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,

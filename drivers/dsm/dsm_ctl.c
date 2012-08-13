@@ -686,6 +686,7 @@ const struct dsm_hook_struct my_dsm_hook = {
     .name = "DSM",
     .fetch_page = dsm_swap_wrapper,
     .pushback_page = push_back_if_remote_dsm_page,
+    .is_congested = dsm_is_congested,
 };
 
 static int dsm_init(void)

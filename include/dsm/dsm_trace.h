@@ -118,15 +118,16 @@ DEFINE_EVENT(dsm_message_template, queued_request,
         TP_ARGS( dsm_id, svm_id, remote_dsm_id, remote_svm_id, address, type, tx_id));
 
 
-DECLARE_EVENT_CLASS(dsm_tx_template,
+DECLARE_EVENT_CLASS(dsm_basic_template,
         TP_PROTO(int id),
         TP_ARGS(id),
         TP_STRUCT__entry(__field(int, id)),
         TP_fast_assign(__entry->id = id;),
-        TP_printk("TX_E_ID: %d", __entry->id));
+        TP_printk(" %d", __entry->id));
 
-DEFINE_EVENT(dsm_tx_template, tx_e_acquire, TP_PROTO(int id), TP_ARGS(id));
-DEFINE_EVENT(dsm_tx_template, tx_e_release, TP_PROTO(int id), TP_ARGS(id));
+DEFINE_EVENT(dsm_basic_template, is_congested, TP_PROTO(int id), TP_ARGS(id));
+DEFINE_EVENT(dsm_basic_template, tx_e_acquire, TP_PROTO(int id), TP_ARGS(id));
+DEFINE_EVENT(dsm_basic_template, tx_e_release, TP_PROTO(int id), TP_ARGS(id));
 
 #endif
 

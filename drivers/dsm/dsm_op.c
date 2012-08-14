@@ -1016,7 +1016,7 @@ int destroy_connection(struct conn_element *ele)
         rdma_destroy_id(ele->cm_id);
     }
 
-    /* destroy page pool! */
+    dsm_destroy_page_pool(ele);
 
     erase_rb_conn(ele);
     delete_connection_sysfs_entry(&ele->sysfs);

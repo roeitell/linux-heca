@@ -67,6 +67,7 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *, unsigned long,
         struct svm_list, int, int);
 void dsm_dealloc_dpc(struct dsm_page_cache **);
 int dsm_init_page_pool(struct conn_element *);
+void dsm_destroy_page_pool(struct conn_element *);
 struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *);
 struct page_pool_ele *dsm_prepare_ppe(struct conn_element *, struct page *);
 void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);

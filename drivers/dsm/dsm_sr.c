@@ -275,6 +275,41 @@ int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
     return 0;
 }
 
+static void handle_page_request_fail(struct conn_element *ele,
+    struct dsm_message *msg, struct subvirtual_machine *remote_svm)
+{
+    struct tx_buf_ele *tx_e;
+    int r = -EINVAL, type;
+
+    switch (msg->type) {
+        case REQUEST_PAGE:
+            /* don't redirect if the calling node already re-claimed the page */
+            if (!msg->dest_id || msg->dest_id == remote_svm->svm_id)
+                return;
+            type = PAGE_REQUEST_REDIRECT;
+            break;
+        case TRY_REQUEST_PAGE:
+            type = PAGE_REQUEST_FAIL;
+            break;
+        default:
+            dsm_printk("Unhandled type: %d\n", msg->type);
+            return;
+    }
+
+    if (request_queue_empty(ele)) {
+        tx_e = try_get_next_empty_tx_ele(ele);
+        if (likely(tx_e)) {
+            dsm_msg_cpy(tx_e->dsm_buf, msg);
+            tx_e->dsm_buf->type = type;
+            tx_e->wrk_req->dst_addr = NULL;
+            tx_e->callback.func = NULL;
+            r = tx_dsm_send(ele, tx_e);
+        }
+    }
+    if (r)
+        add_dsm_request_msg(ele, type, msg);
+}
+
 int process_page_request(struct conn_element *ele,
         struct rx_buf_ele *rx_buf_e)
 {
@@ -284,7 +319,6 @@ int process_page_request(struct conn_element *ele,
     struct dsm *dsm;
     struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
-    int r ;
     struct dsm_message *msg = rx_buf_e->dsm_buf;
 
     dsm = find_dsm(msg->dsm_id);
@@ -344,55 +378,8 @@ no_svm:
 fail: 
     if (tx_e)
         release_tx_element_reply(ele, tx_e);
-    r = -EINVAL;
-    if (request_queue_empty(ele)) {
-        tx_e = try_get_next_empty_tx_ele(ele);
-        if (likely(tx_e)) {
-            switch (msg->type) {
-                case REQUEST_PAGE: {
-                    if (msg->dest_id) {
-                        dsm_msg_cpy(tx_e->dsm_buf, msg);
-                        tx_e->dsm_buf->type = PAGE_REQUEST_REDIRECT;
-                        tx_e->wrk_req->dst_addr = NULL;
-                        tx_e->callback.func = NULL;
-                        r = tx_dsm_send(ele, tx_e);
-                        break;
-                    }
-                }
-                case TRY_REQUEST_PAGE: {
-                    dsm_msg_cpy(tx_e->dsm_buf, msg);
-                    tx_e->dsm_buf->type = PAGE_REQUEST_FAIL;
-                    tx_e->wrk_req->dst_addr = NULL;
-                    tx_e->callback.func = NULL;
-                    r = tx_dsm_send(ele, tx_e);
-                    break;
-                }
-                default: {
-                    dsm_printk("Un-handled type : %d ", msg->type);
-                    r = 0;
-                    break;
-                }
 
-            }
-
-        }
-    }
-    if (r) {
-        switch (msg->type) {
-            case REQUEST_PAGE: {
-                add_dsm_request_msg(ele, PAGE_REQUEST_REDIRECT, msg);
-                break;
-            }
-            case TRY_REQUEST_PAGE: {
-                add_dsm_request_msg(ele, PAGE_REQUEST_FAIL, msg);
-                break;
-            }
-            default: {
-                dsm_printk("Un-handled type : %d ", msg->type);
-                break;
-            }
-        }
-    }
+    handle_page_request_fail(ele, msg, remote_svm);
 
     if (local_svm)
         release_svm(local_svm);
@@ -400,7 +387,6 @@ fail:
         release_svm(remote_svm);
 
     return -EINVAL;
-
 }
 
 /*

@@ -5,6 +5,7 @@
  */
 
 #include <dsm/dsm_module.h>
+#include <dsm/dsm_trace.h>
 
 static struct dsm_module_state *dsm_state;
 
@@ -70,7 +71,7 @@ inline void release_svm(struct subvirtual_machine *svm)
 {
     atomic_dec(&svm->refs);
     if (atomic_cmpxchg(&svm->refs, 1, 0) == 1) {
-        dsm_printk("freeing svm %d\n", svm->svm_id);
+        trace_release_svm(svm->svm_id);
         delete_svm_sysfs_entry(&svm->svm_sysfs.svm_kobject);
         synchronize_rcu();
         kfree(svm);

@@ -134,7 +134,6 @@ out:
 inline void dsm_push_cache_release(struct subvirtual_machine *svm,
         struct dsm_page_cache **dpc, int lock)
 {
-    page_cache_release((*dpc)->pages[0]);
     if (likely(lock)) {
         write_seqlock(&svm->push_cache_lock);
         rb_erase(&(*dpc)->rb_node, &svm->push_cache);
@@ -143,8 +142,12 @@ inline void dsm_push_cache_release(struct subvirtual_machine *svm,
         /* !lock only when traversing push_cache when removing svms */
         rb_erase(&(*dpc)->rb_node, &svm->push_cache);
     }
-    dsm_push_finish_notify((*dpc)->pages[0]);
+    if (likely((*dpc)->pages[0])) {
+        page_cache_release((*dpc)->pages[0]);
+        dsm_push_finish_notify((*dpc)->pages[0]);
+    }
     dsm_dealloc_dpc(dpc);
+    congestion--;
 }
 
 struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
@@ -229,6 +232,7 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
     swp_entry_t swp_e;
     struct dsm_swp_data dsd;
     struct dsm_page_cache *dpc =NULL;
+
     /* first time dealing with this addr? */
     if (pte_none(pte_entry))
         goto fault_page;
@@ -245,8 +249,8 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 
     /* not a swap entry or a migration entry, must be ours */
     BUG_ON(!is_dsm_entry(swp_e));
-    if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
-        BUG();
+    BUG_ON(swp_entry_to_dsm_data(swp_e, &dsd) < 0);
+
     // we check if we are already pulling
     dpc = dsm_cache_get(local_svm, addr);
     if (dpc)
@@ -372,7 +376,6 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     struct page *page;
     struct dsm_page_cache *dpc = NULL;
     pte_t pte_entry;
-    swp_entry_t swp_e;
     struct dsm_pte_data pd;
     int clear_pte_flag = 0, active = 0;
     spinlock_t *ptl = NULL;
@@ -383,9 +386,11 @@ retry:
         goto out;
 
     pte_entry = *(pd.pte);
-    dpc = dsm_push_cache_get(local_svm, addr, remote_svm);
-    if (unlikely(!dpc))
-        goto out;
+    if (likely(!dpc)) {
+        dpc = dsm_push_cache_get(local_svm, addr, remote_svm);
+        if (unlikely(!dpc))
+            goto out;
+    }
 
     page = dpc->pages[0];
     BUG_ON(!page);
@@ -415,39 +420,27 @@ retry:
         dec_mm_counter(mm, MM_ANONPAGES);
         pte_unmap_unlock(pd.pte, ptl);
         unlock_page(page);
+
+    /* racing with the first response */
+    } else if (unlikely(pte_none(pte_entry))) {
+        goto retry;
+
+    /* signal that this is not the first response */
     } else {
-        if (unlikely(pte_none(pte_entry))) {
-            page = NULL;
-            goto noop;
-        }
-
-        swp_e = pte_to_swp_entry(pte_entry);
-        if (unlikely(!non_swap_entry(swp_e) || !is_dsm_entry(swp_e)))
-            BUG_ON(page);
-
-        /* signal that this is not the first response */
         clear_pte_flag = 1;
     }
 
-noop: 
+noop:
     atomic_dec(&dpc->nproc);
-    if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num && 
-            atomic_cmpxchg(&dpc->nproc, 1, 0) <= 1) {
-        if (likely(page)) {
-            if (likely(clear_pte_flag)) {
-                pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-                if (likely(pte_same(*(pd.pte), pte_entry)))
-                    dsm_clear_swp_entry_flag(mm,addr,pd.pte,DSM_PUSHING_BITPOS);
-                pte_unmap_unlock(pd.pte, ptl);
-            }
-            dsm_push_cache_release(local_svm, &dpc, 1);
-        } else {
-            write_seqlock(&local_svm->push_cache_lock);
-            rb_erase(&dpc->rb_node, &local_svm->push_cache);
-            write_sequnlock(&local_svm->push_cache_lock);
-            dsm_dealloc_dpc(&dpc);
+    if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
+            atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        dsm_push_cache_release(local_svm, &dpc, 1);
+        if (likely(page && clear_pte_flag)) {
+            pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
+            if (likely(pte_same(*(pd.pte), pte_entry)))
+                dsm_clear_swp_entry_flag(mm, addr, pd.pte, DSM_PUSHING_BITPOS);
+            pte_unmap_unlock(pd.pte, ptl);
         }
-        congestion--;
     }
 
     *return_pte = pd.pte;
@@ -459,7 +452,8 @@ out:
 struct page *dsm_extract_page_from_remote(struct dsm *dsm,
         struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
-        pte_t **pte, u32 * svm_id) {
+        pte_t **pte, u32 *svm_id)
+{
     struct mm_struct *mm;
     struct page *page = NULL;
 
@@ -608,127 +602,9 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
         page_cache_release(page);
     dsm_push_cache_release(svm, &dpc, 1);
 
-    congestion--;
     return 0;
 }
 EXPORT_SYMBOL(dsm_cancel_page_push);
-
-/*
- * Local node A sends a blue page to node B, the dsm_swp_entry on node A points to B.  Node C requests the page from Node A,
- * Node A forwards the request to Node B, which sends the page to Node C and sets the dsm_swp_entry to Node C.
- *
- * When Node D requests the page from Node A, the request needs to be passed along the whole chain until hitting Node C, which can
- * process the request and send the page.
- *
- * This function will allow the updating of PTE values along the chain.  Node C will send the update command to
- * Node A, it will update the dsm_swap_entry to point to Node C, then forward the command to each Node along the chain.
- *
- * Node D then requests the page from Node A, the request is now passed straight to Node C.  It is asynchronous, if Node A is not
- * updated on time, the next Node can still pass the request along fine - either to the next node or directly to the final.
- *
- */
-int dsm_update_pte_entry(struct dsm_message *msg) // DSM1 - update all code
-{
-    spinlock_t *ptl;
-    pte_t *pte;
-    int r = 0;
-    struct vm_area_struct *vma;
-    pgd_t *pgd;
-    pud_t *pud;
-    pmd_t *pmd;
-    pte_t pte_entry;
-    struct dsm *dsm;
-    struct subvirtual_machine *svm;
-    swp_entry_t swp_e;
-    struct mm_struct *mm;
-    u32 svm_id;
-
-    svm_id = msg->dest_id;
-    dsm = find_dsm(msg->dsm_id);
-    BUG_ON(!dsm);
-
-    svm = find_svm(dsm, svm_id);
-    BUG_ON(!svm);
-
-    mm = svm->priv->mm;
-    down_read(&mm->mmap_sem);
-    retry:
-
-    vma = find_vma(mm, msg->req_addr);
-    if (!vma || vma->vm_start > msg->req_addr)
-        goto out;
-
-    pgd = pgd_offset(mm, msg->req_addr);
-    if (!pgd_present(*pgd))
-        goto out;
-
-    pud = pud_offset(pgd, msg->req_addr);
-    if (!pud_present(*pud))
-        goto out;
-
-    pmd = pmd_offset(pud, msg->req_addr);
-    BUG_ON(pmd_trans_huge(*pmd));
-    if (!pmd_present(*pmd))
-        goto out;
-
-    pte = pte_offset_map_lock(mm, pmd, msg->req_addr, &ptl);
-    pte_entry = *pte;
-
-    if (!pte_present(pte_entry)) {
-        if (pte_none(pte_entry)) {
-            set_pte_at(mm, msg->req_addr, pte,
-                    dsm_descriptor_to_pte(svm->descriptor, 0));
-        } else {
-            swp_e = pte_to_swp_entry(pte_entry);
-            if (!non_swap_entry(swp_e)) {
-                if (is_dsm_entry(swp_e)) {
-                    // store old dest
-                    struct dsm_swp_data old;
-
-                    swp_entry_to_dsm_data(pte_to_swp_entry(pte_entry), &old);
-                    BUG_ON(!old.dsm);
-
-                    if (old.dsm->dsm_id != dsm->dsm_id && old.svms.pp[0]->svm_id != svm_id) {
-                        // update pte
-                        set_pte_at(mm, msg->req_addr, pte,
-                                dsm_descriptor_to_pte(svm->descriptor, 0));
-
-                        // forward msg
-                        // DSM1: fwd message RDMA function call.
-                        // old.dsm_id, old.svm_id.
-                    }
-                } else if (is_migration_entry(swp_e)) {
-                    pte_unmap_unlock(pte, ptl);
-
-                    migration_entry_wait(mm, pmd, msg->req_addr);
-
-                    goto retry;
-                } else {
-                    printk("[*] SWP_ENTRY - not dsm or migration.\n");
-                    BUG();
-                }
-            } else {
-                printk("[*] in swap no need to update\n");
-            }
-        }
-    }
-
-    pte_unmap_unlock(pte, ptl);
-
-out:
-    up_read(&mm->mmap_sem);
-    release_svm(svm);
-
-    return r;
-
-}
-EXPORT_SYMBOL(dsm_update_pte_entry);
-
-static inline int wait_for_page_push(void *x)
-{
-    schedule();
-    return 0;
-}
 
 /*
  * Return 0 => page dsm or not dsm_remote => try to swap out

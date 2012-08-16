@@ -142,7 +142,7 @@ nomem:
 }
 
 static int send_svm_status_update(struct conn_element *ele,
-        struct rx_buf_ele *rx_buf_e)
+        struct dsm_message *msg)
 {
     struct tx_buf_ele *tx_e = NULL;
     int ret = 0;
@@ -150,14 +150,14 @@ static int send_svm_status_update(struct conn_element *ele,
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
-            dsm_msg_cpy(tx_e->dsm_buf, rx_buf_e->dsm_buf);
+            dsm_msg_cpy(tx_e->dsm_buf, msg);
             tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
             ret = tx_dsm_send(ele, tx_e);
             goto out;
         }
     }
 
-    ret = add_dsm_request_msg(ele, SVM_STATUS_UPDATE, rx_buf_e->dsm_buf);
+    ret = add_dsm_request_msg(ele, SVM_STATUS_UPDATE, msg);
 
 out:
     return ret;
@@ -311,7 +311,7 @@ static void handle_page_request_fail(struct conn_element *ele,
 }
 
 int process_page_request(struct conn_element *ele,
-        struct rx_buf_ele *rx_buf_e)
+        struct dsm_message *msg)
 {
     struct page_pool_ele *ppe;
     struct tx_buf_ele *tx_e = NULL;
@@ -319,7 +319,8 @@ int process_page_request(struct conn_element *ele,
     struct dsm *dsm;
     struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
-    struct dsm_message *msg = rx_buf_e->dsm_buf;
+
+
 
     dsm = find_dsm(msg->dsm_id);
     if (!dsm)
@@ -374,7 +375,7 @@ retry:
     return 0;
 
 no_svm: 
-    send_svm_status_update(ele, rx_buf_e);
+    send_svm_status_update(ele, msg);
 fail: 
     if (tx_e)
         release_tx_element_reply(ele, tx_e);

@@ -900,8 +900,8 @@ retry:
     }
 
 
-    /* prefetch */
-    if ((dpc->tag == PULL_TAG) && (flags & FAULT_FLAG_ALLOW_RETRY)) {
+    /* prefetch we do not prefetch if we have the no wait it will be triggeed in the async PF*/
+    if ((dpc->tag == PULL_TAG) && (flags & FAULT_FLAG_ALLOW_RETRY) && !(flags & FAULT_FLAG_RETRY_NOWAIT)) {
         int max_retry = 20;
         int cont_back = 1;
         int cont_forward = 1;

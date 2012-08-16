@@ -283,10 +283,10 @@ static void handle_page_request_fail(struct conn_element *ele,
 
     switch (msg->type) {
         case REQUEST_PAGE:
-            /* don't redirect if the calling node already re-claimed the page */
-            if (!msg->dest_id || msg->dest_id == remote_svm->svm_id)
-                return;
-            type = PAGE_REQUEST_REDIRECT;
+            if ((!remote_svm) || (!msg->dest_id || msg->dest_id == remote_svm->svm_id))
+                type = PAGE_REQUEST_FAIL;
+            else
+                type = PAGE_REQUEST_REDIRECT;
             break;
         case TRY_REQUEST_PAGE:
             type = PAGE_REQUEST_FAIL;

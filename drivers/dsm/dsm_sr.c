@@ -201,20 +201,22 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
     struct subvirtual_machine *local_svm;
     unsigned long norm_addr;
     struct dsm *dsm;
+    struct dsm_message * msg;
     int r = 0;
 
     BUG_ON(!rx_buf_e);
     BUG_ON(!rx_buf_e->dsm_buf);
+    msg= rx_buf_e->dsm_buf;
 
-    dsm = find_dsm(rx_buf_e->dsm_buf->dsm_id);
+    dsm = find_dsm(msg->dsm_id);
     if (unlikely(!dsm))
         goto fail;
 
-    local_svm = find_svm(dsm, rx_buf_e->dsm_buf->src_id);
+    local_svm = find_svm(dsm, msg->src_id);
     if (unlikely(!local_svm || !local_svm->priv))
         goto fail;
 
-    norm_addr = rx_buf_e->dsm_buf->req_addr + local_svm->priv->offset;
+    norm_addr = msg->req_addr + local_svm->priv->offset;
 
     // we get -1 if something bad happened, or >0 if we had dpc or we requested the page
     if (dsm_trigger_page_pull(dsm, local_svm, norm_addr) < 0)
@@ -225,7 +227,7 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
 
 
 fail:
-    return send_svm_status_update(ele, rx_buf_e);
+    return send_svm_status_update(ele, msg);
 
 }
 

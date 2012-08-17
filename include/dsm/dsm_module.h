@@ -127,6 +127,8 @@ void dsm_request_queue_merge(struct tx_buffer *);
 /*
  * SR
  */
+void init_kmem_defered_gup_cache(void);
+void destroy_kmem_defered_gup_cache(void);
 void defered_gup_work_fn(struct work_struct *);
 int request_queue_empty(struct conn_element *);
 void init_kmem_request_cache(void);

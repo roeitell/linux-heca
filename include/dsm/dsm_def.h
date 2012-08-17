@@ -275,9 +275,7 @@ struct subvirtual_machine {
     struct delayed_work delayed_gup_work;
 
     struct llist_head defered_gups;
-    struct list_head defered_gups_list;
     struct work_struct defered_gup_work;
-    struct mutex defered_gups_mutex;
 
     atomic_t refs;
 };

@@ -343,7 +343,6 @@ static void handle_page_request_fail(struct conn_element *ele,
  *  FIXME: NOTE: we really would like to do NOIO GUP with fast iteration over list in order to process the GUP in the fastest order
  */
 static inline void process_defered_gups(struct subvirtual_machine * svm) {
-    struct list_head *head = &svm->defered_gups_list;
     struct llist_node *llnode = llist_del_all(&svm->defered_gups);
     struct defered_gup *dgup = NULL;
     struct subvirtual_machine *remote_svm;
@@ -357,12 +356,12 @@ static inline void process_defered_gups(struct subvirtual_machine * svm) {
             llnode = llnode->next;
             /* we do the gup */
             use_mm(mm);
-            down_read(mm->mmap_sem);
+            down_read(&mm->mmap_sem);
             if (!get_user_pages(current, mm,
                     dgup->dsm_buf.req_addr + svm->priv->offset, 1, 1, 0, &page,
                     NULL))
                 BUG();
-            up_read(mm->mmap_sem);
+            up_read(&mm->mmap_sem);
             unuse_mm(mm);
             /* we process the request */
             remote_svm = find_svm(svm->dsm, dgup->dsm_buf.dest_id);
@@ -399,8 +398,8 @@ retry:
         goto retry;
     }
     dsm_msg_cpy(&dgup->dsm_buf, msg);
-    llist_add(dgup->lnode, local_svm->defered_gups);
-    schedule_work(local_svm->defered_gup_work);
+    llist_add(&dgup->lnode, local_&svm->defered_gups);
+    schedule_work(&local_svm->defered_gup_work);
 }
 
 

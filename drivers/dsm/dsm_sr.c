@@ -388,9 +388,8 @@ void defered_gup_work_fn(struct work_struct *w){
 
 
 static inline void defer_gup(struct dsm_message *msg, u32 remote_svm_id, struct subvirtual_machine *local_svm){
-
-    msg->dest_id = remote_svm_id;
     struct defered_gup *dgup = NULL;
+    msg->dest_id = remote_svm_id;
 retry:
     dgup = kmem_cache_alloc(kmem_defered_gup_cache, GFP_KERNEL);
     if (unlikely(!dgup)) {

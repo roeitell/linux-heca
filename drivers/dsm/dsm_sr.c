@@ -366,7 +366,7 @@ static inline void process_defered_gups(struct subvirtual_machine * svm) {
             /* we process the request */
             remote_svm = find_svm(svm->dsm, dgup->dsm_buf.dest_id);
             if (!remote_svm) {
-                BUG(); => svm not present
+                BUG(); //=> svm not present
             }
             process_page_request(remote_svm->ele, &dgup->dsm_buf);
 
@@ -398,7 +398,7 @@ retry:
         goto retry;
     }
     dsm_msg_cpy(&dgup->dsm_buf, msg);
-    llist_add(&dgup->lnode, local_&svm->defered_gups);
+    llist_add(&dgup->lnode, &local_svm->defered_gups);
     schedule_work(&local_svm->defered_gup_work);
 }
 

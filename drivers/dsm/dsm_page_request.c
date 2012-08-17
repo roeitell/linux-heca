@@ -309,16 +309,12 @@ retry:
         *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
                 &pd);
 
-        if (*svm_id) {
+        if (*svm_id)
             set_pte_at(mm, addr, pd.pte,
                     dsm_descriptor_to_pte(remote_svm->descriptor, 0));
-            pte_unmap_unlock(pd.pte, ptl);
-            goto out;
-        } else {
-            pte_unmap_unlock(pd.pte, ptl);
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            goto retry;
-        }
+        pte_unmap_unlock(pd.pte, ptl);
+        goto out;
+
     }
 
     page = vm_normal_page(pd.vma, addr, *(pd.pte));

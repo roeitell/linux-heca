@@ -274,6 +274,11 @@ struct subvirtual_machine {
     struct llist_head delayed_faults;
     struct delayed_work delayed_gup_work;
 
+    struct llist_head defered_gups;
+    struct list_head defered_gups_list;
+    struct work_struct defered_gup_work;
+    struct mutex defered_gups_mutex;
+
     atomic_t refs;
 };
 
@@ -354,6 +359,12 @@ struct dsm_request {
     struct llist_node lnode;
     struct list_head ordered_list;
 };
+
+struct defered_gup {
+    struct dsm_message dsm_buf;
+    struct llist_node lnode;
+};
+
 
 struct dsm_module_state {
     struct rcm * rcm;

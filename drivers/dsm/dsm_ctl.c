@@ -276,6 +276,8 @@ static int register_svm(struct private_data *priv_data, void __user *argp)
         new_svm->dsm->nb_local_svm++;
         init_llist_head(&new_svm->delayed_faults);
         INIT_DELAYED_WORK(&new_svm->delayed_gup_work, delayed_gup_work_fn);
+        init_llist_head(&new_svm->defered_gups);
+        INIT_WORK(&new_svm->defered_gup_work, defered_gup_work_fn);
     }
 
    /* register new svm to radix trees */

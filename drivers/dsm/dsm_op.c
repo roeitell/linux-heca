@@ -636,6 +636,7 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port)
     rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
     BUG_ON(!(rcm));
     init_kmem_request_cache();
+    init_kmem_defered_gup_cache();
     init_dsm_cache_kmem();
     init_dsm_prefetch_cache_kmem();
     dsm_init_descriptors();
@@ -963,6 +964,7 @@ int destroy_rcm(struct dsm_module_state *dsm_state)
     destroy_dsm_cache_kmem();
     destroy_dsm_prefetch_cache_kmem();
     destroy_kmem_request_cache();
+    destroy_kmem_defered_gup_cache();
     dsm_destroy_descriptors();
 
     return 0;

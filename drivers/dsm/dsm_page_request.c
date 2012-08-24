@@ -200,8 +200,6 @@ retry:
 
     pd->pmd = pmd_offset(pd->pud, addr);
     if (unlikely(pmd_none(*(pd->pmd)))) {
-        if (!__pte_alloc(mm, pd->vma, pd->pmd, addr))
-            goto retry;
         return -4;
     }
     if (unlikely(pmd_bad(*(pd->pmd)))) {
@@ -218,9 +216,8 @@ retry:
             wait_split_huge_page(pd->vma->anon_vma, pd->pmd);
         else
             split_huge_page_pmd(mm, pd->pmd);
-        goto retry;
-    }
 
+    }
     pd->pte = pte_offset_map(pd->pmd, addr);
     return !pd->pte;
 }
@@ -297,9 +294,16 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
 retry:
     page = NULL;
     r= dsm_extract_pte_data(&pd, mm, addr);
-    if (unlikely(r)){
-        trace_extract_pte_data_err(r);
-        goto out;
+    if (unlikely(r)) {
+        if (defered) {
+            trace_extract_pte_data_err(r);
+            trace_is_defered(defered);
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            goto retry;
+        } else {
+            trace_extract_pte_data_err(r);
+            goto out;
+        }
     }
 
     pte_entry = *(pd.pte);

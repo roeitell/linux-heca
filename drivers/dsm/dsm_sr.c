@@ -446,17 +446,16 @@ static inline void process_defered_gups(struct subvirtual_machine * svm) {
     struct llist_node *llnode = llist_del_all(&svm->defered_gups);
     struct defered_gup *dgup = NULL;
     struct subvirtual_machine *remote_svm= NULL;
-    struct page * page;
-    struct mm_struct *mm = svm->priv->mm;
+
 
     do {
         while (llnode) {
 
             dgup = container_of(llnode, struct defered_gup, lnode);
             llnode = llnode->next;
-            process_page_request(dgup->origin_ele, svm ,dgup->remote_svm ,svm &dgup->dsm_buf,1);
+            process_page_request(dgup->origin_ele, svm ,dgup->remote_svm, &dgup->dsm_buf,1);
             /*release the element*/
-            release_kmem_defered_gup_cache_elm(dgup, svm, remote_svm);
+            release_kmem_defered_gup_cache_elm(dgup);
         }
         llnode = llist_del_all(&svm->defered_gups);
     } while (llnode);

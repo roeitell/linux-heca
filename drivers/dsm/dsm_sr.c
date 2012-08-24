@@ -303,17 +303,19 @@ int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 }
 
 static void handle_page_request_fail(struct conn_element *ele,
-    struct dsm_message *msg, struct subvirtual_machine *remote_svm)
+    struct dsm_message *msg, struct subvirtual_machine *remote_svm, u32 id)
 {
     struct tx_buf_ele *tx_e;
     int r = -EINVAL, type;
 
     switch (msg->type) {
         case REQUEST_PAGE:
-            if ((!remote_svm) || ( msg->dest_id == remote_svm->svm_id))
+            if ((!remote_svm) || ( id == remote_svm->svm_id))
                 type = PAGE_REQUEST_FAIL;
-            else
+            else{
+                msg->dest_id= id;
                 type = PAGE_REQUEST_REDIRECT;
+            }
             break;
         case TRY_REQUEST_PAGE:
             type = PAGE_REQUEST_FAIL;
@@ -344,7 +346,6 @@ static inline void defer_gup(struct dsm_message *msg,
         struct subvirtual_machine *remote_svm, struct conn_element *ele) {
     struct defered_gup *dgup = NULL;
 
-    msg->dest_id = remote_svm->svm_id;
 retry:
     dgup = kmem_cache_alloc(kmem_defered_gup_cache, GFP_KERNEL);
     if (unlikely(!dgup)) {
@@ -368,13 +369,13 @@ static int process_page_request(struct conn_element *origin_ele,
     struct page *page;
     unsigned long norm_addr =0;
     struct conn_element *ele=NULL;
+    u32 id=0;
 
    if (!local_svm)
         goto no_svm;
-    if (!remote_svm){
-        trace_fail_level(1);
+    if (!remote_svm)
         goto fail;
-    }
+
     //FIXME : handle if remote svm has moved => different connection element
     //if (origin_ele != remote_svm->ele)
     ele = remote_svm->ele;
@@ -399,18 +400,15 @@ retry:
     tx_e->reply_work_req->addr = norm_addr;
 
     page = dsm_extract_page_from_remote(local_svm, remote_svm, norm_addr,
-            msg->type, &tx_e->reply_work_req->pte, &msg->dest_id, defered);
+            msg->type, &tx_e->reply_work_req->pte, &id, defered);
 
-    if (unlikely(!page)){
-        trace_fail_level(2);
+    if (unlikely(!page))
         goto fail;
-    }
 
     ppe = dsm_prepare_ppe(ele, page);
-    if (!ppe){
-        trace_fail_level(3);
+    if (!ppe)
         goto fail;
-    }
+
 
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
@@ -428,14 +426,16 @@ no_svm:
 fail:
     if (tx_e)
         release_tx_element_reply(ele, tx_e);
-    if (remote_svm && !msg->dest_id) {
+    if (remote_svm && !id) {
         trace_dsm_defer_gup(local_svm->dsm->dsm_id, local_svm->svm_id,
-                remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
+                remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr,
+                msg->type);
         defer_gup(msg, local_svm, remote_svm, origin_ele);
         /* we skip the release of the local svm because we want to keep it there until we actual solve the gup */
         goto out;
-    } else
-        handle_page_request_fail(ele, msg, remote_svm);
+    } else {
+        handle_page_request_fail(ele, msg, remote_svm, id);
+    }
 
     if (local_svm)
         release_svm(local_svm);

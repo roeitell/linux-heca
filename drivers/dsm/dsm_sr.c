@@ -374,8 +374,8 @@ static int process_page_request(struct conn_element *origin_ele,
     if (!remote_svm)
         goto fail;
     //FIXME : handle if remote svm has moved => different connection element
-    if (origin_ele != remote_svm->ele)
-        ele = remote_svm->ele;
+    //if (origin_ele != remote_svm->ele)
+    ele = remote_svm->ele;
 
     norm_addr = msg->req_addr + local_svm->priv->offset;
     trace_process_page_request(local_svm->dsm->dsm_id, local_svm->svm_id,
@@ -453,6 +453,7 @@ static inline void process_defered_gups(struct subvirtual_machine * svm) {
 
             dgup = container_of(llnode, struct defered_gup, lnode);
             llnode = llnode->next;
+            /*the defered is set to one i.e if we need to gup we will block */
             process_page_request(dgup->origin_ele, svm ,dgup->remote_svm, &dgup->dsm_buf,1);
             /*release the element*/
             release_kmem_defered_gup_cache_elm(dgup);

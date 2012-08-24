@@ -366,7 +366,7 @@ static int process_page_request(struct conn_element *origin_ele,
     struct page_pool_ele *ppe;
     struct tx_buf_ele *tx_e = NULL;
     struct page *page;
-    unsigned long norm_addr;
+    unsigned long norm_addr =0;
     struct conn_element *ele=NULL;
 
    if (!local_svm)

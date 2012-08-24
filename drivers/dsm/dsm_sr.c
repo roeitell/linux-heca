@@ -371,8 +371,10 @@ static int process_page_request(struct conn_element *origin_ele,
 
    if (!local_svm)
         goto no_svm;
-    if (!remote_svm)
+    if (!remote_svm){
+        trace_fail_level(1);
         goto fail;
+    }
     //FIXME : handle if remote svm has moved => different connection element
     //if (origin_ele != remote_svm->ele)
     ele = remote_svm->ele;
@@ -399,12 +401,16 @@ retry:
     page = dsm_extract_page_from_remote(local_svm, remote_svm, norm_addr,
             msg->type, &tx_e->reply_work_req->pte, &msg->dest_id, defered);
 
-    if (unlikely(!page))
+    if (unlikely(!page)){
+        trace_fail_level(2);
         goto fail;
+    }
 
     ppe = dsm_prepare_ppe(ele, page);
-    if (!ppe)
+    if (!ppe){
+        trace_fail_level(3);
         goto fail;
+    }
 
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;

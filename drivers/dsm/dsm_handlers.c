@@ -193,7 +193,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
         }
         case TRY_REQUEST_PAGE:
         case REQUEST_PAGE: {
-            process_page_request(ele, rx_e->dsm_buf); // server got a request
+            process_page_request_msg(ele, rx_e->dsm_buf);
             break;
         }
         case REQUEST_PAGE_PULL: {

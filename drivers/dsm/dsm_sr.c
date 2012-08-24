@@ -27,11 +27,8 @@ void destroy_kmem_defered_gup_cache(void)
     kmem_cache_destroy(kmem_defered_gup_cache);
 }
 
-void release_kmem_defered_gup_cache_elm(struct defered_gup * req,
-        struct subvirtual_machine *local_svm,
-        struct subvirtual_machine *remote_svm) {
-    release_svm(local_svm);
-    release_svm(remote_svm);
+void release_kmem_defered_gup_cache_elm(struct defered_gup * req) {
+
     kmem_cache_free(kmem_defered_gup_cache, req);
 }
 
@@ -339,92 +336,46 @@ static void handle_page_request_fail(struct conn_element *ele,
     if (r)
         add_dsm_request_msg(ele, type, msg);
 }
-/*
- *  FIXME: NOTE: we really would like to do NOIO GUP with fast iteration over list in order to process the GUP in the fastest order
- */
-static inline void process_defered_gups(struct subvirtual_machine * svm) {
-    struct llist_node *llnode = llist_del_all(&svm->defered_gups);
+
+
+
+static inline void defer_gup(struct dsm_message *msg,
+        struct subvirtual_machine *local_svm,
+        struct subvirtual_machine *remote_svm, struct conn_element *ele) {
     struct defered_gup *dgup = NULL;
-    struct subvirtual_machine *remote_svm;
-    struct page * page;
-    struct mm_struct *mm = svm->priv->mm;
 
-    do {
-        while (llnode) {
-
-            dgup = container_of(llnode, struct defered_gup, lnode);
-            llnode = llnode->next;
-            /* we do the gup */
-            use_mm(mm);
-            down_read(&mm->mmap_sem);
-            if (!get_user_pages(current, mm,
-                    dgup->dsm_buf.req_addr + svm->priv->offset, 1, 1, 0, &page,
-                    NULL))
-                BUG();
-            up_read(&mm->mmap_sem);
-            unuse_mm(mm);
-            /* we process the request */
-            remote_svm = find_svm(svm->dsm, dgup->dsm_buf.dest_id);
-            if (!remote_svm) {
-                BUG(); //=> svm not present
-            }
-            process_page_request(remote_svm->ele, &dgup->dsm_buf);
-
-            /*release the element*/
-            release_kmem_defered_gup_cache_elm(dgup, svm, remote_svm);
-        }
-        llnode = llist_del_all(&svm->defered_gups);
-    } while (llnode);
-    return;
-
-}
-
-void defered_gup_work_fn(struct work_struct *w){
-    struct subvirtual_machine *svm;
-    svm = container_of(w, struct subvirtual_machine,
-            defered_gup_work);
-    process_defered_gups(svm);
-}
-
-
-static inline void defer_gup(struct dsm_message *msg, u32 remote_svm_id, struct subvirtual_machine *local_svm){
-    struct defered_gup *dgup = NULL;
-    msg->dest_id = remote_svm_id;
+    msg->dest_id = remote_svm->svm_id;
 retry:
     dgup = kmem_cache_alloc(kmem_defered_gup_cache, GFP_KERNEL);
     if (unlikely(!dgup)) {
         might_sleep();
         goto retry;
     }
+    dgup->origin_ele = ele;
+    dgup->remote_svm = remote_svm;
     dsm_msg_cpy(&dgup->dsm_buf, msg);
     llist_add(&dgup->lnode, &local_svm->defered_gups);
     schedule_work(&local_svm->defered_gup_work);
 }
 
 
-int process_page_request(struct conn_element *ele,
-        struct dsm_message *msg)
-{
+static int process_page_request(struct conn_element *origin_ele,
+        struct subvirtual_machine *local_svm,
+        struct subvirtual_machine *remote_svm, struct dsm_message *msg,
+        int defered) {
     struct page_pool_ele *ppe;
     struct tx_buf_ele *tx_e = NULL;
     struct page *page;
-    struct dsm *dsm;
-    struct subvirtual_machine *local_svm, *remote_svm;
     unsigned long norm_addr;
+    struct conn_element *ele=NULL;
 
-
-
-    dsm = find_dsm(msg->dsm_id);
-    if (!dsm)
+   if (!local_svm)
         goto no_svm;
-
-    local_svm = find_svm(dsm, msg->src_id);
-    if (!local_svm)
-        goto no_svm;
-
-    remote_svm = find_svm(dsm, msg->dest_id);
     if (!remote_svm)
         goto fail;
+    //FIXME : handle if remote svm has moved => different connection element
+    if (origin_ele != remote_svm->ele)
+        ele = remote_svm->ele;
 
     norm_addr = msg->req_addr + local_svm->priv->offset;
     trace_process_page_request(local_svm->dsm->dsm_id, local_svm->svm_id,
@@ -445,8 +396,8 @@ retry:
     tx_e->reply_work_req->mm = local_svm->priv->mm;
     tx_e->reply_work_req->addr = norm_addr;
 
-    page = dsm_extract_page_from_remote(dsm, local_svm, remote_svm, norm_addr,
-            msg->type, &tx_e->reply_work_req->pte, &msg->dest_id);
+    page = dsm_extract_page_from_remote(local_svm, remote_svm, norm_addr,
+            msg->type, &tx_e->reply_work_req->pte, &msg->dest_id, defered);
 
     if (unlikely(!page))
         goto fail;
@@ -467,23 +418,74 @@ retry:
     return 0;
 
 no_svm:
-    send_svm_status_update(ele, msg);
+    send_svm_status_update(origin_ele, msg);
 fail:
     if (tx_e)
         release_tx_element_reply(ele, tx_e);
     if (remote_svm && !msg->dest_id) {
-        defer_gup(msg, remote_svm->svm_id, local_svm);
-        /* we skip the release because we want to keep them there until we actual solve the gup */
+        defer_gup(msg, local_svm, remote_svm, origin_ele);
+        /* we skip the release of the local svm because we want to keep it there until we actual solve the gup */
         goto out;
     } else
         handle_page_request_fail(ele, msg, remote_svm);
 
     if (local_svm)
         release_svm(local_svm);
+
     if (remote_svm)
         release_svm(remote_svm);
-out:
+ out:
     return -EINVAL;
+}
+
+
+/*
+ *  FIXME: NOTE: we really would like to do NOIO GUP with fast iteration over list in order to process the GUP in the fastest order
+ */
+static inline void process_defered_gups(struct subvirtual_machine * svm) {
+    struct llist_node *llnode = llist_del_all(&svm->defered_gups);
+    struct defered_gup *dgup = NULL;
+    struct subvirtual_machine *remote_svm= NULL;
+    struct page * page;
+    struct mm_struct *mm = svm->priv->mm;
+
+    do {
+        while (llnode) {
+
+            dgup = container_of(llnode, struct defered_gup, lnode);
+            llnode = llnode->next;
+            process_page_request(dgup->origin_ele, svm ,dgup->remote_svm ,svm &dgup->dsm_buf,1);
+            /*release the element*/
+            release_kmem_defered_gup_cache_elm(dgup, svm, remote_svm);
+        }
+        llnode = llist_del_all(&svm->defered_gups);
+    } while (llnode);
+    return;
+
+}
+
+void defered_gup_work_fn(struct work_struct *w){
+    struct subvirtual_machine *svm;
+    svm = container_of(w, struct subvirtual_machine,
+            defered_gup_work);
+    process_defered_gups(svm);
+}
+
+
+
+
+int process_page_request_msg(struct conn_element *ele, struct dsm_message * msg) {
+
+    struct subvirtual_machine *local_svm = NULL, *remote_svm = NULL;
+    struct dsm *dsm = NULL;
+
+    dsm = find_dsm(msg->dsm_id);
+    if (dsm) {
+        local_svm = find_svm(dsm, msg->src_id);
+        if (local_svm)
+            remote_svm = find_svm(dsm, msg->dest_id);
+    }
+    return process_page_request(ele, local_svm, remote_svm, msg, 0); // server got a request, not defered
 }
 
 /*

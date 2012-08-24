@@ -80,9 +80,8 @@ int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct memory_region *);
 
 /* dsm_page_request.c */
-struct page *dsm_extract_page_from_remote(struct dsm *,
-        struct subvirtual_machine *, struct subvirtual_machine *, unsigned long,
-        u16, pte_t **, u32 *);
+struct page *dsm_extract_page_from_remote(struct subvirtual_machine *,
+        struct subvirtual_machine *, unsigned long, u16, pte_t **, u32 *, int);
 int dsm_prepare_page_for_push(struct subvirtual_machine *, struct svm_list,
         struct page *, unsigned long, struct mm_struct *, u32);
 struct page *dsm_find_normal_page(struct mm_struct *, unsigned long);

@@ -360,6 +360,8 @@ struct dsm_request {
 
 struct defered_gup {
     struct dsm_message dsm_buf;
+    struct subvirtual_machine remote_svm;
+    struct conn_element *origin_ele;
     struct llist_node lnode;
 };
 

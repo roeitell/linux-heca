@@ -235,16 +235,16 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 
     /* first time dealing with this addr? */
     if (pte_none(pte_entry))
-        goto fault_page;
+        goto self_fault;
 
     /* page could be swapped to disk */
     swp_e = pte_to_swp_entry(pte_entry);
     if (!non_swap_entry(swp_e))
-        goto fault_page;
+        goto self_fault;
 
     if (is_migration_entry(swp_e)) {
         migration_entry_wait(mm, pd->pmd, addr);
-        goto fault_page;
+        goto self_fault;
     }
 
     /* not a swap entry or a migration entry, must be ours */
@@ -254,7 +254,7 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
     // we check if we are already pulling
     dpc = dsm_cache_get(local_svm, addr);
     if (dpc)
-        goto fault_page;
+        goto self_fault;
     // we can only redirect if we have one location to redirect to!
     //FIXME enable RAIM support
     BUG_ON(dsd.svms.num != 1);
@@ -277,15 +277,15 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 //            return;
 //    }
 
-fault_page:
-    /* we already use the mm and we already own the mm semaphore */
+self_fault:
+    return 0;
 
-    return 0 ;
+
 }
 
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
-        unsigned long addr, pte_t **return_pte, u32 *svm_id)
+        unsigned long addr, pte_t **return_pte, u32 *svm_id,int defered)
 {
     spinlock_t *ptl;
     int r = 0;
@@ -309,12 +309,15 @@ retry:
         *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
                 &pd);
 
-        if (*svm_id)
+        if (*svm_id) {
             set_pte_at(mm, addr, pd.pte,
                     dsm_descriptor_to_pte(remote_svm->descriptor, 0));
-        pte_unmap_unlock(pd.pte, ptl);
-        goto out;
-
+        } else if (defered) {
+            pte_unmap_unlock(pd.pte, ptl);
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            goto retry;
+        }
+        goto bad_page;
     }
 
     page = vm_normal_page(pd.vma, addr, *(pd.pte));
@@ -445,10 +448,9 @@ out:
     return active? NULL : page;
 }
 
-struct page *dsm_extract_page_from_remote(struct dsm *dsm,
-        struct subvirtual_machine *local_svm,
+struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
-        pte_t **pte, u32 *svm_id)
+        pte_t **pte, u32 *svm_id, int defered)
 {
     struct mm_struct *mm;
     struct page *page = NULL;
@@ -463,7 +465,7 @@ struct page *dsm_extract_page_from_remote(struct dsm *dsm,
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
-        dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id);
+        dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,defered);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 

@@ -446,40 +446,32 @@ fail:
  */
 static inline void process_defered_gups(struct subvirtual_machine * svm) {
     struct defered_gup *dgup = NULL;
-    struct subvirtual_machine *remote_svm= NULL;
     struct llist_node *llnode = llist_del_all(&svm->defered_gups);
-
-
 
     do {
         while (llnode) {
-
             dgup = container_of(llnode, struct defered_gup, lnode);
             llnode = llnode->next;
             /*the defered is set to one i.e if we need to gup we will block */
             trace_dsm_defer_gup_execute(svm->dsm->dsm_id, svm->svm_id,
-                    remote_svm->dsm->dsm_id, remote_svm->svm_id, dgup->dsm_buf.req_addr, dgup->dsm_buf.type);
-            process_page_request(dgup->origin_ele, svm ,dgup->remote_svm, &dgup->dsm_buf,1);
+                    dgup->remote_svm->dsm->dsm_id, dgup->remote_svm->svm_id,
+                    dgup->dsm_buf.req_addr, dgup->dsm_buf.type);
+            process_page_request(dgup->origin_ele, svm, dgup->remote_svm,
+                    &dgup->dsm_buf, 1);
             /*release the element*/
             release_kmem_defered_gup_cache_elm(dgup);
         }
         llnode = llist_del_all(&svm->defered_gups);
     } while (llnode);
-    return;
 
 }
 
-void defered_gup_work_fn(struct work_struct *w){
+void defered_gup_work_fn(struct work_struct *w) {
     struct subvirtual_machine *svm = NULL;
 
     svm = container_of(w, struct subvirtual_machine, defered_gup_work);
 
-    /* bla */
-    if (svm) {
-        process_defered_gups(svm);
-    } else {
-        dsm_printk(KERN_ERR "bad svm %p ", svm);
-    }
+    process_defered_gups(svm);
 }
 
 

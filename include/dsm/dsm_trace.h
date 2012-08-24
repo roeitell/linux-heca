@@ -140,6 +140,7 @@ DEFINE_EVENT(dsm_basic_template, is_congested, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, tx_e_acquire, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, tx_e_release, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, release_svm, TP_PROTO(int id), TP_ARGS(id));
+DEFINE_EVENT(dsm_basic_template, is_defered, TP_PROTO(int id), TP_ARGS(id));
 
 #endif
 

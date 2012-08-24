@@ -308,7 +308,8 @@ retry:
     if (unlikely(!pte_present(pte_entry))) {
         *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
                 &pd);
-        dsm_printk("SVM ID: %d , defered : %d " ,*svm_id,defered );
+        trace_is_defered(*svm_id);
+        trace_is_defered(defered);
         if (*svm_id) {
             set_pte_at(mm, addr, pd.pte,
                     dsm_descriptor_to_pte(remote_svm->descriptor, 0));

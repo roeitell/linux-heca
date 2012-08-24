@@ -186,7 +186,7 @@ static int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
 
 retry: 
     pd->pte = NULL;
-    pd->vma = find_vma(mm, addr);
+    pd->vma = find_extend_vma(mm, addr);
     if (unlikely(!pd->vma || pd->vma->vm_start > addr))
         return -1;
 

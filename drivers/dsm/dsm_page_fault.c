@@ -672,7 +672,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
     dpc = dsm_cache_get(fault_svm, norm_addr);
     if (!dpc) {
         ret = -1;
-        vma = find_vma(mm, addr);
+        vma = find_extend_vma(mm, addr);
         if (unlikely(!vma || vma->vm_start > addr))
             goto out;
 

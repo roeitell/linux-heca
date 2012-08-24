@@ -27,7 +27,12 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 retry:
     vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
-        printk("[dsm_flag_page_remote] no VMA or bad VMA \n");
+        if (likely(!retry)) {
+            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            retry = 1;
+            goto retry;
+        }
+        printk("[dsm_flag_page_remote] no vma \n");
         goto out;
     }
 

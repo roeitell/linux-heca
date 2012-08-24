@@ -423,6 +423,8 @@ fail:
     if (tx_e)
         release_tx_element_reply(ele, tx_e);
     if (remote_svm && !msg->dest_id) {
+        trace_dsm_defer_gup(local_svm->dsm->dsm_id, local_svm->svm_id,
+                remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
         defer_gup(msg, local_svm, remote_svm, origin_ele);
         /* we skip the release of the local svm because we want to keep it there until we actual solve the gup */
         goto out;
@@ -454,6 +456,8 @@ static inline void process_defered_gups(struct subvirtual_machine * svm) {
             dgup = container_of(llnode, struct defered_gup, lnode);
             llnode = llnode->next;
             /*the defered is set to one i.e if we need to gup we will block */
+            trace_dsm_defer_gup_execute(svm->dsm->dsm_id, svm->svm_id,
+                    remote_svm->dsm->dsm_id, remote_svm->svm_id, dgup->dsm_buf.req_addr, dgup->dsm_buf.type);
             process_page_request(dgup->origin_ele, svm ,dgup->remote_svm, &dgup->dsm_buf,1);
             /*release the element*/
             release_kmem_defered_gup_cache_elm(dgup);

@@ -292,12 +292,15 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
     struct page *page;
     struct dsm_pte_data pd;
     pte_t pte_entry;
-    *svm_id = 0;
+
     
 retry:
     page = NULL;
-    if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
+    r= dsm_extract_pte_data(&pd, mm, addr);
+    if (unlikely(r)){
+        trace_extract_pte_data_err(r);
         goto out;
+    }
 
     pte_entry = *(pd.pte);
     pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -308,7 +311,6 @@ retry:
     if (unlikely(!pte_present(pte_entry))) {
         *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
                 &pd);
-        trace_is_defered(*svm_id);
         trace_is_defered(defered);
         if (*svm_id) {
             set_pte_at(mm, addr, pd.pte,

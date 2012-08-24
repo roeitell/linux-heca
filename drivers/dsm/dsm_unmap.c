@@ -25,7 +25,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
     down_read(&mm->mmap_sem);
 
 retry:
-    vma = find_extend_vma(mm, addr);
+    vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
         if (likely(!retry)) {
             get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);

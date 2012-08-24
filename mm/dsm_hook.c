@@ -43,7 +43,7 @@ EXPORT_SYMBOL(ksm_madvise);
 EXPORT_SYMBOL(__pte_alloc);
 EXPORT_SYMBOL(vm_normal_page);
 EXPORT_SYMBOL(handle_mm_fault);
-EXPORT_SYMBOL(find_extend_vma);
+
 
 #include <linux/gfp.h>
 EXPORT_SYMBOL(alloc_pages_vma);

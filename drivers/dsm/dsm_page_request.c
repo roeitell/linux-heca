@@ -186,7 +186,7 @@ static int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
 
 
     pd->pte = NULL;
-    pd->vma = find_extend_vma(mm, addr);
+    pd->vma = find_vma(mm, addr);
     if (unlikely(!pd->vma || pd->vma->vm_start > addr))
         return -1;
 
@@ -298,7 +298,8 @@ retry:
         if (defered) {
             trace_extract_pte_data_err(r);
             trace_is_defered(defered);
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            r= get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            trace_get_user_pages_res(r);
             goto retry;
         } else {
             trace_extract_pte_data_err(r);

@@ -445,9 +445,10 @@ fail:
  *  FIXME: NOTE: we really would like to do NOIO GUP with fast iteration over list in order to process the GUP in the fastest order
  */
 static inline void process_defered_gups(struct subvirtual_machine * svm) {
-    struct llist_node *llnode = llist_del_all(&svm->defered_gups);
     struct defered_gup *dgup = NULL;
     struct subvirtual_machine *remote_svm= NULL;
+    struct llist_node *llnode = llist_del_all(&svm->defered_gups);
+
 
 
     do {
@@ -458,7 +459,7 @@ static inline void process_defered_gups(struct subvirtual_machine * svm) {
             /*the defered is set to one i.e if we need to gup we will block */
             trace_dsm_defer_gup_execute(svm->dsm->dsm_id, svm->svm_id,
                     remote_svm->dsm->dsm_id, remote_svm->svm_id, dgup->dsm_buf.req_addr, dgup->dsm_buf.type);
-            //process_page_request(dgup->origin_ele, svm ,dgup->remote_svm, &dgup->dsm_buf,1);
+            process_page_request(dgup->origin_ele, svm ,dgup->remote_svm, &dgup->dsm_buf,1);
             /*release the element*/
             release_kmem_defered_gup_cache_elm(dgup);
         }
@@ -469,10 +470,16 @@ static inline void process_defered_gups(struct subvirtual_machine * svm) {
 }
 
 void defered_gup_work_fn(struct work_struct *w){
-    struct subvirtual_machine *svm;
-    svm = container_of(w, struct subvirtual_machine,
-            defered_gup_work);
-    process_defered_gups(svm);
+    struct subvirtual_machine *svm = NULL;
+
+    svm = container_of(w, struct subvirtual_machine, defered_gup_work);
+
+    /* bla */
+    if (svm) {
+        process_defered_gups(svm);
+    } else {
+        dsm_printk(KERN_ERR "bad svm %p ", svm);
+    }
 }
 
 

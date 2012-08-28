@@ -282,7 +282,7 @@ self_fault:
 
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
-        unsigned long addr, pte_t **return_pte, u32 *svm_id,int defered)
+        unsigned long addr, pte_t **return_pte, u32 *svm_id, int deferred)
 {
     spinlock_t *ptl;
     int r = 0;
@@ -295,9 +295,9 @@ retry:
     page = NULL;
     r= dsm_extract_pte_data(&pd, mm, addr);
     if (unlikely(r)) {
-        if (defered) {
+        if (deferred) {
             trace_extract_pte_data_err(r);
-            trace_is_defered(defered);
+            trace_is_deferred(deferred);
             r= get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
             trace_get_user_pages_res(r);
             goto retry;
@@ -316,11 +316,11 @@ retry:
     if (unlikely(!pte_present(pte_entry))) {
         *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
                 &pd);
-        trace_is_defered(defered);
+        trace_is_deferred(deferred);
         if (*svm_id) {
             set_pte_at(mm, addr, pd.pte,
                     dsm_descriptor_to_pte(remote_svm->descriptor, 0));
-        } else if (defered) {
+        } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
             get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
             goto retry;
@@ -458,22 +458,22 @@ out:
 
 struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
-        pte_t **pte, u32 *svm_id, int defered)
+        pte_t **pte, u32 *svm_id, int deferred)
 {
     struct mm_struct *mm;
     struct page *page = NULL;
 
     BUG_ON(!local_svm);
-    BUG_ON(!local_svm->priv);
 
-    mm = local_svm->priv->mm;
+    mm = local_svm->mm;
     BUG_ON(!mm);
 
     use_mm(mm);
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
-        dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,defered);
+        dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,
+                deferred);
     up_read(&mm->mmap_sem);
     unuse_mm(mm);
 
@@ -650,13 +650,13 @@ static int _push_back_if_remote_dsm_page(struct page *page)
         if (!svm)
             continue;
 
-        mr = search_mr(svm->dsm, address);
-        if (!mr || mr->local == LOCAL) {
+        /* lookup a remote mr owner, to push the page to */
+        mr = search_mr(svm, address);
+        if (!mr || mr->local == DSM_LOCAL_MR) {
             release_svm(svm);
             continue;
         }
 
-        BUG_ON(address < svm->priv->offset);
         dsm_request_page_pull(svm->dsm, svm, page, address, vma->vm_mm, mr);
 
         release_svm(svm);

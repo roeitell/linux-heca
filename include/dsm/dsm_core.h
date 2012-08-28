@@ -72,9 +72,6 @@ struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *);
 struct page_pool_ele *dsm_prepare_ppe(struct conn_element *, struct page *);
 void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);
 
-int request_dsm_page(struct page *, struct subvirtual_machine *,
-        struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
-        int, struct dsm_page_cache *, struct page_pool_ele *);
 int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct page *, unsigned long, struct mm_struct *,
         struct memory_region *);
@@ -105,9 +102,9 @@ void delayed_gup_work_fn(struct work_struct *);
 void init_dsm_prefetch_cache_kmem(void);
 void destroy_dsm_prefetch_cache_kmem(void) ;
 int dsm_trigger_page_pull(struct dsm *, struct subvirtual_machine *,
-        unsigned long);
+        struct memory_region *, unsigned long);
 void dsm_release_pull_dpc(struct dsm_page_cache **);
-int dsm_pull_req_failure(struct dsm_page_cache *, unsigned long);
+int dsm_pull_req_failure(struct dsm_page_cache *);
 
 /* svm_descriptors */
 void dsm_init_descriptors(void);

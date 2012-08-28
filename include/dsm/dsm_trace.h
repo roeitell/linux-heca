@@ -140,7 +140,7 @@ DEFINE_EVENT(dsm_basic_template, is_congested, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, tx_e_acquire, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, tx_e_release, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, release_svm, TP_PROTO(int id), TP_ARGS(id));
-DEFINE_EVENT(dsm_basic_template, is_defered, TP_PROTO(int id), TP_ARGS(id));
+DEFINE_EVENT(dsm_basic_template, is_deferred, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, fail_level, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, extract_pte_data_err, TP_PROTO(int id), TP_ARGS(id));
 DEFINE_EVENT(dsm_basic_template, get_user_pages_res, TP_PROTO(int id), TP_ARGS(id));

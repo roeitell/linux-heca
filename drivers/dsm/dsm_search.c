@@ -196,12 +196,44 @@ void erase_rb_conn(struct conn_element *ele)
 }
 EXPORT_SYMBOL(erase_rb_conn);
 
-void insert_mr(struct dsm *dsm, struct memory_region *mr)
+void destroy_mrs(struct subvirtual_machine *svm)
 {
-    struct rb_root *root = &dsm->mr_tree_root;
+    struct rb_root *root;
+    struct rb_node *node;
+    struct memory_region *mr;
+
+    write_seqlock(&svm->mr_seq_lock);
+    root = &svm->mr_tree_root;
+    node = rb_first(root);
+    while (node) {
+        mr = rb_entry(node, struct memory_region, rb_node);
+        node = rb_next(node);
+        rb_erase(&mr->rb_node, root);
+        kfree(mr);
+    }
+    write_sequnlock(&svm->mr_seq_lock);
+}
+
+int insert_mr(struct subvirtual_machine *svm, struct memory_region *mr)
+{
+    struct rb_root *root = &svm->mr_tree_root;
     struct rb_node **new = &root->rb_node, *parent = NULL;
     struct memory_region *this;
-    write_seqlock(&dsm->mr_seq_lock);
+    int r;
+
+    r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
+    if (r)
+        goto fail;
+
+    write_seqlock(&svm->mr_seq_lock);
+
+    /* insert to radix tree */
+    r = radix_tree_insert(&svm->mr_id_tree_root, (unsigned long) mr->mr_id,
+            mr);
+    if (r)
+        goto out;
+
+    /* insert to rb tree */
     while (*new) {
         this = rb_entry(*new, struct memory_region, rb_node);
         parent = *new;
@@ -213,20 +245,57 @@ void insert_mr(struct dsm *dsm, struct memory_region *mr)
 
     rb_link_node(&mr->rb_node, parent, new);
     rb_insert_color(&mr->rb_node, root);
-    write_sequnlock(&dsm->mr_seq_lock);
+out:
+    radix_tree_preload_end();
+    write_sequnlock(&svm->mr_seq_lock);
+fail:
+    return r;
 }
 EXPORT_SYMBOL(insert_mr);
 
-// Return NULL if no element contained within tree.
-struct memory_region *search_mr(struct dsm *dsm, unsigned long addr)
+struct memory_region *find_mr(struct subvirtual_machine *svm,
+        u32 id)
 {
-    struct rb_root *root = &dsm->mr_tree_root;
+    struct memory_region *mr, **mrp;
+    struct radix_tree_root *root;
+
+    rcu_read_lock();
+    root = &svm->mr_id_tree_root;
+repeat:
+    mr = NULL;
+    mrp = (struct memory_region **) radix_tree_lookup_slot(root,
+            (unsigned long) id);
+    if (mrp) {
+        mr = radix_tree_deref_slot((void **) mrp);
+        if (unlikely(!mr))
+            goto out;
+        if (radix_tree_exception(mr)) {
+            if (radix_tree_deref_retry(mr))
+                goto repeat;
+        }
+    }
+out: 
+    rcu_read_unlock();
+    return mr;
+}
+
+// Return NULL if no element contained within tree.
+struct memory_region *search_mr(struct subvirtual_machine *svm,
+        unsigned long addr)
+{
+    struct rb_root *root = &svm->mr_tree_root;
     struct rb_node *node;
-    struct memory_region *this = NULL;
+    struct memory_region *this = svm->mr_cache;
     unsigned long seq;
 
+    /* try to follow cache hint */
+    if (likely(this)) {
+        if (addr >= this->addr && addr < this->addr + this->sz)
+            goto out;
+    }
+
     do {
-        seq = read_seqbegin(&dsm->mr_seq_lock);
+        seq = read_seqbegin(&svm->mr_seq_lock);
         for (node = root->rb_node; node; this = 0) {
             this = rb_entry(node, struct memory_region, rb_node);
 
@@ -240,43 +309,15 @@ struct memory_region *search_mr(struct dsm *dsm, unsigned long addr)
             else
                 break;
         }
-    } while (read_seqretry(&dsm->mr_seq_lock, seq));
+    } while (read_seqretry(&svm->mr_seq_lock, seq));
 
+    if (likely(this))
+        svm->mr_cache = this;
+
+out:
     return this;
 }
 EXPORT_SYMBOL(search_mr);
-
-int destroy_mrs(struct dsm *dsm, int force)
-{
-    struct rb_root *root = &dsm->mr_tree_root;
-    struct rb_node *node;
-    struct memory_region *mr;
-    int ret = 0, i;
-    struct svm_list svms;
-
-    write_seqlock(&dsm->mr_seq_lock);
-    for (node = rb_first(root); node; node = rb_next(node)) {
-        mr = rb_entry(node, struct memory_region, rb_node);
-        rcu_read_lock();
-        svms = dsm_descriptor_to_svms(mr->descriptor);
-        rcu_read_unlock();
-        if (!force) {
-            for_each_valid_svm(svms, i)
-                goto next;
-        }
-
-        printk("[destroy_mrs] [%lu, %lu)\n", mr->addr, mr->addr + mr->sz);
-        rb_erase(&mr->rb_node, root);
-        kfree(mr);
-        ret++;
-next:
-        continue;
-    }
-    write_sequnlock(&dsm->mr_seq_lock);
-
-    return ret;
-}
-EXPORT_SYMBOL(destroy_mrs);
 
 /* svm_descriptors */
 static struct svm_list *sdsc;
@@ -329,7 +370,8 @@ void dsm_destroy_descriptors(void)
 }
 EXPORT_SYMBOL(dsm_destroy_descriptors);
 
-void dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids) {
+void dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids)
+{
     u32 j;
 
     for (j = 0; svm_ids[j]; j++)
@@ -402,6 +444,35 @@ struct svm_list dsm_descriptor_to_svms(u32 dsc)
     return rcu_dereference(sdsc)[dsc];
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svms);
+
+/* arrive with dsm mutex held! */
+void remove_svm_from_descriptors(struct subvirtual_machine *svm)
+{
+    int i;
+
+    for (i = SDSC_MIN; i < sdsc_max && sdsc[i].num; i++) {
+        struct svm_list svms;
+        int j;
+
+        rcu_read_lock();
+        svms = dsm_descriptor_to_svms(i);
+        rcu_read_unlock();
+
+        /*
+         * We can either walk the entire page table, removing references to this
+         * descriptor; change the descriptor in-place (which will require
+         * complex locking everywhere); or hack - leave a "hole" in the arr to
+         * signal svm down.
+         */
+        for_each_valid_svm (svms, j) {
+            if (svms.pp[j]->svm_id == svm->svm_id) {
+                svms.pp[j] = NULL;
+                break;
+            }
+        }
+    }
+}
+
 
 int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 {

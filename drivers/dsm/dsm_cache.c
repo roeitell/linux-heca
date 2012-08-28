@@ -203,7 +203,7 @@ static void dsm_page_pool_refill(struct work_struct *work)
         if (!ppe)
             break;
 
-        page = alloc_pages_current(GFP_HIGHUSER_MOVABLE, 0);
+        page = alloc_pages_current(GFP_HIGHUSER_MOVABLE & ~__GFP_WAIT, 0);
         if (!page) {
             dsm_release_ppe(ele, ppe);
             break;

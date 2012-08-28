@@ -7,29 +7,29 @@
 #include <dsm/dsm_trace.h>
 
 static struct kmem_cache *kmem_request_cache;
-static struct kmem_cache *kmem_defered_gup_cache;
+static struct kmem_cache *kmem_deferred_gup_cache;
 
-static inline void init_kmem_defered_gup_cache_elm(void *obj)
+static inline void init_kmem_deferred_gup_cache_elm(void *obj)
 {
-    struct defered_gup *dgup = (struct defered_gup *) obj;
-    memset(dgup, 0, sizeof(struct defered_gup));
+    struct deferred_gup *dgup = (struct deferred_gup *) obj;
+    memset(dgup, 0, sizeof(struct deferred_gup));
 }
 
-void init_kmem_defered_gup_cache(void)
+void init_kmem_deferred_gup_cache(void)
 {
-    kmem_defered_gup_cache = kmem_cache_create("kmem_defered_gup_cache",
-            sizeof(struct defered_gup), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
-            init_kmem_defered_gup_cache_elm);
+    kmem_deferred_gup_cache = kmem_cache_create("kmem_deferred_gup_cache",
+            sizeof(struct deferred_gup), 0, SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
+            init_kmem_deferred_gup_cache_elm);
 }
 
-void destroy_kmem_defered_gup_cache(void)
+void destroy_kmem_deferred_gup_cache(void)
 {
-    kmem_cache_destroy(kmem_defered_gup_cache);
+    kmem_cache_destroy(kmem_deferred_gup_cache);
 }
 
-void release_kmem_defered_gup_cache_elm(struct defered_gup * req) {
+void release_kmem_deferred_gup_cache_elm(struct deferred_gup * req) {
 
-    kmem_cache_free(kmem_defered_gup_cache, req);
+    kmem_cache_free(kmem_deferred_gup_cache, req);
 }
 
 
@@ -66,9 +66,10 @@ static inline void queue_dsm_request(struct conn_element *ele,
 
 static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
         u16 type, struct subvirtual_machine *local_svm,
-        struct subvirtual_machine *remote_svm, uint64_t addr,
-        int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
-        struct page *page, struct page_pool_ele *ppe)
+        struct memory_region *fault_mr, struct subvirtual_machine *remote_svm,
+        uint64_t addr, int (*func)(struct tx_buf_ele *),
+        struct dsm_page_cache *dpc, struct page *page,
+        struct page_pool_ele *ppe)
 {
     if (!req) {
         req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
@@ -78,6 +79,7 @@ static int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
 
     req->type = type;
     req->dsm_id = local_svm->dsm->dsm_id;
+    req->mr_id = fault_mr->mr_id;
     req->local_svm_id = local_svm->svm_id;
     req->remote_svm_id = remote_svm->svm_id;
     req->addr = addr;
@@ -117,7 +119,8 @@ static inline int request_queue_full(struct conn_element *ele)
 }
 
 static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
-        struct svm_list svms, unsigned long addr)
+        struct memory_region *fault_mr, struct svm_list svms,
+        unsigned long addr)
 {
     struct tx_buf_ele *tx_elms[svms.num];
     struct dsm_request *reqs[svms.num];
@@ -140,14 +143,15 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
     for_each_valid_svm(svms, i) {
         if (tx_elms[i]) {
             create_page_pull_request(svms.pp[i]->ele, tx_elms[i],
-                    fault_svm->dsm->dsm_id, fault_svm->svm_id,
+                    fault_svm->dsm->dsm_id, fault_mr->mr_id, fault_svm->svm_id,
                     svms.pp[i]->svm_id, (uint64_t) addr);
             tx_elms[i]->callback.func = NULL;
             tx_dsm_send(svms.pp[i]->ele, tx_elms[i]);
         } else {
             BUG_ON(!reqs[i]);
             r |= add_dsm_request(reqs[i], svms.pp[i]->ele, REQUEST_PAGE_PULL,
-                    fault_svm, svms.pp[i], addr, NULL, NULL, NULL, NULL);
+                    fault_svm, fault_mr, svms.pp[i], addr, NULL, NULL, NULL,
+                    NULL);
         }
     }
 
@@ -189,32 +193,33 @@ out:
 }
 
 int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
-        struct subvirtual_machine *fault_svm, uint64_t addr,
-        int (*func)(struct tx_buf_ele *), int tag, struct dsm_page_cache *dpc,
-        struct page_pool_ele *ppe)
+        struct subvirtual_machine *fault_svm, struct memory_region *fault_mr,
+        unsigned long addr, int (*func)(struct tx_buf_ele *), int tag,
+        struct dsm_page_cache *dpc, struct page_pool_ele *ppe)
 {
     struct conn_element *ele = remote_svm->ele;
     struct tx_buf_ele *tx_e;
     int ret = -EINVAL;
     int req_tag = (tag == PULL_TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
+    unsigned long shared_addr = addr - fault_mr->addr;
 
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
             create_page_request(ele, tx_e, fault_svm->dsm->dsm_id,
-                    fault_svm->svm_id, remote_svm->svm_id, addr, page, req_tag,
-                    dpc, ppe);
+                    fault_mr->mr_id, fault_svm->svm_id, remote_svm->svm_id,
+                    shared_addr, page, req_tag, dpc, ppe);
 
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
             trace_send_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,
-                        tx_e->id, tx_e->dsm_buf->offset, addr, tag);
+                        tx_e->id, tx_e->dsm_buf->offset, shared_addr, tag);
             goto out;
         }
     }
 
-    ret = add_dsm_request(NULL, ele, req_tag, fault_svm, remote_svm,
-            addr, func, dpc, page, ppe);
+    ret = add_dsm_request(NULL, ele, req_tag, fault_svm, fault_mr,
+            remote_svm, shared_addr, func, dpc, page, ppe);
     BUG_ON(ret); /* FIXME: Handle req alloc failure */
 
 out:
@@ -224,27 +229,30 @@ out:
 int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
 {
     struct subvirtual_machine *local_svm;
-    unsigned long norm_addr;
     struct dsm *dsm;
-    struct dsm_message * msg;
+    struct dsm_message *msg;
+    struct memory_region *mr;
     int r = 0;
 
     BUG_ON(!rx_buf_e);
     BUG_ON(!rx_buf_e->dsm_buf);
-    msg= rx_buf_e->dsm_buf;
+    msg = rx_buf_e->dsm_buf;
 
     dsm = find_dsm(msg->dsm_id);
     if (unlikely(!dsm))
         goto fail;
 
     local_svm = find_svm(dsm, msg->src_id);
-    if (unlikely(!local_svm || !local_svm->priv))
+    if (unlikely(!local_svm || !local_svm->mm))
         goto fail;
 
-    norm_addr = msg->req_addr + local_svm->priv->offset;
+    /* push only happens to mr owners! */
+    mr = find_mr(local_svm, msg->mr_id);
+    if (unlikely(!mr || mr->local != DSM_LOCAL_MR))
+        goto fail;
 
     // we get -1 if something bad happened, or >0 if we had dpc or we requested the page
-    if (dsm_trigger_page_pull(dsm, local_svm, norm_addr) < 0)
+    if (dsm_trigger_page_pull(dsm, local_svm, mr, msg->req_addr) < 0)
         r = -1;
     release_svm(local_svm);
 
@@ -272,23 +280,29 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
     u64 req_addr = tx_e->dsm_buf->req_addr;
     int (*func)(struct tx_buf_ele *) = tx_e->callback.func;
     struct subvirtual_machine *svm = NULL;
-    int ret = 0;
+    struct memory_region *fault_mr;
+    int ret = -1;
 
     tx_e->wrk_req->dst_addr->mem_page = NULL;
     dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
     release_tx_element(ele, tx_e);
 
+    fault_mr = find_mr(dpc->svm, tx_e->dsm_buf->mr_id);
+    if (!fault_mr)
+        goto out;
+
     svm = find_svm(dpc->svm->dsm, redirect_svm_id);
-    if (svm) {
-        trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
-                svm->dsm->dsm_id, svm->svm_id, req_addr, dpc->tag);
-        ret = request_dsm_page(page, svm, dpc->svm, req_addr, func, dpc->tag,
-                dpc, NULL);
-    } else
-        ret = -1;
+    if (!svm)
+        goto out;
+
+    trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
+            svm->dsm->dsm_id, svm->svm_id, req_addr, dpc->tag);
+    ret = request_dsm_page(page, svm, dpc->svm, fault_mr, req_addr, func,
+            dpc->tag, dpc, NULL);
 
     // we need to release the page as something failed..
     //FIXME: not sure about refcount
+out:
     if (ret != 0)
         page_cache_release(page);
     return ret;
@@ -342,47 +356,56 @@ static void handle_page_request_fail(struct conn_element *ele,
 
 
 static inline void defer_gup(struct dsm_message *msg,
-        struct subvirtual_machine *local_svm,
-        struct subvirtual_machine *remote_svm, struct conn_element *ele) {
-    struct defered_gup *dgup = NULL;
+        struct subvirtual_machine *local_svm, struct memory_region *mr,
+        struct subvirtual_machine *remote_svm, struct conn_element *ele) 
+{
+    struct deferred_gup *dgup = NULL;
 
 retry:
-    dgup = kmem_cache_alloc(kmem_defered_gup_cache, GFP_KERNEL);
+    dgup = kmem_cache_alloc(kmem_deferred_gup_cache, GFP_KERNEL);
     if (unlikely(!dgup)) {
         might_sleep();
         goto retry;
     }
     dgup->origin_ele = ele;
     dgup->remote_svm = remote_svm;
+    dgup->mr = mr;
     dsm_msg_cpy(&dgup->dsm_buf, msg);
-    llist_add(&dgup->lnode, &local_svm->defered_gups);
-    schedule_work(&local_svm->defered_gup_work);
+    llist_add(&dgup->lnode, &local_svm->deferred_gups);
+    schedule_work(&local_svm->deferred_gup_work);
 }
 
 
 static int process_page_request(struct conn_element *origin_ele,
-        struct subvirtual_machine *local_svm,
+        struct subvirtual_machine *local_svm, struct memory_region *mr,
         struct subvirtual_machine *remote_svm, struct dsm_message *msg,
-        int defered) {
+        int deferred)
+{
     struct page_pool_ele *ppe;
     struct tx_buf_ele *tx_e = NULL;
     struct page *page;
-    unsigned long norm_addr =0;
-    struct conn_element *ele=NULL;
-    u32 id=0;
+    unsigned long addr = 0;
+    struct conn_element *ele = NULL;
+    u32 redirect_id = 0;
 
-   if (!local_svm)
+    if (!local_svm) {
+        printk(KERN_ERR "!local_svm (inner)\n");
         goto no_svm;
-    if (!remote_svm)
+    }
+    if (!remote_svm) {
+        printk(KERN_ERR "!remote_svm (inner)\n");
         goto fail;
+    }
 
     //FIXME : handle if remote svm has moved => different connection element
     //if (origin_ele != remote_svm->ele)
     ele = remote_svm->ele;
 
-    norm_addr = msg->req_addr + local_svm->priv->offset;
+    addr = msg->req_addr + mr->addr;
+    BUG_ON(addr < mr->addr || addr > mr->addr + mr->sz);
+
     trace_process_page_request(local_svm->dsm->dsm_id, local_svm->svm_id,
-            remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr, msg->type);
+            remote_svm->dsm->dsm_id, remote_svm->svm_id, addr, msg->type);
 
 retry:
     tx_e = try_get_next_empty_tx_reply_ele(ele);
@@ -396,18 +419,22 @@ retry:
     tx_e->dsm_buf->type = PAGE_REQUEST_REPLY;
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_buf->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_buf->rkey;
-    tx_e->reply_work_req->mm = local_svm->priv->mm;
-    tx_e->reply_work_req->addr = norm_addr;
+    tx_e->reply_work_req->mm = local_svm->mm;
+    tx_e->reply_work_req->addr = addr;
 
-    page = dsm_extract_page_from_remote(local_svm, remote_svm, norm_addr,
-            msg->type, &tx_e->reply_work_req->pte, &id, defered);
+    page = dsm_extract_page_from_remote(local_svm, remote_svm, addr,
+            msg->type, &tx_e->reply_work_req->pte, &redirect_id, deferred);
 
-    if (unlikely(!page))
+    if (unlikely(!page)) {
+        printk(KERN_ERR "!page\n");
         goto fail;
+    }
 
     ppe = dsm_prepare_ppe(ele, page);
-    if (!ppe)
+    if (!ppe) {
+        printk(KERN_ERR "!ppe\n");
         goto fail;
+    }
 
 
     tx_e->wrk_req->dst_addr = ppe;
@@ -415,7 +442,7 @@ retry:
 
     trace_process_page_request_complete(local_svm->dsm->dsm_id,
             local_svm->svm_id, remote_svm->dsm->dsm_id, remote_svm->svm_id,
-            norm_addr, msg->type);
+            addr, msg->type);
     tx_dsm_send(ele, tx_e);
     release_svm(local_svm);
     release_svm(remote_svm);
@@ -426,15 +453,15 @@ no_svm:
 fail:
     if (tx_e)
         release_tx_element_reply(ele, tx_e);
-    if (remote_svm && !id) {
+    if (remote_svm && !redirect_id) {
         trace_dsm_defer_gup(local_svm->dsm->dsm_id, local_svm->svm_id,
-                remote_svm->dsm->dsm_id, remote_svm->svm_id, norm_addr,
+                remote_svm->dsm->dsm_id, remote_svm->svm_id, addr,
                 msg->type);
-        defer_gup(msg, local_svm, remote_svm, origin_ele);
+        defer_gup(msg, local_svm, mr, remote_svm, origin_ele);
         /* we skip the release of the local svm because we want to keep it there until we actual solve the gup */
         goto out;
     } else {
-        handle_page_request_fail(ele, msg, remote_svm, id);
+        handle_page_request_fail(ele, msg, remote_svm, redirect_id);
     }
 
     if (local_svm)
@@ -450,51 +477,65 @@ fail:
 /*
  *  FIXME: NOTE: we really would like to do NOIO GUP with fast iteration over list in order to process the GUP in the fastest order
  */
-static inline void process_defered_gups(struct subvirtual_machine * svm) {
-    struct defered_gup *dgup = NULL;
-    struct llist_node *llnode = llist_del_all(&svm->defered_gups);
+static inline void process_deferred_gups(struct subvirtual_machine *svm)
+{
+    struct deferred_gup *dgup = NULL;
+    struct llist_node *llnode = llist_del_all(&svm->deferred_gups);
 
     do {
         while (llnode) {
-            dgup = container_of(llnode, struct defered_gup, lnode);
+            dgup = container_of(llnode, struct deferred_gup, lnode);
             llnode = llnode->next;
-            /*the defered is set to one i.e if we need to gup we will block */
+            /*the deferred is set to one i.e if we need to gup we will block */
             trace_dsm_defer_gup_execute(svm->dsm->dsm_id, svm->svm_id,
                     dgup->remote_svm->dsm->dsm_id, dgup->remote_svm->svm_id,
                     dgup->dsm_buf.req_addr, dgup->dsm_buf.type);
-            process_page_request(dgup->origin_ele, svm, dgup->remote_svm,
-                    &dgup->dsm_buf, 1);
+            process_page_request(dgup->origin_ele, svm, dgup->mr,
+                    dgup->remote_svm, &dgup->dsm_buf, 1);
             /*release the element*/
-            release_kmem_defered_gup_cache_elm(dgup);
+            release_kmem_deferred_gup_cache_elm(dgup);
         }
-        llnode = llist_del_all(&svm->defered_gups);
+        llnode = llist_del_all(&svm->deferred_gups);
     } while (llnode);
 
 }
 
-void defered_gup_work_fn(struct work_struct *w) {
+void deferred_gup_work_fn(struct work_struct *w) {
     struct subvirtual_machine *svm = NULL;
 
-    svm = container_of(w, struct subvirtual_machine, defered_gup_work);
+    svm = container_of(w, struct subvirtual_machine, deferred_gup_work);
 
-    process_defered_gups(svm);
+    process_deferred_gups(svm);
 }
 
-
-
-
-int process_page_request_msg(struct conn_element *ele, struct dsm_message * msg) {
-
+int process_page_request_msg(struct conn_element *ele, struct dsm_message *msg)
+{
     struct subvirtual_machine *local_svm = NULL, *remote_svm = NULL;
     struct dsm *dsm = NULL;
+    struct memory_region *mr = NULL;
 
     dsm = find_dsm(msg->dsm_id);
-    if (dsm) {
-        local_svm = find_svm(dsm, msg->src_id);
-        if (local_svm)
-            remote_svm = find_svm(dsm, msg->dest_id);
+    if (unlikely(!dsm))
+        goto fail;
+
+    local_svm = find_svm(dsm, msg->src_id);
+    if (unlikely(!local_svm))
+        goto fail;
+
+    mr = find_mr(local_svm, msg->mr_id);
+    if (unlikely(!mr))
+        goto fail;
+
+    remote_svm = find_svm(dsm, msg->dest_id);
+    if (unlikely(!remote_svm)) {
+        release_svm(local_svm);
+        goto fail;
     }
-    return process_page_request(ele, local_svm, remote_svm, msg, 0); // server got a request, not defered
+
+    return process_page_request(ele, local_svm, mr, remote_svm, msg, 0);
+
+fail:
+    return -EFAULT;
 }
 
 /*
@@ -730,8 +771,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
     if (unlikely(ret))
         goto out;
 
-    ret = send_request_dsm_page_pull(fault_svm, svms,
-            addr - fault_svm->priv->offset);
+    ret = send_request_dsm_page_pull(fault_svm, mr, svms, addr - mr->addr);
     if (unlikely(ret == -ENOMEM))
         dsm_cancel_page_push(fault_svm, addr, page);
 

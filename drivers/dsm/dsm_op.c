@@ -636,7 +636,7 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port)
     rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
     BUG_ON(!(rcm));
     init_kmem_request_cache();
-    init_kmem_defered_gup_cache();
+    init_kmem_deferred_gup_cache();
     init_dsm_cache_kmem();
     init_dsm_prefetch_cache_kmem();
     dsm_init_descriptors();
@@ -805,7 +805,7 @@ unsigned int inet_addr(char *addr)
 }
 
 void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
-        u32 dsm_id, u32 local_id, u32 remote_id, uint64_t addr,
+        u32 dsm_id, u32 mr_id, u32 local_id, u32 remote_id, uint64_t addr,
         struct page *page, u16 type, struct dsm_page_cache *dpc,
         struct page_pool_ele *ppe)
 {
@@ -821,6 +821,7 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
     //we need to reset the offset just in case if we actually use the element for reply as an error
     msg->offset = tx_e->id;
     msg->dsm_id = dsm_id;
+    msg->mr_id = mr_id;
     msg->dest_id = local_id;
     msg->src_id = remote_id;
     msg->dst_addr = (u64) ppe->page_buf;
@@ -830,14 +831,15 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
 }
 
 void create_page_pull_request(struct conn_element *ele,
-        struct tx_buf_ele *tx_e, u32 dsm_id, u32 local_id, u32 remote_id,
-        uint64_t addr)
+        struct tx_buf_ele *tx_e, u32 dsm_id, u32 mr_id, u32 local_id,
+        u32 remote_id, uint64_t addr)
 {
     struct dsm_message *msg = tx_e->dsm_buf;
 
     tx_e->wrk_req->dst_addr = NULL;
     msg->offset = tx_e->id;
     msg->dsm_id = dsm_id;
+    msg->mr_id = mr_id;
     msg->dest_id = local_id;
     msg->src_id = remote_id;
     msg->dst_addr = 0;
@@ -964,7 +966,7 @@ int destroy_rcm(struct dsm_module_state *dsm_state)
     destroy_dsm_cache_kmem();
     destroy_dsm_prefetch_cache_kmem();
     destroy_kmem_request_cache();
-    destroy_kmem_defered_gup_cache();
+    destroy_kmem_deferred_gup_cache();
     dsm_destroy_descriptors();
 
     return 0;
@@ -1025,62 +1027,6 @@ int destroy_connection(struct conn_element *ele)
     vfree(ele);
 
     return ret;
-}
-
-static void replace_mr_descriptor(struct dsm *dsm, struct memory_region *mr,
-        struct svm_list svms, u32 svm_id)
-{
-    int i, j = 0;
-    u32 svm_ids[svms.num - 1];
-
-    for_each_valid_svm(svms, i) {
-        if (svms.pp[i]->svm_id != svm_id)
-            svm_ids[j++] = svms.pp[i]->svm_id;
-    }
-    svm_ids[j] = 0;
-
-    mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
-}
-
-void release_svm_from_mr_descriptors(struct subvirtual_machine *svm)
-{
-    struct rb_root *root = &svm->dsm->mr_tree_root;
-    struct rb_node *node;
-    int i;
-
-    write_seqlock(&svm->dsm->mr_seq_lock);
-    for (node = rb_first(root); node; ) {
-        struct memory_region *mr;
-        struct svm_list svms;
-
-        mr = rb_entry(node, struct memory_region, rb_node);
-        node = rb_next(node);
-        rcu_read_lock();
-        svms = dsm_descriptor_to_svms(mr->descriptor);
-        rcu_read_unlock();
-
-        for_each_valid_svm(svms, i) {
-            if (svms.pp[i]->svm_id == svm->svm_id) {
-                if (svms.num > 1) {
-                    replace_mr_descriptor(svm->dsm, mr, svms, svm->svm_id);
-                } else {
-                    rb_erase(&mr->rb_node, root);
-                    kfree(mr);
-                }
-
-                /*
-                 * We can either walk the entire page table, removing references
-                 * to this descriptor; change the descriptor right now (which
-                 * will require more complicated rcu locking everywhere); or
-                 * hack - leave a "hole" in the arr to signal svm down.
-                 *
-                 */
-                svms.pp[i] = 0;
-                break;
-            }
-        }
-    }
-    write_sequnlock(&svm->dsm->mr_seq_lock);
 }
 
 /*
@@ -1164,10 +1110,8 @@ void release_svm_tx_elements(struct subvirtual_machine *svm,
                 && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)
                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
             struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
-            unsigned long addr;
             
-            addr = tx_e->dsm_buf->req_addr + dpc->svm->priv->offset;
-            dsm_pull_req_failure(dpc, addr);
+            dsm_pull_req_failure(dpc);
             tx_e->wrk_req->dst_addr->mem_page = NULL;
             dsm_release_pull_dpc(&dpc);
             dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);

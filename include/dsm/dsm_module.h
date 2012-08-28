@@ -55,10 +55,10 @@ int create_rcm(struct dsm_module_state *, char *, int);
 int destroy_rcm(struct dsm_module_state *);
 int destroy_connection(struct conn_element *);
 void create_page_request(struct conn_element *, struct tx_buf_ele *, u32, u32,
-        u32, uint64_t, struct page*, u16, struct dsm_page_cache *,
+        u32, u32, uint64_t, struct page*, u16, struct dsm_page_cache *,
         struct page_pool_ele *);
 void create_page_pull_request(struct conn_element *, struct tx_buf_ele *, u32,
-        u32, u32, uint64_t);
+        u32, u32, u32, uint64_t);
 struct tx_buf_ele * try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele * try_get_next_empty_tx_reply_ele(struct conn_element *);
 int create_connection(struct rcm *, struct svm_data *);
@@ -71,7 +71,7 @@ void try_release_tx_element(struct conn_element *, struct tx_buf_ele *);
 int setup_recv_wr(struct conn_element *);
 int refill_recv_wr(struct conn_element *, struct rx_buf_ele *);
 void reg_rem_info(struct conn_element *);
-void release_svm_from_mr_descriptors(struct subvirtual_machine *);
+void remove_svm_from_descriptors(struct subvirtual_machine *);
 void release_svm_tx_elements(struct subvirtual_machine *, struct conn_element*);
 void release_svm_push_elements(struct subvirtual_machine *);
 void surrogate_push_remote_svm(struct subvirtual_machine *,
@@ -101,9 +101,10 @@ struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
         struct mm_struct *);
 struct subvirtual_machine *find_local_svm(struct mm_struct *);
 struct subvirtual_machine *find_svm(struct dsm *, u32);
-void insert_mr(struct dsm *, struct memory_region *);
-struct memory_region *search_mr(struct dsm *, unsigned long);
-int destroy_mrs(struct dsm *, int);
+int insert_mr(struct subvirtual_machine *, struct memory_region *);
+struct memory_region *search_mr(struct subvirtual_machine *, unsigned long);
+struct memory_region *find_mr(struct subvirtual_machine *, u32);
+void destroy_mrs(struct subvirtual_machine *);
 int remove_svm_from_mrs(struct dsm *, u32);
 void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
 
@@ -127,9 +128,9 @@ void dsm_request_queue_merge(struct tx_buffer *);
 /*
  * SR
  */
-void init_kmem_defered_gup_cache(void);
-void destroy_kmem_defered_gup_cache(void);
-void defered_gup_work_fn(struct work_struct *);
+void init_kmem_deferred_gup_cache(void);
+void destroy_kmem_deferred_gup_cache(void);
+void deferred_gup_work_fn(struct work_struct *);
 int request_queue_empty(struct conn_element *);
 void init_kmem_request_cache(void);
 void destroy_kmem_request_cache(void);
@@ -143,8 +144,9 @@ int exchange_info(struct conn_element *, int);
 int dsm_send_info(struct conn_element *);
 int dsm_recv_info(struct conn_element *);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
-        struct subvirtual_machine *, uint64_t, int (*func)(struct tx_buf_ele *),
-        int, struct dsm_page_cache *, struct page_pool_ele *);
+        struct subvirtual_machine *, struct memory_region *, unsigned long,
+        int (*func)(struct tx_buf_ele *), int, struct dsm_page_cache *,
+        struct page_pool_ele *);
 int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct page *, unsigned long, struct mm_struct *,
         struct memory_region *);

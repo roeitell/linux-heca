@@ -85,11 +85,9 @@ struct dsm {
 
     struct radix_tree_root svm_tree_root;
     struct radix_tree_root svm_mm_tree_root;
-    struct rb_root mr_tree_root;
 
     struct mutex dsm_mutex;
     struct list_head svm_list;
-    seqlock_t mr_seq_lock;
 
     struct list_head dsm_ptr;
 
@@ -228,43 +226,44 @@ struct dsm_message {
     u64 req_addr;
     u64 dst_addr;
     u32 dsm_id;
+    u32 mr_id;
     u32 src_id;
     u32 dest_id;
     u32 offset;
     u32 rkey;
 };
 
-/*
- * region represents local area of VM memory.
- */
 struct memory_region {
     unsigned long addr;
     unsigned long sz;
     u32 descriptor;
-    struct rb_node rb_node;
+    u32 mr_id;
     int local;
-#define LOCAL   1
-#define REMOTE  0
+#define DSM_REMOTE_MR  0
+#define DSM_LOCAL_MR   1
+
+    struct rb_node rb_node;
 };
 
 struct private_data {
-    struct mm_struct *mm;
-    unsigned long offset;
     struct dsm *dsm;
-    struct subvirtual_machine *svm;
 };
 
 struct subvirtual_machine {
     u32 svm_id;
     struct dsm *dsm;
     struct conn_element *ele;
-    struct private_data *priv;
+    struct mm_struct *mm;
     u32 descriptor;
     struct list_head svm_ptr;
-    struct list_head mr_list;
 
     struct radix_tree_root page_cache;
     spinlock_t page_cache_spinlock;
+
+    struct radix_tree_root mr_id_tree_root;
+    struct rb_root mr_tree_root;
+    struct memory_region *mr_cache;
+    seqlock_t mr_seq_lock;
 
     struct rb_root push_cache;
     seqlock_t push_cache_lock;
@@ -274,8 +273,8 @@ struct subvirtual_machine {
     struct llist_head delayed_faults;
     struct delayed_work delayed_gup_work;
 
-    struct llist_head defered_gups;
-    struct work_struct defered_gup_work;
+    struct llist_head deferred_gups;
+    struct work_struct deferred_gup_work;
 
     atomic_t refs;
 };
@@ -347,6 +346,7 @@ struct dsm_request {
     u32 dsm_id;
     u32 local_svm_id;
     u32 remote_svm_id;
+    u32 mr_id;
     struct page *page;
     struct page_pool_ele *ppe;
     uint64_t addr;
@@ -358,10 +358,11 @@ struct dsm_request {
     struct list_head ordered_list;
 };
 
-struct defered_gup {
+struct deferred_gup {
     struct dsm_message dsm_buf;
     struct subvirtual_machine *remote_svm;
     struct conn_element *origin_ele;
+    struct memory_region *mr;
     struct llist_node lnode;
 };
 

@@ -59,13 +59,13 @@ static int process_dsm_request(struct conn_element *ele,
     switch (req->type) {
         case REQUEST_PAGE:
         case TRY_REQUEST_PAGE:
-            create_page_request(ele, tx_e, req->dsm_id, req->local_svm_id,
-                    req->remote_svm_id, req->addr, req->page, req->type,
-                    req->dpc, req->ppe);
+            create_page_request(ele, tx_e, req->dsm_id, req->mr_id,
+                    req->local_svm_id, req->remote_svm_id, req->addr, req->page,
+                    req->type, req->dpc, req->ppe);
             break;
         case REQUEST_PAGE_PULL:
-            create_page_pull_request(ele, tx_e, req->dsm_id, req->local_svm_id,
-                    req->remote_svm_id, req->addr);
+            create_page_pull_request(ele, tx_e, req->dsm_id, req->mr_id,
+                    req->local_svm_id, req->remote_svm_id, req->addr);
             break;
         case PAGE_REQUEST_FAIL:
             dsm_msg_cpy(tx_e->dsm_buf, &req->dsm_buf);

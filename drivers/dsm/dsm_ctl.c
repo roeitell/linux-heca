@@ -518,6 +518,7 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
         goto out_free;
     }
 
+    mr->mr_id = udata.id;
     mr->addr = (unsigned long) udata.addr;
     mr->sz = udata.sz;
     mr->local = DSM_REMOTE_MR;
@@ -559,8 +560,8 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
 
     release_svm(svm);
 
-    dsm_printk(KERN_INFO "register_mr: svm[%d] addr[%lu] sz [0x%lx] --> ret %d",
-            svm->svm_id, mr->addr, mr->sz, ret);
+    dsm_printk(KERN_INFO "register_mr: id[%d] svm[%d] addr[%lu] sz [0x%lx]"
+            " --> ret %d", mr->mr_id, svm->svm_id, mr->addr, mr->sz, ret);
 
     return ret;
 
@@ -571,11 +572,10 @@ out_free:
 out:
     if (svm)
         release_svm(svm);
-    dsm_printk(KERN_INFO
-            "register_mr failed : addr [0x%lx] sz [0x%lx] svm[0] [0x%x] --> ret %d",
-            udata.addr, udata.sz, *udata.svm_ids, ret);
-    ret =-1;
-    return ret;
+    dsm_printk(KERN_INFO "register_mr failed : id [%d] addr [0x%lx] sz [0x%lx]"
+            " svm[0] [0x%x] --> ret %d", udata.id, udata.addr, udata.sz,
+            *udata.svm_ids, ret);
+    return -1;
 }
 
 static int pushback_page(struct private_data *priv_data, void __user *argp)

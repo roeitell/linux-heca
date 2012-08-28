@@ -388,14 +388,11 @@ static int process_page_request(struct conn_element *origin_ele,
     struct conn_element *ele = NULL;
     u32 redirect_id = 0;
 
-    if (!local_svm) {
-        printk(KERN_ERR "!local_svm (inner)\n");
+    if (!local_svm)
         goto no_svm;
-    }
-    if (!remote_svm) {
-        printk(KERN_ERR "!remote_svm (inner)\n");
+
+    if (!remote_svm)
         goto fail;
-    }
 
     //FIXME : handle if remote svm has moved => different connection element
     //if (origin_ele != remote_svm->ele)
@@ -425,16 +422,12 @@ retry:
     page = dsm_extract_page_from_remote(local_svm, remote_svm, addr,
             msg->type, &tx_e->reply_work_req->pte, &redirect_id, deferred);
 
-    if (unlikely(!page)) {
-        printk(KERN_ERR "!page\n");
+    if (unlikely(!page))
         goto fail;
-    }
 
     ppe = dsm_prepare_ppe(ele, page);
-    if (!ppe) {
-        printk(KERN_ERR "!ppe\n");
+    if (!ppe)
         goto fail;
-    }
 
 
     tx_e->wrk_req->dst_addr = ppe;

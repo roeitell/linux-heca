@@ -384,10 +384,10 @@ static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
     struct dsm_page_cache *dpc = NULL;
     pte_t pte_entry;
     struct dsm_pte_data pd;
-    int clear_pte_flag = 0, active = 0;
+    int clear_pte_flag = 0;
     spinlock_t *ptl = NULL;
 
-retry: 
+retry:
     page = NULL;
     if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
         goto out;
@@ -402,13 +402,8 @@ retry:
     page = dpc->pages[0];
     BUG_ON(!page);
 
-    /* page has been taken in the meanwhile, bail out */
-    if (unlikely(PageActive(page))) {
-        active = 1;
-        goto noop;
-
     /* first response to arrive and grab the pte lock */
-    } else if (pte_present(pte_entry)) {
+    if (pte_present(pte_entry)) {
         /* make sure shrink_page_list is finished with this page */
         lock_page(page);
         pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -437,7 +432,6 @@ retry:
         clear_pte_flag = 1;
     }
 
-noop:
     atomic_dec(&dpc->nproc);
     if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
             atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
@@ -452,8 +446,8 @@ noop:
 
     *return_pte = pd.pte;
 
-out: 
-    return active? NULL : page;
+out:
+    return page;
 }
 
 struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,

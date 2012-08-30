@@ -738,10 +738,9 @@ int dsm_recv_info(struct conn_element *ele)
 }
 
 int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
-        struct page *page, unsigned long request_addr, struct mm_struct *mm,
+        struct page *page, unsigned long addr, struct mm_struct *mm,
         struct memory_region *mr)
 {
-    unsigned long addr = request_addr & PAGE_MASK;
     struct svm_list svms;
     int ret = 0, i;
 

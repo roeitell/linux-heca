@@ -83,6 +83,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             release_svm_tx_elements(svm, ele);
         }
         release_svm_push_elements(svm);
+        destroy_mrs(svm);
     } else if (svm->ele) {
         struct subvirtual_machine *local_svm;
 

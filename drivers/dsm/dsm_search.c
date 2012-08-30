@@ -198,20 +198,24 @@ EXPORT_SYMBOL(erase_rb_conn);
 
 void destroy_mrs(struct subvirtual_machine *svm)
 {
-    struct rb_root *root;
-    struct rb_node *node;
-    struct memory_region *mr;
+    struct rb_root *root = &svm->mr_tree_root;
 
-    write_seqlock(&svm->mr_seq_lock);
-    root = &svm->mr_tree_root;
-    node = rb_first(root);
-    while (node) {
+    do {
+        struct memory_region *mr;
+        struct rb_node *node;
+
+        write_seqlock(&svm->mr_seq_lock);
+        node = rb_first(root);
+        if (!node) {
+            write_sequnlock(&svm->mr_seq_lock);
+            break;
+        }
         mr = rb_entry(node, struct memory_region, rb_node);
-        node = rb_next(node);
         rb_erase(&mr->rb_node, root);
+        write_sequnlock(&svm->mr_seq_lock);
+        synchronize_rcu();
         kfree(mr);
-    }
-    write_sequnlock(&svm->mr_seq_lock);
+    } while(1);
 }
 
 int insert_mr(struct subvirtual_machine *svm, struct memory_region *mr)

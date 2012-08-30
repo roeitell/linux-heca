@@ -438,8 +438,10 @@ retry:
         dsm_push_cache_release(local_svm, &dpc, 1);
         if (likely(page && clear_pte_flag)) {
             pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-            if (likely(pte_same(*(pd.pte), pte_entry)))
-                dsm_clear_swp_entry_flag(mm, addr, pd.pte, DSM_PUSHING_BITPOS);
+            /* try again with lock held */
+            if (unlikely(!pte_same(*(pd.pte), pte_entry)))
+                dsm_extract_pte_data(&pd, mm, addr);
+            dsm_clear_swp_entry_flag(mm, addr, pd.pte, DSM_PUSHING_BITPOS);
             pte_unmap_unlock(pd.pte, ptl);
         }
     }
@@ -524,16 +526,17 @@ int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
     if (dsm_push_cache_lookup(local_svm, addr))
         return -EEXIST;
 
-retry:
     dpc = dsm_alloc_dpc(local_svm, addr, svms, 1, descriptor);
     if (unlikely(!dpc))
         return -ENOMEM;
 
-    /* we're trying to swap out an active page, everything should be here */
+retry:
+    /* we lock the pte to avoid racing with an incoming page request */
     dsm_extract_pte_data(&pd, mm, addr);
     BUG_ON(!pd.pte);
     pte_entry = *(pd.pte);
-    BUG_ON(!pte_present(pte_entry));
+    if (unlikely(!pte_present(pte_entry)))
+        goto no_page;
 
     pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
     if (unlikely(!pte_same(*pte, pte_entry))) {
@@ -583,8 +586,9 @@ retry:
     return 0;
     
 bad_page: 
-    dsm_dealloc_dpc(&dpc);
     pte_unmap_unlock(pte, ptl);
+no_page:
+    dsm_dealloc_dpc(&dpc);
     return -EFAULT;
 }
 EXPORT_SYMBOL(dsm_prepare_page_for_push);

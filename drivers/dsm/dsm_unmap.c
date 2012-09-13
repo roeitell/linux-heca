@@ -130,7 +130,7 @@ retry:
     }
     if (PageKsm(page)) {
         printk("[dsm_flag_page_remote] KSM page\n");
-
+        pte_unmap_unlock(pte, ptl);
         r = ksm_madvise(vma, request_addr, request_addr + PAGE_SIZE,
                 MADV_UNMERGEABLE, &vma->vm_flags);
 
@@ -140,6 +140,7 @@ retry:
             // DSM1 : better ksm error handling required.
             return -EFAULT;
         }
+        goto retry;
     }
 
     if (!trylock_page(page)) {

@@ -348,7 +348,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd->vma->vm_mm,pd->vma, addr, FAULT_FLAG_WRITE);
+        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
         if (r)
             return NULL;
         goto retry;
@@ -555,7 +555,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd->vma->vm_mm,pd->vma, addr, FAULT_FLAG_WRITE);
+        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
         if(r)
             goto bad_page;
         goto retry;

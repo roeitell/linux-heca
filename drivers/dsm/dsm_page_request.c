@@ -347,10 +347,11 @@ retry:
     }
 
     if (unlikely(PageKsm(page))) {
-        r = ksm_madvise(pd.vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE,
-                &(pd.vma->vm_flags));
-        if (r) /* DSM1 : better ksm error handling required. */
-            goto bad_page;
+        pte_unmap_unlock(pd.pte, ptl);
+        r = handle_mm_fault(pd->vma->vm_mm,pd->vma, addr, FAULT_FLAG_WRITE);
+        if (r)
+            return NULL;
+        goto retry;
     }
 
 
@@ -530,11 +531,11 @@ int dsm_prepare_page_for_push(struct subvirtual_machine *local_svm,
     if (dsm_push_cache_lookup(local_svm, addr))
         return -EEXIST;
 
-retry:
+
     dpc = dsm_alloc_dpc(local_svm, addr, svms, 1, descriptor);
     if (unlikely(!dpc))
         return -ENOMEM;
-
+retry:
     /* we're trying to swap out an active page, everything should be here */
     dsm_extract_pte_data(&pd, mm, addr);
     BUG_ON(!pd.pte);
@@ -549,18 +550,20 @@ retry:
 
     if (unlikely(PageTransHuge(page) && !PageHuge(page) && PageAnon(page))) {
         if (unlikely(split_huge_page(page)))
-            goto bad_page;
+            goto bad_page_unlock;
     }
 
     if (unlikely(PageKsm(page))) {
-        if (ksm_madvise(pd.vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE,
-                &pd.vma->vm_flags))
+        pte_unmap_unlock(pd.pte, ptl);
+        r = handle_mm_fault(pd->vma->vm_mm,pd->vma, addr, FAULT_FLAG_WRITE);
+        if(r)
             goto bad_page;
+        goto retry;
     }
 
     r = dsm_push_cache_add(dpc, local_svm, addr);
     if (unlikely(r))
-        goto bad_page;
+        goto bad_page_unlock;
 
     dpc->bitmap = 0;
     dpc->pages[0] = page;
@@ -588,9 +591,11 @@ retry:
     congestion++;
     return 0;
     
-bad_page: 
-    dsm_dealloc_dpc(&dpc);
+bad_page_unlock:
     pte_unmap_unlock(pte, ptl);
+bad_page:
+    dsm_dealloc_dpc(&dpc);
+
     return -EFAULT;
 }
 EXPORT_SYMBOL(dsm_prepare_page_for_push);

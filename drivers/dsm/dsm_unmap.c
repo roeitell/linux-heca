@@ -131,13 +131,9 @@ retry:
     if (PageKsm(page)) {
         printk("[dsm_flag_page_remote] KSM page\n");
         pte_unmap_unlock(pte, ptl);
-        r = ksm_madvise(vma, request_addr, request_addr + PAGE_SIZE,
-                MADV_UNMERGEABLE, &vma->vm_flags);
-
+        r = handle_mm_fault(vma->vm_mm, vma, request_addr, FAULT_FLAG_WRITE);
         if (r) {
-            printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
-
-            // DSM1 : better ksm error handling required.
+            printk("[dsm_extract_page] handle_mm_fault ret : %d\n", r);
             return -EFAULT;
         }
         goto retry;

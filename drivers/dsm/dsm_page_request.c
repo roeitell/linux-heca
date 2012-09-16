@@ -276,8 +276,17 @@ static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
 
 self_fault:
     return 0;
+}
 
+static inline int do_deferred_gup(struct mm_struct *mm, unsigned long addr,
+        struct page *page)
+{
+    int r;
 
+    trace_is_deferred(1);
+    r = get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+    trace_get_user_pages_res(r);
+    return r;
 }
 
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
@@ -290,21 +299,16 @@ static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
     struct dsm_pte_data pd;
     pte_t pte_entry;
 
-    
 retry:
     page = NULL;
-    r= dsm_extract_pte_data(&pd, mm, addr);
+    r = dsm_extract_pte_data(&pd, mm, addr);
     if (unlikely(r)) {
-        if (deferred) {
-            trace_extract_pte_data_err(r);
-            trace_is_deferred(deferred);
-            r= get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            trace_get_user_pages_res(r);
+        trace_extract_pte_data_err(r);
+        if (likely(deferred)) {
+            do_deferred_gup(mm, addr, page);
             goto retry;
-        } else {
-            trace_extract_pte_data_err(r);
-            goto out;
         }
+        goto out;
     }
 
     pte_entry = *(pd.pte);
@@ -316,13 +320,12 @@ retry:
     if (unlikely(!pte_present(pte_entry))) {
         *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
                 &pd);
-        trace_is_deferred(deferred);
         if (*svm_id) {
             set_pte_at(mm, addr, pd.pte,
                     dsm_descriptor_to_pte(remote_svm->descriptor, 0));
         } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            do_deferred_gup(mm, addr, page);
             goto retry;
         }
         goto bad_page;

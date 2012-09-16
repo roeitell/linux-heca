@@ -561,8 +561,8 @@ static int register_mr(struct private_data *priv_data, void __user *argp)
 
     release_svm(svm);
 
-    dsm_printk(KERN_INFO "register_mr: id[%d] svm[%d] addr[%lu] sz [0x%lx]"
-            " --> ret %d", mr->mr_id, svm->svm_id, mr->addr, mr->sz, ret);
+    dsm_printk(KERN_INFO "register_mr: id[%d] svm[%d] local[%d] addr[%lu:0x%lx]"
+            "==> %d", mr->mr_id, svm->svm_id, mr->local, mr->addr, mr->sz, ret);
 
     return ret;
 

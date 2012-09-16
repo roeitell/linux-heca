@@ -388,11 +388,13 @@ static int process_page_request(struct conn_element *origin_ele,
     struct conn_element *ele = NULL;
     u32 redirect_id = 0;
 
-    if (!local_svm)
-        goto no_svm;
+    if (!local_svm) {
+        send_svm_status_update(origin_ele, msg);
+        goto fail_svm;
+    }
 
     if (!remote_svm)
-        goto fail;
+        goto fail_svm;
 
     //FIXME : handle if remote svm has moved => different connection element
     //if (origin_ele != remote_svm->ele)
@@ -429,7 +431,6 @@ retry:
     if (!ppe)
         goto fail;
 
-
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 
@@ -441,11 +442,9 @@ retry:
     release_svm(remote_svm);
     return 0;
 
-no_svm:
-    send_svm_status_update(origin_ele, msg);
 fail:
-    if (tx_e)
-        release_tx_element_reply(ele, tx_e);
+    release_tx_element_reply(ele, tx_e);
+fail_svm:
     if (remote_svm && !redirect_id) {
         trace_dsm_defer_gup(local_svm->dsm->dsm_id, local_svm->svm_id,
                 remote_svm->dsm->dsm_id, remote_svm->svm_id, addr,

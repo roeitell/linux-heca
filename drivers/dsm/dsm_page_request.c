@@ -404,6 +404,8 @@ retry:
 
     /* first response to arrive and grab the pte lock */
     if (pte_present(pte_entry)) {
+        u32 pte_flag = 0;
+
         /* make sure shrink_page_list is finished with this page */
         lock_page(page);
         pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -415,8 +417,11 @@ retry:
 
         flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
         ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-        set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(dpc->tag,
-                    (dpc->svms.num == 1)? 0 : DSM_PUSHING));
+        if (dpc->svms.num > 1) {
+            pte_flag = DSM_PUSHING;
+            clear_pte_flag = 1; /* race condition */
+        }
+        set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(dpc->tag, pte_flag));
         page_remove_rmap(page);
         page_cache_release(page);
         dec_mm_counter(mm, MM_ANONPAGES);
@@ -435,15 +440,14 @@ retry:
     atomic_dec(&dpc->nproc);
     if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
             atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-        dsm_push_cache_release(local_svm, &dpc, 1);
-        if (likely(page && clear_pte_flag)) {
+        if (clear_pte_flag) {
             pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-            /* try again with lock held */
-            if (unlikely(!pte_same(*(pd.pte), pte_entry)))
-                dsm_extract_pte_data(&pd, mm, addr);
-            dsm_clear_swp_entry_flag(mm, addr, pd.pte, DSM_PUSHING_BITPOS);
+            /* FIXME: unlikely, but page could have been pulled and re-pushed */
+            if (likely(!pte_present(*(pd.pte))))
+                dsm_clear_swp_entry_flag(mm, addr, pd.pte, DSM_PUSHING_BITPOS);
             pte_unmap_unlock(pd.pte, ptl);
         }
+        dsm_push_cache_release(local_svm, &dpc, 1);
     }
 
     *return_pte = pd.pte;

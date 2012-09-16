@@ -169,21 +169,34 @@ static inline void dsm_release_ppe(struct conn_element *ele,
     llist_add(&ppe->llnode, &ele->page_pool_elements);
 }
 
+static inline struct page_pool_ele *dsm_try_get_ppe(struct conn_element *ele)
+{
+    struct llist_node *llnode;
+    struct page_pool_ele *ppe = NULL;
+
+    spin_lock(&ele->page_pool_elements_lock);
+    llnode = llist_del_first(&ele->page_pool_elements);
+    spin_unlock(&ele->page_pool_elements_lock);
+
+    if (likely(llnode))
+        ppe = container_of(llnode, struct page_pool_ele, llnode);
+
+    return ppe;
+}
+
 static struct page_pool_ele *dsm_get_ppe(struct conn_element *ele)
 {
-    struct llist_node *llnode = NULL;
     struct page_pool_ele *ppe;
 
-    do {
-        while (llist_empty(&ele->page_pool_elements))
-            cond_resched();
+retry:
+    /* FIXME: when flushing dsm_requests we might be mutex_locked */
+    while (llist_empty(&ele->page_pool_elements))
+        cond_resched();
 
-        spin_lock(&ele->page_pool_elements_lock);
-        llnode = llist_del_first(&ele->page_pool_elements);
-        spin_unlock(&ele->page_pool_elements_lock);
-    } while (!llnode);
+    ppe = dsm_try_get_ppe(ele);
+    if (unlikely(!ppe))
+        goto retry;
 
-    ppe = container_of(llnode, struct page_pool_ele, llnode);
     return ppe;
 }
 
@@ -199,7 +212,7 @@ static void dsm_page_pool_refill(struct work_struct *work)
         struct page_pool_ele *ppe;
         struct page *page;
 
-        ppe = dsm_get_ppe(ele);
+        ppe = dsm_try_get_ppe(ele);
         if (!ppe)
             break;
 

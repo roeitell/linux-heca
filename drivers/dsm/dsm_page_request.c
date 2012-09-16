@@ -442,8 +442,7 @@ retry:
             atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
         if (clear_pte_flag) {
             pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-            /* FIXME: unlikely, but page could have been pulled and re-pushed */
-            if (likely(!pte_present(*(pd.pte))))
+            if (likely(pte_same(*(pd.pte), pte_entry)))
                 dsm_clear_swp_entry_flag(mm, addr, pd.pte, DSM_PUSHING_BITPOS);
             pte_unmap_unlock(pd.pte, ptl);
         }

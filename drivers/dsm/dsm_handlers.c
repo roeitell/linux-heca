@@ -124,7 +124,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele) {
         tx->request_queue_sz--;
         req = list_first_entry(&tx->ordered_request_queue, struct dsm_request,
                 ordered_list);
-        trace_flushing_requests(tx->request_queue_sz, 0, 0, 0, req->addr, 0);
+        trace_flushing_requests(tx->request_queue_sz);
         process_dsm_request(ele, req, tx_e);
         list_del(&req->ordered_list);
         release_dsm_request(req);
@@ -166,7 +166,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
     struct tx_buf_ele *tx_e = NULL;
 
     trace_dsm_rx_msg(rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->src_id,
-                    rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->dest_id,
+                    rx_e->dsm_buf->dest_id, -1, 0, 
                     rx_e->dsm_buf->req_addr, rx_e->dsm_buf->type,
                     rx_e->dsm_buf->offset);
 
@@ -231,9 +231,8 @@ static int dsm_send_message_handler(struct conn_element *ele,
         struct tx_buf_ele *tx_buf_e)
 {
     trace_dsm_tx_msg(tx_buf_e->dsm_buf->dsm_id, tx_buf_e->dsm_buf->src_id,
-            tx_buf_e->dsm_buf->dsm_id, tx_buf_e->dsm_buf->dest_id,
-            tx_buf_e->dsm_buf->req_addr, tx_buf_e->dsm_buf->type,
-            tx_buf_e->dsm_buf->offset);
+            tx_buf_e->dsm_buf->dest_id, -1, 0, tx_buf_e->dsm_buf->req_addr,
+            tx_buf_e->dsm_buf->type, tx_buf_e->dsm_buf->offset);
 
     switch (tx_buf_e->dsm_buf->type) {
         case PAGE_REQUEST_REPLY:

@@ -350,7 +350,7 @@ void dequeue_and_gup(struct subvirtual_machine *svm)
 {
     struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;
-    struct page * page;
+    struct page *page;
     struct llist_node *head, *node;
 
     head = llist_del_all(&svm->delayed_faults);
@@ -362,8 +362,8 @@ void dequeue_and_gup(struct subvirtual_machine *svm)
             dpc = dsm_cache_get_hold(svm, ddf->addr);
             if (dpc) {
                 if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                    trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, 0, 0, 
-                            dpc->addr, dpc->tag);
+                    trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, -1, -1,
+                            dpc->addr, 0, dpc->tag);
                     use_mm(svm->mm);
                     down_read(&svm->mm->mmap_sem);
                     get_user_pages(current, svm->mm, ddf->addr, 1, 1, 0,
@@ -403,8 +403,8 @@ static int dsm_pull_req_success(struct page *page,
         struct dsm_page_cache *dpc)
 {
     int i, found;
-    trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
-                    dpc->addr, dpc->tag);
+    trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, -1,
+            -1, dpc->addr, 0, dpc->tag);
 
     for (i = 0; i < dpc->svms.num; i++) {
         if (dpc->pages[i] == page)
@@ -423,8 +423,8 @@ unlock:
             if (likely(dpc->pages[i]))
                 SetPageUptodate(dpc->pages[i]);
         }
-        trace_dsm_pull_req_success(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, 0, 0,
-                        dpc->addr, dpc->tag);
+        trace_dsm_pull_req_success(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, -1,
+                -1, dpc->addr, 0, dpc->tag);
         unlock_page(dpc->pages[0]);
         lru_add_drain();
 
@@ -456,7 +456,7 @@ int dsm_pull_req_failure(struct dsm_page_cache *dpc)
     int found, i;
 
     trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
-            dpc->svm->svm_id, 0, 0, dpc->addr, dpc->tag);
+            dpc->svm->svm_id, -1, -1, dpc->addr, 0, dpc->tag);
 
 retry:
     found = atomic_read(&dpc->found);
@@ -512,7 +512,8 @@ static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
     SetPageSwapBacked(page);
 
     trace_dsm_get_remote_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
-            remote_svm->dsm->dsm_id, remote_svm->svm_id, addr, tag);
+            remote_svm->svm_id, fault_mr->mr_id, addr, addr - fault_mr->addr,
+            tag);
 
     request_dsm_page(page, remote_svm, fault_svm, fault_mr, addr,
             dsm_pull_req_complete, tag, dpc, ppe);
@@ -576,8 +577,8 @@ static struct dsm_page_cache *dsm_cache_add_send(
     struct page_pool_ele *ppe = NULL;
     int r;
 
-    trace_dsm_cache_add_send(fault_svm->dsm->dsm_id, fault_svm->svm_id, 0, 0,
-            norm_addr, tag);
+    trace_dsm_cache_add_send(fault_svm->dsm->dsm_id, fault_svm->svm_id, -1,
+            fault_mr->mr_id, norm_addr, norm_addr - fault_mr->addr, tag);
 
     do {
         found_dpc = dsm_cache_get_hold(fault_svm, norm_addr);
@@ -839,7 +840,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct page *found_page, *swapcache = NULL;
     struct mem_cgroup *ptr;
     pte_t pte;
-    u32 dsm_id, svm_id;
+    u32 dsm_id, svm_id, mr_id; /* used only for trace record later */
+    unsigned long shared_addr; /* used only for trace record later */
 
 retry:
     if (swp_entry_to_dsm_data(entry, &dsd) < 0)
@@ -853,7 +855,10 @@ retry:
 
     dsm_id = fault_svm->dsm->dsm_id;
     svm_id = fault_svm->svm_id;
-    trace_do_dsm_page_fault_svm(dsm_id, svm_id, 0, 0, norm_addr, dsd.flags);
+    mr_id = fault_mr->mr_id;
+    shared_addr = norm_addr - fault_mr->addr;
+    trace_do_dsm_page_fault_svm(dsm_id, svm_id, -1, mr_id, norm_addr,
+            shared_addr, dsd.flags);
 
     /*
      * If page is currently being pushed, halt the push, re-claim the page and
@@ -1027,8 +1032,8 @@ resolve:
     pte_unmap_unlock(pte, ptl);
     page_cache_release(found_page);
     atomic_dec(&dpc->nproc);
-    trace_do_dsm_page_fault_svm_complete(dsm_id, svm_id, 0, 0, norm_addr,
-            dpc->tag);
+    trace_do_dsm_page_fault_svm_complete(dsm_id, svm_id, -1, mr_id,
+            norm_addr, shared_addr, dpc->tag);
     goto out;
 
 out_nomap:

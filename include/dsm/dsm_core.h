@@ -40,6 +40,7 @@
 #define PREFETCH_TAG    (1 << 1)  /* pulling the page for prefetch */
 #define PUSH_TAG        (1 << 2)  /* pushing the page */
 #define PULL_TRY_TAG    (1 << 3)  /* pulling the page by request (pushing to us) */
+#define CLAIM_TAG       (1 << 4)  /* reclaiming a page */
 
 #define for_each_valid_svm(svms, i)         \
     for (i = 0; i < (svms).num; i++)        \
@@ -90,6 +91,8 @@ void dsm_push_finish_notify(struct page *);
 void dsm_push_cache_release(struct subvirtual_machine *,
         struct dsm_page_cache **, int);
 int dsm_is_congested(void);
+int dsm_try_unmap_page(struct mm_struct *, unsigned long,
+        struct subvirtual_machine *);
 
 /* dsm_unmap.c */
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,

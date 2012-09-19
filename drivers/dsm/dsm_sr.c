@@ -193,6 +193,38 @@ out:
     return ret;
 }
 
+int dsm_claim_page(struct subvirtual_machine *fault_svm,
+        struct subvirtual_machine *remote_svm, struct memory_region *fault_mr,
+        unsigned long addr)
+{
+    struct conn_element *ele = remote_svm->ele;
+    struct tx_buf_ele *tx_e;
+    int ret = -EINVAL;
+    unsigned long shared_addr = addr - fault_mr->addr;
+
+    if (request_queue_empty(ele)) {
+        tx_e = try_get_next_empty_tx_ele(ele);
+        if (tx_e) {
+            create_page_claim_request(tx_e, fault_svm->dsm->dsm_id,
+                    fault_mr->mr_id, fault_svm->svm_id, remote_svm->svm_id,
+                    shared_addr);
+
+            ret = tx_dsm_send(ele, tx_e);
+            trace_send_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,
+                    remote_svm->svm_id, fault_mr->mr_id, addr, shared_addr,
+                    CLAIM_TAG);
+            goto out;
+        }
+    }
+
+    ret = add_dsm_request(NULL, ele, CLAIM_PAGE, fault_svm, fault_mr,
+            remote_svm, shared_addr, NULL, NULL, NULL, NULL);
+    BUG_ON(ret); /* FIXME: Handle req alloc failure */
+
+out:
+    return ret;
+}
+
 int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         struct subvirtual_machine *fault_svm, struct memory_region *fault_mr,
         unsigned long addr, int (*func)(struct tx_buf_ele *), int tag,
@@ -272,10 +304,9 @@ int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
     return 1;
 }
 
-
 int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
-        u32 redirect_svm_id) {
-
+        u32 redirect_svm_id)
+{
     struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
     struct page *page = tx_e->wrk_req->dst_addr->mem_page;
     u64 req_addr = tx_e->dsm_buf->req_addr;
@@ -309,7 +340,6 @@ out:
         page_cache_release(page);
     return ret;
 }
-
 
 int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 {
@@ -355,8 +385,6 @@ static void handle_page_request_fail(struct conn_element *ele,
         add_dsm_request_msg(ele, type, msg);
 }
 
-
-
 static inline void defer_gup(struct dsm_message *msg,
         struct subvirtual_machine *local_svm, struct memory_region *mr,
         struct subvirtual_machine *remote_svm, struct conn_element *ele) 
@@ -377,6 +405,41 @@ retry:
     schedule_work(&local_svm->deferred_gup_work);
 }
 
+int process_page_claim(struct conn_element *ele, struct dsm_message *msg)
+{
+    struct dsm *dsm;
+    struct subvirtual_machine *local_svm, *remote_svm;
+    struct memory_region *mr;
+    unsigned long addr;
+    int r = -EFAULT;
+
+    dsm = find_dsm(msg->dsm_id);
+    if (unlikely(!dsm))
+        goto out;
+
+    local_svm = find_svm(dsm, msg->dest_id);
+    if (unlikely(!local_svm))
+        goto out;
+
+    mr = find_mr(local_svm, msg->mr_id);
+    if (unlikely(!mr))
+        goto out_svm;
+
+    remote_svm = find_svm(dsm, msg->src_id);
+    if (unlikely(!remote_svm))
+        goto out_svm;
+
+    addr = msg->req_addr + mr->addr;
+
+    BUG_ON(!local_svm->mm);
+    r = dsm_try_unmap_page(local_svm->mm, addr, remote_svm);
+
+    release_svm(remote_svm);
+out_svm:
+    release_svm(local_svm);
+out:
+    return r;
+}
 
 static int process_page_request(struct conn_element *origin_ele,
         struct subvirtual_machine *local_svm, struct memory_region *mr,
@@ -422,7 +485,6 @@ retry:
 
     page = dsm_extract_page_from_remote(local_svm, remote_svm, addr,
             msg->type, &tx_e->reply_work_req->pte, &redirect_id, deferred);
-
     if (unlikely(!page))
         goto fail;
 
@@ -443,8 +505,7 @@ retry:
 
 fail:
     release_tx_element_reply(ele, tx_e);
-fail_svm:
-    if (remote_svm && !redirect_id) {
+    if (!redirect_id && msg->type == REQUEST_PAGE) {
         trace_dsm_defer_gup(local_svm->dsm->dsm_id, local_svm->svm_id,
                 remote_svm->svm_id, mr->mr_id, addr, msg->req_addr,
                 msg->type);
@@ -452,14 +513,13 @@ fail_svm:
         /* we release the svms when we actually solve the gup */
         goto out;
     }
+    release_svm(remote_svm);
 
+fail_svm:
     handle_page_request_fail(ele, msg, remote_svm, redirect_id);
-
     if (local_svm)
         release_svm(local_svm);
 
-    if (remote_svm)
-        release_svm(remote_svm);
 out:
     return -EINVAL;
 }
@@ -547,6 +607,7 @@ retry:
     switch (type) {
         case REQUEST_PAGE:
         case REQUEST_PAGE_PULL:
+        case CLAIM_PAGE:
         case TRY_REQUEST_PAGE:
         case SVM_STATUS_UPDATE:
         case PAGE_REQUEST_REDIRECT:

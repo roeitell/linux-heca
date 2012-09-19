@@ -552,10 +552,8 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
         spin_unlock_irq(&fault_svm->page_cache_spinlock);
         radix_tree_preload_end();
         if (likely(!r)) {
-            for_each_valid_svm(svms, i) {
-                request_dsm_page(new_dpc->pages[0], svms.pp[i], fault_svm,
-                        fault_mr, addr, NULL, PULL_TRY_TAG, NULL, NULL);
-            }
+            for_each_valid_svm(svms, i)
+                dsm_claim_page(fault_svm, svms.pp[i], fault_mr, addr);
             return new_dpc;
         }
     } while (r != -ENOMEM);

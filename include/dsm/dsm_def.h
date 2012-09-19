@@ -43,9 +43,9 @@
 #define MAX_SVMS_PER_PAGE   2
 
 #define GUP_DELAY           HZ*5    /* 5 second */
-#define REQUEST_FLUSH_DELAY 50       /* 50 usec delay */
+#define REQUEST_FLUSH_DELAY 50      /* 50 usec delay */
 
-/**
+/*
  * RDMA_INFO
  */
 #define RDMA_INFO_CL        4
@@ -54,10 +54,9 @@
 #define RDMA_INFO_READY_SV  1
 #define RDMA_INFO_NULL      0
 
-/**
+/*
  * DSM_MESSAGE
  */
-
 #define REQUEST_PAGE                    (1 << 0) // We Request a page
 #define REQUEST_PAGE_PULL               (1 << 1) // We Request a page pull
 #define PAGE_REQUEST_REPLY              (1 << 2) // We Reply to a page request
@@ -68,10 +67,11 @@
 #define SVM_STATUS_UPDATE               (1 << 7) // The svm is down
 #define DSM_MSG_ERR                     (1 << 8) // ERROR
 #define ACK                             (1 << 9) // Msg Acknowledgement
+#define CLAIM_PAGE                      (1 << 10) // Re-claim a page
+
 /*
  * DSM DATA structure
  */
-
 struct con_element_sysfs {
     struct kobject connection_kobject;
 };

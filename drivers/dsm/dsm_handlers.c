@@ -63,6 +63,10 @@ static int process_dsm_request(struct conn_element *ele,
                     req->local_svm_id, req->remote_svm_id, req->addr, req->page,
                     req->type, req->dpc, req->ppe);
             break;
+        case CLAIM_PAGE:
+            create_page_claim_request(tx_e, req->dsm_id, req->mr_id,
+                    req->local_svm_id, req->remote_svm_id, req->addr);
+            break;
         case REQUEST_PAGE_PULL:
             create_page_pull_request(ele, tx_e, req->dsm_id, req->mr_id,
                     req->local_svm_id, req->remote_svm_id, req->addr);
@@ -171,53 +175,48 @@ static int dsm_recv_message_handler(struct conn_element *ele,
                     rx_e->dsm_buf->offset);
 
     switch (rx_e->dsm_buf->type) {
-        case PAGE_REQUEST_REPLY: {
+        case PAGE_REQUEST_REPLY:
             BUG_ON(rx_e->dsm_buf->offset < 0 ||
                     rx_e->dsm_buf->offset >= ele->tx_buffer.len);
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             handle_tx_element(ele, tx_e, process_page_response);
             break;
-        }
-        case PAGE_REQUEST_REDIRECT:{
+        case PAGE_REQUEST_REDIRECT:
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             process_page_redirect(ele, tx_e, rx_e->dsm_buf->dest_id);
             break;
-        }
-        case PAGE_REQUEST_FAIL: {
+        case PAGE_REQUEST_FAIL:
             BUG_ON(rx_e->dsm_buf->offset < 0 ||
                     rx_e->dsm_buf->offset >= ele->tx_buffer.len);
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             tx_e->dsm_buf->type = PAGE_REQUEST_FAIL;
             handle_tx_element(ele, tx_e, process_page_response);
             break;
-        }
         case TRY_REQUEST_PAGE:
-        case REQUEST_PAGE: {
+        case REQUEST_PAGE:
             process_page_request_msg(ele, rx_e->dsm_buf);
             break;
-        }
-        case REQUEST_PAGE_PULL: {
-            process_pull_request(ele, rx_e); // server is requested to pull
+        case CLAIM_PAGE:
+            process_page_claim(ele, rx_e->dsm_buf);
+            break;
+        case REQUEST_PAGE_PULL:
+            process_pull_request(ele, rx_e);
             ack_msg(ele, rx_e);
             break;
-        }
-        case SVM_STATUS_UPDATE: {
+        case SVM_STATUS_UPDATE:
             process_svm_status(ele, rx_e);
             break;
-        }
-        case ACK: {
+        case ACK:
             BUG_ON(rx_e->dsm_buf->offset < 0 ||
                     rx_e->dsm_buf->offset >= ele->tx_buffer.len);
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             handle_tx_element(ele, tx_e, NULL);
             break;
-        }
 
-        default: {
+        default:
             printk("[dsm_recv_poll] unhandled message stats addr: %p, status %d"
                     " id %d\n", rx_e, rx_e->dsm_buf->type, rx_e->id);
             goto err;
-        }
     }
 
     refill_recv_wr(ele, rx_e);
@@ -245,6 +244,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
         case ACK:
         case PAGE_REQUEST_FAIL:
         case SVM_STATUS_UPDATE:
+        case CLAIM_PAGE:
             release_tx_element(ele, tx_buf_e);
             break;
         case REQUEST_PAGE:

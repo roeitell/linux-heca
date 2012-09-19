@@ -611,7 +611,6 @@ void release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e)
     atomic_set(&tx_e->used, 0);
     atomic_set(&tx_e->released, 0);
     llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
-    trace_tx_e_release(tx_e->id);
 }
 
 void release_tx_element_reply(struct conn_element *ele, struct tx_buf_ele *tx_e)
@@ -804,6 +803,19 @@ unsigned int inet_addr(char *addr)
     return *(unsigned int*) arr;
 }
 
+void create_page_claim_request(struct tx_buf_ele *tx_e, u32 dsm_id, u32 mr_id,
+        u32 local_id, u32 remote_id, uint64_t addr)
+{
+    struct dsm_message *msg = tx_e->dsm_buf;
+
+    msg->type = CLAIM_PAGE;
+    msg->dsm_id = dsm_id;
+    msg->src_id = local_id;
+    msg->dest_id = remote_id;
+    msg->mr_id = mr_id;
+    msg->req_addr = addr;
+}
+
 void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
         u32 dsm_id, u32 mr_id, u32 local_id, u32 remote_id, uint64_t addr,
         struct page *page, u16 type, struct dsm_page_cache *dpc,
@@ -818,7 +830,10 @@ void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->wrk_req->dpc = dpc;
 
-    //we need to reset the offset just in case if we actually use the element for reply as an error
+    /* 
+     * we need to reset the offset just in case if we actually use the element
+     * for reply as an error
+     */
     msg->offset = tx_e->id;
     msg->dsm_id = dsm_id;
     msg->mr_id = mr_id;
@@ -913,7 +928,6 @@ struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele)
 
     if (llnode) {
         tx_e = container_of(llnode, struct tx_buf_ele, tx_buf_ele_ptr);
-        trace_tx_e_acquire(tx_e->id);
         atomic_set(&tx_e->used, 1);
     }
     return tx_e;

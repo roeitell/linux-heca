@@ -222,60 +222,41 @@ static int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
     return !pd->pte;
 }
 
-static u32 dsm_extract_handle_missing_pte(struct subvirtual_machine *local_svm,
-        struct mm_struct *mm, unsigned long addr, pte_t pte_entry,
-        struct dsm_pte_data *pd)
+static struct subvirtual_machine *dsm_extract_handle_missing_pte(
+        struct subvirtual_machine *local_svm, struct mm_struct *mm,
+        unsigned long addr, pte_t pte_entry, struct dsm_pte_data *pd,
+        int *redirect_id)
 {
     swp_entry_t swp_e;
     struct dsm_swp_data dsd;
     struct dsm_page_cache *dpc =NULL;
 
-    /* first time dealing with this addr? */
-    if (pte_none(pte_entry))
-        goto self_fault;
-
     /* page could be swapped to disk */
     swp_e = pte_to_swp_entry(pte_entry);
     if (!non_swap_entry(swp_e))
-        goto self_fault;
+        goto fail;
 
     if (is_migration_entry(swp_e)) {
         migration_entry_wait(mm, pd->pmd, addr);
-        goto self_fault;
+        goto fail;
     }
 
     /* not a swap entry or a migration entry, must be ours */
     BUG_ON(!is_dsm_entry(swp_e));
     BUG_ON(swp_entry_to_dsm_data(swp_e, &dsd) < 0);
 
-    // we check if we are already pulling
+    /* we check if we are already pulling */
     dpc = dsm_cache_get(local_svm, addr);
     if (dpc)
-        goto self_fault;
-    // we can only redirect if we have one location to redirect to!
-    //FIXME enable RAIM support
+        goto fail;
+
+    /* FIXME: enable RRAIM support, rely on distributed directory */
     BUG_ON(dsd.svms.num != 1);
-    return dsd.svms.pp[0]->svm_id;
+    return dsd.svms.pp[0];
 
-    //FIXME: we do not support mirrored push with redirect... so no active active passive scenario
-
-
-//    if (unlikely(dsd.flags)) {
-//        /*
-//         * FIXME: unhandled; we need to stop the push process, and reclaim the
-//         * page, so we can answer the fault. an interesting question is what to
-//         * do if we're pushing to the faulting machine anyway.
-//         */
-//        if (dsd.flags & DSM_PUSHING)
-//            BUG();
-//
-//        /* we're answering another fault, we can't answer this one */
-//        else if (dsd.flags & DSM_INFLIGHT)
-//            return;
-//    }
-
-self_fault:
-    return 0;
+    /* couldn't find a redirect, gup needed */
+fail:
+    return NULL;
 }
 
 static inline int do_deferred_gup(struct mm_struct *mm, unsigned long addr,
@@ -286,6 +267,84 @@ static inline int do_deferred_gup(struct mm_struct *mm, unsigned long addr,
     trace_is_deferred(1);
     r = get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
     trace_get_user_pages_res(r);
+    return r;
+}
+
+int dsm_try_unmap_page(struct mm_struct *mm, unsigned long addr,
+        struct subvirtual_machine *remote_svm)
+{
+    struct dsm_pte_data pd;
+    struct page *page;
+    spinlock_t *ptl;
+    pte_t pte_entry;
+    int r;
+
+retry:
+    r = dsm_extract_pte_data(&pd, mm, addr);
+    if (unlikely(r)) {
+        trace_extract_pte_data_err(r);
+        return r;
+    }
+
+    pte_entry = *(pd.pte);
+    pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
+    if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
+        pte_unmap_unlock(pd.pte, ptl);
+        goto retry;
+    }
+
+    /* first access to page */
+    if (pte_none(pte_entry)) {
+        set_pte_at(mm, addr, pd.pte,
+                dsm_descriptor_to_pte(remote_svm->descriptor, 0));
+        goto out;
+    }
+
+    /* page already unmapped somewhere */
+    if (unlikely(!pte_present(pte_entry))) {
+        /* TODO: If pte isn't dsm, gup or defer_gup (it should be dsm); If pte
+         * is dsm, validate descriptor == remote_dsm->descriptor
+         */
+        r = -EEXIST;
+        goto out;
+    }
+
+    page = vm_normal_page(pd.vma, addr, pte_entry);
+    if (!page) {
+        /* DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */
+        if (pte_pfn(*(pd.pte)) == (unsigned long) (void *) ZERO_PAGE(0))
+            goto out;
+
+        page = pte_page(*(pd.pte));
+    }
+
+    if (unlikely(PageTransHuge(page))) {
+        if (!PageHuge(page) && PageAnon(page)) {
+            pte_unmap_unlock(pd.pte, ptl);
+            if (unlikely(split_huge_page(page)))
+                goto out;
+            goto retry;
+        }
+    }
+
+    if (unlikely(PageKsm(page))) {
+        r = ksm_madvise(pd.vma, addr, addr + PAGE_SIZE, MADV_UNMERGEABLE,
+                &(pd.vma->vm_flags));
+        if (r) /* DSM1 : better ksm error handling required. */
+            goto out;
+    }
+
+    flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
+    ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+    set_pte_at(mm, addr, pd.pte,
+            dsm_descriptor_to_pte(remote_svm->descriptor, 0));
+
+    page_remove_rmap(page);
+    page_cache_release(page);
+    dec_mm_counter(mm, MM_ANONPAGES);
+
+out:
+    pte_unmap_unlock(pd.pte, ptl);
     return r;
 }
 
@@ -310,19 +369,29 @@ retry:
         }
         goto out;
     }
-
     pte_entry = *(pd.pte);
+
+    /* first time dealing with this addr? */
+    if (pte_none(pte_entry)) {
+        get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
+        goto retry;
+    }
+
     pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
     if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
         pte_unmap_unlock(pd.pte, ptl);
         goto retry;
     }
+
     if (unlikely(!pte_present(pte_entry))) {
-        *svm_id = dsm_extract_handle_missing_pte(local_svm, mm, addr, pte_entry,
-                &pd);
-        if (*svm_id) {
+        struct subvirtual_machine *redirect_svm;
+        
+        redirect_svm = dsm_extract_handle_missing_pte(local_svm, mm, addr,
+                pte_entry, &pd, svm_id);
+        if (redirect_svm) {
             set_pte_at(mm, addr, pd.pte,
-                    dsm_descriptor_to_pte(remote_svm->descriptor, 0));
+                    dsm_descriptor_to_pte(redirect_svm->descriptor, 0));
+            *svm_id = redirect_svm->svm_id;
         } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
             do_deferred_gup(mm, addr, page);

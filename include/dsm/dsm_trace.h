@@ -13,12 +13,26 @@
 #include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
-
 #define dsm_dpc_tag \
     { PULL_TAG,                 "PULL_TAG" }, \
     { PREFETCH_TAG,             "PREFETCH_TAG" },\
     { PUSH_TAG,                 "PUSH_TAG" }, \
     { PULL_TRY_TAG,             "PULL_TRY_TAG" }
+
+#define dsm_msg_type \
+    { REQUEST_PAGE,                 "REQUEST_PAGE" }, \
+    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
+    { PAGE_REQUEST_REPLY,           "PAGE_REQUEST_REPLY" }, \
+    { PAGE_REQUEST_REDIRECT,        "PAGE_REQUEST_REDIRECT" },\
+    { PAGE_INFO_UPDATE,             "PAGE_INFO_UPDATE" }, \
+    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
+    { TRY_REQUEST_PAGE,             "TRY_REQUEST_PAGE" }, \
+    { PAGE_REQUEST_FAIL,            "PAGE_REQUEST_FAIL" },\
+    { SVM_STATUS_UPDATE,            "SVM_STATUS_UPDATE" }, \
+    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
+    { ACK,                          "ACK" },\
+    { DSM_MSG_ERR,                  "DSM_MSG_ERR" }
+
 DECLARE_EVENT_CLASS(dsm_full_template,
         TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id,
             unsigned long addr, unsigned long shared_addr, int tag),
@@ -32,10 +46,11 @@ DECLARE_EVENT_CLASS(dsm_full_template,
             __entry->addr = addr; __entry->shared_addr = shared_addr;
             __entry->tag = tag),
         TP_printk("DSM(%d) SVM(%d) Remote_SVM(%d) MR(%d) Addr(%lu) "
-            "Shared_Addr(%lu) Flags(%s)",
+            "Shared_Addr(%lu) Flags(%s, %s)",
             __entry->dsm_id, __entry->svm_id, __entry->remote_svm_id,
             __entry->mr_id, __entry->addr, __entry->shared_addr,
-            __print_symbolic(__entry->tag, dsm_dpc_tag)));
+            __print_symbolic(__entry->tag, dsm_dpc_tag),
+            __print_symbolic(__entry->tag, dsm_msg_type)));
 
 #define DSM_DECLARE_EVENT_FULL(name)                                    \
     DEFINE_EVENT(dsm_full_template, name,                               \
@@ -57,19 +72,6 @@ DSM_DECLARE_EVENT_FULL(dsm_pull_req_success);
 DSM_DECLARE_EVENT_FULL(dsm_defer_gup);
 DSM_DECLARE_EVENT_FULL(dsm_defer_gup_execute);
 
-#define dsm_msg_type \
-    { REQUEST_PAGE,                 "REQUEST_PAGE" }, \
-    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { PAGE_REQUEST_REPLY,           "PAGE_REQUEST_REPLY" }, \
-    { PAGE_REQUEST_REDIRECT,        "PAGE_REQUEST_REDIRECT" },\
-    { PAGE_INFO_UPDATE,             "PAGE_INFO_UPDATE" }, \
-    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { TRY_REQUEST_PAGE,             "TRY_REQUEST_PAGE" }, \
-    { PAGE_REQUEST_FAIL,            "PAGE_REQUEST_FAIL" },\
-    { SVM_STATUS_UPDATE,            "SVM_STATUS_UPDATE" }, \
-    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { ACK,                          "ACK" },\
-    { DSM_MSG_ERR,                  "DSM_MSG_ERR" }
 DECLARE_EVENT_CLASS(dsm_message_template,
         TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id,
             unsigned long addr, unsigned long shared_addr, int type, int tx_id),
@@ -110,8 +112,6 @@ DECLARE_EVENT_CLASS(dsm_basic_template,
 #define DSM_DECLARE_EVENT_BASIC(name)                                       \
     DEFINE_EVENT(dsm_basic_template, name, TP_PROTO(int id), TP_ARGS(id));
 DSM_DECLARE_EVENT_BASIC(is_congested);
-DSM_DECLARE_EVENT_BASIC(tx_e_acquire);
-DSM_DECLARE_EVENT_BASIC(tx_e_release);
 DSM_DECLARE_EVENT_BASIC(free_svm);
 DSM_DECLARE_EVENT_BASIC(is_deferred);
 DSM_DECLARE_EVENT_BASIC(extract_pte_data_err);

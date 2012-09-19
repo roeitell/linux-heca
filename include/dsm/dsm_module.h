@@ -108,7 +108,7 @@ struct memory_region *search_mr(struct subvirtual_machine *, unsigned long);
 struct memory_region *find_mr(struct subvirtual_machine *, u32);
 void destroy_mrs(struct subvirtual_machine *);
 int remove_svm_from_mrs(struct dsm *, u32);
-void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t *, int);
+void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
 
 /*
  * handler

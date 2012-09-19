@@ -8,14 +8,6 @@
 #include <dsm/dsm_module.h>
 #include <dsm/dsm_trace.h>
 
-struct dsm_pte_data {
-    struct vm_area_struct *vma;
-    pgd_t *pgd;
-    pud_t *pud;
-    pmd_t *pmd;
-    pte_t *pte;
-};
-
 #define DSM_CONGESTION_THRESHOLD 512 
 static unsigned long congestion = 0;
 inline int dsm_is_congested(void)
@@ -176,14 +168,10 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
 }
 EXPORT_SYMBOL(dsm_push_cache_get_remove);
 
-static int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
+int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         unsigned long addr) 
 {
     int i;
-
-    BUG_ON(!mm);
-    BUG_ON(!pd);
-
 
     pd->pte = NULL;
     pd->vma = find_vma(mm, addr);
@@ -350,7 +338,7 @@ out:
 
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
-        unsigned long addr, pte_t **return_pte, u32 *svm_id, int deferred)
+        unsigned long addr, pte_t *return_pte, u32 *svm_id, int deferred)
 {
     spinlock_t *ptl;
     int r = 0;
@@ -430,14 +418,14 @@ retry:
 
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
     ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-    set_pte_at(mm, addr, pd.pte, 
+    set_pte_at(mm, addr, pd.pte,
             dsm_descriptor_to_pte(remote_svm->descriptor, DSM_INFLIGHT));
 
     page_remove_rmap(page);
     page_cache_release(page);
     dec_mm_counter(mm, MM_ANONPAGES);
 
-    *return_pte = pd.pte;
+    *return_pte = *(pd.pte);
 
     pte_unmap_unlock(pd.pte, ptl);
 out: 
@@ -450,7 +438,7 @@ bad_page:
 
 static struct page *try_dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
-        unsigned long addr, pte_t **return_pte)
+        unsigned long addr, pte_t *return_pte)
 {
     struct page *page;
     struct dsm_page_cache *dpc = NULL;
@@ -512,16 +500,12 @@ retry:
     atomic_dec(&dpc->nproc);
     if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
             atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
-        if (clear_pte_flag) {
-            pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-            if (likely(pte_same(*(pd.pte), pte_entry)))
-                dsm_clear_swp_entry_flag(mm, addr, pd.pte, DSM_PUSHING_BITPOS);
-            pte_unmap_unlock(pd.pte, ptl);
-        }
+        if (clear_pte_flag)
+            dsm_clear_swp_entry_flag(mm, addr, *(pd.pte), DSM_PUSHING_BITPOS);
         dsm_push_cache_release(local_svm, &dpc, 1);
     }
 
-    *return_pte = pd.pte;
+    *return_pte = *(pd.pte);
 
 out:
     return page;
@@ -529,7 +513,7 @@ out:
 
 struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
-        pte_t **pte, u32 *svm_id, int deferred)
+        pte_t *pte, u32 *svm_id, int deferred)
 {
     struct mm_struct *mm;
     struct page *page = NULL;

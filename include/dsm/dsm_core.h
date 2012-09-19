@@ -79,7 +79,7 @@ int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
 
 /* dsm_page_request.c */
 struct page *dsm_extract_page_from_remote(struct subvirtual_machine *,
-        struct subvirtual_machine *, unsigned long, u16, pte_t **, u32 *, int);
+        struct subvirtual_machine *, unsigned long, u16, pte_t *, u32 *, int);
 int dsm_prepare_page_for_push(struct subvirtual_machine *, struct svm_list,
         struct page *, unsigned long, struct mm_struct *, u32);
 struct page *dsm_find_normal_page(struct mm_struct *, unsigned long);
@@ -93,6 +93,8 @@ void dsm_push_cache_release(struct subvirtual_machine *,
 int dsm_is_congested(void);
 int dsm_try_unmap_page(struct mm_struct *, unsigned long,
         struct subvirtual_machine *);
+int dsm_extract_pte_data(struct dsm_pte_data *, struct mm_struct *,
+        unsigned long);
 
 /* dsm_unmap.c */
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,

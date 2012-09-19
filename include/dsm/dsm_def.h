@@ -310,7 +310,7 @@ struct reply_work_request {
     struct page * mem_page;
     void *page_buf;
     struct ib_sge page_sgl;
-    pte_t *pte;
+    pte_t pte;
     struct mm_struct *mm;
     unsigned long addr;
 
@@ -403,6 +403,14 @@ struct dsm_page_cache {
 struct dsm_delayed_fault {
     unsigned long addr;
     struct llist_node node;
+};
+
+struct dsm_pte_data {
+    struct vm_area_struct *vma;
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    pte_t *pte;
 };
 
 #define DSM_INFLIGHT            0x04

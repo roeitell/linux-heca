@@ -440,11 +440,13 @@ inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
 {
     u64 val = dsc;
     swp_entry_t swp_e = val_to_dsm_entry((val << 24) | flags);
+    BUG_ON(dsc < SDSC_MIN || dsc >= sdsc_max);
     return swp_entry_to_pte(swp_e);
 }
 
-struct svm_list dsm_descriptor_to_svms(u32 dsc)
+inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
 {
+    BUG_ON(dsc < SDSC_MIN || dsc >= sdsc_max);
     return rcu_dereference(sdsc)[dsc];
 }
 EXPORT_SYMBOL(dsm_descriptor_to_svms);
@@ -476,7 +478,6 @@ void remove_svm_from_descriptors(struct subvirtual_machine *svm)
         }
     }
 }
-
 
 int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 {
@@ -511,16 +512,29 @@ int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2)
 EXPORT_SYMBOL(dsm_swp_entry_same);
 
 void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
-        pte_t *pte, int pos)
+        pte_t orig_pte, int pos)
 {
-    pte_t tmp_pte = *pte;
-    swp_entry_t arch = __pte_to_swp_entry(tmp_pte);
-    swp_entry_t entry = swp_entry(__swp_type(arch), __swp_offset(arch));
-    u64 desc = dsm_entry_to_desc(entry);
-    u32 flags = dsm_entry_to_flags(entry);
+    struct dsm_pte_data pd;
+    spinlock_t *ptl;
+    swp_entry_t arch, entry;
+    u32 desc, flags;
+
+    if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
+        return;
+
+    pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
+    if (unlikely(!pte_same(*(pd.pte), orig_pte)))
+        goto out;
+
+    arch = __pte_to_swp_entry(orig_pte);
+    entry = swp_entry(__swp_type(arch), __swp_offset(arch));
+    desc = dsm_entry_to_desc(entry);
+    flags = dsm_entry_to_flags(entry);
 
     clear_bit(pos, (volatile long unsigned int *) &flags);
-    set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(desc, flags));
+    set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(desc, flags));
+
+out:
+    pte_unmap_unlock(pd.pte, ptl);
 }
-EXPORT_SYMBOL(dsm_clear_swp_entry_flag);
 

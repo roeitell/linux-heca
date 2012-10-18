@@ -1,16 +1,21 @@
 /*
+ * drivers/dsm/dsm_sysfs.c
  *
+ * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
+ * Roei Tell <roei.tell@sap.com> 2012 (c)
+ * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
+#include <dsm/dsm_core.h>
 
-#include <dsm/dsm_module.h>
-
-static void dsm_kobject_type_release(struct kobject *kobj) {
+static void dsm_kobject_type_release(struct kobject *kobj)
+{
     printk("Releasing kobject %p\n", kobj);
 }
 
 /* default kobject attribute operations */
 static ssize_t kobj_dsm_attr_show(struct kobject *kobj, struct attribute *attr,
-        char *buf) {
+        char *buf)
+{
     struct kobj_attribute *kattr;
     ssize_t ret = -EIO;
 
@@ -21,7 +26,8 @@ static ssize_t kobj_dsm_attr_show(struct kobject *kobj, struct attribute *attr,
 }
 
 static ssize_t kobj_dsm_attr_store(struct kobject *kobj, struct attribute *attr,
-        const char *buf, size_t count) {
+        const char *buf, size_t count)
+{
     struct kobj_attribute *kattr;
     ssize_t ret = -EIO;
 
@@ -35,7 +41,8 @@ static struct sysfs_ops kobj_dsm_sysfs_ops = { .show = kobj_dsm_attr_show, .stor
 
 static struct kobj_type dsm_kobject_type = { .release = dsm_kobject_type_release, .sysfs_ops = &kobj_dsm_sysfs_ops, };
 
-static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
+static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state)
+{
     struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
     kobject_put(dsm_kobjects->rdma_kobject);
@@ -46,7 +53,8 @@ static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state) {
     return;
 }
 
-int create_svm_sysfs_entry(struct subvirtual_machine *svm) {
+int create_svm_sysfs_entry(struct subvirtual_machine *svm)
+{
     struct kobject *kobj = &svm->svm_sysfs.svm_kobject;
     int r;
 
@@ -56,7 +64,8 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm) {
     return r;
 }
 
-void delete_svm_sysfs_entry(struct kobject *obj) {
+void delete_svm_sysfs_entry(struct kobject *obj)
+{
     kobject_put(obj);
     kobject_del(obj);
 }
@@ -66,26 +75,29 @@ int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) 
             dsm_state->dsm_kobjects.domains_kobject, "dsm.%u", dsm->dsm_id);
 }
 
-void delete_dsm_sysfs_entry(struct kobject *obj) {
+void delete_dsm_sysfs_entry(struct kobject *obj)
+{
     kobject_put(obj);
     kobject_del(obj);
 }
 
 int create_connection_sysfs_entry(struct con_element_sysfs *sysfs,
-        struct kobject *root_kobj, char* name) {
+        struct kobject *root_kobj, char* name)
+{
     int r = kobject_init_and_add(&sysfs->connection_kobject, &dsm_kobject_type,
             root_kobj, name);
 
     return r;
 }
 
-void delete_connection_sysfs_entry(struct con_element_sysfs *sysfs) {
-
+void delete_connection_sysfs_entry(struct con_element_sysfs *sysfs)
+{
     kobject_put(&sysfs->connection_kobject);
     kobject_del(&sysfs->connection_kobject);
 }
 
-int dsm_sysfs_setup(struct dsm_module_state *dsm_state) {
+int dsm_sysfs_setup(struct dsm_module_state *dsm_state)
+{
     struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
     dsm_kobjects->dsm_glob_kobject = kobject_create_and_add("dsm", kernel_kobj);
@@ -108,7 +120,8 @@ int dsm_sysfs_setup(struct dsm_module_state *dsm_state) {
     err: return -ENOMEM;
 }
 
-void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state) {
+void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state)
+{
     cleanup_top_level_kobject(dsm_state);
 }
 

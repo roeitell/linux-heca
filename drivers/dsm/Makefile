@@ -1,6 +1,5 @@
-dsm_rdma-y := dsm_sysfs.o dsm_ctl.o dsm_op.o dsm_handlers.o dsm_sr.o \
-    dsm_search.o dsm_cache.o dsm_page_fault.o \
-    dsm_page_request.o dsm_unmap.o dsm_utils.o
+dsm_rdma-y := dsm_base.o dsm.o dsm_conn.o dsm_ops.o dsm_pull.o dsm_push.o \
+    dsm_struct.o dsm_sysfs.o
 
 obj-$(CONFIG_DSM) += dsm_rdma.o
 

@@ -13,17 +13,18 @@
 struct svm_data {
     __u32 dsm_id;
     __u32 svm_id;
-    unsigned long offset;
     char ip[MAX_ADDR_STR];
     int port;
+    int local;
 };
 
 #define MAX_SVM_IDS 3 /* This actually means 2, as the arr is null terminated */
 
 struct unmap_data {
     __u32 dsm_id;
-    unsigned long addr;
+    void *addr;
     size_t sz;
+    __u32 id;
     __u32 svm_ids[MAX_SVM_IDS];
     int unmap;
 };

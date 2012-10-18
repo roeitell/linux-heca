@@ -10,7 +10,6 @@
 #define DSM_TRACE_H_
 
 #include <linux/tracepoint.h>
-#include <dsm/dsm_def.h>
 #include <dsm/dsm_core.h>
 
 #define dsm_dpc_tag \

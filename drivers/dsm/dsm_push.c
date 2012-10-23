@@ -855,9 +855,7 @@ retry:
     }
     if (PageKsm(page)) {
         printk("[dsm_flag_page_remote] KSM page\n");
-
-        r = ksm_madvise(vma, request_addr, request_addr + PAGE_SIZE,
-                MADV_UNMERGEABLE, &vma->vm_flags);
+	r = handle_mm_fault(mm,vma,request_addr, FAULT_FLAG_WRITE);  
 
         if (r) {
             printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);

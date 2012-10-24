@@ -245,17 +245,6 @@ fail:
     return NULL;
 }
 
-static inline int do_deferred_gup(struct mm_struct *mm, unsigned long addr,
-        struct page *page)
-{
-    int r;
-
-    trace_is_deferred(1);
-    r = get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-    trace_get_user_pages_res(r);
-    return r;
-}
-
 int dsm_try_unmap_page(struct mm_struct *mm, unsigned long addr,
         struct subvirtual_machine *remote_svm)
 {
@@ -265,11 +254,13 @@ int dsm_try_unmap_page(struct mm_struct *mm, unsigned long addr,
     pte_t pte_entry;
     int r;
 
+    down_read(&mm->mmap_sem);
+
 retry:
     r = dsm_extract_pte_data(&pd, mm, addr);
     if (unlikely(r)) {
         trace_extract_pte_data_err(r);
-        return r;
+        goto out_mm;
     }
 
     pte_entry = *(pd.pte);
@@ -314,7 +305,9 @@ retry:
     }
 
     if (unlikely(PageKsm(page))) {
-        r = handle_mm_fault(pd.vma->vm_mm, pd.vma, addr, FAULT_FLAG_WRITE); 
+        pte_unmap_unlock(pd.pte, ptl);
+        r = handle_mm_fault(mm, pd.vma, addr,
+                FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_WRITE); 
         if (r) /* DSM1 : better ksm error handling required. */
             goto out;
     }
@@ -330,27 +323,33 @@ retry:
 
 out:
     pte_unmap_unlock(pd.pte, ptl);
+out_mm:
+    up_read(&mm->mmap_sem);
     return r;
 }
 
+/* we arrive with mm semaphore held */
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
         unsigned long addr, pte_t *return_pte, u32 *svm_id, int deferred)
 {
     spinlock_t *ptl;
-    int r = 0;
+    int r;
     struct page *page;
     struct dsm_pte_data pd;
     pte_t pte_entry;
 
 retry:
+    r = 0;
     page = NULL;
     r = dsm_extract_pte_data(&pd, mm, addr);
     if (unlikely(r)) {
         trace_extract_pte_data_err(r);
-        if (likely(deferred)) {
-            do_deferred_gup(mm, addr, page);
-            goto retry;
+        if (likely(deferred && r != -1)) {
+            r = handle_mm_fault(mm, pd.vma, addr,
+                    FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+            if (~r & VM_FAULT_ERROR)
+                goto retry;
         }
         goto out;
     }
@@ -358,7 +357,11 @@ retry:
 
     /* first time dealing with this addr? */
     if (pte_none(pte_entry)) {
-        get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
+        r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE |
+                FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_RETRY_NOWAIT);
+        if (r & VM_FAULT_ERROR)
+            goto out;
+
         goto retry;
     }
 
@@ -370,7 +373,7 @@ retry:
 
     if (unlikely(!pte_present(pte_entry))) {
         struct subvirtual_machine *redirect_svm;
-        
+
         redirect_svm = dsm_extract_handle_missing_pte(local_svm, mm, addr,
                 pte_entry, &pd, svm_id);
         if (redirect_svm) {
@@ -379,7 +382,10 @@ retry:
             *svm_id = redirect_svm->svm_id;
         } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
-            do_deferred_gup(mm, addr, page);
+            r = handle_mm_fault(mm, pd.vma, addr,
+                    FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+            if (r & VM_FAULT_ERROR)
+                goto out;
             goto retry;
         }
         goto bad_page;
@@ -405,9 +411,10 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
-        if (r)
-            return NULL;
+        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr,
+                FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+        if (r & VM_FAULT_ERROR)
+            goto out;
         goto retry;
     }
 
@@ -607,8 +614,9 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
-        if(r)
+        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr,
+                FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+        if (r & VM_FAULT_ERROR)
             goto bad_page;
         goto retry;
     }
@@ -732,12 +740,26 @@ int push_back_if_remote_dsm_page(struct page *page)
     return _push_back_if_remote_dsm_page(page);
 }
 
+static inline int dsm_fault_missing_page(struct mm_struct *mm,
+        struct vm_area_struct *vma, unsigned long addr)
+{
+    int r;
+
+    down_read(&mm->mmap_sem);
+    r = handle_mm_fault(mm, vma, addr,
+            FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_WRITE);
+    up_read(&mm->mmap_sem);
+
+    return r;
+}
+
+/* no locks are held when calling this function */
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         unsigned long request_addr)
 {
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0, retry = 0;
+    int r;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -750,13 +772,9 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
     down_read(&mm->mmap_sem);
 
 retry:
+    r = 0;
     vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
-        if (likely(!retry)) {
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            retry = 1;
-            goto retry;
-        }
         printk("[dsm_flag_page_remote] no vma \n");
         goto out;
     }
@@ -765,24 +783,22 @@ retry:
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
-        if (likely(!retry)) {
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            retry = 1;
-            goto retry;
+        r = dsm_fault_missing_page(mm, vma, addr);
+        if (r & VM_FAULT_ERROR) {
+            printk("[dsm_flag_page_remote] no pgd, fault=%d\n", r);
+            goto out;
         }
-        printk("[dsm_flag_page_remote] no pgd \n");
-        goto out;
+        goto retry;
     }
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        if (likely(!retry)) {
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            retry = 1;
-            goto retry;
+        r = dsm_fault_missing_page(mm, vma, addr);
+        if (r & VM_FAULT_ERROR) {
+            printk("[dsm_flag_page_remote] no pud, fault=%d\n", r);
+            goto out;
         }
-        printk("[dsm_flag_page_remote] no pud \n");
-        goto out;
+        goto retry;
     }
 
     pmd = pmd_offset(pud, addr);
@@ -828,9 +844,10 @@ retry:
                 }
             } else {
                 pte_unmap_unlock(pte, ptl);
-                r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
+                r = dsm_fault_missing_page(mm, vma, addr);
                 if (r & VM_FAULT_ERROR) {
                     printk("[*] failed at faulting \n");
+                    goto out;
                     BUG();
                 }
                 r = 0;
@@ -855,16 +872,14 @@ retry:
     }
     if (PageKsm(page)) {
         printk("[dsm_flag_page_remote] KSM page\n");
-	pte_unmap_unlock(pte, ptl);
-	r = handle_mm_fault(mm,vma,addr, FAULT_FLAG_WRITE);  
-
-        if (r) {
+        pte_unmap_unlock(pte, ptl);
+        r = dsm_fault_missing_page(mm, vma, addr);
+        if (r & VM_FAULT_ERROR) {
             printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
-
             // DSM1 : better ksm error handling required.
             return -EFAULT;
         }
-	goto retry;
+        goto retry;
     }
 
     if (!trylock_page(page)) {

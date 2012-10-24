@@ -340,11 +340,21 @@ static inline struct llist_node *llist_nodes_reverse(struct llist_node *llnode)
     return tail;
 }
 
+static inline void dsm_initiate_fault(struct mm_struct *mm, unsigned long addr)
+{
+    struct vm_area_struct *vma;
+
+    down_read(&mm->mmap_sem);
+    vma = find_vma(mm, addr);
+    if (likely(vma))
+        handle_mm_fault(mm, vma, addr, FAULT_FLAG_ALLOW_RETRY);
+    up_read(&mm->mmap_sem);
+}
+
 void dequeue_and_gup(struct subvirtual_machine *svm)
 {
     struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;
-    struct page *page;
     struct llist_node *head, *node;
 
     head = llist_del_all(&svm->delayed_faults);
@@ -356,15 +366,9 @@ void dequeue_and_gup(struct subvirtual_machine *svm)
             dpc = dsm_cache_get_hold(svm, ddf->addr);
             if (dpc) {
                 if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                    trace_delayed_gup(svm->dsm->dsm_id, svm->svm_id, -1, -1,
-                            dpc->addr, 0, dpc->tag);
-                    use_mm(svm->mm);
-                    down_read(&svm->mm->mmap_sem);
-                    get_user_pages(current, svm->mm, ddf->addr, 1, 1, 0,
-                            &page, NULL);
-                    up_read(&svm->mm->mmap_sem);
-                    unuse_mm(svm->mm);
-
+                    trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                            -1, -1, dpc->addr, 0, dpc->tag);
+                    dsm_initiate_fault(svm->mm, ddf->addr);
                 }
                 dsm_release_pull_dpc(&dpc);
             }
@@ -422,21 +426,17 @@ unlock:
         unlock_page(dpc->pages[0]);
         lru_add_drain();
 
-        /* queue delayed page fault */
+        /* try to delay faulting pages that were prefetched or pushed to us */
         if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-            struct mm_struct *mm = dpc->svm->mm;
             struct dsm_delayed_fault *ddf;
 
             ddf = alloc_dsm_delayed_fault_cache_elm(dpc->addr);
             if (likely(ddf)) {
                 queue_ddf_for_delayed_gup(ddf, dpc->svm);
             } else {
-                /* just in case we run out of memory for the slab */
-                use_mm(mm);
-                down_read(&mm->mmap_sem);
-                get_user_pages(current, mm, dpc->addr, 1, 1, 0, &page, NULL);
-                up_read(&mm->mmap_sem);
-                unuse_mm(mm);
+                trace_immediate_initiated_fault(dpc->svm->dsm->dsm_id,
+                        dpc->svm->svm_id, -1, -1, dpc->addr, 0, dpc->tag);
+                dsm_initiate_fault(dpc->svm->mm, dpc->addr);
             }
         }
     }

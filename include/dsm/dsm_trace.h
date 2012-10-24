@@ -65,7 +65,8 @@ DSM_DECLARE_EVENT_FULL(dsm_try_pull_req_complete_fail);
 DSM_DECLARE_EVENT_FULL(process_page_request_complete);
 DSM_DECLARE_EVENT_FULL(process_page_request);
 DSM_DECLARE_EVENT_FULL(send_request);
-DSM_DECLARE_EVENT_FULL(delayed_gup);
+DSM_DECLARE_EVENT_FULL(delayed_initiated_fault);
+DSM_DECLARE_EVENT_FULL(immediate_initiated_fault);
 DSM_DECLARE_EVENT_FULL(redirect);
 DSM_DECLARE_EVENT_FULL(dsm_pull_req_success);
 DSM_DECLARE_EVENT_FULL(dsm_defer_gup);
@@ -112,9 +113,8 @@ DECLARE_EVENT_CLASS(dsm_basic_template,
     DEFINE_EVENT(dsm_basic_template, name, TP_PROTO(int id), TP_ARGS(id));
 DSM_DECLARE_EVENT_BASIC(is_congested);
 DSM_DECLARE_EVENT_BASIC(free_svm);
-DSM_DECLARE_EVENT_BASIC(is_deferred);
 DSM_DECLARE_EVENT_BASIC(extract_pte_data_err);
-DSM_DECLARE_EVENT_BASIC(get_user_pages_res);
+DSM_DECLARE_EVENT_BASIC(deferred_fault);
 DSM_DECLARE_EVENT_BASIC(flushing_requests);
 #endif
 

@@ -737,7 +737,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 {
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0, retry = 0;
+    int r = 0, page_no = 0;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -752,12 +752,16 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 retry:
     vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
-        if (likely(!retry)) {
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            retry = 1;
+        if (likely(!page_no)) {
+            page_no = get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            if (page_no != 1) {
+                printk("[dsm_flag_page_remote] couldn't allocate page for missing vma %p\n", addr);
+                goto out;
+            }
+
             goto retry;
         }
-        printk("[dsm_flag_page_remote] no vma \n");
+        printk("[dsm_flag_page_remote] no vma %p\n", addr);
         goto out;
     }
 
@@ -765,23 +769,33 @@ retry:
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
-        if (likely(!retry)) {
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            retry = 1;
+        if (likely(!page_no)) {
+            page_no = get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            if (page_no != 1) {
+                printk("[dsm_flag_page_remote] couldn't allocate page for missing pgd %p\n", addr);
+                goto out;
+            }
+
             goto retry;
         }
-        printk("[dsm_flag_page_remote] no pgd \n");
+
+        printk("[dsm_flag_page_remote] no pgd %p \n", addr);
         goto out;
     }
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        if (likely(!retry)) {
-            get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
-            retry = 1;
+        if (likely(!page_no)) {
+            page_no = get_user_pages(current, mm, addr, 1, 1, 0, &page, NULL);
+            if (page_no != 1) {
+                printk("[dsm_flag_page_remote] couldn't allocate page for missing pud %p\n", addr);
+                goto out;
+            }
+
             goto retry;
         }
-        printk("[dsm_flag_page_remote] no pud \n");
+
+        printk("[dsm_flag_page_remote] no pud %p\n", addr);
         goto out;
     }
 
@@ -855,10 +869,10 @@ retry:
     }
     if (PageKsm(page)) {
         printk("[dsm_flag_page_remote] KSM page\n");
-	pte_unmap_unlock(pte, ptl);
-	r = handle_mm_fault(mm,vma,addr, FAULT_FLAG_WRITE);  
+        pte_unmap_unlock(pte, ptl);
+        r = handle_mm_fault(mm,vma,addr, FAULT_FLAG_WRITE);  
 
-        if (r) {
+        if ( !(r & VM_FAULT_WRITE) ) {
             printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
 
             // DSM1 : better ksm error handling required.

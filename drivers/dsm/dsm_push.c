@@ -306,9 +306,10 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
-        if (r & VM_FAULT_ERROR) /* DSM1 : better ksm error handling required. */
+        if (!dsm_initiate_fault(mm, addr, 1)) {
+            r = -EFAULT;  /* DSM1 : better ksm error handling required. */
             goto out;
+        }
     }
 
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
@@ -325,6 +326,20 @@ out:
 out_mm:
     up_read(&mm->mmap_sem);
     return r;
+}
+
+/* semaphore already held for read */
+static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
+        int write)
+{
+    int r;
+
+    use_mm(mm);
+    r = get_user_pages(current, mm, addr, 1, write, 0, NULL, NULL);
+    unuse_mm(mm);
+
+    BUG_ON(r > 1);
+    return r == 1;
 }
 
 /* we arrive with mm semaphore held */
@@ -345,8 +360,7 @@ retry:
     if (unlikely(r)) {
         trace_extract_pte_data_err(r);
         if (likely(deferred && r != -1)) {
-            r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
-            if (~r & VM_FAULT_ERROR)
+            if (dsm_initiate_fault_fast(mm, addr, 1))
                 goto retry;
         }
         goto out;
@@ -355,10 +369,8 @@ retry:
 
     /* first time dealing with this addr? */
     if (pte_none(pte_entry)) {
-        r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
-        if (r & VM_FAULT_ERROR)
+        if (!dsm_initiate_fault_fast(mm, addr, 1))
             goto out;
-
         goto retry;
     }
 
@@ -379,8 +391,7 @@ retry:
             *svm_id = redirect_svm->svm_id;
         } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
-            r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
-            if (r & VM_FAULT_ERROR)
+            if (!dsm_initiate_fault_fast(mm, addr, 1))
                 goto out;
             goto retry;
         }
@@ -407,8 +418,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
-        if (r & VM_FAULT_ERROR)
+        if (!dsm_initiate_fault_fast(mm, addr, 1))
             goto out;
         goto retry;
     }
@@ -607,8 +617,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
-        if (r & VM_FAULT_ERROR)
+        if (!dsm_initiate_fault(mm, addr, 1))
             goto bad_page;
         goto retry;
     }
@@ -732,18 +741,6 @@ int push_back_if_remote_dsm_page(struct page *page)
     return _push_back_if_remote_dsm_page(page);
 }
 
-static inline int dsm_fault_missing_page(struct mm_struct *mm,
-        struct vm_area_struct *vma, unsigned long addr)
-{
-    int r;
-
-    down_read(&mm->mmap_sem);
-    r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
-    up_read(&mm->mmap_sem);
-
-    return r;
-}
-
 /* no locks are held when calling this function */
 int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
         unsigned long request_addr)
@@ -774,9 +771,9 @@ retry:
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
-        r = dsm_fault_missing_page(mm, vma, addr);
-        if (r & VM_FAULT_ERROR) {
-            printk("[dsm_flag_page_remote] no pgd, fault=%d\n", r);
+        if (!dsm_initiate_fault(mm, addr, 1)) {
+            printk("[dsm_flag_page_remote] no pgd\n");
+            r = -EFAULT;
             goto out;
         }
         goto retry;
@@ -784,9 +781,9 @@ retry:
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        r = dsm_fault_missing_page(mm, vma, addr);
-        if (r & VM_FAULT_ERROR) {
-            printk("[dsm_flag_page_remote] no pud, fault=%d\n", r);
+        if (!dsm_initiate_fault(mm, addr, 1)) {
+            printk("[dsm_flag_page_remote] no pud\n");
+            r = -EFAULT;
             goto out;
         }
         goto retry;
@@ -835,11 +832,10 @@ retry:
                 }
             } else {
                 pte_unmap_unlock(pte, ptl);
-                r = dsm_fault_missing_page(mm, vma, addr);
-                if (r & VM_FAULT_ERROR) {
+                if (!dsm_initiate_fault(mm, addr, 1)) {
                     printk("[*] failed at faulting \n");
+                    r = -EFAULT;
                     goto out;
-                    BUG();
                 }
                 r = 0;
                 goto retry;
@@ -864,11 +860,11 @@ retry:
     if (PageKsm(page)) {
         printk("[dsm_flag_page_remote] KSM page\n");
         pte_unmap_unlock(pte, ptl);
-        r = dsm_fault_missing_page(mm, vma, addr);
-        if (r & VM_FAULT_ERROR) {
+        if (!dsm_initiate_fault(mm, addr, 1)) {
             printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
             // DSM1 : better ksm error handling required.
-            return -EFAULT;
+            r = -EFAULT;
+            goto out;
         }
         goto retry;
     }

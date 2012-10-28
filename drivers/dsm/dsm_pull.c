@@ -340,30 +340,18 @@ static inline struct llist_node *llist_nodes_reverse(struct llist_node *llnode)
     return tail;
 }
 
-/*
- * A reasonable alternative would be to get_user_pages_fast, and then put_page.
- * It would potentially save us the need to hold the mmap_sem lock, yet it would
- * be an overkill: as we do not really require the page pinned, we just want to
- * make sure it's faulted in if it wasn't touched so far.
- */
-static inline void dsm_initiate_fault(struct mm_struct *mm, unsigned long addr)
+int dsm_initiate_fault(struct mm_struct *mm, unsigned long addr, int write)
 {
-    struct vm_area_struct *vma;
+    int r;
 
+    use_mm(mm);
     down_read(&mm->mmap_sem);
-    vma = find_vma(mm, addr);
-    if (likely(vma)) {
-        /*
-         * VM_FAULT_RETRY means someone's been tampering with the page, so no
-         * need for us to insist on faulting it in. It also means that mmap_sem
-         * was released in handle_mm_fault. In any case we want to send the flag
-         * for ALLOW_RETRY, to prevent waiting until page is unlocked.
-         */
-        int r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_ALLOW_RETRY);
-        if (r & VM_FAULT_RETRY)
-            return;
-    }
+    r = get_user_pages(current, mm, addr, 1, write, 0, NULL, NULL);
     up_read(&mm->mmap_sem);
+    unuse_mm(mm);
+
+    BUG_ON(r > 1);
+    return r == 1;
 }
 
 static void dequeue_and_gup(struct subvirtual_machine *svm)
@@ -380,10 +368,11 @@ static void dequeue_and_gup(struct subvirtual_machine *svm)
         if (unlikely(dpc)) {
             dpc = dsm_cache_get_hold(svm, ddf->addr);
             if (dpc) {
+                /* TODO: validate page hasn't been tampered with */
                 if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
                     trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
                             -1, -1, dpc->addr, 0, dpc->tag);
-                    dsm_initiate_fault(svm->mm, ddf->addr);
+                    dsm_initiate_fault(svm->mm, ddf->addr, 0);
                 }
                 dsm_release_pull_dpc(&dpc);
             }
@@ -451,7 +440,7 @@ unlock:
             } else {
                 trace_immediate_initiated_fault(dpc->svm->dsm->dsm_id,
                         dpc->svm->svm_id, -1, -1, dpc->addr, 0, dpc->tag);
-                dsm_initiate_fault(dpc->svm->mm, dpc->addr);
+                dsm_initiate_fault(dpc->svm->mm, dpc->addr, 0);
             }
         }
     }
@@ -880,9 +869,9 @@ retry:
             int inflight = inflight_wait(page_table, &orig_pte, &entry, &dsd);
 
             if (inflight) {
-                if (inflight == -EFAULT)
+                if (inflight == -EFAULT) {
                     ret = VM_FAULT_ERROR;
-                else {
+                } else {
                     ret |= VM_FAULT_RETRY;
                     up_read(&mm->mmap_sem);
                 }

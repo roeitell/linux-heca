@@ -149,6 +149,7 @@ int ack_msg(struct conn_element *, struct rx_buf_ele *);
 int do_unmap_range(struct dsm *, int, void *, void *);
 
 /* dsm_pull.c */
+int dsm_initiate_fault(struct mm_struct *, unsigned long, int);
 void init_dsm_prefetch_cache_kmem(void);
 void destroy_dsm_prefetch_cache_kmem(void);
 int dsm_zero_pfn_init(void);

@@ -328,14 +328,13 @@ out_mm:
     return r;
 }
 
-/* semaphore already held for read */
-static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
-        int write)
+/* mmap_sem already held for read */
+static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr)
 {
     int r;
 
     use_mm(mm);
-    r = get_user_pages(current, mm, addr, 1, write, 0, NULL, NULL);
+    r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
     unuse_mm(mm);
 
     BUG_ON(r > 1);
@@ -360,7 +359,7 @@ retry:
     if (unlikely(r)) {
         trace_extract_pte_data_err(r);
         if (likely(deferred && r != -1)) {
-            if (dsm_initiate_fault_fast(mm, addr, 1))
+            if (dsm_initiate_fault_fast(mm, addr))
                 goto retry;
         }
         goto out;
@@ -369,7 +368,7 @@ retry:
 
     /* first time dealing with this addr? */
     if (pte_none(pte_entry)) {
-        if (!dsm_initiate_fault_fast(mm, addr, 1))
+        if (!dsm_initiate_fault_fast(mm, addr))
             goto out;
         goto retry;
     }
@@ -391,7 +390,7 @@ retry:
             *svm_id = redirect_svm->svm_id;
         } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
-            if (!dsm_initiate_fault_fast(mm, addr, 1))
+            if (!dsm_initiate_fault_fast(mm, addr))
                 goto out;
             goto retry;
         }
@@ -418,7 +417,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        if (!dsm_initiate_fault_fast(mm, addr, 1))
+        if (!dsm_initiate_fault_fast(mm, addr))
             goto out;
         goto retry;
     }

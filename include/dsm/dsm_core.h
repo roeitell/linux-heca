@@ -155,7 +155,6 @@ int dsm_zero_pfn_init(void);
 void dsm_zero_pfn_exit(void);
 inline void dsm_release_pull_dpc(struct dsm_page_cache **);
 void dequeue_and_gup_cleanup(struct subvirtual_machine *);
-void dequeue_and_gup(struct subvirtual_machine *);
 void delayed_gup_work_fn(struct work_struct *);
 int dsm_pull_req_failure(struct dsm_page_cache *);
 int dsm_swap_wrapper(struct mm_struct *, struct vm_area_struct *,

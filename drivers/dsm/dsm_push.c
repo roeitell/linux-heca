@@ -306,9 +306,8 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(mm, pd.vma, addr,
-                FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_WRITE); 
-        if (r) /* DSM1 : better ksm error handling required. */
+        r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
+        if (r & VM_FAULT_ERROR) /* DSM1 : better ksm error handling required. */
             goto out;
     }
 
@@ -346,8 +345,7 @@ retry:
     if (unlikely(r)) {
         trace_extract_pte_data_err(r);
         if (likely(deferred && r != -1)) {
-            r = handle_mm_fault(mm, pd.vma, addr,
-                    FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+            r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
             if (~r & VM_FAULT_ERROR)
                 goto retry;
         }
@@ -357,8 +355,7 @@ retry:
 
     /* first time dealing with this addr? */
     if (pte_none(pte_entry)) {
-        r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE |
-                FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_RETRY_NOWAIT);
+        r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
         if (r & VM_FAULT_ERROR)
             goto out;
 
@@ -382,8 +379,7 @@ retry:
             *svm_id = redirect_svm->svm_id;
         } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
-            r = handle_mm_fault(mm, pd.vma, addr,
-                    FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+            r = handle_mm_fault(mm, pd.vma, addr, FAULT_FLAG_WRITE);
             if (r & VM_FAULT_ERROR)
                 goto out;
             goto retry;
@@ -411,8 +407,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr,
-                FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
         if (r & VM_FAULT_ERROR)
             goto out;
         goto retry;
@@ -528,14 +523,12 @@ struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
     mm = local_svm->mm;
     BUG_ON(!mm);
 
-    use_mm(mm);
     down_read(&mm->mmap_sem);
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,
                 deferred);
     up_read(&mm->mmap_sem);
-    unuse_mm(mm);
 
     return page;
 }
@@ -614,8 +607,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr,
-                FAULT_FLAG_WRITE | FAULT_FLAG_ALLOW_RETRY);
+        r = handle_mm_fault(pd.vma->vm_mm,pd.vma, addr, FAULT_FLAG_WRITE);
         if (r & VM_FAULT_ERROR)
             goto bad_page;
         goto retry;
@@ -746,8 +738,7 @@ static inline int dsm_fault_missing_page(struct mm_struct *mm,
     int r;
 
     down_read(&mm->mmap_sem);
-    r = handle_mm_fault(mm, vma, addr,
-            FAULT_FLAG_ALLOW_RETRY | FAULT_FLAG_WRITE);
+    r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE);
     up_read(&mm->mmap_sem);
 
     return r;

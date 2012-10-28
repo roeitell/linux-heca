@@ -340,18 +340,33 @@ static inline struct llist_node *llist_nodes_reverse(struct llist_node *llnode)
     return tail;
 }
 
+/*
+ * A reasonable alternative would be to get_user_pages_fast, and then put_page.
+ * It would potentially save us the need to hold the mmap_sem lock, yet it would
+ * be an overkill: as we do not really require the page pinned, we just want to
+ * make sure it's faulted in if it wasn't touched so far.
+ */
 static inline void dsm_initiate_fault(struct mm_struct *mm, unsigned long addr)
 {
     struct vm_area_struct *vma;
 
     down_read(&mm->mmap_sem);
     vma = find_vma(mm, addr);
-    if (likely(vma))
-        handle_mm_fault(mm, vma, addr, FAULT_FLAG_ALLOW_RETRY);
+    if (likely(vma)) {
+        /*
+         * VM_FAULT_RETRY means someone's been tampering with the page, so no
+         * need for us to insist on faulting it in. It also means that mmap_sem
+         * was released in handle_mm_fault. In any case we want to send the flag
+         * for ALLOW_RETRY, to prevent waiting until page is unlocked.
+         */
+        int r = handle_mm_fault(mm, vma, addr, FAULT_FLAG_ALLOW_RETRY);
+        if (r & VM_FAULT_RETRY)
+            return;
+    }
     up_read(&mm->mmap_sem);
 }
 
-void dequeue_and_gup(struct subvirtual_machine *svm)
+static void dequeue_and_gup(struct subvirtual_machine *svm)
 {
     struct dsm_delayed_fault *ddf;
     struct dsm_page_cache *dpc;
@@ -867,8 +882,10 @@ retry:
             if (inflight) {
                 if (inflight == -EFAULT)
                     ret = VM_FAULT_ERROR;
-                else
+                else {
                     ret |= VM_FAULT_RETRY;
+                    up_read(&mm->mmap_sem);
+                }
                 release_svm(fault_svm);
                 goto out_no_dpc;
             }
@@ -1073,14 +1090,11 @@ int dsm_trigger_page_pull(struct dsm *dsm, struct subvirtual_machine *local_svm,
         struct memory_region *mr, unsigned long norm_addr)
 {
     int r = 0;
-    struct mm_struct *mm;
+    struct mm_struct *mm = local_svm->mm;
 
-    mm = local_svm->mm;
-    use_mm(mm);
     down_read(&mm->mmap_sem);
     r = get_dsm_page(mm, norm_addr + mr->addr, local_svm, mr, PULL_TRY_TAG);
     up_read(&mm->mmap_sem);
-    unuse_mm(mm);
 
     return r;
 }

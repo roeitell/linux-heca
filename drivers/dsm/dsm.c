@@ -124,7 +124,9 @@ static int unmap_range(void __user *argp)
 {
     int r = -EFAULT;
     struct unmap_data udata;
-    struct dsm *dsm;
+    struct memory_region * mr = NULL;
+    struct subvirtual_machine *svm = NULL; 
+    struct dsm *dsm = NULL;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
@@ -133,7 +135,20 @@ static int unmap_range(void __user *argp)
     if (!dsm)
         goto out;
 
-    r = do_unmap_range(dsm, dsm_get_descriptor(dsm, udata.svm_ids), udata.addr,
+    svm = find_local_svm_in_dsm(dsm, current->mm);
+    if (!svm) {
+        dsm_printk(KERN_ERR "local svm not registered\n");
+        goto out;
+    }
+    mr = search_mr(svm, (unsigned long) udata.addr);
+    if (!mr) {
+        dsm_printk(KERN_ERR "mr already exists at addr 0x%lx", udata.addr);
+        r = -EEXIST;
+        goto out;
+    }
+
+    dsm_printk("doing_unmap_range");
+    r = do_unmap_range(dsm, mr->descriptor, udata.addr,
             udata.addr + udata.sz - 1);
 
 out:

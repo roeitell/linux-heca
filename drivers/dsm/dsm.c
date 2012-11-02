@@ -124,7 +124,9 @@ static int unmap_range(void __user *argp)
 {
     int r = -EFAULT;
     struct unmap_data udata;
-    struct dsm *dsm;
+    struct memory_region * mr = NULL;
+    struct subvirtual_machine *svm = NULL; 
+    struct dsm *dsm = NULL;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
@@ -133,7 +135,20 @@ static int unmap_range(void __user *argp)
     if (!dsm)
         goto out;
 
-    r = do_unmap_range(dsm, dsm_get_descriptor(dsm, udata.svm_ids), udata.addr,
+    svm = find_local_svm_in_dsm(dsm, current->mm);
+    if (!svm) {
+        dsm_printk(KERN_ERR "local svm not registered\n");
+        goto out;
+    }
+    mr = search_mr(svm, (unsigned long) udata.addr);
+    if (!mr) {
+        dsm_printk(KERN_ERR "mr already exists at addr 0x%lx", udata.addr);
+        r = -EEXIST;
+        goto out;
+    }
+
+    dsm_printk("doing_unmap_range");
+    r = do_unmap_range(dsm, mr->descriptor, udata.addr,
             udata.addr + udata.sz - 1);
 
 out:
@@ -202,27 +217,16 @@ static int release(struct inode *inode, struct file *f)
 {
     struct private_data *data = (struct private_data *) f->private_data;
     struct dsm *dsm = data->dsm;
-    struct list_head *pos = NULL;
-    u32 remove, svm_id;
+    struct subvirtual_machine *svm = NULL;
 
     if (!dsm)
         return 1;
 
-    rcu_read_lock();
-    remove = 0;
-    list_for_each (pos, &dsm->svm_list) {
-        struct subvirtual_machine *svm = list_entry(pos,
-                struct subvirtual_machine, svm_ptr);
-        if (svm->mm == current->mm) {
-            svm_id = svm->svm_id;
-            remove = 1;
-            break;
-        }
+    while ( !list_empty(&dsm->svm_list) ) {
+        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr);
+        dsm_printk("removing svm_id: %d from list of svms", svm->svm_id);
+        remove_svm(dsm->dsm_id, svm->svm_id);
     }
-    rcu_read_unlock();
-
-    if (remove)
-        remove_svm(dsm->dsm_id, svm_id);
 
     if (data->dsm->nb_local_svm == 0) {
         remove_dsm(data->dsm);

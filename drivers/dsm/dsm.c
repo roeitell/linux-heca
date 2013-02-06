@@ -91,7 +91,7 @@ static int register_svm(void __user *argp)
         return -EFAULT;
     }
 
-    return create_svm(svm_info.dsm_id, svm_info.svm_id, svm_info.local);
+    return create_svm(svm_info.dsm_id, svm_info.svm_id, svm_info.is_local);
 }
 
 static int register_svm_connection(void __user *argp)
@@ -116,8 +116,8 @@ static int register_mr(void __user *argp)
         return -EFAULT;
     }
 
-    return create_mr(udata.dsm_id, udata.id, udata.addr, udata.sz,
-            udata.svm_ids, udata.unmap);
+    return create_mr(udata.dsm_id, udata.mr_id, udata.addr, udata.sz,
+            udata.svm_ids, udata.do_unmap);
 }
 
 static int unmap_range(void __user *argp)
@@ -249,7 +249,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
         goto out;
 
     /* special case: no need for prior dsm in process */
-    if (ioctl == DSM_DSM) {
+    if (ioctl == HECAIOC_DSM_INIT) {
         r = register_dsm(priv_data, argp);
         goto out;
     }
@@ -258,23 +258,19 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
         goto out;
 
     switch (ioctl) {
-        case DSM_SVM:
+        case HECAIOC_SVM_ADD:
             r = register_svm(argp);
             break;
-        case DSM_CONNECT:
+        case HECAIOC_SVM_CONNECT:
             r = register_svm_connection(argp);
             break;
-        case DSM_MR:
+        case HECAIOC_MR_ADD:
             r = register_mr(argp);
             break;
-        case DSM_UNMAP_RANGE:
+        case HECAIOC_MR_UNMAP:
             r = unmap_range(argp);
             break;
-
-        /*
-         * devel/debug
-         */
-        case DSM_TRY_PUSH_BACK_PAGE: {
+        case HECAIOC_MR_PUSHBACK: {
             r = pushback_page(argp);
             break;
         }

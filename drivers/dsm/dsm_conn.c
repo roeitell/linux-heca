@@ -1493,7 +1493,8 @@ void try_release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e)
         release_tx_element(ele, tx_e);
 }
 
-static int create_connection(struct rcm *rcm, char *ip, int port)
+static int create_connection(struct rcm *rcm, unsigned long ip,
+	unsigned short port)
 {
     struct sockaddr_in dst, src;
     struct rdma_conn_param param;
@@ -1506,8 +1507,8 @@ static int create_connection(struct rcm *rcm, char *ip, int port)
     param.retry_count = 10;
 
     dst.sin_family = AF_INET;
-    dst.sin_addr.s_addr = (__u32) inet_addr(ip);
-    dst.sin_port = (__u16) htons(port);
+    dst.sin_addr.s_addr = ip;
+    dst.sin_port = htons(port);
 
     src.sin_family = AF_INET;
     src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
@@ -1518,7 +1519,7 @@ static int create_connection(struct rcm *rcm, char *ip, int port)
         goto err;
 
     init_completion(&ele->completion);
-    ele->remote_node_ip = inet_addr(ip);
+    ele->remote_node_ip = ip;
     insert_rb_conn(ele);
 
     ele->rcm = rcm;
@@ -1528,7 +1529,7 @@ static int create_connection(struct rcm *rcm, char *ip, int port)
         goto err1;
 
     if (create_connection_sysfs_entry(&ele->sysfs,
-            dsm_state->dsm_kobjects.rdma_kobject, ip))
+            dsm_state->dsm_kobjects.rdma_kobject, inet_ntoa(ip)))
         goto err1;
 
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
@@ -1539,9 +1540,10 @@ static int create_connection(struct rcm *rcm, char *ip, int port)
     err: return -1;
 }
 
-int connect_svm(__u32 dsm_id, __u32 svm_id, char *ip, int port)
+int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
+	unsigned short port)
 {
-    int r = 0, ip_addr;
+    int r = 0;
     struct dsm *dsm;
     struct subvirtual_machine *svm;
     struct conn_element *cele;
@@ -1563,7 +1565,6 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, char *ip, int port)
         goto no_svm;
     }
 
-    ip_addr = inet_addr(ip);
     cele = search_rb_conn(ip_addr);
     if (cele) {
         dsm_printk(KERN_ERR "has existing connection to %pI4", &ip_addr);
@@ -1571,7 +1572,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, char *ip, int port)
         goto done;
     }
 
-    r = create_connection(dsm_state->rcm, ip, port);
+    r = create_connection(dsm_state->rcm, ip_addr, port);
     if (r) {
         dsm_printk(KERN_ERR "create_connection failed %d", r);
         goto failed;
@@ -1604,17 +1605,32 @@ no_svm:
     return r;
 }
 
-unsigned int inet_addr(char *addr)
+unsigned long inet_addr(const char *cp)
 {
     unsigned int a, b, c, d;
-    char arr[4];
+    unsigned char arr[4];
 
-    sscanf(addr, "%u.%u.%u.%u", &a, &b, &c, &d);
+    sscanf(cp, "%u.%u.%u.%u", &a, &b, &c, &d);
     arr[0] = a;
     arr[1] = b;
     arr[2] = c;
     arr[3] = d;
-    return *(unsigned int*) arr;
+    return *(unsigned int*) arr; /* network */
+}
+
+char *inet_ntoa(unsigned long s_addr)
+{
+    static char ret[16];
+
+    unsigned char *b = (unsigned char *)&s_addr;
+    unsigned int i;
+    unsigned int pos = 0;
+
+    ret[0] = '\0';
+    for(i = 0; pos <= sizeof(ret) && i < sizeof(s_addr); i++)
+	pos += snprintf(&ret[pos], sizeof(ret) - pos, "%s%u",
+		i ? "." : "", b[i]);
+    return ret;
 }
 
 struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele)

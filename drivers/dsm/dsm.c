@@ -10,16 +10,6 @@
 #include <linux/dsm_hook.h>
 #include <dsm/dsm_core.h>
 
-static char *ip = 0;
-static int port = 0;
-
-module_param(ip, charp, S_IRUGO|S_IWUSR);
-MODULE_PARM_DESC(ip, "The ip of the machine running this module - will be used"
-       " as node_id.");
-module_param(port, int, S_IRUGO|S_IWUSR);
-MODULE_PARM_DESC(port, "The port on the machine running this module - used for"
-       " DSM_RDMA communication.");
-
 #ifdef CONFIG_DSM_DEBUG
 static int debug = 1;
 module_param(debug, int, 0644);
@@ -49,10 +39,11 @@ void __dsm_printk(unsigned int level, const char *path, int line, const char *fo
 
 #ifdef CONFIG_DSM_DEBUG
     if (debug < level)
-    return;
+        return;
 #endif
 
     va_start(args, format);
+
 #ifdef CONFIG_DSM_VERBOSE_PRINTK
     vaf.fmt = format;
     vaf.va = &args;
@@ -60,11 +51,13 @@ void __dsm_printk(unsigned int level, const char *path, int line, const char *fo
         memcpy(verbose_fmt, format, 3);
         vaf.fmt = format + 3;
     } else if (level)
-    memcpy(verbose_fmt, KERN_DEBUG, 3);
+        memcpy(verbose_fmt, KERN_DEBUG, 3);
     printk(verbose_fmt, sanity_file_name(path), line, &vaf);
 #else
     vprintk(format, args);
 #endif
+    printk("\n");
+
     va_end(args);
 #endif
 }
@@ -73,13 +66,33 @@ EXPORT_SYMBOL(__dsm_printk);
 static int register_dsm(struct private_data *priv_data, void __user *argp)
 {
     struct svm_data svm_info;
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
+    int rc;
+
+    dsm_printk(KERN_DEBUG "entered function");
+
+    BUG_ON(!dsm_state);
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
-        dsm_printk("copy_from_user failed");
-        return -EFAULT;
+        dsm_printk(KERN_ERR "copy_from_user failed");
+        rc = -EFAULT;
+	goto done;
     }
 
-    return create_dsm(priv_data, svm_info.dsm_id);
+    if ((rc = create_rcm(dsm_state, inet_ntoa(svm_info.ip), svm_info.port))) {
+        dsm_printk(KERN_ERR "create_rcm failed");
+	goto done;
+    }
+    rdma_listen(dsm_state->rcm->cm_id, 2);
+
+    if ((rc = create_dsm(priv_data, svm_info.dsm_id))) {
+        dsm_printk(KERN_ERR "create_dsm failed");
+	goto done;
+    }
+
+done:
+    dsm_printk(KERN_DEBUG "exit function: %d", rc);
+    return rc;
 }
 
 static int register_svm(void __user *argp)
@@ -87,7 +100,7 @@ static int register_svm(void __user *argp)
     struct svm_data svm_info;
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
-        dsm_printk("copy_from_user failed");
+        dsm_printk(KERN_ERR "copy_from_user failed");
         return -EFAULT;
     }
 
@@ -99,7 +112,7 @@ static int register_svm_connection(void __user *argp)
     struct svm_data svm_info;
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
-        dsm_printk("copy_from_user failed");
+        dsm_printk(KERN_ERR "copy_from_user failed");
         return -EFAULT;
     }
 
@@ -112,7 +125,7 @@ static int register_mr(void __user *argp)
     struct unmap_data udata;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata)) {
-        dsm_printk("copy_from_user failed");
+        dsm_printk(KERN_ERR "copy_from_user failed");
         return -EFAULT;
     }
 
@@ -137,7 +150,7 @@ static int unmap_range(void __user *argp)
 
     svm = find_local_svm_in_dsm(dsm, current->mm);
     if (!svm) {
-        dsm_printk(KERN_ERR "local svm not registered\n");
+        dsm_printk(KERN_ERR "local svm not registered");
         goto out;
     }
     mr = search_mr(svm, (unsigned long) udata.addr);
@@ -147,7 +160,7 @@ static int unmap_range(void __user *argp)
         goto out;
     }
 
-    dsm_printk("doing_unmap_range");
+    dsm_printk(KERN_ERR "doing_unmap_range");
     r = do_unmap_range(dsm, mr->descriptor, udata.addr,
             udata.addr + udata.sz - 1);
 
@@ -223,14 +236,16 @@ static int release(struct inode *inode, struct file *f)
         return 1;
 
     while ( !list_empty(&dsm->svm_list) ) {
-        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine, svm_ptr);
-        dsm_printk("removing svm_id: %d from list of svms", svm->svm_id);
+        svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine,
+            svm_ptr);
+        dsm_printk(KERN_ERR "removing svm_id: %d from list of svms",
+            svm->svm_id);
         remove_svm(dsm->dsm_id, svm->svm_id);
     }
 
     if (data->dsm->nb_local_svm == 0) {
         remove_dsm(data->dsm);
-        printk("[Release ] last local svm , freeing the dsm\n");
+        dsm_printk(KERN_INFO "[Release ] last local svm , freeing the dsm");
     }
     kfree(data);
 
@@ -241,12 +256,9 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 {
     struct private_data *priv_data = (struct private_data *) f->private_data;
     void __user *argp = (void __user *) arg;
-    struct dsm_module_state *dsm_state = get_dsm_module_state();
+    int r = -EINVAL;
 
-    int r = -1;
-
-    if (!dsm_state->rcm)
-        goto out;
+    dsm_printk(KERN_DEBUG "entering with ioctl %d", ioctl);
 
     /* special case: no need for prior dsm in process */
     if (ioctl == HECAIOC_DSM_INIT) {
@@ -254,8 +266,10 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
         goto out;
     }
 
-    if (!priv_data->dsm)
+    if (!priv_data->dsm) {
+        dsm_printk(KERN_ERR "module not initiated - existing");
         goto out;
+    }
 
     switch (ioctl) {
         case HECAIOC_SVM_ADD:
@@ -276,11 +290,13 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
         }
         default: {
             r = -EFAULT;
+            dsm_printk(KERN_ERR "don't support ioctl %d", ioctl);
             break;
         }
     }
 
 out: 
+    dsm_printk(KERN_DEBUG "exiting return code of %d", r);
     return r;
 }
 
@@ -300,23 +316,16 @@ const struct dsm_hook_struct my_dsm_hook = {
 static int dsm_init(void)
 {
     struct dsm_module_state *dsm_state = create_dsm_module_state();
+    int rc;
 
+    BUG_ON(!dsm_state);
     dsm_zero_pfn_init();
-
-    printk("[dsm_init] ip : %s\n", ip);
-    printk("[dsm_init] port : %d\n", port);
-
-    if (create_rcm(dsm_state, ip, port))
-        goto err;
-
-    if (dsm_sysfs_setup(dsm_state)) {
-        destroy_rcm(dsm_state);
-    }
-
-    rdma_listen(dsm_state->rcm->cm_id, 2);
+    dsm_sysfs_setup(dsm_state);
     dsm_hook_write(&my_dsm_hook);
-err: 
-    return misc_register(&rdma_misc);
+    rc = misc_register(&rdma_misc);
+
+    dsm_printk(KERN_DEBUG "existing function: %d", rc);
+    return rc;
 }
 module_init(dsm_init);
 
@@ -326,7 +335,6 @@ static void dsm_exit(void)
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
     dsm_hook_write(NULL);
-
     dsm_zero_pfn_exit();
 
     while (!list_empty(&dsm_state->dsm_list)) {
@@ -335,7 +343,8 @@ static void dsm_exit(void)
     }
 
     dsm_sysfs_cleanup(dsm_state);
-    destroy_rcm(dsm_state);
+    if (dsm_state->rcm)
+        destroy_rcm(dsm_state);
 
     misc_deregister(&rdma_misc);
     destroy_dsm_module_state();

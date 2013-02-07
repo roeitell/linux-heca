@@ -942,11 +942,11 @@ err_cq:
 err_pd:
     err_bind: rdma_destroy_id(rcm->cm_id);
 err_cm_id:
-    printk(">[create_rcm] Failed.\n");
+    dsm_printk(KERN_ERR "create_rcm: General Fault");
     return ret;
 
 nodevice:
-    printk(">[create_rcm] - NO DEVICE\n");
+    dsm_printk(KERN_ERR "create_rcm: No Device");
     return ret;
 }
 

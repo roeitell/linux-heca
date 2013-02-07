@@ -1555,13 +1555,13 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
         return -EFAULT;
     }
 
-    dsm_printk(KERN_ERR "connecting to dsm_id: %u [%p], svm_id: %u\n",
+    dsm_printk(KERN_ERR "connecting to dsm_id: %u [%p], svm_id: %u",
         dsm_id, dsm, svm_id);
 
     mutex_lock(&dsm->dsm_mutex);
     svm = find_svm(dsm, svm_id);
     if (!svm) {
-        dsm_printk(KERN_ERR "Can't find svm %d", svm_id);
+        dsm_printk(KERN_ERR "can't find svm %d", svm_id);
         goto no_svm;
     }
 

@@ -746,7 +746,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 {
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0, page_no = 0;
+    int r = 0;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;

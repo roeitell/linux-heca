@@ -67,7 +67,6 @@ void __dsm_printk(unsigned int level, const char *path, int line,
 #define dsm_printk(fmt, args...) \
     __dsm_printk(0, __FILE__, __LINE__, fmt, ##args);
 
-
 /* dsm_base.c */
 inline struct dsm_module_state *get_dsm_module_state(void);
 struct dsm_module_state *create_dsm_module_state(void);

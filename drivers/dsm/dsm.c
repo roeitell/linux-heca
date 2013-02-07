@@ -98,26 +98,30 @@ done:
 static int register_svm(void __user *argp)
 {
     struct svm_data svm_info;
+    int rc;
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
         dsm_printk(KERN_ERR "copy_from_user failed");
         return -EFAULT;
     }
 
-    return create_svm(svm_info.dsm_id, svm_info.svm_id, svm_info.is_local);
-}
-
-static int register_svm_connection(void __user *argp)
-{
-    struct svm_data svm_info;
-
-    if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
-        dsm_printk(KERN_ERR "copy_from_user failed");
-        return -EFAULT;
+    rc = create_svm(svm_info.dsm_id, svm_info.svm_id, svm_info.is_local);
+    if (rc) {
+        dsm_printk(KERN_ERR "create_svm failed");
+        goto done;
     }
 
-    return connect_svm(svm_info.dsm_id, svm_info.svm_id, svm_info.ip,
+    if (!svm_info.is_local) {
+        rc = connect_svm(svm_info.dsm_id, svm_info.svm_id, svm_info.ip,
             svm_info.port);
+        if (rc) {
+            dsm_printk(KERN_ERR "connect_svm failed");
+            goto done;
+        }
+    }
+
+done:
+    return rc;
 }
 
 static int register_mr(void __user *argp)
@@ -274,9 +278,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     switch (ioctl) {
         case HECAIOC_SVM_ADD:
             r = register_svm(argp);
-            break;
-        case HECAIOC_SVM_CONNECT:
-            r = register_svm_connection(argp);
             break;
         case HECAIOC_MR_ADD:
             r = register_mr(argp);

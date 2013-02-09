@@ -140,7 +140,7 @@ static int register_mr(void __user *argp)
 static int pushback_page(void __user *argp)
 {
     int r = -EFAULT;
-    unsigned long addr;
+    unsigned long addr, start_addr;
     struct dsm *dsm;
     struct unmap_data udata;
     struct memory_region *mr;
@@ -150,8 +150,6 @@ static int pushback_page(void __user *argp)
     if (copy_from_user((void *) &udata, argp, sizeof udata))
         goto out;
 
-    addr =((unsigned long) udata.addr) & PAGE_MASK;
-
     dsm = find_dsm(udata.dsm_id);
     if (!dsm)
         goto out;
@@ -160,16 +158,23 @@ static int pushback_page(void __user *argp)
     if (!local_svm)
         goto out;
 
-    mr = search_mr(local_svm, addr);
-    if (!mr)
-        goto out;
+    addr = start_addr =((unsigned long) udata.addr) & PAGE_MASK;
+    while (addr < start_addr + udata.sz) {
 
-    page = dsm_find_normal_page(current->mm, addr);
-    if (!page)
-        goto out;
+        mr = search_mr(local_svm, addr);
+        if (!mr)
+            goto out;
 
-    r = dsm_request_page_pull(dsm, local_svm, page, addr, current->mm, mr);
+        page = dsm_find_normal_page(current->mm, addr);
+        if (!page)
+            goto out;
 
+        r = dsm_request_page_pull(dsm, local_svm, page, addr, current->mm, mr);
+        if (r)
+            goto out;
+
+        addr += PAGE_SIZE;
+    }
 out:
     if (local_svm)
         release_svm(local_svm);

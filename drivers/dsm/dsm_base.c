@@ -780,8 +780,7 @@ static void destroy_mrs(struct subvirtual_machine *svm)
     } while(1);
 }
 
-int create_mr(__u32 dsm_id, __u32 id, void *addr, size_t sz, __u32 *svm_ids,
-        int unmap)
+int create_mr(__u32 dsm_id, __u32 id, void *addr, size_t sz, __u32 *svm_ids)
 {
     int ret = 0, i;
     struct dsm *dsm;
@@ -848,12 +847,8 @@ int create_mr(__u32 dsm_id, __u32 id, void *addr, size_t sz, __u32 *svm_ids,
     }
 
 
-    if (unmap) {
-        if (mr->local == DSM_LOCAL_MR) {
-            dsm_printk(KERN_ERR "could not unmap local mr\n");
-        } else {
-            ret = do_unmap_range(dsm, mr->descriptor, addr, addr + sz - 1);
-        }
+    if (mr->local != DSM_LOCAL_MR) {
+        ret = do_unmap_range(dsm, mr->descriptor, addr, addr + sz - 1);
     }
 
     release_svm(svm);

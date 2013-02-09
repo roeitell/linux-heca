@@ -134,47 +134,9 @@ static int register_mr(void __user *argp)
     }
 
     return create_mr(udata.dsm_id, udata.mr_id, udata.addr, udata.sz,
-            udata.svm_ids, udata.do_unmap);
+            udata.svm_ids);
 }
 
-static int unmap_range(void __user *argp)
-{
-    int r = -EFAULT;
-    struct unmap_data udata;
-    struct memory_region * mr = NULL;
-    struct subvirtual_machine *svm = NULL; 
-    struct dsm *dsm = NULL;
-
-    if (copy_from_user((void *) &udata, argp, sizeof udata))
-        goto out;
-
-    dsm = find_dsm(udata.dsm_id);
-    if (!dsm)
-        goto out;
-
-    svm = find_local_svm_in_dsm(dsm, current->mm);
-    if (!svm) {
-        dsm_printk(KERN_ERR "local svm not registered");
-        goto out;
-    }
-    mr = search_mr(svm, (unsigned long) udata.addr);
-    if (!mr) {
-        dsm_printk(KERN_ERR "mr already exists at addr 0x%lx", udata.addr);
-        r = -EEXIST;
-        goto out;
-    }
-
-    dsm_printk(KERN_ERR "doing_unmap_range");
-    r = do_unmap_range(dsm, mr->descriptor, udata.addr,
-            udata.addr + udata.sz - 1);
-
-out:
-    return r;
-}
-
-/*
- * debug/devel only
- */
 static int pushback_page(void __user *argp)
 {
     int r = -EFAULT;
@@ -281,9 +243,6 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
             break;
         case HECAIOC_MR_ADD:
             r = register_mr(argp);
-            break;
-        case HECAIOC_MR_UNMAP:
-            r = unmap_range(argp);
             break;
         case HECAIOC_MR_PUSHBACK: {
             r = pushback_page(argp);

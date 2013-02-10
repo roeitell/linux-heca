@@ -76,18 +76,19 @@ static int register_dsm(struct private_data *priv_data, void __user *argp)
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
         dsm_printk(KERN_ERR "copy_from_user failed");
         rc = -EFAULT;
-	goto done;
+        goto done;
     }
 
-    if ((rc = create_rcm(dsm_state, inet_ntoa(svm_info.ip), svm_info.port))) {
+    if ((rc = create_rcm(dsm_state, svm_info.server.sin_addr.s_addr,
+            svm_info.server.sin_port))) {
         dsm_printk(KERN_ERR "create_rcm failed");
-	goto done;
+        goto done;
     }
     rdma_listen(dsm_state->rcm->cm_id, 2);
 
     if ((rc = create_dsm(priv_data, svm_info.dsm_id))) {
         dsm_printk(KERN_ERR "create_dsm failed");
-	goto done;
+        goto done;
     }
 
 done:
@@ -112,8 +113,9 @@ static int register_svm(void __user *argp)
     }
 
     if (!svm_info.is_local) {
-        rc = connect_svm(svm_info.dsm_id, svm_info.svm_id, svm_info.ip,
-            svm_info.port);
+        rc = connect_svm(svm_info.dsm_id, svm_info.svm_id, 
+            svm_info.server.sin_addr.s_addr, svm_info.server.sin_port);
+
         if (rc) {
             dsm_printk(KERN_ERR "connect_svm failed");
             goto done;

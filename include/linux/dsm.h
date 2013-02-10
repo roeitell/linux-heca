@@ -7,12 +7,16 @@
 #define DSM_H_
 
 #include <asm/types.h>
+#ifdef __KERNEL__
+#include <linux/in.h>
+#else
+#include <netinet/in.h>
+#endif
 
 struct svm_data {
     __u32 dsm_id;
     __u32 svm_id;
-    unsigned long ip;
-    unsigned short port;
+    struct sockaddr_in server;
     int is_local;
 };
 

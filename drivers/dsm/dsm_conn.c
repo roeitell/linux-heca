@@ -1363,7 +1363,7 @@ disconnect_err:
 
 int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
 {
-    char ip[32];
+    char name[20];
     int ret = 0;
     struct conn_element *ele = 0;
     struct rcm *rcm;
@@ -1389,9 +1389,10 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
                 goto err;
             }
 
-            scnprintf(ip, 32, "%p", id);
+            name[sizeof(name) - 1] = 0;
+            snprintf(name, sizeof(name) - 1, "%p", id);
             ret = create_connection_sysfs_entry(&ele->sysfs,
-                    get_dsm_module_state()->dsm_kobjects.rdma_kobject, ip);
+                    get_dsm_module_state()->dsm_kobjects.rdma_kobject, name);
             if (ret)
                 goto err;
 
@@ -1500,6 +1501,7 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
     struct rdma_conn_param param;
     struct conn_element *ele;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
+    char ip_str[20];
 
     memset(&param, 0, sizeof(struct rdma_conn_param));
     param.responder_resources = 1;
@@ -1508,7 +1510,7 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
 
     dst.sin_family = AF_INET;
     dst.sin_addr.s_addr = ip;
-    dst.sin_port = htons(port);
+    dst.sin_port = port;
 
     src.sin_family = AF_INET;
     src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
@@ -1529,7 +1531,8 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
         goto err1;
 
     if (create_connection_sysfs_entry(&ele->sysfs,
-            dsm_state->dsm_kobjects.rdma_kobject, inet_ntoa(ip)))
+            dsm_state->dsm_kobjects.rdma_kobject, 
+            inet_ntoa(ip, ip_str, sizeof ip_str)))
         goto err1;
 
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
@@ -1618,19 +1621,19 @@ unsigned long inet_addr(const char *cp)
     return *(unsigned int*) arr; /* network */
 }
 
-char *inet_ntoa(unsigned long s_addr)
+char *inet_ntoa(unsigned long s_addr, char *buf, int sz)
 {
-    static char ret[16];
-
-    unsigned char *b = (unsigned char *)&s_addr;
+    unsigned char *bytes = (unsigned char *)&s_addr;
     unsigned int i;
     unsigned int pos = 0;
 
-    ret[0] = '\0';
-    for(i = 0; pos <= sizeof(ret) && i < sizeof(s_addr); i++)
-	pos += snprintf(&ret[pos], sizeof(ret) - pos, "%s%u",
-		i ? "." : "", b[i]);
-    return ret;
+    if (!sz)
+        return NULL;
+
+    buf[0] = '\0';
+    for(i = 0; pos < sz && i < sizeof(s_addr); i++)
+        pos += snprintf(&buf[pos], sz - pos, "%s%u", i ? "." : "", bytes[i]);
+    return buf;
 }
 
 struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele)

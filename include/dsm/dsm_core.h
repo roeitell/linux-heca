@@ -88,7 +88,7 @@ struct memory_region *find_mr(struct subvirtual_machine *, u32);
 struct memory_region *search_mr(struct subvirtual_machine *,
         unsigned long);
 int create_mr(__u32, __u32, void *, size_t, __u32 *);
-int create_rcm(struct dsm_module_state *, char *, int);
+int create_rcm(struct dsm_module_state *, unsigned long, unsigned short);
 int destroy_rcm(struct dsm_module_state *);
 
 /* dsm_conn.c */
@@ -120,7 +120,7 @@ void release_tx_element_reply(struct conn_element *, struct tx_buf_ele *);
 void try_release_tx_element(struct conn_element *, struct tx_buf_ele *);
 int connect_svm(__u32, __u32, unsigned long, unsigned short);
 unsigned long inet_addr(const char *cp);
-char *inet_ntoa(unsigned long s_addr);
+char *inet_ntoa(unsigned long s_addr, char *buf, int sz);
 struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct conn_element *);
 int destroy_connection(struct conn_element *);

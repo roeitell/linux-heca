@@ -875,7 +875,8 @@ out:
 /*
  * rcm funcs
  */
-int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port)
+int create_rcm(struct dsm_module_state *dsm_state, unsigned long ip,
+        unsigned short port)
 {
     int ret = 0;
     struct rcm *rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
@@ -888,14 +889,14 @@ int create_rcm(struct dsm_module_state *dsm_state, char *ip, int port)
     dsm_init_descriptors();
     mutex_init(&rcm->rcm_mutex);
 
-    rcm->node_ip = inet_addr(ip);
+    rcm->node_ip = ip;
 
     rcm->root_conn = RB_ROOT;
     seqlock_init(&rcm->conn_lock);
 
     rcm->sin.sin_family = AF_INET;
-    rcm->sin.sin_addr.s_addr = (__u32) rcm->node_ip;
-    rcm->sin.sin_port = (__u16) htons(port);
+    rcm->sin.sin_addr.s_addr = rcm->node_ip;
+    rcm->sin.sin_port = port;
 
     rcm->cm_id = rdma_create_id(server_event_handler, rcm, RDMA_PS_TCP,
             IB_QPT_RC);

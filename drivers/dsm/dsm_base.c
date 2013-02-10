@@ -928,6 +928,9 @@ int create_rcm(struct dsm_module_state *dsm_state, unsigned long ip,
         goto err_mr;
 
     dsm_state->rcm = rcm;
+    ret = rdma_listen(dsm_state->rcm->cm_id, 2);
+    if (!ret)
+        dsm_printk(KERN_ERR "rdma_listen %d\n", ret);
     return ret;
 
 err_mr:

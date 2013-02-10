@@ -63,36 +63,65 @@ void __dsm_printk(unsigned int level, const char *path, int line, const char *fo
 }
 EXPORT_SYMBOL(__dsm_printk);
 
-static int register_dsm(struct private_data *priv_data, void __user *argp)
+static int deregister_dsm(struct private_data *priv_data, __u32 dsm_id)
 {
-    struct svm_data svm_info;
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
+    int rc = 0;
+    struct dsm *dsm = priv_data->dsm;
+
+    dsm_printk(KERN_DEBUG "[enter]");
+
+    if (!dsm) {
+        rc = -EFAULT;
+        goto done;
+    }
+
+    if (dsm->dsm_id != dsm_id) {
+        rc = -EINVAL;
+        goto done;
+    }
+
+    if (priv_data->dsm) {
+        remove_dsm(priv_data->dsm);
+        priv_data->dsm = NULL;
+    }
+
+    if (dsm_state->rcm) { 
+        if (!priv_data->dsm->nb_local_svm) {
+            destroy_rcm(dsm_state);
+            dsm_state->rcm = NULL;
+        } else
+            --priv_data->dsm->nb_local_svm;
+    }
+
+done:
+    dsm_printk(KERN_DEBUG "[exit] %d", rc);
+    return rc;
+}
+
+static int register_dsm(struct private_data *priv_data, 
+        struct svm_data *svm_info)
+{
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int rc;
 
     dsm_printk(KERN_DEBUG "entered function");
 
-    BUG_ON(!dsm_state);
-
-    if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
-        dsm_printk(KERN_ERR "copy_from_user failed");
-        rc = -EFAULT;
+    if ((rc = create_rcm(dsm_state, svm_info->server.sin_addr.s_addr,
+            svm_info->server.sin_port))) {
+        dsm_printk(KERN_ERR "create_rcm %d", rc);
         goto done;
     }
 
-    if ((rc = create_rcm(dsm_state, svm_info.server.sin_addr.s_addr,
-            svm_info.server.sin_port))) {
-        dsm_printk(KERN_ERR "create_rcm failed");
-        goto done;
-    }
-    rdma_listen(dsm_state->rcm->cm_id, 2);
-
-    if ((rc = create_dsm(priv_data, svm_info.dsm_id))) {
-        dsm_printk(KERN_ERR "create_dsm failed");
+    if ((rc = create_dsm(priv_data, svm_info->dsm_id))) {
+        dsm_printk(KERN_ERR "create_dsm %d", rc);
         goto done;
     }
 
 done:
-    dsm_printk(KERN_DEBUG "exit function: %d", rc);
+    if (rc)
+        deregister_dsm(priv_data, svm_info->dsm_id);
+    dsm_printk(KERN_DEBUG "[exit] %d", rc);
     return rc;
 }
 
@@ -201,12 +230,12 @@ static int open(struct inode *inode, struct file *f)
 
 static int release(struct inode *inode, struct file *f)
 {
-    struct private_data *data = (struct private_data *) f->private_data;
-    struct dsm *dsm = data->dsm;
+    struct private_data *priv_data = (struct private_data *) f->private_data;
+    struct dsm *dsm = priv_data->dsm;
     struct subvirtual_machine *svm = NULL;
 
     if (!dsm)
-        return 1;
+        return 0;
 
     while ( !list_empty(&dsm->svm_list) ) {
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine,
@@ -216,13 +245,34 @@ static int release(struct inode *inode, struct file *f)
         remove_svm(dsm->dsm_id, svm->svm_id);
     }
 
-    if (data->dsm->nb_local_svm == 0) {
-        remove_dsm(data->dsm);
-        dsm_printk(KERN_INFO "[Release ] last local svm , freeing the dsm");
-    }
-    kfree(data);
+    deregister_dsm(priv_data, priv_data->dsm->dsm_id);
+    kfree(priv_data);
 
     return 0;
+}
+
+static long ioctl_dsm(struct private_data *priv_data, unsigned int ioctl,
+    void __user *argp)
+{
+    struct svm_data svm_info;
+    int rc = -EFAULT;
+
+    if ((rc = copy_from_user((void *) &svm_info, argp, sizeof svm_info))) {
+        dsm_printk(KERN_ERR "copy_from_user %d", rc);
+        goto failed;
+    }
+
+    switch (ioctl) {
+        case HECAIOC_DSM_INIT:
+            return register_dsm(priv_data, &svm_info);
+        case HECAIOC_DSM_FINI:
+            return deregister_dsm(priv_data, svm_info.dsm_id);
+        default:
+            goto failed;
+    }
+
+failed:
+    return rc;
 }
 
 static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
@@ -233,10 +283,14 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
     dsm_printk(KERN_DEBUG "entering with ioctl %d", ioctl);
 
+    BUG_ON(!priv_data);
+
     /* special case: no need for prior dsm in process */
-    if (ioctl == HECAIOC_DSM_INIT) {
-        r = register_dsm(priv_data, argp);
-        goto out;
+    switch (ioctl) {
+        case HECAIOC_DSM_INIT:
+        case HECAIOC_DSM_FINI:
+            r = ioctl_dsm(priv_data, ioctl, argp);
+            goto out;
     }
 
     if (!priv_data->dsm) {

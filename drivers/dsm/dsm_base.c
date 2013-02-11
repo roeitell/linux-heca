@@ -137,7 +137,9 @@ void remove_dsm(struct dsm *dsm)
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     struct list_head *pos, *n;
 
-    dsm_printk("removing dsm %d", dsm->dsm_id);
+    BUG_ON(!dsm);
+
+    dsm_printk(KERN_DEBUG "remove_dsm [enter] dsm=%d", dsm->dsm_id);
 
     list_for_each_safe (pos, n, &dsm->svm_list) {
         svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
@@ -155,6 +157,8 @@ void remove_dsm(struct dsm *dsm)
     mutex_lock(&dsm_state->dsm_state_mutex);
     kfree(dsm);
     mutex_unlock(&dsm_state->dsm_state_mutex);
+
+    dsm_printk(KERN_DEBUG "remove_dsm [exit]");
 }
 
 /* FIXME: just a dummy lock so that radix_tree functions work */
@@ -870,82 +874,104 @@ out:
     return -1;
 }
 
-
-
 /*
  * rcm funcs
  */
-int create_rcm(struct dsm_module_state *dsm_state, unsigned long ip,
-        unsigned short port)
+int init_rcm(void)
 {
-    int ret = 0;
-    struct rcm *rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
-    BUG_ON(!rcm);
-
     init_kmem_request_cache();
     init_kmem_deferred_gup_cache();
     init_dsm_cache_kmem();
     init_dsm_prefetch_cache_kmem();
     dsm_init_descriptors();
+    return 0;
+}
+
+int fini_rcm(void)
+{
+    destroy_dsm_cache_kmem();
+    destroy_dsm_prefetch_cache_kmem();
+    destroy_kmem_request_cache();
+    destroy_kmem_deferred_gup_cache();
+    dsm_destroy_descriptors();
+    return 0;
+}
+
+int destroy_rcm(struct dsm_module_state *dsm_state);
+
+int create_rcm(struct dsm_module_state *dsm_state, unsigned long ip,
+        unsigned short port)
+{
+    int ret = 0;
+    struct rcm *rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
+
+    if (!rcm)
+        return -ENOMEM;
+
     mutex_init(&rcm->rcm_mutex);
-
-    rcm->node_ip = ip;
-
-    rcm->root_conn = RB_ROOT;
     seqlock_init(&rcm->conn_lock);
-
+    rcm->node_ip = ip;
+    rcm->root_conn = RB_ROOT;
     rcm->sin.sin_family = AF_INET;
     rcm->sin.sin_addr.s_addr = rcm->node_ip;
     rcm->sin.sin_port = port;
 
     rcm->cm_id = rdma_create_id(server_event_handler, rcm, RDMA_PS_TCP,
             IB_QPT_RC);
-    if (IS_ERR(rcm->cm_id))
-        goto err_cm_id;
+    if (IS_ERR(rcm->cm_id)) {
+        rcm->cm_id = NULL;
+        dsm_printk(KERN_ERR "Failed rdma_create_id: %d", IS_ERR(rcm->cm_id));
+        goto failed;
+    }
 
     ret = rdma_bind_addr(rcm->cm_id, (struct sockaddr *) &(rcm->sin));
-    if (ret)
-        goto err_bind;
+    if (ret) {
+        dsm_printk(KERN_ERR "Failed rdma_bind_addr: %d", ret);
+        goto failed;
+    }
 
-    if (!rcm->cm_id->device)
-        goto nodevice;
+    if (!rcm->cm_id->device) {
+        dsm_printk(KERN_ERR "Error no device exists");
+        goto failed;
+    }
 
     rcm->pd = ib_alloc_pd(rcm->cm_id->device);
-    if (IS_ERR(rcm->pd))
-        goto err_pd;
+    if (IS_ERR(rcm->pd)) {
+        rcm->pd = NULL;
+        dsm_printk(KERN_ERR "Failed id_alloc_pd: %d", IS_ERR(rcm->pd));
+        goto failed;
+    }
 
     rcm->listen_cq = ib_create_cq(rcm->cm_id->device, listener_cq_handle, NULL,
             rcm, 2, 0);
-    if (IS_ERR(rcm->listen_cq))
-        goto err_cq;
+    if (IS_ERR(rcm->listen_cq)) {
+        rcm->listen_cq = NULL;
+        dsm_printk(KERN_ERR "Failed ib_create_cq: %d", IS_ERR(rcm->listen_cq));
+        goto failed;
+    }
 
-    if (ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))
-        goto err_notify;
+    if (ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP)) {
+        dsm_printk(KERN_ERR "Failed ib_req_notify_cq");
+        goto failed;
+    }
 
     rcm->mr = ib_get_dma_mr(rcm->pd, IB_ACCESS_LOCAL_WRITE |
             IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
-    if (IS_ERR(rcm->mr))
-        goto err_mr;
+    if (IS_ERR(rcm->mr)) {
+        rcm->mr = NULL;
+        dsm_printk(KERN_ERR "Failed ib_get_dma_mr: %d", IS_ERR(rcm->mr));
+        goto failed;
+    }
 
     dsm_state->rcm = rcm;
+
     ret = rdma_listen(dsm_state->rcm->cm_id, 2);
-    if (!ret)
-        dsm_printk(KERN_ERR "rdma_listen %d\n", ret);
-    return ret;
+    if (ret)
+        dsm_printk(KERN_ERR "Failed rdma_listen: %d", ret);
+    return 0;
 
-err_mr:
-err_notify:
-    ib_destroy_cq(rcm->listen_cq);
-err_cq:
-    ib_dealloc_pd(rcm->pd);
-err_pd:
-    err_bind: rdma_destroy_id(rcm->cm_id);
-err_cm_id:
-    dsm_printk(KERN_ERR "create_rcm: General Fault");
-    return ret;
-
-nodevice:
-    dsm_printk(KERN_ERR "create_rcm: No Device");
+failed:
+    destroy_rcm(dsm_state);
     return ret;
 }
 
@@ -972,39 +998,49 @@ static int rcm_disconnect(struct rcm *rcm)
 
 int destroy_rcm(struct dsm_module_state *dsm_state)
 {
+    int rc = 0;
     struct rcm *rcm = dsm_state->rcm;
 
-    if (likely(rcm)) {
-        rcm_disconnect(rcm);
+    dsm_printk(KERN_DEBUG "destroy_rcm [enter]");
 
-        if (likely(rcm->cm_id)) {
-            if (likely(rcm->cm_id->qp))
-                ib_destroy_qp(rcm->cm_id->qp);
+    if (!rcm)
+        goto done;
 
-            if (likely(rcm->listen_cq))
-                ib_destroy_cq(rcm->listen_cq);
+    rcm_disconnect(rcm);
 
-            if (likely(rcm->mr))
-                ib_dereg_mr(rcm->mr);
+    if (!rcm->cm_id)
+        goto destroy;
 
-            if (likely(rcm->pd))
-                ib_dealloc_pd(rcm->pd);
-
-            rdma_destroy_id(rcm->cm_id);
-        }
-
-        mutex_destroy(&rcm->rcm_mutex);
-        dsm_state->rcm = NULL;
-        kfree(rcm);
+    if (rcm->cm_id->qp) {
+        ib_destroy_qp(rcm->cm_id->qp);
+        rcm->cm_id->qp = NULL;
     }
 
-    destroy_dsm_cache_kmem();
-    destroy_dsm_prefetch_cache_kmem();
-    destroy_kmem_request_cache();
-    destroy_kmem_deferred_gup_cache();
-    dsm_destroy_descriptors();
+    if (rcm->listen_cq) {
+        ib_destroy_cq(rcm->listen_cq);
+        rcm->listen_cq = NULL;
+    }
 
-    return 0;
+    if (rcm->mr) {
+        ib_dereg_mr(rcm->mr);
+        rcm->mr = NULL;
+    }
+
+    if (rcm->pd) {
+        ib_dealloc_pd(rcm->pd);
+        rcm->pd = NULL;
+    }
+
+    rdma_destroy_id(rcm->cm_id);
+    rcm->cm_id = NULL;
+
+destroy:
+    mutex_destroy(&rcm->rcm_mutex);
+    kfree(rcm);
+    dsm_state->rcm = NULL;
+
+done:
+    dsm_printk(KERN_DEBUG "destroy_rcm [exit] %d", rc);
+    return rc;
 }
-
 

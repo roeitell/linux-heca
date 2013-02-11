@@ -90,6 +90,8 @@ struct memory_region *search_mr(struct subvirtual_machine *,
 int create_mr(__u32, __u32, void *, size_t, __u32 *);
 int create_rcm(struct dsm_module_state *, unsigned long, unsigned short);
 int destroy_rcm(struct dsm_module_state *);
+int init_rcm(void);
+int fini_rcm(void);
 
 /* dsm_conn.c */
 void init_kmem_request_cache(void);

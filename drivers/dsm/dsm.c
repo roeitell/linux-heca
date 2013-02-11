@@ -69,7 +69,9 @@ static int deregister_dsm(struct private_data *priv_data, __u32 dsm_id)
     int rc = 0;
     struct dsm *dsm = priv_data->dsm;
 
-    dsm_printk(KERN_DEBUG "[enter]");
+    dsm_printk(KERN_DEBUG "deregister_dsm [enter] dsm_id=%d", dsm_id);
+
+    BUG_ON(!dsm_state);
 
     if (!dsm) {
         rc = -EFAULT;
@@ -82,20 +84,20 @@ static int deregister_dsm(struct private_data *priv_data, __u32 dsm_id)
     }
 
     if (priv_data->dsm) {
-        remove_dsm(priv_data->dsm);
-        priv_data->dsm = NULL;
-    }
-
-    if (dsm_state->rcm) { 
         if (!priv_data->dsm->nb_local_svm) {
-            destroy_rcm(dsm_state);
-            dsm_state->rcm = NULL;
+            remove_dsm(priv_data->dsm);
+            priv_data->dsm = NULL;
         } else
             --priv_data->dsm->nb_local_svm;
     }
 
+    if (dsm_state->rcm) { 
+        destroy_rcm(dsm_state);
+        dsm_state->rcm = NULL;
+    }
+
 done:
-    dsm_printk(KERN_DEBUG "[exit] %d", rc);
+    dsm_printk(KERN_DEBUG "deregister_dsm [exit] %d", rc);
     return rc;
 }
 
@@ -105,7 +107,7 @@ static int register_dsm(struct private_data *priv_data,
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int rc;
 
-    dsm_printk(KERN_DEBUG "entered function");
+    dsm_printk(KERN_DEBUG "[enter]");
 
     if ((rc = create_rcm(dsm_state, svm_info->server.sin_addr.s_addr,
             svm_info->server.sin_port))) {
@@ -231,13 +233,18 @@ static int open(struct inode *inode, struct file *f)
 static int release(struct inode *inode, struct file *f)
 {
     struct private_data *priv_data = (struct private_data *) f->private_data;
-    struct dsm *dsm = priv_data->dsm;
     struct subvirtual_machine *svm = NULL;
+    struct dsm *dsm;
 
-    if (!dsm)
-        return 0;
+    dsm_printk(KERN_DEBUG "release [enter]");
 
-    while ( !list_empty(&dsm->svm_list) ) {
+    if (!priv_data)
+        goto final;
+   
+    if (!(dsm = priv_data->dsm))
+        goto done;
+
+    while (!list_empty(&dsm->svm_list)) {
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine,
             svm_ptr);
         dsm_printk(KERN_ERR "removing svm_id: %d from list of svms",
@@ -245,9 +252,13 @@ static int release(struct inode *inode, struct file *f)
         remove_svm(dsm->dsm_id, svm->svm_id);
     }
 
-    deregister_dsm(priv_data, priv_data->dsm->dsm_id);
-    kfree(priv_data);
+    deregister_dsm(priv_data, dsm->dsm_id);
 
+done:
+    f->private_data = NULL;
+    kfree(priv_data);
+final:
+    dsm_printk(KERN_DEBUG "release [exit]");
     return 0;
 }
 
@@ -281,7 +292,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     void __user *argp = (void __user *) arg;
     int r = -EINVAL;
 
-    dsm_printk(KERN_DEBUG "entering with ioctl %d", ioctl);
+    dsm_printk(KERN_DEBUG "ioctl [enter] ioctl=%d", ioctl);
 
     BUG_ON(!priv_data);
 
@@ -317,7 +328,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     }
 
 out: 
-    dsm_printk(KERN_DEBUG "exiting return code of %d", r);
+    dsm_printk(KERN_DEBUG "ioctl [exit] %d", r);
     return r;
 }
 
@@ -339,35 +350,29 @@ static int dsm_init(void)
     struct dsm_module_state *dsm_state = create_dsm_module_state();
     int rc;
 
+    dsm_printk(KERN_DEBUG "dsm_init [enter]");
+
     BUG_ON(!dsm_state);
     dsm_zero_pfn_init();
     dsm_sysfs_setup(dsm_state);
     dsm_hook_write(&my_dsm_hook);
     rc = misc_register(&rdma_misc);
+    init_rcm();
 
-    dsm_printk(KERN_DEBUG "existing function: %d", rc);
+    dsm_printk(KERN_DEBUG "dsm_init [exit] %d", rc);
     return rc;
 }
 module_init(dsm_init);
 
 static void dsm_exit(void)
 {
-    struct dsm *dsm = NULL;
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
-    dsm_hook_write(NULL);
-    dsm_zero_pfn_exit();
-
-    while (!list_empty(&dsm_state->dsm_list)) {
-        dsm = list_first_entry(&dsm_state->dsm_list, struct dsm, dsm_ptr);
-        remove_dsm(dsm);
-    }
-
-    dsm_sysfs_cleanup(dsm_state);
-    if (dsm_state->rcm)
-        destroy_rcm(dsm_state);
-
+    fini_rcm();
     misc_deregister(&rdma_misc);
+    dsm_hook_write(NULL);
+    dsm_sysfs_cleanup(dsm_state);
+    dsm_zero_pfn_exit();
     destroy_dsm_module_state();
 }
 module_exit(dsm_exit);

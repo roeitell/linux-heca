@@ -143,36 +143,19 @@ static int ioctl_svm(int ioctl, void __user *argp)
             remove_svm(svm_info.dsm_id, svm_info.svm_id);
             return 0;
     }
-    return EINVAL;
+    return -EINVAL;
 }
 
-static int register_mr(void __user *argp)
-{
-    struct unmap_data udata;
-
-    if (copy_from_user((void *) &udata, argp, sizeof udata)) {
-        dsm_printk(KERN_ERR "copy_from_user failed");
-        return -EFAULT;
-    }
-
-    return create_mr(udata.dsm_id, udata.mr_id, udata.addr, udata.sz,
-            udata.svm_ids);
-}
-
-static int pushback_page(void __user *argp)
+static int pushback_mr(struct unmap_data *udata)
 {
     int r = -EFAULT;
     unsigned long addr, start_addr;
     struct dsm *dsm;
-    struct unmap_data udata;
     struct memory_region *mr;
     struct page *page;
     struct subvirtual_machine *local_svm = NULL;
 
-    if (copy_from_user((void *) &udata, argp, sizeof udata))
-        goto out;
-
-    dsm = find_dsm(udata.dsm_id);
+    dsm = find_dsm(udata->dsm_id);
     if (!dsm)
         goto out;
 
@@ -180,8 +163,8 @@ static int pushback_page(void __user *argp)
     if (!local_svm)
         goto out;
 
-    addr = start_addr =((unsigned long) udata.addr) & PAGE_MASK;
-    while (addr < start_addr + udata.sz) {
+    addr = start_addr =((unsigned long) udata->addr) & PAGE_MASK;
+    while (addr < start_addr + udata->sz) {
 
         mr = search_mr(local_svm, addr);
         if (!mr)
@@ -201,6 +184,26 @@ out:
     if (local_svm)
         release_svm(local_svm);
     return r;
+}
+
+static int ioctl_mr(int ioctl, void __user *argp)
+{
+    struct unmap_data udata;
+
+    if (copy_from_user((void *) &udata, argp, sizeof udata)) {
+        dsm_printk(KERN_ERR "copy_from_user failed");
+        return -EFAULT;
+    }
+
+    switch (ioctl) {
+        case HECAIOC_MR_ADD:
+            return create_mr(udata.dsm_id, udata.mr_id, udata.addr, udata.sz,
+                udata.svm_ids);
+        case HECAIOC_MR_PUSHBACK:
+            return pushback_mr(&udata);
+    }
+
+    return -EINVAL;
 }
 
 static int open(struct inode *inode, struct file *f)
@@ -307,18 +310,12 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
     switch (ioctl) {
         case HECAIOC_MR_ADD:
-            r = register_mr(argp);
-            break;
-        case HECAIOC_MR_PUSHBACK: {
-            r = pushback_page(argp);
-            break;
-        }
-        default: {
-            r = -EFAULT;
-            dsm_printk(KERN_ERR "don't support ioctl %d", ioctl);
-            break;
-        }
+        case HECAIOC_MR_PUSHBACK:
+            r = ioctl_mr(ioctl, argp);
+            goto out;
     }
+    r = -EINVAL;
+    dsm_printk(KERN_ERR "ioctl %d not supported", ioctl);
 
 out: 
     dsm_printk(KERN_DEBUG "ioctl [exit] %d", r);

@@ -353,7 +353,7 @@ out:
     return r;
 }
 
-int create_svm( __u32 dsm_id, __u32 svm_id, int local)
+int create_svm(struct svm_data *svm_info)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int r = 0;
@@ -369,31 +369,32 @@ int create_svm( __u32 dsm_id, __u32 svm_id, int local)
 
     /* grab dsm lock */
     mutex_lock(&dsm_state->dsm_state_mutex);
-    dsm = find_dsm(dsm_id);
+    dsm = find_dsm(svm_info->dsm_id);
     if (dsm)
         mutex_lock(&dsm->dsm_mutex);
     mutex_unlock(&dsm_state->dsm_state_mutex);
     if (!dsm) {
-        dsm_printk(KERN_ERR "could not find dsm: %d", dsm_id);
+        dsm_printk(KERN_ERR "could not find dsm: %d", svm_info->dsm_id);
         r = -EFAULT;
         goto no_dsm;
     }
 
     /* already exists? */
-    found_svm = find_svm(dsm, svm_id);
+    found_svm = find_svm(dsm, svm_info->svm_id);
     if (found_svm) {
-        dsm_printk(KERN_ERR "svm %d (dsm %d) already exists", svm_id, dsm_id);
+        dsm_printk(KERN_ERR "svm %d (dsm %d) already exists", svm_info->svm_id,
+                svm_info->dsm_id);
         r = -EEXIST;
         goto out;
     }
 
     /* initial svm data */
-    new_svm->svm_id = svm_id;
+    new_svm->svm_id = svm_info->svm_id;
     new_svm->dsm = dsm;
     atomic_set(&new_svm->refs, 2);
 
     /* register local svm */
-    if (local) {
+    if (svm_info->is_local) {
         /* current process already registered an svm? */
         found_svm = find_local_svm(current->mm);
         if (found_svm) {
@@ -433,20 +434,32 @@ int create_svm( __u32 dsm_id, __u32 svm_id, int local)
 
     /* assign descriptor for remote svm */
     if (!is_svm_local(new_svm)) {
-        u32 svm_id[] = {new_svm->svm_id, 0};
-        new_svm->descriptor = dsm_get_descriptor(dsm, svm_id);
+        u32 svm_ids[] = {new_svm->svm_id, 0};
+        new_svm->descriptor = dsm_get_descriptor(dsm, svm_ids);
     }
 
 out:
     mutex_unlock(&dsm->dsm_mutex);
     if (found_svm)
         release_svm(found_svm);
-    if (r)
+    if (r) {
         kfree(new_svm);
+        new_svm = NULL;
+        goto no_dsm;
+    }
 
+    if (!svm_info->is_local) {
+        r = connect_svm(svm_info->dsm_id, svm_info->svm_id, 
+            svm_info->server.sin_addr.s_addr, svm_info->server.sin_port);
+
+        if (r) {
+            dsm_printk(KERN_ERR "connect_svm failed %d", r);
+            goto out;
+        }
+    }
 no_dsm:
     dsm_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d",
-            new_svm, r, dsm_id, svm_id, r);
+            new_svm, r, svm_info->dsm_id, svm_info->svm_id, r);
     return r;
 }
 

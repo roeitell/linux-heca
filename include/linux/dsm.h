@@ -34,6 +34,7 @@ struct unmap_data {
 #define HECAIOC_DSM_INIT             _IOW(HECAIOC, 0xA0, struct svm_data)
 #define HECAIOC_DSM_FINI             _IOW(HECAIOC, 0xA1, struct svm_data)
 #define HECAIOC_SVM_ADD              _IOW(HECAIOC, 0xB0, struct svm_data)
+#define HECAIOC_SVM_RM               _IOW(HECAIOC, 0xB1, struct svm_data)
 #define HECAIOC_MR_ADD               _IOW(HECAIOC, 0xC0, struct unmap_data)
 #define HECAIOC_MR_PUSHBACK          _IOW(HECAIOC, 0xC1, struct unmap_data)
 

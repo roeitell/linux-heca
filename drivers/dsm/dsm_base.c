@@ -925,6 +925,7 @@ int create_rcm(struct dsm_module_state *dsm_state, unsigned long ip,
     seqlock_init(&rcm->conn_lock);
     rcm->node_ip = ip;
     rcm->root_conn = RB_ROOT;
+
     rcm->sin.sin_family = AF_INET;
     rcm->sin.sin_addr.s_addr = rcm->node_ip;
     rcm->sin.sin_port = port;

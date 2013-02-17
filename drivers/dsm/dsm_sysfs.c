@@ -7,10 +7,10 @@
 
 #define HECA_SYSFS_MODULE "heca"
 #define HECA_SYSFS_RDMA "rdma"
-#define HECA_SYSFS_CONN_FMT "cm_id%p"
+#define HECA_SYSFS_CONN_FMT "cm_id-0x%p"
 #define HECA_SYSFS_CONF "conf"
-#define HECA_SYSFS_SVM_FMT "svm%u"
-#define HECA_SYSFS_DSM_FMT "dsm%u"
+#define HECA_SYSFS_SVM_FMT "svm-%u"
+#define HECA_SYSFS_DSM_FMT "dsm-%u"
 
 static void dsm_kobject_type_release(struct kobject *kobj)
 {

@@ -649,27 +649,32 @@ static int exchange_info(struct conn_element *ele, int id)
             refill_recv_wr(ele, &ele->rx_buffer.rx_buf[ele->rx_buffer.len - 1]);
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
 
-            ele->remote_node_ip = (int) ele->rid.remote_info->node_ip;
-            ele->remote.sin_addr.s_addr = ele->remote_node_ip;
+            ele->remote_node_ip = (u32) ele->rid.remote_info->node_ip;
+            ele->remote.sin_addr.s_addr = (u32) ele->rid.remote_info->node_ip;
+            ele->local = get_dsm_module_state()->rcm->sin;
             ele_found = search_rb_conn(ele->remote_node_ip);
 
-            // We find that a connection is already open with that node - delete this connection request.
             if (ele_found) {
-                if (ele->remote_node_ip != get_dsm_module_state()->rcm->node_ip) {
-                    dsm_printk("destroy_connection duplicate: %d former: %d",
-                            ele->remote_node_ip, ele_found->remote_node_ip);
+                if (ele->remote_node_ip !=
+                        get_dsm_module_state()->rcm->node_ip) {
+                    char curr[20], prev[20];
+
+                    inet_ntoa(ele->remote_node_ip, curr, sizeof curr);
+                    inet_ntoa(ele_found->remote_node_ip, prev, sizeof prev);
+                    dsm_printk("destroy_connection duplicate: %s former: %s",
+                            curr, prev);
                     rdma_disconnect(ele->cm_id);
                 } else {
                     dsm_printk("loopback, lets hope for the best");
                 }
                 erase_rb_conn(ele);
             } else {
-                char ip_str[20];
+                char curr[20];
 
                 complete(&ele->completion);
                 insert_rb_conn(ele);
-                inet_ntoa(ele->remote_node_ip, ip_str, sizeof ip_str);
-                dsm_printk("inserted conn_element to rb_tree: %s", ip_str);
+                inet_ntoa(ele->remote_node_ip, curr, sizeof curr);
+                dsm_printk("inserted conn_element to rb_tree: %s", curr);
             }
             goto send;
 

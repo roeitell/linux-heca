@@ -127,6 +127,10 @@ struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *);
 struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct conn_element *);
 int destroy_connection(struct conn_element *);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
+char *port_ntoa(unsigned short port, char *buf, int sz);
+char *sockaddr_ntoa(struct sockaddr_in *sa, char *buf, int sz);
+char *conn_ntoa(struct sockaddr_in *src, struct sockaddr_in *dst, char *buf,
+        int sz);
 
 /* dsm_ops.c */
 void init_kmem_deferred_gup_cache(void);
@@ -219,9 +223,8 @@ int create_svm_sysfs_entry(struct subvirtual_machine *);
 void delete_svm_sysfs_entry(struct kobject *);
 int create_dsm_sysfs_entry(struct dsm *, struct dsm_module_state *);
 void delete_dsm_sysfs_entry(struct kobject *);
-int create_connection_sysfs_entry(struct con_element_sysfs *,
-        struct kobject *, char *);
-void delete_connection_sysfs_entry(struct con_element_sysfs *);
+int create_conn_sysfs_entry(struct conn_element *ele);
+void delete_conn_sysfs_entry(struct conn_element *ele);
 int dsm_sysfs_setup(struct dsm_module_state *);
 void dsm_sysfs_cleanup(struct dsm_module_state *);
 

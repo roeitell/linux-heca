@@ -69,10 +69,6 @@
 /*
  * DSM DATA structure
  */
-struct con_element_sysfs {
-    struct kobject connection_kobject;
-};
-
 struct svm_sysfs {
     struct kobject svm_kobject;
 };
@@ -181,6 +177,7 @@ struct conn_element {
     /* not 100% sur of this atomic regarding barrier*/
     atomic_t alive;
 
+    struct sockaddr_in src, dst;
     int remote_node_ip;
     struct rdma_info_data rid;
     struct ib_qp_init_attr qp_attr;
@@ -200,7 +197,7 @@ struct conn_element {
 
     struct rb_node rb_node;
 
-    struct con_element_sysfs sysfs;
+    struct kobject kobj;
 
     struct completion completion;
     struct work_struct delayed_request_flush_work;

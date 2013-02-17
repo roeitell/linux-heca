@@ -9,6 +9,70 @@
 #include <dsm/dsm_core.h>
 #include <dsm/dsm_trace.h>
 
+unsigned long inet_addr(const char *cp)
+{
+    unsigned int a, b, c, d;
+    unsigned char arr[4];
+
+    sscanf(cp, "%u.%u.%u.%u", &a, &b, &c, &d);
+    arr[0] = a;
+    arr[1] = b;
+    arr[2] = c;
+    arr[3] = d;
+    return *(unsigned int*) arr; /* network */
+}
+
+char *inet_ntoa(unsigned long s_addr, char *buf, int sz)
+{
+    unsigned char *b = (unsigned char *)&s_addr;
+
+    if (!sz)
+        return NULL;
+
+    buf[0] = 0;
+    snprintf(buf, sz - 1, "%u.%u.%u.%u", b[0], b[1], b[2], b[3]);
+    return buf;
+}
+
+char *port_ntoa(unsigned short port, char *buf, int sz)
+{
+    if (!sz)
+        return NULL;
+
+    buf[0] = 0;
+    snprintf(buf, sz - 1, "%u", ntohs(port));
+    return buf;
+}
+
+char *sockaddr_ntoa(struct sockaddr_in *sa, char *buf, int sz)
+{
+    char ip_str[20], port_str[10];
+
+    if (!sz)
+        return NULL;
+
+    buf[0] = 0;
+    inet_ntoa(sa->sin_addr.s_addr, ip_str, sizeof ip_str);
+    port_ntoa(sa->sin_port, port_str, sizeof port_str);
+    snprintf(buf, sz - 1, "%s:%s", ip_str, port_str);
+    return buf;
+}
+
+char *conn_ntoa(struct sockaddr_in *src, struct sockaddr_in *dst,
+        char *buf, int sz)
+{
+    char src_str[35], dst_str[35];
+
+    if (!sz)
+        return NULL;
+
+    sockaddr_ntoa(src, src_str, sizeof src_str);
+    sockaddr_ntoa(dst, dst_str, sizeof dst_str);
+    buf[0] = 0;
+    snprintf(buf, sz - 1, "%s-%s", src_str, dst_str);
+    return buf;
+}
+
 static struct kmem_cache *kmem_request_cache;
 
 static inline void init_kmem_request_cache_elm(void *obj)
@@ -557,8 +621,6 @@ static int exchange_info(struct conn_element *ele, int id)
     int flag = (int) ele->rid.remote_info->flag;
     int ret = 0;
     struct conn_element * ele_found;
-    unsigned int arr[4];
-    char charid[20];
 
     BUG_ON(!ele);
 
@@ -588,6 +650,7 @@ static int exchange_info(struct conn_element *ele, int id)
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
 
             ele->remote_node_ip = (int) ele->rid.remote_info->node_ip;
+            ele->dst.sin_addr.s_addr = ele->remote_node_ip;
             ele_found = search_rb_conn(ele->remote_node_ip);
 
             // We find that a connection is already open with that node - delete this connection request.
@@ -601,18 +664,12 @@ static int exchange_info(struct conn_element *ele, int id)
                 }
                 erase_rb_conn(ele);
             } else {
-                //ok, inserting this connection to the tree
+                char ip_str[20];
+
                 complete(&ele->completion);
                 insert_rb_conn(ele);
-                arr[0] = (ele->remote_node_ip) & 0x000000ff;
-                arr[1] = (ele->remote_node_ip >> 8) & 0x000000ff;
-                arr[2] = (ele->remote_node_ip >> 16) & 0x000000ff;
-                arr[3] = (ele->remote_node_ip >> 24) & 0x000000ff;
-                scnprintf(charid, 20, "%u.%u.%u.%u", arr[0], arr[1], arr[2],
-                        arr[3]);
-                kobject_rename(&ele->sysfs.connection_kobject, charid);
-                dsm_printk("inserted conn_element to rb_tree: %d",
-                        ele->remote_node_ip);
+                inet_ntoa(ele->remote_node_ip, ip_str, sizeof ip_str);
+                dsm_printk("inserted conn_element to rb_tree: %s", ip_str);
             }
             goto send;
 
@@ -626,7 +683,7 @@ static int exchange_info(struct conn_element *ele, int id)
             goto out;
         }
         default: {
-            printk(KERN_ERR "unknown RDMA info flag");
+            dsm_printk(KERN_ERR "unknown RDMA info flag");
             goto out;
         }
     }
@@ -1272,7 +1329,6 @@ static int setup_connection(struct conn_element *ele, int type)
     return err;
 }
 
-
 static int client_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
 {
     int ret = 0, err = 0;
@@ -1363,7 +1419,6 @@ disconnect_err:
 
 int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
 {
-    char name[20];
     int ret = 0;
     struct conn_element *ele = 0;
     struct rcm *rcm;
@@ -1385,16 +1440,16 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
 
             ret = setup_connection(ele, 1);
             if (ret) {
-                printk("Connection could not be accepted\n");
+                dsm_printk(KERN_ERR "setup_connection failed: %d", ret);
                 goto err;
             }
 
-            name[sizeof(name) - 1] = 0;
-            snprintf(name, sizeof(name) - 1, "%p", id);
-            ret = create_connection_sysfs_entry(&ele->sysfs,
-                    get_dsm_module_state()->dsm_kobjects.rdma_kobject, name);
-            if (ret)
+            ret = create_conn_sysfs_entry(ele);
+            if (ret) {
+                dsm_printk(KERN_ERR "create_conn_sysfs_entry failed: %d",
+                    ret);
                 goto err;
+            }
 
             atomic_set(&ele->alive, 1);
             break;
@@ -1500,25 +1555,25 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
     struct sockaddr_in dst, src;
     struct rdma_conn_param param;
     struct conn_element *ele;
-    struct dsm_module_state *dsm_state = get_dsm_module_state();
-    char ip_str[20];
+
+    ele = vzalloc(sizeof(struct conn_element));
+    if (unlikely(!ele))
+        goto err;
 
     memset(&param, 0, sizeof(struct rdma_conn_param));
     param.responder_resources = 1;
     param.initiator_depth = 1;
     param.retry_count = 10;
 
-    dst.sin_family = AF_INET;
-    dst.sin_addr.s_addr = ip;
-    dst.sin_port = port;
-
     src.sin_family = AF_INET;
     src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
     src.sin_port = 0; /* intentionally do not specify outgoing port */
+    ele->src = src;
 
-    ele = vzalloc(sizeof(struct conn_element));
-    if (unlikely(!ele))
-        goto err;
+    dst.sin_family = AF_INET;
+    dst.sin_addr.s_addr = ip;
+    dst.sin_port = port;
+    ele->dst = dst;
 
     init_completion(&ele->completion);
     ele->remote_node_ip = ip;
@@ -1530,10 +1585,10 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
     if (IS_ERR(ele->cm_id))
         goto err1;
 
-    if (create_connection_sysfs_entry(&ele->sysfs,
-            dsm_state->dsm_kobjects.rdma_kobject, 
-            inet_ntoa(ip, ip_str, sizeof ip_str)))
+    if (create_conn_sysfs_entry(ele)) {
+        dsm_printk(KERN_ERR "create_conn_sysfs_entry failed");
         goto err1;
+    }
 
     return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
             (struct sockaddr*) &dst, 2000);
@@ -1606,34 +1661,6 @@ no_svm:
     dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
         dsm_id, svm_id, &ip_addr, r);
     return r;
-}
-
-unsigned long inet_addr(const char *cp)
-{
-    unsigned int a, b, c, d;
-    unsigned char arr[4];
-
-    sscanf(cp, "%u.%u.%u.%u", &a, &b, &c, &d);
-    arr[0] = a;
-    arr[1] = b;
-    arr[2] = c;
-    arr[3] = d;
-    return *(unsigned int*) arr; /* network */
-}
-
-char *inet_ntoa(unsigned long s_addr, char *buf, int sz)
-{
-    unsigned char *bytes = (unsigned char *)&s_addr;
-    unsigned int i;
-    unsigned int pos = 0;
-
-    if (!sz)
-        return NULL;
-
-    buf[0] = '\0';
-    for(i = 0; pos < sz && i < sizeof(s_addr); i++)
-        pos += snprintf(&buf[pos], sz - pos, "%s%u", i ? "." : "", bytes[i]);
-    return buf;
 }
 
 struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele)
@@ -1719,7 +1746,7 @@ int destroy_connection(struct conn_element *ele)
     dsm_destroy_page_pool(ele);
 
     erase_rb_conn(ele);
-    delete_connection_sysfs_entry(&ele->sysfs);
+    delete_conn_sysfs_entry(ele);
     vfree(ele);
 
     return ret;

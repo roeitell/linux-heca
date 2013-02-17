@@ -132,6 +132,12 @@ static ssize_t instance_conn_remote_show(struct conn_element *conn, char *data)
     return sprintf(data, "%s\n", s);
 }
 
+static ssize_t instance_conn_alive_show(struct conn_element *conn,
+        char *data)
+{
+    return sprintf(data, "%d\n", atomic_read(&conn->alive));
+}
+
 #define INSTANCE_ATTR(_name, _mode, _show, _store)  \
     static struct instance_attribute attr_instance_##_name = {  \
             .attr   = {.name = __stringify(_name), .mode = _mode }, \
@@ -141,10 +147,12 @@ static ssize_t instance_conn_remote_show(struct conn_element *conn, char *data)
 
 INSTANCE_ATTR(conn_local, S_IRUGO, instance_conn_local_show, NULL);
 INSTANCE_ATTR(conn_remote, S_IRUGO, instance_conn_remote_show, NULL);
+INSTANCE_ATTR(conn_alive, S_IRUGO, instance_conn_alive_show, NULL);
 
 static struct instance_attribute *conn_instance_attr[] = {
     &attr_instance_conn_local,
     &attr_instance_conn_remote,
+    &attr_instance_conn_alive,
     NULL
 };
 

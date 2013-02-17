@@ -177,7 +177,7 @@ struct conn_element {
     /* not 100% sur of this atomic regarding barrier*/
     atomic_t alive;
 
-    struct sockaddr_in src, dst;
+    struct sockaddr_in local, remote;
     int remote_node_ip;
     struct rdma_info_data rid;
     struct ib_qp_init_attr qp_attr;

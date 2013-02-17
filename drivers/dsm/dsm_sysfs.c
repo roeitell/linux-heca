@@ -118,17 +118,17 @@ static ssize_t conn_instance_show(struct kobject *k,
     return 0;
 }
 
-static ssize_t instance_conn_src_show(struct conn_element *conn, char *data)
+static ssize_t instance_conn_local_show(struct conn_element *conn, char *data)
 {
     char s[20];
-    sockaddr_ntoa(&conn->src, s, sizeof s);
+    sockaddr_ntoa(&conn->local, s, sizeof s);
     return sprintf(data, "%s\n", s);
 }
 
-static ssize_t instance_conn_dst_show(struct conn_element *conn, char *data)
+static ssize_t instance_conn_remote_show(struct conn_element *conn, char *data)
 {
     char s[20];
-    sockaddr_ntoa(&conn->dst, s, sizeof s);
+    sockaddr_ntoa(&conn->remote, s, sizeof s);
     return sprintf(data, "%s\n", s);
 }
 
@@ -139,12 +139,12 @@ static ssize_t instance_conn_dst_show(struct conn_element *conn, char *data)
             .store  = _store,                   \
     };
 
-INSTANCE_ATTR(conn_src, S_IRUGO, instance_conn_src_show, NULL);
-INSTANCE_ATTR(conn_dst, S_IRUGO, instance_conn_dst_show, NULL);
+INSTANCE_ATTR(conn_local, S_IRUGO, instance_conn_local_show, NULL);
+INSTANCE_ATTR(conn_remote, S_IRUGO, instance_conn_remote_show, NULL);
 
 static struct instance_attribute *conn_instance_attr[] = {
-    &attr_instance_conn_src,
-    &attr_instance_conn_dst,
+    &attr_instance_conn_local,
+    &attr_instance_conn_remote,
     NULL
 };
 

@@ -58,18 +58,18 @@ char *sockaddr_ntoa(struct sockaddr_in *sa, char *buf, int sz)
     return buf;
 }
 
-char *conn_ntoa(struct sockaddr_in *src, struct sockaddr_in *dst,
+char *conn_ntoa(struct sockaddr_in *local, struct sockaddr_in *remote,
         char *buf, int sz)
 {
-    char src_str[35], dst_str[35];
+    char local_str[35], remote_str[35];
 
     if (!sz)
         return NULL;
 
-    sockaddr_ntoa(src, src_str, sizeof src_str);
-    sockaddr_ntoa(dst, dst_str, sizeof dst_str);
+    sockaddr_ntoa(local, local_str, sizeof local_str);
+    sockaddr_ntoa(remote, remote_str, sizeof remote_str);
     buf[0] = 0;
-    snprintf(buf, sz - 1, "%s-%s", src_str, dst_str);
+    snprintf(buf, sz - 1, "%s-%s", local_str, remote_str);
     return buf;
 }
 
@@ -650,7 +650,7 @@ static int exchange_info(struct conn_element *ele, int id)
             ele->rid.remote_info->flag = RDMA_INFO_NULL;
 
             ele->remote_node_ip = (int) ele->rid.remote_info->node_ip;
-            ele->dst.sin_addr.s_addr = ele->remote_node_ip;
+            ele->remote.sin_addr.s_addr = ele->remote_node_ip;
             ele_found = search_rb_conn(ele->remote_node_ip);
 
             // We find that a connection is already open with that node - delete this connection request.
@@ -1552,7 +1552,6 @@ void try_release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e)
 static int create_connection(struct rcm *rcm, unsigned long ip,
 	unsigned short port)
 {
-    struct sockaddr_in dst, src;
     struct rdma_conn_param param;
     struct conn_element *ele;
 
@@ -1565,15 +1564,13 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
     param.initiator_depth = 1;
     param.retry_count = 10;
 
-    src.sin_family = AF_INET;
-    src.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
-    src.sin_port = 0; /* intentionally do not specify outgoing port */
-    ele->src = src;
+    ele->local.sin_family = AF_INET;
+    ele->local.sin_addr.s_addr = rcm->sin.sin_addr.s_addr;
+    ele->local.sin_port = 0;
 
-    dst.sin_family = AF_INET;
-    dst.sin_addr.s_addr = ip;
-    dst.sin_port = port;
-    ele->dst = dst;
+    ele->remote.sin_family = AF_INET;
+    ele->remote.sin_addr.s_addr = ip;
+    ele->remote.sin_port = port;
 
     init_completion(&ele->completion);
     ele->remote_node_ip = ip;
@@ -1590,8 +1587,8 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
         goto err1;
     }
 
-    return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &src,
-            (struct sockaddr*) &dst, 2000);
+    return rdma_resolve_addr(ele->cm_id, (struct sockaddr *) &ele->local,
+            (struct sockaddr*) &ele->remote, 2000);
 
     err1: erase_rb_conn(ele);
     vfree(ele);

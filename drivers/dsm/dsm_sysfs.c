@@ -12,14 +12,14 @@
 #define HECA_SYSFS_SVM_FMT "svm-%u"
 #define HECA_SYSFS_DSM_FMT "dsm-%u"
 
-static void dsm_kobject_type_release(struct kobject *kobj)
+/* default sysfs functions */
+static void kobj_default_release(struct kobject *kobj)
 {
     dsm_printk(KERN_DEBUG "Releasing kobject %p", kobj);
 }
 
-/* default kobject attribute operations */
-static ssize_t kobj_dsm_attr_show(struct kobject *kobj, struct attribute *attr,
-        char *buf)
+static ssize_t kobj_default_attr_show(struct kobject *kobj,
+        struct attribute *attr, char *buf)
 {
     struct kobj_attribute *kattr;
     ssize_t ret = -EIO;
@@ -30,8 +30,8 @@ static ssize_t kobj_dsm_attr_show(struct kobject *kobj, struct attribute *attr,
     return ret;
 }
 
-static ssize_t kobj_dsm_attr_store(struct kobject *kobj, struct attribute *attr,
-        const char *buf, size_t count)
+static ssize_t kobj_default_attr_store(struct kobject *kobj, struct attribute
+        *attr, const char *buf, size_t count)
 {
     struct kobj_attribute *kattr;
     ssize_t ret = -EIO;
@@ -42,26 +42,21 @@ static ssize_t kobj_dsm_attr_store(struct kobject *kobj, struct attribute *attr,
     return ret;
 }
 
-static struct sysfs_ops kobj_dsm_sysfs_ops = { 
-    .show = kobj_dsm_attr_show, 
-    .store = kobj_dsm_attr_store, 
+static struct sysfs_ops kobj_default_sysfs_ops = { 
+    .show = kobj_default_attr_show, 
+    .store = kobj_default_attr_store, 
 };
 
-static struct kobj_type dsm_kobject_type = { 
-    .release = dsm_kobject_type_release,
-    .sysfs_ops = &kobj_dsm_sysfs_ops,
+static struct kobj_type kobj_default_type = { 
+    .release = kobj_default_release,
+    .sysfs_ops = &kobj_default_sysfs_ops,
 };
 
-static void cleanup_top_level_kobject(struct dsm_module_state *dsm_state)
+/* svm sysfs functions */
+void delete_svm_sysfs_entry(struct kobject *obj)
 {
-    struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
-
-    kobject_put(dsm_kobjects->rdma_kobject);
-    kobject_del(dsm_kobjects->rdma_kobject);
-    kobject_put(dsm_kobjects->domains_kobject);
-    kobject_del(dsm_kobjects->domains_kobject);
-    kobject_del(dsm_kobjects->dsm_glob_kobject);
-    return;
+    kobject_put(obj);
+    kobject_del(obj);
 }
 
 int create_svm_sysfs_entry(struct subvirtual_machine *svm)
@@ -69,35 +64,25 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm)
     struct kobject *kobj = &svm->svm_sysfs.svm_kobject;
     int r;
 
-    r = kobject_init_and_add(kobj, &dsm_kobject_type, &svm->dsm->dsm_kobject,
+    r = kobject_init_and_add(kobj, &kobj_default_type, &svm->dsm->dsm_kobject,
             HECA_SYSFS_SVM_FMT, svm->svm_id);
     return r;
 }
 
-void delete_svm_sysfs_entry(struct kobject *obj)
-{
-    kobject_put(obj);
-    kobject_del(obj);
-}
-
-int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) {
-    return kobject_init_and_add(&dsm->dsm_kobject, &dsm_kobject_type,
-            dsm_state->dsm_kobjects.domains_kobject, HECA_SYSFS_DSM_FMT,
-            dsm->dsm_id);
-}
-
+/* dsm sysfs functions */
 void delete_dsm_sysfs_entry(struct kobject *obj)
 {
     kobject_put(obj);
     kobject_del(obj);
 }
 
-void delete_conn_sysfs_entry(struct conn_element *ele)
-{
-    kobject_put(&ele->kobj);
-    kobject_del(&ele->kobj);
+int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) {
+    return kobject_init_and_add(&dsm->dsm_kobject, &kobj_default_type,
+            dsm_state->dsm_kobjects.domains_kobject, HECA_SYSFS_DSM_FMT,
+            dsm->dsm_id);
 }
 
+/* conn sysfs functions */
 struct instance_attribute {
     struct attribute attr;
     ssize_t(*show)(struct conn_element *, char *);
@@ -161,10 +146,16 @@ static struct sysfs_ops conn_instance_ops = {
 };
 
 static struct kobj_type ktype_conn_instance = { 
-    .release = dsm_kobject_type_release,
+    .release = kobj_default_release,
     .sysfs_ops = &conn_instance_ops,
     .default_attrs = (struct attribute **) conn_instance_attr,
 };
+
+void delete_conn_sysfs_entry(struct conn_element *ele)
+{
+    kobject_put(&ele->kobj);
+    kobject_del(&ele->kobj);
+}
 
 int create_conn_sysfs_entry(struct conn_element *ele)
 {
@@ -182,6 +173,18 @@ int create_conn_sysfs_entry(struct conn_element *ele)
 
 done:
     return rc;
+}
+
+/* toplevel sysfs functions */
+void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state)
+{
+    struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
+
+    kobject_put(dsm_kobjects->rdma_kobject);
+    kobject_del(dsm_kobjects->rdma_kobject);
+    kobject_put(dsm_kobjects->domains_kobject);
+    kobject_del(dsm_kobjects->domains_kobject);
+    kobject_del(dsm_kobjects->dsm_glob_kobject);
 }
 
 int dsm_sysfs_setup(struct dsm_module_state *dsm_state)
@@ -203,14 +206,12 @@ int dsm_sysfs_setup(struct dsm_module_state *dsm_state)
 
     return 0;
 
-    err2: kobject_put(dsm_kobjects->rdma_kobject);
+err2:
+    kobject_put(dsm_kobjects->rdma_kobject);
     kobject_del(dsm_kobjects->rdma_kobject);
-    err1: kobject_del(dsm_kobjects->dsm_glob_kobject);
-    err: return -ENOMEM;
-}
-
-void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state)
-{
-    cleanup_top_level_kobject(dsm_state);
+err1:
+    kobject_del(dsm_kobjects->dsm_glob_kobject);
+err:
+    return -ENOMEM;
 }
 

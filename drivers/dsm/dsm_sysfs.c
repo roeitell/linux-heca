@@ -6,9 +6,9 @@
 #include <dsm/dsm_core.h>
 
 #define HECA_SYSFS_MODULE "heca"
-#define HECA_SYSFS_RDMA "rdma"
-#define HECA_SYSFS_CONN_FMT "cm_id-0x%p"
-#define HECA_SYSFS_CONF "conf"
+#define HECA_SYSFS_RDMA "conn"
+#define HECA_SYSFS_CONN_FMT "rdma_cm_id-0x%p"
+#define HECA_SYSFS_CONF "ps"
 #define HECA_SYSFS_SVM_FMT "svm-%u"
 #define HECA_SYSFS_DSM_FMT "dsm-%u"
 
@@ -27,6 +27,7 @@ static void kobj_default_release(struct kobject *kobj)
     dsm_printk(KERN_DEBUG "Releasing kobject %p", kobj);
 }
 
+#if 0
 static ssize_t kobj_default_attr_show(struct kobject *kobj,
         struct attribute *attr, char *buf)
 {
@@ -60,8 +61,66 @@ static struct kobj_type kobj_default_type = {
     .release = kobj_default_release,
     .sysfs_ops = &kobj_default_sysfs_ops,
 };
+#endif
 
 /* svm sysfs functions */
+struct svm_instance_attribute {
+    struct attribute attr;
+    ssize_t(*show)(struct subvirtual_machine *, char *);
+    ssize_t(*store)(struct subvirtual_machine *, char *, size_t);
+};
+
+static ssize_t svm_instance_show(struct kobject *k,
+        struct attribute *a, char *buffer)
+{
+    struct subvirtual_machine *svm = container_of(k,
+        struct subvirtual_machine, svm_kobject);
+    struct svm_instance_attribute *instance_attr = 
+        container_of(a, struct svm_instance_attribute, attr);
+
+    if (instance_attr->show)
+        return instance_attr->show(svm, buffer);
+    return 0;
+}
+
+static ssize_t instance_svm_id_show(struct subvirtual_machine *svm,
+        char *data)
+{
+    return sprintf(data, "%u\n", svm->svm_id);
+}
+
+static ssize_t instance_svm_conn_show(struct subvirtual_machine *svm,
+        char *data)
+{
+    if (!svm->ele)
+        return 0;
+    if (!svm->ele->cm_id)
+        return 0;
+
+    return sprintf(data, HECA_SYSFS_CONN_FMT "\n", svm->ele->cm_id);
+}
+
+INSTANCE_ATTR(struct svm_instance_attribute, svm_id, S_IRUGO,
+        instance_svm_id_show, NULL);
+INSTANCE_ATTR(struct svm_instance_attribute, svm_conn, S_IRUGO,
+        instance_svm_conn_show, NULL);
+
+static struct svm_instance_attribute *svm_instance_attr[] = {
+    &ATTR_NAME(svm_id),
+    &ATTR_NAME(svm_conn),
+    NULL
+};
+
+static struct sysfs_ops svm_instance_ops = {
+    .show = svm_instance_show,
+};
+
+static struct kobj_type ktype_svm_instance = { 
+    .release = kobj_default_release,
+    .sysfs_ops = &svm_instance_ops,
+    .default_attrs = (struct attribute **) svm_instance_attr,
+};
+
 void delete_svm_sysfs_entry(struct kobject *obj)
 {
     kobject_put(obj);
@@ -70,10 +129,10 @@ void delete_svm_sysfs_entry(struct kobject *obj)
 
 int create_svm_sysfs_entry(struct subvirtual_machine *svm)
 {
-    struct kobject *kobj = &svm->svm_sysfs.svm_kobject;
+    struct kobject *kobj = &svm->svm_kobject;
     int r;
 
-    r = kobject_init_and_add(kobj, &kobj_default_type, &svm->dsm->dsm_kobject,
+    r = kobject_init_and_add(kobj, &ktype_svm_instance, &svm->dsm->dsm_kobject,
             HECA_SYSFS_SVM_FMT, svm->svm_id);
     return r;
 }
@@ -103,7 +162,7 @@ static ssize_t instance_dsm_id_show(struct dsm *dsm,
     return sprintf(data, "%u\n", dsm->dsm_id);
 }
 
-static ssize_t instance_server_show(struct dsm *dsm,
+static ssize_t instance_dsm_server_show(struct dsm *dsm,
         char *data)
 {
     char s[20];
@@ -118,12 +177,12 @@ static ssize_t instance_server_show(struct dsm *dsm,
 
 INSTANCE_ATTR(struct dsm_instance_attribute, dsm_id, S_IRUGO,
         instance_dsm_id_show, NULL);
-INSTANCE_ATTR(struct dsm_instance_attribute, server, S_IRUGO,
-        instance_server_show, NULL);
+INSTANCE_ATTR(struct dsm_instance_attribute, dsm_server, S_IRUGO,
+        instance_dsm_server_show, NULL);
 
 static struct dsm_instance_attribute *dsm_instance_attr[] = {
     &ATTR_NAME(dsm_id),
-    &ATTR_NAME(server),
+    &ATTR_NAME(dsm_server),
     NULL
 };
 

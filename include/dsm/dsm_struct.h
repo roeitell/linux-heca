@@ -69,10 +69,6 @@
 /*
  * DSM DATA structure
  */
-struct svm_sysfs {
-    struct kobject svm_kobject;
-};
-
 struct dsm {
     u32 dsm_id;
 
@@ -262,7 +258,7 @@ struct subvirtual_machine {
     struct rb_root push_cache;
     seqlock_t push_cache_lock;
 
-    struct svm_sysfs svm_sysfs;
+    struct kobject svm_kobject;
 
     struct llist_head delayed_faults;
     struct delayed_work delayed_gup_work;

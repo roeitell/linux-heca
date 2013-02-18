@@ -8,9 +8,9 @@
 #define HECA_SYSFS_MODULE "heca"
 #define HECA_SYSFS_RDMA "conn"
 #define HECA_SYSFS_CONN_FMT "rdma_cm_id-0x%p"
-#define HECA_SYSFS_CONF "ps"
+#define HECA_SYSFS_CONF "proc"
 #define HECA_SYSFS_SVM_FMT "svm-%u"
-#define HECA_SYSFS_DSM_FMT "dsm-%u"
+#define HECA_SYSFS_DSM_FMT "pid-%u--dsm-%u"
 
 #define ATTR_NAME(_name) attr_instance_##_name
 
@@ -156,6 +156,12 @@ static ssize_t dsm_instance_show(struct kobject *k,
     return 0;
 }
 
+static ssize_t instance_dsm_pid_show(struct dsm *dsm,
+        char *data)
+{
+    return sprintf(data, "%u\n", dsm->pid_vnr);
+}
+
 static ssize_t instance_dsm_id_show(struct dsm *dsm,
         char *data)
 {
@@ -175,12 +181,15 @@ static ssize_t instance_dsm_server_show(struct dsm *dsm,
     return sprintf(data, "%s\n", s);
 }
 
+INSTANCE_ATTR(struct dsm_instance_attribute, dsm_pid, S_IRUGO,
+        instance_dsm_pid_show, NULL);
 INSTANCE_ATTR(struct dsm_instance_attribute, dsm_id, S_IRUGO,
         instance_dsm_id_show, NULL);
 INSTANCE_ATTR(struct dsm_instance_attribute, dsm_server, S_IRUGO,
         instance_dsm_server_show, NULL);
 
 static struct dsm_instance_attribute *dsm_instance_attr[] = {
+    &ATTR_NAME(dsm_pid),
     &ATTR_NAME(dsm_id),
     &ATTR_NAME(dsm_server),
     NULL
@@ -205,7 +214,7 @@ void delete_dsm_sysfs_entry(struct kobject *obj)
 int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) {
     return kobject_init_and_add(&dsm->dsm_kobject, &ktype_dsm_instance,
             dsm_state->dsm_kobjects.domains_kobject, HECA_SYSFS_DSM_FMT,
-            dsm->dsm_id);
+            dsm->pid_vnr, dsm->dsm_id);
 }
 
 /* conn sysfs functions */

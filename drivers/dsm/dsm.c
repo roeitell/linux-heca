@@ -16,6 +16,11 @@ module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "Debug level (0 = disable)");
 #endif
 
+static pid_t sys_getpid(void)
+{
+    return task_pid_vnr(current);
+}
+
 #ifdef CONFIG_DSM_VERBOSE_PRINTK
 /* strip the leading path if the given path is absolute */
 static const char *sanity_file_name(const char *path)
@@ -63,7 +68,8 @@ void __dsm_printk(unsigned int level, const char *path, int line, const char *fo
 }
 EXPORT_SYMBOL(__dsm_printk);
 
-static int deregister_dsm(struct private_data *priv_data, __u32 dsm_id)
+static int deregister_dsm(struct private_data *priv_data, pid_t pid_vnr,
+        __u32 dsm_id)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int rc = 0;
@@ -78,10 +84,8 @@ static int deregister_dsm(struct private_data *priv_data, __u32 dsm_id)
         goto done;
     }
 
-    if (dsm->dsm_id != dsm_id) {
-        rc = -EINVAL;
-        goto done;
-    }
+    BUG_ON(dsm->pid_vnr != pid_vnr);
+    BUG_ON(dsm->dsm_id != dsm_id);
 
     if (priv_data->dsm) {
         if (!priv_data->dsm->nb_local_svm) {
@@ -115,14 +119,14 @@ static int register_dsm(struct private_data *priv_data,
         goto done;
     }
 
-    if ((rc = create_dsm(priv_data, svm_info->dsm_id))) {
+    if ((rc = create_dsm(priv_data, svm_info->pid_vnr, svm_info->dsm_id))) {
         dsm_printk(KERN_ERR "create_dsm %d", rc);
         goto done;
     }
 
 done:
     if (rc)
-        deregister_dsm(priv_data, svm_info->dsm_id);
+        deregister_dsm(priv_data, svm_info->pid_vnr, svm_info->dsm_id);
     dsm_printk(KERN_DEBUG "[exit] %d", rc);
     return rc;
 }
@@ -135,6 +139,9 @@ static int ioctl_svm(int ioctl, void __user *argp)
         dsm_printk(KERN_ERR "copy_from_user failed");
         return -EFAULT;
     }
+
+    if (!svm_info.pid_vnr)
+        svm_info.pid_vnr = sys_getpid();
 
     switch (ioctl) {
         case HECAIOC_SVM_ADD:
@@ -195,6 +202,9 @@ static int ioctl_mr(int ioctl, void __user *argp)
         return -EFAULT;
     }
 
+    if (!udata.pid_vnr)
+        udata.pid_vnr = sys_getpid();
+
     switch (ioctl) {
         case HECAIOC_MR_ADD:
             return create_mr(udata.dsm_id, udata.mr_id, udata.addr, udata.sz,
@@ -244,7 +254,7 @@ static int release(struct inode *inode, struct file *f)
         remove_svm(dsm->dsm_id, svm->svm_id);
     }
 
-    deregister_dsm(priv_data, dsm->dsm_id);
+    deregister_dsm(priv_data, dsm->pid_vnr, dsm->dsm_id);
 
 done:
     f->private_data = NULL;
@@ -265,11 +275,14 @@ static long ioctl_dsm(struct private_data *priv_data, unsigned int ioctl,
         goto failed;
     }
 
+    if (!svm_info.pid_vnr)
+        svm_info.pid_vnr = sys_getpid();
+
     switch (ioctl) {
         case HECAIOC_DSM_INIT:
             return register_dsm(priv_data, &svm_info);
         case HECAIOC_DSM_FINI:
-            return deregister_dsm(priv_data, svm_info.dsm_id);
+            return deregister_dsm(priv_data, svm_info.pid_vnr, svm_info.dsm_id);
         default:
             goto failed;
     }

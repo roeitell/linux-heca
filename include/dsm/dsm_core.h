@@ -76,7 +76,7 @@ void insert_rb_conn(struct conn_element *);
 void erase_rb_conn(struct conn_element *);
 struct dsm *find_dsm(u32);
 void remove_dsm(struct dsm *);
-int create_dsm(struct private_data *, __u32);
+int create_dsm(struct private_data *, pid_t, __u32);
 inline struct subvirtual_machine *find_svm(struct dsm *, u32);
 inline struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
         struct mm_struct *);

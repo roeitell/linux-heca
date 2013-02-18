@@ -164,7 +164,7 @@ void remove_dsm(struct dsm *dsm)
 /* FIXME: just a dummy lock so that radix_tree functions work */
 DEFINE_SPINLOCK(dsm_lock);
 
-int create_dsm(struct private_data *priv_data, __u32 dsm_id)
+int create_dsm(struct private_data *priv_data, pid_t pid_vnr, __u32 dsm_id)
 {
     int r = 0;
     struct dsm *found_dsm, *new_dsm = NULL;
@@ -183,6 +183,7 @@ int create_dsm(struct private_data *priv_data, __u32 dsm_id)
         dsm_printk("can't allocate");
         return -ENOMEM;
     }
+    new_dsm->pid_vnr = pid_vnr;
     new_dsm->dsm_id = dsm_id;
     mutex_init(&new_dsm->dsm_mutex);
     INIT_RADIX_TREE(&new_dsm->svm_tree_root, GFP_KERNEL & ~__GFP_WAIT);

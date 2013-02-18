@@ -70,6 +70,7 @@
  * DSM DATA structure
  */
 struct dsm {
+    pid_t pid_vnr;
     u32 dsm_id;
 
     struct radix_tree_root svm_tree_root;

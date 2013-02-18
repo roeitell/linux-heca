@@ -14,6 +14,7 @@
 #endif
 
 struct svm_data {
+    pid_t pid_vnr;
     __u32 dsm_id;
     __u32 svm_id;
     struct sockaddr_in server;
@@ -23,6 +24,7 @@ struct svm_data {
 #define MAX_SVM_IDS 3 /*Is NULL terminated */
 
 struct unmap_data {
+    pid_t pid_vnr;
     __u32 dsm_id;
     __u32 svm_ids[MAX_SVM_IDS];
     __u32 mr_id;

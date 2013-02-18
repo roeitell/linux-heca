@@ -798,7 +798,7 @@ static void destroy_mrs(struct subvirtual_machine *svm)
     } while(1);
 }
 
-int create_mr(__u32 dsm_id, __u32 id, void *addr, size_t sz, __u32 *svm_ids)
+int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids)
 {
     int ret = 0, i;
     struct dsm *dsm;
@@ -833,10 +833,9 @@ int create_mr(__u32 dsm_id, __u32 id, void *addr, size_t sz, __u32 *svm_ids)
         goto out_free;
     }
 
-    mr->mr_id = id;
+    mr->mr_id = mr_id;
     mr->addr = (unsigned long) addr;
     mr->sz = sz;
-    mr->local = DSM_REMOTE_MR;
     if (insert_mr(svm, mr))
         goto out_free;
 
@@ -859,20 +858,21 @@ int create_mr(__u32 dsm_id, __u32 id, void *addr, size_t sz, __u32 *svm_ids)
         }
 
         if (is_svm_local(owner))
-            mr->local = DSM_LOCAL_MR;
+            mr->is_local = 1;
 
         release_svm(owner);
     }
 
 
-    if (mr->local != DSM_LOCAL_MR) {
+    if (!mr->is_local) {
         ret = do_unmap_range(dsm, mr->descriptor, addr, addr + sz - 1);
     }
 
     release_svm(svm);
 
     dsm_printk(KERN_INFO "register_mr: id[%d] svm[%d] local[%d] addr[%lu:0x%lx]"
-            "==> %d", mr->mr_id, svm->svm_id, mr->local, mr->addr, mr->sz, ret);
+            "==> %d", mr->mr_id, svm->svm_id, mr->is_local, mr->addr, mr->sz,
+            ret);
 
     return ret;
 
@@ -884,7 +884,7 @@ out:
     if (svm)
         release_svm(svm);
     dsm_printk(KERN_INFO "register_mr failed : id [%d] addr [0x%lx] sz [0x%lx]"
-            " --> ret %d", id, addr, sz, ret);
+            " --> ret %d", mr_id, addr, sz, ret);
     return -1;
 }
 

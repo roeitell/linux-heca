@@ -229,10 +229,7 @@ struct memory_region {
     unsigned long sz;
     u32 descriptor;
     u32 mr_id;
-    int local;
-#define DSM_REMOTE_MR  0
-#define DSM_LOCAL_MR   1
-
+    int is_local;
     struct rb_node rb_node;
 };
 

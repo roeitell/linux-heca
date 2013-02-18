@@ -12,6 +12,15 @@
 #define HECA_SYSFS_SVM_FMT "svm-%u"
 #define HECA_SYSFS_DSM_FMT "dsm-%u"
 
+#define ATTR_NAME(_name) attr_instance_##_name
+
+#define INSTANCE_ATTR(_type, _name, _mode, _show, _store)  \
+    static _type ATTR_NAME(_name) = {  \
+            .attr   = {.name = __stringify(_name), .mode = _mode }, \
+            .show   = _show,                    \
+            .store  = _store,                   \
+    };
+
 /* default sysfs functions */
 static void kobj_default_release(struct kobject *kobj)
 {
@@ -70,6 +79,64 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm)
 }
 
 /* dsm sysfs functions */
+struct dsm_instance_attribute {
+    struct attribute attr;
+    ssize_t(*show)(struct dsm *, char *);
+    ssize_t(*store)(struct dsm *, char *, size_t);
+};
+
+static ssize_t dsm_instance_show(struct kobject *k,
+        struct attribute *a, char *buffer)
+{
+    struct dsm *dsm = container_of(k, struct dsm, dsm_kobject);
+    struct dsm_instance_attribute *instance_attr = 
+        container_of(a, struct dsm_instance_attribute, attr);
+
+    if (instance_attr->show)
+        return instance_attr->show(dsm, buffer);
+    return 0;
+}
+
+static ssize_t instance_dsm_id_show(struct dsm *dsm,
+        char *data)
+{
+    return sprintf(data, "%u\n", dsm->dsm_id);
+}
+
+static ssize_t instance_server_show(struct dsm *dsm,
+        char *data)
+{
+    char s[20];
+    struct dsm_module_state *dsm_state = get_dsm_module_state();
+
+    BUG_ON(!dsm_state);
+    BUG_ON(!dsm_state->rcm);
+
+    sockaddr_ntoa(&dsm_state->rcm->sin, s, sizeof s);
+    return sprintf(data, "%s\n", s);
+}
+
+INSTANCE_ATTR(struct dsm_instance_attribute, dsm_id, S_IRUGO,
+        instance_dsm_id_show, NULL);
+INSTANCE_ATTR(struct dsm_instance_attribute, server, S_IRUGO,
+        instance_server_show, NULL);
+
+static struct dsm_instance_attribute *dsm_instance_attr[] = {
+    &ATTR_NAME(dsm_id),
+    &ATTR_NAME(server),
+    NULL
+};
+
+static struct sysfs_ops dsm_instance_ops = {
+    .show = dsm_instance_show,
+};
+
+static struct kobj_type ktype_dsm_instance = { 
+    .release = kobj_default_release,
+    .sysfs_ops = &dsm_instance_ops,
+    .default_attrs = (struct attribute **) dsm_instance_attr,
+};
+
 void delete_dsm_sysfs_entry(struct kobject *obj)
 {
     kobject_put(obj);
@@ -77,26 +144,24 @@ void delete_dsm_sysfs_entry(struct kobject *obj)
 }
 
 int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) {
-    return kobject_init_and_add(&dsm->dsm_kobject, &kobj_default_type,
+    return kobject_init_and_add(&dsm->dsm_kobject, &ktype_dsm_instance,
             dsm_state->dsm_kobjects.domains_kobject, HECA_SYSFS_DSM_FMT,
             dsm->dsm_id);
 }
 
 /* conn sysfs functions */
-struct instance_attribute {
+struct conn_instance_attribute {
     struct attribute attr;
     ssize_t(*show)(struct conn_element *, char *);
     ssize_t(*store)(struct conn_element *, char *, size_t);
 };
 
-#define to_instance_conn(k) container_of(k, struct conn_element, kobj)
-#define to_instance_attr(a) container_of(a, struct instance_attribute, attr)
-
 static ssize_t conn_instance_show(struct kobject *k,
         struct attribute *a, char *buffer)
 {
-    struct conn_element *conn = to_instance_conn(k);
-    struct instance_attribute *instance_attr = to_instance_attr(a);
+    struct conn_element *conn = container_of(k, struct conn_element, kobj);
+    struct conn_instance_attribute *instance_attr = 
+        container_of(a, struct conn_instance_attribute, attr);
 
     if (instance_attr->show)
         return instance_attr->show(conn, buffer);
@@ -123,21 +188,17 @@ static ssize_t instance_conn_alive_show(struct conn_element *conn,
     return sprintf(data, "%d\n", atomic_read(&conn->alive));
 }
 
-#define INSTANCE_ATTR(_name, _mode, _show, _store)  \
-    static struct instance_attribute attr_instance_##_name = {  \
-            .attr   = {.name = __stringify(_name), .mode = _mode }, \
-            .show   = _show,                    \
-            .store  = _store,                   \
-    };
+INSTANCE_ATTR(struct conn_instance_attribute, conn_local, S_IRUGO,
+        instance_conn_local_show, NULL);
+INSTANCE_ATTR(struct conn_instance_attribute, conn_remote, S_IRUGO,
+        instance_conn_remote_show, NULL);
+INSTANCE_ATTR(struct conn_instance_attribute, conn_alive, S_IRUGO,
+        instance_conn_alive_show, NULL);
 
-INSTANCE_ATTR(conn_local, S_IRUGO, instance_conn_local_show, NULL);
-INSTANCE_ATTR(conn_remote, S_IRUGO, instance_conn_remote_show, NULL);
-INSTANCE_ATTR(conn_alive, S_IRUGO, instance_conn_alive_show, NULL);
-
-static struct instance_attribute *conn_instance_attr[] = {
-    &attr_instance_conn_local,
-    &attr_instance_conn_remote,
-    &attr_instance_conn_alive,
+static struct conn_instance_attribute *conn_instance_attr[] = {
+    &ATTR_NAME(conn_local),
+    &ATTR_NAME(conn_remote),
+    &ATTR_NAME(conn_alive),
     NULL
 };
 

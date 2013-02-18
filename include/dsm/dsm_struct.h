@@ -362,7 +362,7 @@ struct deferred_gup {
 
 
 struct dsm_module_state {
-    struct rcm * rcm;
+    struct rcm *rcm;
     struct mutex dsm_state_mutex;
     struct radix_tree_root dsm_tree_root;
     struct radix_tree_root mm_tree_root;

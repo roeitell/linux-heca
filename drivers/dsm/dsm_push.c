@@ -4,6 +4,7 @@
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
+ * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
 #include <dsm/dsm_core.h>
 #include <dsm/dsm_trace.h>
@@ -715,7 +716,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
 
         /* lookup a remote mr owner, to push the page to */
         mr = search_mr_by_addr(svm, address);
-        if (!mr || !mr->is_local) {
+        if (!mr || !(mr->flags & MR_LOCAL)) {
             release_svm(svm);
             continue;
         }

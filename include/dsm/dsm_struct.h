@@ -66,6 +66,12 @@
 #define ACK                             (1 << 9) // Msg Acknowledgement
 #define CLAIM_PAGE                      (1 << 10) // Re-claim a page
 
+/* 
+ * MEMORY REGION FLAGS
+ */
+#define MR_LOCAL                (1 << 0)
+#define MR_COPY_ON_ACCESS       (1 << 1)
+
 /*
  * DSM DATA structure
  */
@@ -229,7 +235,7 @@ struct memory_region {
     unsigned long sz;
     u32 descriptor;
     u32 mr_id;
-    int is_local;
+    u32 flags;
     struct rb_node rb_node;
     struct kobject mr_kobject;
 };

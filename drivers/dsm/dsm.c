@@ -4,6 +4,7 @@
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
+ * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
 #include <linux/list.h>
 #include <linux/delay.h>
@@ -208,7 +209,7 @@ static int ioctl_mr(int ioctl, void __user *argp)
     switch (ioctl) {
         case HECAIOC_MR_ADD:
             return create_mr(udata.dsm_id, udata.mr_id, udata.addr, udata.sz,
-                udata.svm_ids);
+                udata.svm_ids, udata.flags);
         case HECAIOC_MR_PUSHBACK:
             return pushback_mr(&udata);
     }

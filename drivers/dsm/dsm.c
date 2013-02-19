@@ -173,7 +173,7 @@ static int pushback_mr(struct unmap_data *udata)
     addr = start_addr =((unsigned long) udata->addr) & PAGE_MASK;
     while (addr < start_addr + udata->sz) {
 
-        mr = search_mr(local_svm, addr);
+        mr = search_mr_by_addr(local_svm, addr);
         if (!mr)
             goto out;
 

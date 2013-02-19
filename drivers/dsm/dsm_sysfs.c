@@ -10,6 +10,7 @@
 #define HECA_SYSFS_CONN_FMT "rdma_cm_id-0x%p"
 #define HECA_SYSFS_CONF "proc"
 #define HECA_SYSFS_SVM_FMT "svm-%u"
+#define HECA_SYSFS_MR_FMT "mr-%u"
 #define HECA_SYSFS_DSM_FMT "pid-%u--dsm-%u"
 
 #define ATTR_NAME(_name) attr_instance_##_name
@@ -100,14 +101,23 @@ static ssize_t instance_svm_conn_show(struct subvirtual_machine *svm,
     return sprintf(data, HECA_SYSFS_CONN_FMT "\n", svm->ele->cm_id);
 }
 
+static ssize_t instance_svm_is_local_show(struct subvirtual_machine *svm,
+        char *data)
+{
+    return sprintf(data, "%u\n", svm->is_local);
+}
+
 INSTANCE_ATTR(struct svm_instance_attribute, svm_id, S_IRUGO,
         instance_svm_id_show, NULL);
 INSTANCE_ATTR(struct svm_instance_attribute, svm_conn, S_IRUGO,
         instance_svm_conn_show, NULL);
+INSTANCE_ATTR(struct svm_instance_attribute, svm_is_local, S_IRUGO,
+        instance_svm_is_local_show, NULL);
 
 static struct svm_instance_attribute *svm_instance_attr[] = {
     &ATTR_NAME(svm_id),
     &ATTR_NAME(svm_conn),
+    &ATTR_NAME(svm_is_local),
     NULL
 };
 
@@ -135,6 +145,88 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm)
     r = kobject_init_and_add(kobj, &ktype_svm_instance, &svm->dsm->dsm_kobject,
             HECA_SYSFS_SVM_FMT, svm->svm_id);
     return r;
+}
+
+/* mr sysfs functions */
+struct mr_instance_attribute {
+    struct attribute attr;
+    ssize_t(*show)(struct memory_region *, char *);
+    ssize_t(*store)(struct memory_region *, char *, size_t);
+};
+
+static ssize_t mr_instance_show(struct kobject *k,
+        struct attribute *a, char *buffer)
+{
+    struct memory_region *mr = container_of(k,
+        struct memory_region, mr_kobject);
+    struct mr_instance_attribute *instance_attr = 
+        container_of(a, struct mr_instance_attribute, attr);
+
+    if (instance_attr->show)
+        return instance_attr->show(mr, buffer);
+    return 0;
+}
+
+static ssize_t instance_mr_id_show(struct memory_region *mr, char *data)
+{
+    return sprintf(data, "%u\n", mr->mr_id);
+}
+
+static ssize_t instance_mr_addr_show(struct memory_region *mr, char *data)
+{
+    return sprintf(data, "0x%lx\n", mr->addr);
+}
+
+static ssize_t instance_mr_sz_show(struct memory_region *mr, char *data)
+{
+    return sprintf(data, "0x%lx\n", mr->sz);
+}
+
+static ssize_t instance_mr_is_local_show(struct memory_region *mr, char *data)
+{
+    return sprintf(data, "%u\n", mr->is_local);
+}
+
+INSTANCE_ATTR(struct mr_instance_attribute, mr_id, S_IRUGO,
+        instance_mr_id_show, NULL);
+INSTANCE_ATTR(struct mr_instance_attribute, mr_addr, S_IRUGO,
+        instance_mr_addr_show, NULL);
+INSTANCE_ATTR(struct mr_instance_attribute, mr_sz, S_IRUGO,
+        instance_mr_sz_show, NULL);
+INSTANCE_ATTR(struct mr_instance_attribute, mr_is_local, S_IRUGO,
+        instance_mr_is_local_show, NULL);
+
+static struct mr_instance_attribute *mr_instance_attr[] = {
+    &ATTR_NAME(mr_id),
+    &ATTR_NAME(mr_addr),
+    &ATTR_NAME(mr_sz),
+    &ATTR_NAME(mr_is_local),
+    NULL
+};
+
+static struct sysfs_ops mr_instance_ops = {
+    .show = mr_instance_show,
+};
+
+static struct kobj_type ktype_mr_instance = { 
+    .release = kobj_default_release,
+    .sysfs_ops = &mr_instance_ops,
+    .default_attrs = (struct attribute **) mr_instance_attr,
+};
+
+void delete_mr_sysfs_entry(struct kobject *obj)
+{
+    kobject_put(obj);
+    kobject_del(obj);
+}
+
+int create_mr_sysfs_entry(struct dsm *dsm, struct memory_region *mr)
+{
+    struct kobject *kobj = &mr->mr_kobject;
+    struct kobject *root_kobj = &dsm->dsm_kobject;
+
+    return kobject_init_and_add(kobj, &ktype_mr_instance, root_kobj,
+            HECA_SYSFS_MR_FMT, mr->mr_id);
 }
 
 /* dsm sysfs functions */

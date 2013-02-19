@@ -845,7 +845,7 @@ retry:
     fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
     BUG_ON(!fault_svm);
 
-    fault_mr = search_mr(fault_svm, norm_addr);
+    fault_mr = search_mr_by_addr(fault_svm, norm_addr);
     BUG_ON(!fault_mr);
 
     dsm_id = fault_svm->dsm->dsm_id;

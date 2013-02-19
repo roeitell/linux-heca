@@ -241,7 +241,7 @@ failed:
 /*
  * svm funcs
  */
-static void destroy_mrs(struct subvirtual_machine *svm);
+static void destroy_svm_mrs(struct subvirtual_machine *svm);
 
 static inline int is_svm_local(struct subvirtual_machine *svm)
 {
@@ -391,6 +391,7 @@ int create_svm(struct svm_data *svm_info)
 
     /* initial svm data */
     new_svm->svm_id = svm_info->svm_id;
+    new_svm->is_local = svm_info->is_local;
     new_svm->dsm = dsm;
     atomic_set(&new_svm->refs, 2);
 
@@ -648,7 +649,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
             release_svm_tx_elements(svm, ele);
         }
         release_svm_push_elements(svm);
-        destroy_mrs(svm);
+        destroy_svm_mrs(svm);
     } else if (svm->ele) {
         struct subvirtual_machine *local_svm;
 
@@ -700,7 +701,7 @@ out:
     return mr;
 }
 
-struct memory_region *search_mr(struct subvirtual_machine *svm,
+struct memory_region *search_mr_by_addr(struct subvirtual_machine *svm,
         unsigned long addr)
 {
     struct rb_root *root = &svm->mr_tree_root;
@@ -776,7 +777,7 @@ fail:
     return r;
 }
 
-static void destroy_mrs(struct subvirtual_machine *svm)
+static void destroy_svm_mrs(struct subvirtual_machine *svm)
 {
     struct rb_root *root = &svm->mr_tree_root;
 
@@ -793,6 +794,8 @@ static void destroy_mrs(struct subvirtual_machine *svm)
         mr = rb_entry(node, struct memory_region, rb_node);
         rb_erase(&mr->rb_node, root);
         write_sequnlock(&svm->mr_seq_lock);
+        dsm_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
+                svm->dsm->dsm_id, svm->svm_id, mr->mr_id);
         synchronize_rcu();
         kfree(mr);
     } while(1);
@@ -820,7 +823,7 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids)
     }
 
     /* FIXME: Validate against every kind of overlap! */
-    if (search_mr(svm, (unsigned long) addr)) {
+    if (search_mr_by_addr(svm, (unsigned long) addr)) {
         dsm_printk(KERN_ERR "mr already exists at addr 0x%lx", addr);
         ret = -EEXIST;
         goto out;
@@ -868,13 +871,8 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids)
         ret = do_unmap_range(dsm, mr->descriptor, addr, addr + sz - 1);
     }
 
-    release_svm(svm);
-
-    dsm_printk(KERN_INFO "register_mr: id[%d] svm[%d] local[%d] addr[%lu:0x%lx]"
-            "==> %d", mr->mr_id, svm->svm_id, mr->is_local, mr->addr, mr->sz,
-            ret);
-
-    return ret;
+    create_mr_sysfs_entry(dsm, mr);
+    goto out;
 
 out_remove_tree:
     rb_erase(&mr->rb_node, &svm->mr_tree_root);
@@ -883,9 +881,9 @@ out_free:
 out:
     if (svm)
         release_svm(svm);
-    dsm_printk(KERN_INFO "register_mr failed : id [%d] addr [0x%lx] sz [0x%lx]"
+    dsm_printk(KERN_INFO "register_mr: id [%d] addr [0x%lx] sz [0x%lx]"
             " --> ret %d", mr_id, addr, sz, ret);
-    return -1;
+    return ret;
 }
 
 /*

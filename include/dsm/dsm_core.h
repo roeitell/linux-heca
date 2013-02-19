@@ -85,7 +85,7 @@ int create_svm(struct svm_data *svm_info);
 inline void release_svm(struct subvirtual_machine *);
 void remove_svm(u32, u32);
 struct memory_region *find_mr(struct subvirtual_machine *, u32);
-struct memory_region *search_mr(struct subvirtual_machine *,
+struct memory_region *search_mr_by_addr(struct subvirtual_machine *,
         unsigned long);
 int create_mr(__u32, __u32, void *, size_t, __u32 *);
 int create_rcm(struct dsm_module_state *, unsigned long, unsigned short);
@@ -221,6 +221,8 @@ void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);
 /* dsm_sysfs.c */
 int create_svm_sysfs_entry(struct subvirtual_machine *);
 void delete_svm_sysfs_entry(struct kobject *);
+int create_mr_sysfs_entry(struct dsm *dsm, struct memory_region *);
+void delete_mr_sysfs_entry(struct kobject *);
 int create_dsm_sysfs_entry(struct dsm *, struct dsm_module_state *);
 void delete_dsm_sysfs_entry(struct kobject *);
 int create_conn_sysfs_entry(struct conn_element *ele);

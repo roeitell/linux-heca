@@ -231,6 +231,7 @@ struct memory_region {
     u32 mr_id;
     int is_local;
     struct rb_node rb_node;
+    struct kobject mr_kobject;
 };
 
 struct private_data {
@@ -239,6 +240,7 @@ struct private_data {
 
 struct subvirtual_machine {
     u32 svm_id;
+    int is_local;
     struct dsm *dsm;
     struct conn_element *ele;
     struct mm_struct *mm;

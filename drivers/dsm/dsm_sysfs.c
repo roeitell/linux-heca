@@ -184,7 +184,7 @@ static ssize_t instance_mr_sz_show(struct memory_region *mr, char *data)
 
 static ssize_t instance_mr_is_local_show(struct memory_region *mr, char *data)
 {
-    return sprintf(data, "%u\n", mr->is_local);
+    return sprintf(data, "%u\n", mr->flags & MR_LOCAL);
 }
 
 INSTANCE_ATTR(struct mr_instance_attribute, mr_id, S_IRUGO,

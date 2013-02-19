@@ -715,7 +715,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
 
         /* lookup a remote mr owner, to push the page to */
         mr = search_mr(svm, address);
-        if (!mr || !mr->is_local) {
+        if (!mr || !(mr->flags & MR_LOCAL)) {
             release_svm(svm);
             continue;
         }

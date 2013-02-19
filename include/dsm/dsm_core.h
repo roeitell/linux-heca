@@ -87,7 +87,7 @@ void remove_svm(u32, u32);
 struct memory_region *find_mr(struct subvirtual_machine *, u32);
 struct memory_region *search_mr(struct subvirtual_machine *,
         unsigned long);
-int create_mr(__u32, __u32, void *, size_t, __u32 *);
+int create_mr(__u32, __u32, void *, size_t, __u32 *, __u32);
 int create_rcm(struct dsm_module_state *, unsigned long, unsigned short);
 int destroy_rcm(struct dsm_module_state *);
 int init_rcm(void);

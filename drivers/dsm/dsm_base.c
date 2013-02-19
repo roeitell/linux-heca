@@ -4,9 +4,11 @@
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
+ * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
 #include <dsm/dsm_core.h>
 #include <dsm/dsm_trace.h>
+#include <dsm/dsm_struct.h>
 
 /*
  * dsm_module_state funcs
@@ -798,7 +800,8 @@ static void destroy_mrs(struct subvirtual_machine *svm)
     } while(1);
 }
 
-int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids)
+int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids, 
+        __u32 flags)
 {
     int ret = 0, i;
     struct dsm *dsm;
@@ -838,6 +841,7 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids)
     mr->sz = sz;
     if (insert_mr(svm, mr))
         goto out_free;
+    
 
     mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
     if (!mr->descriptor) {
@@ -846,6 +850,7 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids)
         goto out_free;
     }
 
+    mr->flags = 0;
     for (i = 0; svm_ids[i]; i++) {
         struct subvirtual_machine *owner;
         u32 svm_id = svm_ids[i];
@@ -858,21 +863,24 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids)
         }
 
         if (is_svm_local(owner))
-            mr->is_local = 1;
+            mr->flags |= MR_LOCAL;
 
         release_svm(owner);
     }
 
+    if (flags & UD_COPY_ON_ACCESS)
+        mr->flags |= MR_COPY_ON_ACCESS;
 
-    if (!mr->is_local) {
+
+    if (!(mr->flags & MR_LOCAL) && (flags & UD_AUTO_UNMAP)) {
         ret = do_unmap_range(dsm, mr->descriptor, addr, addr + sz - 1);
     }
 
     release_svm(svm);
 
-    dsm_printk(KERN_INFO "register_mr: id[%d] svm[%d] local[%d] addr[%lu:0x%lx]"
-            "==> %d", mr->mr_id, svm->svm_id, mr->is_local, mr->addr, mr->sz,
-            ret);
+    dsm_printk(KERN_INFO "register_mr: id[%d] svm[%d] local[%d] coa[%d]" 
+            "addr[%lu:0x%lx] ==> %d", mr->mr_id, svm->svm_id, mr->flags & MR_LOCAL, 
+            mr->flags & MR_COPY_ON_ACCESS,  mr->addr, mr->sz, ret);
 
     return ret;
 

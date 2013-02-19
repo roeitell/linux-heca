@@ -1,6 +1,7 @@
 /*
  * Benoit Hudzia <benoit.hudzia@sap.com>
  * Aidan Shribman <aidan.shribman@sap.com>
+ * Steve Walsh <steve.walsh@sap.com>
  */
 
 #ifndef DSM_H_
@@ -23,6 +24,10 @@ struct svm_data {
 
 #define MAX_SVM_IDS 3 /*Is NULL terminated */
 
+/* unmap_data flags */
+#define UD_AUTO_UNMAP           (1 << 0)
+#define UD_COPY_ON_ACCESS       (1 << 1)
+
 struct unmap_data {
     pid_t pid_vnr;
     __u32 dsm_id;
@@ -30,6 +35,7 @@ struct unmap_data {
     __u32 mr_id;
     void *addr;
     size_t sz;
+    __u32 flags;
 };
 
 #define HECAIOC                      0xFF

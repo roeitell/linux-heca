@@ -84,7 +84,7 @@ config KVM_MMU_AUDIT
 # the virtualization menu.
 source drivers/vhost/Kconfig
 source drivers/lguest/Kconfig
-source drivers/dsm/Kconfig
+source drivers/heca/Kconfig
 source drivers/softiwarp/Kconfig
 
 endif # VIRTUALIZATION

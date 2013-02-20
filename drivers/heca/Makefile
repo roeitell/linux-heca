@@ -1,5 +1,6 @@
-heca-y := dsm_base.o dsm.o dsm_conn.o dsm_ops.o dsm_pull.o dsm_push.o \
-    dsm_struct.o dsm_sysfs.o
+ccflags-y += -I${PWD}
+
+heca-y := ioctl.o base.o conn.o ops.o pull.o push.o struct.o sysfs.o
 
 obj-$(CONFIG_DSM) += heca.o
 

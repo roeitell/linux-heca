@@ -6,8 +6,8 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
-#include <dsm/dsm_core.h>
-#include <dsm/dsm_trace.h>
+#include "core.h"
+#include "trace.h"
 
 #define DSM_CONGESTION_THRESHOLD 512 
 static unsigned long congestion = 0;

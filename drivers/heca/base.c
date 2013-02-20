@@ -6,9 +6,9 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
-#include <dsm/dsm_core.h>
-#include <dsm/dsm_trace.h>
-#include <dsm/dsm_struct.h>
+#include "core.h"
+#include "trace.h"
+#include "struct.h"
 
 /*
  * dsm_module_state funcs

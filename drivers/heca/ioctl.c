@@ -9,7 +9,7 @@
 #include <linux/list.h>
 #include <linux/delay.h>
 #include <linux/dsm_hook.h>
-#include <dsm/dsm_core.h>
+#include "core.h"
 
 #ifdef CONFIG_DSM_DEBUG
 static int debug = 1;

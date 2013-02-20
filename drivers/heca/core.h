@@ -47,7 +47,7 @@
 #include <asm-generic/mman-common.h>
 
 #include "../../../mm/internal.h"
-#include <dsm/dsm_struct.h>
+#include "struct.h"
 
 #define PULL_TAG        (1 << 0)  /* pulling the page */
 #define PREFETCH_TAG    (1 << 1)  /* pulling the page for prefetch */

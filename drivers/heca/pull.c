@@ -5,9 +5,9 @@
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
-#include <dsm/dsm_core.h>
+#include "core.h"
 #define CREATE_TRACE_POINTS
-#include <dsm/dsm_trace.h>
+#include "trace.h"
 
 static struct kmem_cache *dsm_delayed_fault_cache_kmem;
 unsigned long zero_dsm_pfn __read_mostly;

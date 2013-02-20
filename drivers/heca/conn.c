@@ -6,8 +6,8 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
 #include <linux/list.h>
-#include <dsm/dsm_core.h>
-#include <dsm/dsm_trace.h>
+#include "core.h"
+#include "trace.h"
 
 unsigned long inet_addr(const char *cp)
 {

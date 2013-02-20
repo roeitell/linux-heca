@@ -10,7 +10,7 @@
 #define DSM_TRACE_H_
 
 #include <linux/tracepoint.h>
-#include <dsm/dsm_core.h>
+#include "core.h"
 
 #define dsm_dpc_tag \
     { PULL_TAG,                 "PULL_TAG" }, \
@@ -116,9 +116,12 @@ DSM_DECLARE_EVENT_BASIC(free_svm);
 DSM_DECLARE_EVENT_BASIC(extract_pte_data_err);
 DSM_DECLARE_EVENT_BASIC(deferred_fault);
 DSM_DECLARE_EVENT_BASIC(flushing_requests);
-#endif
+#endif /* DSM_TRACE_H_ */
 
 #undef TRACE_INCLUDE_PATH
-#define TRACE_INCLUDE_PATH ../../include/dsm
-#define TRACE_INCLUDE_FILE dsm_trace
+#define TRACE_INCLUDE_PATH drivers/heca
+#undef TRACE_INCLUDE_FILE
+#define TRACE_INCLUDE_FILE trace
+
+/* This part must be outside protection */
 #include <trace/define_trace.h>

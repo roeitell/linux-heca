@@ -196,7 +196,7 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
 
     /* push only happens to mr owners! */
     mr = find_mr(local_svm, msg->mr_id);
-    if (unlikely(!mr || !(mr->flags & MR_LOCAL)))
+    if (unlikely(!mr || !(mr->flags & MR_LOCAL) || (mr->flags & MR_COPY_ON_ACCESS)))
         goto fail;
 
     // we get -1 if something bad happened, or >0 if we had dpc or we requested the page
@@ -399,7 +399,7 @@ retry:
     tx_e->reply_work_req->addr = addr;
 
     page = dsm_extract_page_from_remote(local_svm, remote_svm, addr,
-            msg->type, &tx_e->reply_work_req->pte, &redirect_id, deferred);
+            msg->type, &tx_e->reply_work_req->pte, &redirect_id, deferred, mr);
     if (unlikely(!page))
         goto fail;
 

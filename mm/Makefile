@@ -18,8 +18,8 @@ obj-y			:= filemap.o mempool.o oom_kill.o fadvise.o \
 			   page_isolation.o mm_init.o mmu_context.o percpu.o \
 			   compaction.o $(mmu-y)
 obj-y += init-mm.o
-ifdef CONFIG_DSM
-    obj-y += dsm_hook.o
+ifdef CONFIG_HECA
+    obj-y += heca_hook.o
 endif
 
 ifdef CONFIG_NO_BOOTMEM

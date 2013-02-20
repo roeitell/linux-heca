@@ -1,23 +1,21 @@
-config DSM
-	tristate "DSM"
+config HECA
+	tristate "HECA"
 	depends on NUMA && RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET && MMU_NOTIFIER && MMU
 	default m
 	help
-	  Enable DSM - running single VM over several linux hosts with qemu/kvm.
+	  Enable HECA - running single VM over several linux hosts with qemu/kvm.
 
-
-		
-config DSM_DEBUG
-	bool "DSM_DEBUG"
-	depends on DSM
+config HECA_DEBUG
+	bool "HECA_DEBUG"
+	depends on HECA
 	default n
 	help
-		DSM_DEBUG provides debug functionality for DSM 
+		HECA_DEBUG provides debug functionality for HECA 
 		
-config DSM_VERBOSE_PRINTK
-	bool "DSM_VERBOSE_PRINTK"
-	depends on DSM
+config HECA_VERBOSE_PRINTK
+	bool "HECA_VERBOSE_PRINTK"
+	depends on HECA
 	default n
 	help
-		DSM_VERBOSE_PRINTK provide verbose functionality 	
+		HECA_VERBOSE_PRINTK provide verbose functionality 	
 

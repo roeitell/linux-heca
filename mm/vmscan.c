@@ -47,8 +47,8 @@
 #include <asm/div64.h>
 
 #include <linux/swapops.h>
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
-#include <linux/dsm_hook.h>
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+#include <linux/heca_hook.h>
 #endif
 
 #include "internal.h"
@@ -747,7 +747,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 			if (!(sc->gfp_mask & __GFP_IO))
 				goto keep_locked;
 
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
             {
                 const struct dsm_hook_struct *hook = dsm_hook_read();
 

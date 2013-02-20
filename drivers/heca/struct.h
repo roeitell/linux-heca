@@ -23,7 +23,7 @@
 #include <linux/swapops.h>
 #include <asm/atomic.h>
 #include <linux/llist.h>
-#include <linux/dsm.h>
+#include <linux/heca.h>
 
 #define RDMA_PAGE_SIZE      PAGE_SIZE
 

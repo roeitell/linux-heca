@@ -8,10 +8,10 @@
  */
 #include <linux/list.h>
 #include <linux/delay.h>
-#include <linux/dsm_hook.h>
+#include <linux/heca_hook.h>
 #include "core.h"
 
-#ifdef CONFIG_DSM_DEBUG
+#ifdef CONFIG_HECA_DEBUG
 static int debug = 1;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "Debug level (0 = disable)");
@@ -22,7 +22,7 @@ static pid_t sys_getpid(void)
     return task_pid_vnr(current);
 }
 
-#ifdef CONFIG_DSM_VERBOSE_PRINTK
+#ifdef CONFIG_HECA_VERBOSE_PRINTK
 /* strip the leading path if the given path is absolute */
 static const char *sanity_file_name(const char *path)
 {
@@ -36,21 +36,21 @@ static const char *sanity_file_name(const char *path)
 void __dsm_printk(unsigned int level, const char *path, int line, const char *format,
         ...)
 {
-#if defined(CONFIG_DSM_DEBUG) || defined(CONFIG_DSM_VERBOSE_PRINTK)
+#if defined(CONFIG_HECA_DEBUG) || defined(CONFIG_HECA_VERBOSE_PRINTK)
     va_list args;
-#ifdef CONFIG_DSM_VERBOSE_PRINTK
+#ifdef CONFIG_HECA_VERBOSE_PRINTK
     struct va_format vaf;
     char verbose_fmt[] = KERN_DEFAULT "DSM %s:%d %pV";
 #endif
 
-#ifdef CONFIG_DSM_DEBUG
+#ifdef CONFIG_HECA_DEBUG
     if (debug < level)
         return;
 #endif
 
     va_start(args, format);
 
-#ifdef CONFIG_DSM_VERBOSE_PRINTK
+#ifdef CONFIG_HECA_VERBOSE_PRINTK
     vaf.fmt = format;
     vaf.va = &args;
     if (format[0] == '<' && format[2] == '>') {
@@ -339,11 +339,11 @@ out:
 static struct file_operations rdma_fops = { .owner = THIS_MODULE,
     .release = release, .unlocked_ioctl = ioctl, .open = open,
     .llseek = noop_llseek, };
-static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "rdma",
+static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "heca",
     &rdma_fops, };
 
 const struct dsm_hook_struct my_dsm_hook = {
-    .name = "DSM",
+    .name = "HECA",
     .fetch_page = dsm_swap_wrapper,
     .pushback_page = push_back_if_remote_dsm_page,
     .is_congested = dsm_is_congested,

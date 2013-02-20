@@ -64,8 +64,8 @@
 #include <asm/tlb.h>
 #include <asm/tlbflush.h>
 #include <asm/pgtable.h>
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
-#include <linux/dsm_hook.h>
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+#include <linux/heca_hook.h>
 #endif
 
 #include "internal.h"
@@ -2911,7 +2911,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 		} else if (is_hwpoison_entry(entry)) {
 			ret = VM_FAULT_HWPOISON;
         }
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
         else if (is_dsm_entry(entry)) {
             const struct dsm_hook_struct *hook = dsm_hook_read();
 

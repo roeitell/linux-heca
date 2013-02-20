@@ -12,8 +12,8 @@
 #include <linux/device.h>
 #include <trace/events/writeback.h>
 
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
-#include <linux/dsm_hook.h>
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+#include <linux/heca_hook.h>
 #endif
 
 static atomic_long_t bdi_seq = ATOMIC_LONG_INIT(0);
@@ -862,7 +862,7 @@ long wait_iff_congested(struct zone *zone, int sync, long timeout)
 	wait_queue_head_t *wqh = &congestion_wqh[sync];
     int dsm_congested = 0;
 
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
     {
         const struct dsm_hook_struct *hook = dsm_hook_read();
         dsm_congested = hook && hook->is_congested();

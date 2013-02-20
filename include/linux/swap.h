@@ -69,7 +69,7 @@ static inline int current_is_kswapd(void)
 /*
  * DSM support
  */
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
 #define SWP_DSM_NUM 1
 #define SWP_DSM (MAX_SWAPFILES + SWP_HWPOISON_NUM + SWP_MIGRATION_NUM)
 #else

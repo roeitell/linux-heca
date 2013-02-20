@@ -1,9 +1,9 @@
 #include <linux/export.h>
-#include <linux/dsm_hook.h>
+#include <linux/heca_hook.h>
 
 const struct dsm_hook_struct *dsm_hook;
 EXPORT_SYMBOL(dsm_hook);
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
 const struct dsm_hook_struct *dsm_hook_read(void)
 {
     const struct dsm_hook_struct *hook;

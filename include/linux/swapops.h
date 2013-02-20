@@ -194,7 +194,7 @@ static inline int non_swap_entry(swp_entry_t entry)
 }
 #endif
 
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
 static inline int is_dsm_entry(swp_entry_t entry)
 {
 	return swp_type(entry) == SWP_DSM;

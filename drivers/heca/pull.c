@@ -1065,7 +1065,7 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
 
-#if defined(CONFIG_DSM) || defined(CONFIG_DSM_MODULE)
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
     return do_dsm_page_fault(mm, vma, address, page_table, pmd, flags,
             orig_pte, entry);
 

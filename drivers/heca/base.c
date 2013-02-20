@@ -845,7 +845,6 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
     if (insert_mr(svm, mr))
         goto out_free;
     
-
     mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
     if (!mr->descriptor) {
         dsm_printk(KERN_ERR "can't find MR descriptor for svm_ids");
@@ -853,7 +852,6 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
         goto out_free;
     }
 
-    mr->flags = 0;
     for (i = 0; svm_ids[i]; i++) {
         struct subvirtual_machine *owner;
         u32 svm_id = svm_ids[i];

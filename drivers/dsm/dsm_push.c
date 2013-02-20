@@ -345,7 +345,8 @@ static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr)
 /* we arrive with mm semaphore held */
 static struct page *dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
-        unsigned long addr, pte_t *return_pte, u32 *svm_id, int deferred)
+        unsigned long addr, pte_t *return_pte, u32 *svm_id, int deferred,
+        struct memory_region *mr)
 {
     spinlock_t *ptl;
     int r;
@@ -426,14 +427,16 @@ retry:
 
     page_cache_get(page);
 
-    flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-    ptep_clear_flush_notify(pd.vma, addr, pd.pte);
-    set_pte_at(mm, addr, pd.pte,
-            dsm_descriptor_to_pte(remote_svm->descriptor, DSM_INFLIGHT));
+    if (!(mr->flags & MR_COPY_ON_ACCESS)) {
+        flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
+        ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+        set_pte_at(mm, addr, pd.pte,
+                dsm_descriptor_to_pte(remote_svm->descriptor, DSM_INFLIGHT));
 
-    page_remove_rmap(page);
-    page_cache_release(page);
-    dec_mm_counter(mm, MM_ANONPAGES);
+        page_remove_rmap(page);
+        page_cache_release(page);
+        dec_mm_counter(mm, MM_ANONPAGES);
+    }
 
     *return_pte = *(pd.pte);
 
@@ -523,7 +526,7 @@ out:
 
 struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
-        pte_t *pte, u32 *svm_id, int deferred)
+        pte_t *pte, u32 *svm_id, int deferred, struct memory_region *mr)
 {
     struct mm_struct *mm;
     struct page *page = NULL;
@@ -537,7 +540,7 @@ struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
     page = (tag == TRY_REQUEST_PAGE)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,
-                deferred);
+                deferred, mr);
     up_read(&mm->mmap_sem);
 
     return page;
@@ -716,7 +719,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
 
         /* lookup a remote mr owner, to push the page to */
         mr = search_mr_by_addr(svm, address);
-        if (!mr || !(mr->flags & MR_LOCAL)) {
+        if (!mr || !(mr->flags & MR_LOCAL) || (mr->flags & MR_COPY_ON_ACCESS)) {
             release_svm(svm);
             continue;
         }

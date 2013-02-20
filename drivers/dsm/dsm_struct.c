@@ -196,6 +196,9 @@ void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
     swp_entry_t arch, entry;
     u32 desc, flags;
 
+    if (pte_present(orig_pte))
+        return;
+
     if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
         return;
 

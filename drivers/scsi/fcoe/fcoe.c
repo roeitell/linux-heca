@@ -1222,7 +1222,7 @@ static int __init fcoe_if_init(void)
  *
  * Returns: 0 on success
  */
-static int __exit fcoe_if_exit(void)
+static int fcoe_if_exit(void)
 {
 	fc_release_transport(fcoe_nport_scsi_transport);
 	fc_release_transport(fcoe_vport_scsi_transport);

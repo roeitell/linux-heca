@@ -194,6 +194,7 @@ static void siw_dma_generic_free(struct device *dev, size_t size,
     siw_dma_free_coherent(NULL, size, vaddr, dma_handle);
 }
 
+#if 0
 static void *siw_dma_generic_alloc_coherent(struct device *dev, size_t size,
 					    dma_addr_t *dma_handle, gfp_t gfp)
 {
@@ -205,6 +206,7 @@ static void siw_dma_generic_free_coherent(struct device *dev, size_t size,
 {
 	siw_dma_free_coherent(NULL, size, vaddr, dma_handle);
 }
+#endif
 
 static dma_addr_t siw_dma_generic_map_page(struct device *dev,
 					   struct page *page,

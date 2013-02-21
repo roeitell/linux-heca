@@ -182,7 +182,7 @@ int dsm_try_unmap_page(struct mm_struct *, unsigned long,
         struct subvirtual_machine *);
 struct page *dsm_extract_page_from_remote(struct subvirtual_machine *,
         struct subvirtual_machine *, unsigned long, u16, pte_t *, u32 *,
-        int, struct memory_region*);
+        int, struct memory_region *);
 struct page *dsm_find_normal_page(struct mm_struct *, unsigned long);
 int dsm_prepare_page_for_push(struct subvirtual_machine *,
         struct svm_list, struct page *, unsigned long, struct mm_struct *, u32);

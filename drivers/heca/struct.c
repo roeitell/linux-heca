@@ -196,6 +196,7 @@ void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
     swp_entry_t arch, entry;
     u32 desc, flags;
 
+    /* If PTE_PRESENT flag is set, pte hasn't changed - no need to clear anything*/
     if (pte_present(orig_pte))
         return;
 

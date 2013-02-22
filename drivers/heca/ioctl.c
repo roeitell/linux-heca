@@ -154,6 +154,33 @@ static int ioctl_svm(int ioctl, void __user *argp)
     return -EINVAL;
 }
 
+static int unmap_mr(struct unmap_data *udata)
+{
+    int r = -EFAULT;
+    struct dsm *dsm = NULL;
+    struct subvirtual_machine *local_svm = NULL;
+    struct memory_region * mr = NULL;
+
+    dsm = find_dsm(udata->dsm_id);
+    if (!dsm)
+        goto out;
+
+    local_svm = find_local_svm_in_dsm(dsm, current->mm);
+    if (!local_svm)
+        goto out;
+    
+    mr = search_mr_by_addr(local_svm, (unsigned long) udata->addr);
+    if (!mr)
+        goto out;
+
+    r = do_unmap_range(dsm, mr->descriptor, udata->addr, udata->addr+udata->sz - 1);
+
+out:
+    if (local_svm)
+        release_svm(local_svm);
+    return r;
+}
+
 static int pushback_mr(struct unmap_data *udata)
 {
     int r = -EFAULT;
@@ -171,7 +198,7 @@ static int pushback_mr(struct unmap_data *udata)
     if (!local_svm)
         goto out;
 
-    addr = start_addr =((unsigned long) udata->addr) & PAGE_MASK;
+    addr = start_addr = ((unsigned long) udata->addr) & PAGE_MASK;
     while (addr < start_addr + udata->sz) {
 
         mr = search_mr_by_addr(local_svm, addr);
@@ -212,6 +239,8 @@ static int ioctl_mr(int ioctl, void __user *argp)
                 udata.svm_ids, udata.flags);
         case HECAIOC_MR_PUSHBACK:
             return pushback_mr(&udata);
+        case HECAIOC_MR_UNMAP:
+            return unmap_mr(&udata);
     }
 
     return -EINVAL;
@@ -325,6 +354,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     switch (ioctl) {
         case HECAIOC_MR_ADD:
         case HECAIOC_MR_PUSHBACK:
+        case HECAIOC_MR_UNMAP:
             r = ioctl_mr(ioctl, argp);
             goto out;
     }

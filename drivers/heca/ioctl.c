@@ -33,14 +33,14 @@ static const char *sanity_file_name(const char *path)
 }
 #endif
 
-void __dsm_printk(unsigned int level, const char *path, int line, const char *format,
-        ...)
+void __dsm_printk(unsigned int level, const char *path, int line,
+        const char *func, const char *format, ...)
 {
 #if defined(CONFIG_HECA_DEBUG) || defined(CONFIG_HECA_VERBOSE_PRINTK)
     va_list args;
 #ifdef CONFIG_HECA_VERBOSE_PRINTK
     struct va_format vaf;
-    char verbose_fmt[] = KERN_DEFAULT "DSM %s:%d %pV";
+    char verbose_fmt[] = KERN_DEFAULT "DSM %s:%d (%s) %pV";
 #endif
 
 #ifdef CONFIG_HECA_DEBUG
@@ -58,7 +58,7 @@ void __dsm_printk(unsigned int level, const char *path, int line, const char *fo
         vaf.fmt = format + 3;
     } else if (level)
         memcpy(verbose_fmt, KERN_DEBUG, 3);
-    printk(verbose_fmt, sanity_file_name(path), line, &vaf);
+    printk(verbose_fmt, sanity_file_name(path), line, func, &vaf);
 #else
     vprintk(format, args);
 #endif
@@ -97,7 +97,7 @@ static int deregister_dsm(struct private_data *priv_data, pid_t pid_vnr,
     }
 
     if (dsm_state->rcm) { 
-        destroy_rcm(dsm_state);
+        destroy_rcm_listener(dsm_state);
         dsm_state->rcm = NULL;
     }
 
@@ -114,7 +114,7 @@ static int register_dsm(struct private_data *priv_data,
 
     dsm_printk(KERN_DEBUG "[enter]");
 
-    if ((rc = create_rcm(dsm_state, svm_info->server.sin_addr.s_addr,
+    if ((rc = create_rcm_listener(dsm_state, svm_info->server.sin_addr.s_addr,
             svm_info->server.sin_port))) {
         dsm_printk(KERN_ERR "create_rcm %d", rc);
         goto done;
@@ -327,7 +327,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     void __user *argp = (void __user *) arg;
     int r = -EINVAL;
 
-    dsm_printk(KERN_DEBUG "ioctl [enter] ioctl=%d", ioctl);
+    dsm_printk(KERN_DEBUG "ioctl [enter] ioctl=0x%X", ioctl);
 
     BUG_ON(!priv_data);
 
@@ -359,10 +359,10 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
             goto out;
     }
     r = -EINVAL;
-    dsm_printk(KERN_ERR "ioctl %d not supported", ioctl);
+    dsm_printk(KERN_ERR "ioctl 0x%X not supported", ioctl);
 
 out: 
-    dsm_printk(KERN_DEBUG "ioctl [exit] %d", r);
+    dsm_printk(KERN_DEBUG "ioctl [exit] ioctl=0x%X: %d", ioctl, r);
     return r;
 }
 

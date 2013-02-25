@@ -63,9 +63,9 @@
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
 void __dsm_printk(unsigned int level, const char *path, int line,
-        const char *format, ...);
+        const char *func, const char *format, ...);
 #define dsm_printk(fmt, args...) \
-    __dsm_printk(0, __FILE__, __LINE__, fmt, ##args);
+    __dsm_printk(0, __FILE__, __LINE__, __func__, fmt, ##args);
 
 /* dsm_base.c */
 inline struct dsm_module_state *get_dsm_module_state(void);
@@ -88,8 +88,9 @@ struct memory_region *find_mr(struct subvirtual_machine *, u32);
 struct memory_region *search_mr_by_addr(struct subvirtual_machine *,
         unsigned long);
 int create_mr(__u32, __u32, void *, size_t, __u32 *, __u32);
-int create_rcm(struct dsm_module_state *, unsigned long, unsigned short);
-int destroy_rcm(struct dsm_module_state *);
+int create_rcm_listener(struct dsm_module_state *, unsigned long,
+        unsigned short);
+int destroy_rcm_listener(struct dsm_module_state *);
 int init_rcm(void);
 int fini_rcm(void);
 

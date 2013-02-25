@@ -1615,7 +1615,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
         return -EFAULT;
     }
 
-    dsm_printk(KERN_ERR "connecting to dsm_id: %u [%p], svm_id: %u",
+    dsm_printk(KERN_ERR "connecting to dsm_id: %u [0x%p], svm_id: %u",
         dsm_id, dsm, svm_id);
 
     mutex_lock(&dsm->dsm_mutex);

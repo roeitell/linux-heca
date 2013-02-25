@@ -915,13 +915,14 @@ int fini_rcm(void)
     return 0;
 }
 
-int destroy_rcm(struct dsm_module_state *dsm_state);
+int destroy_rcm_listener(struct dsm_module_state *dsm_state);
 
-int create_rcm(struct dsm_module_state *dsm_state, unsigned long ip,
+int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
         unsigned short port)
 {
     int ret = 0;
     struct rcm *rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
+    char buf[80];
 
     if (!rcm)
         return -ENOMEM;
@@ -931,66 +932,65 @@ int create_rcm(struct dsm_module_state *dsm_state, unsigned long ip,
     rcm->node_ip = ip;
     rcm->root_conn = RB_ROOT;
 
-    rcm->sin.sin_family = AF_INET;
-    rcm->sin.sin_addr.s_addr = rcm->node_ip;
-    rcm->sin.sin_port = port;
-
     rcm->cm_id = rdma_create_id(server_event_handler, rcm, RDMA_PS_TCP,
             IB_QPT_RC);
     if (IS_ERR(rcm->cm_id)) {
         rcm->cm_id = NULL;
-        dsm_printk(KERN_ERR "Failed rdma_create_id: %d", IS_ERR(rcm->cm_id));
+        ret = PTR_ERR(rcm->cm_id);
+        dsm_printk(KERN_ERR "Failed rdma_create_id: %d", ret);
         goto failed;
     }
 
-    ret = rdma_bind_addr(rcm->cm_id, (struct sockaddr *) &(rcm->sin));
+    rcm->sin.sin_family = AF_INET;
+    rcm->sin.sin_addr.s_addr = rcm->node_ip;
+    rcm->sin.sin_port = port;
+
+    ret = rdma_bind_addr(rcm->cm_id, (struct sockaddr *)&rcm->sin);
     if (ret) {
         dsm_printk(KERN_ERR "Failed rdma_bind_addr: %d", ret);
         goto failed;
     }
 
-    if (!rcm->cm_id->device) {
-        dsm_printk(KERN_ERR "Error no device exists");
-        goto failed;
-    }
-
     rcm->pd = ib_alloc_pd(rcm->cm_id->device);
     if (IS_ERR(rcm->pd)) {
+        ret = PTR_ERR(rcm->pd);
         rcm->pd = NULL;
-        dsm_printk(KERN_ERR "Failed id_alloc_pd: %d", IS_ERR(rcm->pd));
+        dsm_printk(KERN_ERR "Failed id_alloc_pd: %d", ret);
         goto failed;
     }
 
     rcm->listen_cq = ib_create_cq(rcm->cm_id->device, listener_cq_handle, NULL,
             rcm, 2, 0);
     if (IS_ERR(rcm->listen_cq)) {
+        ret = PTR_ERR(rcm->listen_cq);
         rcm->listen_cq = NULL;
-        dsm_printk(KERN_ERR "Failed ib_create_cq: %d", IS_ERR(rcm->listen_cq));
+        dsm_printk(KERN_ERR "Failed ib_create_cq: %d", ret);
         goto failed;
     }
 
-    if (ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP)) {
-        dsm_printk(KERN_ERR "Failed ib_req_notify_cq");
+    if ((ret = ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))) {
+        dsm_printk(KERN_ERR "Failed ib_req_notify_cq: %d", ret);
         goto failed;
     }
 
     rcm->mr = ib_get_dma_mr(rcm->pd, IB_ACCESS_LOCAL_WRITE |
             IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
     if (IS_ERR(rcm->mr)) {
+        ret = PTR_ERR(rcm->mr);
         rcm->mr = NULL;
-        dsm_printk(KERN_ERR "Failed ib_get_dma_mr: %d", IS_ERR(rcm->mr));
+        dsm_printk(KERN_ERR "Failed ib_get_dma_mr: %d", ret);
         goto failed;
     }
 
     dsm_state->rcm = rcm;
 
-    ret = rdma_listen(dsm_state->rcm->cm_id, 2);
+    ret = rdma_listen(rcm->cm_id, 2);
     if (ret)
         dsm_printk(KERN_ERR "Failed rdma_listen: %d", ret);
     return 0;
 
 failed:
-    destroy_rcm(dsm_state);
+    destroy_rcm_listener(dsm_state);
     return ret;
 }
 
@@ -1015,12 +1015,12 @@ static int rcm_disconnect(struct rcm *rcm)
     return 0;
 }
 
-int destroy_rcm(struct dsm_module_state *dsm_state)
+int destroy_rcm_listener(struct dsm_module_state *dsm_state)
 {
     int rc = 0;
     struct rcm *rcm = dsm_state->rcm;
 
-    dsm_printk(KERN_DEBUG "destroy_rcm [enter]");
+    dsm_printk(KERN_DEBUG "[enter]");
 
     if (!rcm)
         goto done;
@@ -1059,7 +1059,7 @@ destroy:
     dsm_state->rcm = NULL;
 
 done:
-    dsm_printk(KERN_DEBUG "destroy_rcm [exit] %d", rc);
+    dsm_printk(KERN_DEBUG "[exit] %d", rc);
     return rc;
 }
 

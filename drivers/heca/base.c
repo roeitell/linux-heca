@@ -1,6 +1,4 @@
 /*
- * drivers/dsm/dsm_base.c
- *
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
@@ -9,6 +7,12 @@
 #include "core.h"
 #include "trace.h"
 #include "struct.h"
+#include "base.h"
+#include "conn.h"
+#include "pull.h"
+#include "push.h"
+#include "sysfs.h"
+#include "ops.h"
 
 /*
  * dsm_module_state funcs
@@ -922,7 +926,6 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
 {
     int ret = 0;
     struct rcm *rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
-    char buf[80];
 
     if (!rcm)
         return -ENOMEM;

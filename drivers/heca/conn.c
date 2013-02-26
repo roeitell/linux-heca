@@ -1,6 +1,4 @@
 /*
- * drivers/dsm/dsm_conn.c
- *
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
@@ -8,6 +6,11 @@
 #include <linux/list.h>
 #include "core.h"
 #include "trace.h"
+#include "conn.h"
+#include "base.h"
+#include "struct.h"
+#include "ops.h"
+#include "sysfs.h"
 
 unsigned long inet_addr(const char *cp)
 {

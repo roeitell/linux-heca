@@ -1,12 +1,16 @@
 /*
- * drivers/dsm/dsm_ops.c
- *
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
 #include "core.h"
 #include "trace.h"
+#include "struct.h"
+#include "ops.h"
+#include "pull.h"
+#include "push.h"
+#include "conn.h"
+#include "base.h"
 
 static struct kmem_cache *kmem_deferred_gup_cache;
 

@@ -1,6 +1,4 @@
 /*
- * drivers/dsm/dsm.c
- *
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
@@ -10,6 +8,11 @@
 #include <linux/delay.h>
 #include <linux/heca_hook.h>
 #include "core.h"
+#include "sysfs.h"
+#include "base.h"
+#include "push.h"
+#include "pull.h"
+#include "ops.h"
 
 #ifdef CONFIG_HECA_DEBUG
 static int debug = 1;
@@ -388,7 +391,7 @@ static int dsm_init(void)
 
     BUG_ON(!dsm_state);
     dsm_zero_pfn_init();
-    dsm_sysfs_setup(dsm_state);
+    heca_sysfs_setup(dsm_state);
     dsm_hook_write(&my_dsm_hook);
     rc = misc_register(&rdma_misc);
     init_rcm();
@@ -405,7 +408,7 @@ static void dsm_exit(void)
     fini_rcm();
     misc_deregister(&rdma_misc);
     dsm_hook_write(NULL);
-    dsm_sysfs_cleanup(dsm_state);
+    heca_sysfs_cleanup(dsm_state);
     dsm_zero_pfn_exit();
     destroy_dsm_module_state();
 }

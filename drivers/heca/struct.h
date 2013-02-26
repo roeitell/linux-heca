@@ -1,9 +1,11 @@
 /*
- *
+ * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
+ * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
+ * Roei Tell <roei.tell@sap.com> 2012 (c)
  */
 
-#ifndef DSM_DEF_H_
-#define DSM_DEF_H_
+#ifndef HECA_STRUCT_H_
+#define HECA_STRUCT_H_
 
 #include <rdma/rdma_cm.h>
 #include <rdma/ib_verbs.h>
@@ -275,6 +277,10 @@ struct subvirtual_machine {
     atomic_t refs;
 };
 
+#define for_each_valid_svm(svms, i)         \
+    for (i = 0; i < (svms).num; i++)        \
+        if (likely((svms).pp[i]))
+
 struct work_request_ele {
     struct conn_element *ele;
     struct ib_send_wr wr;
@@ -420,4 +426,30 @@ struct dsm_swp_data {
     u32 flags;
 };
 
-#endif /* DSM_DEF_H_ */
+void dsm_init_descriptors(void);
+void dsm_destroy_descriptors(void);
+u32 dsm_get_descriptor(struct dsm *, u32 *);
+inline pte_t dsm_descriptor_to_pte(u32, u32);
+inline struct svm_list dsm_descriptor_to_svms(u32);
+void remove_svm_from_descriptors(struct subvirtual_machine *);
+int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
+int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
+void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
+void init_dsm_cache_kmem(void);
+void destroy_dsm_cache_kmem(void);
+struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *,
+        unsigned long, struct svm_list, int, int);
+void dsm_dealloc_dpc(struct dsm_page_cache **);
+struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *,
+        unsigned long);
+struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,
+        unsigned long);
+struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *,
+        unsigned long);
+void dsm_destroy_page_pool(struct conn_element *);
+int dsm_init_page_pool(struct conn_element *);
+struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *);
+struct page_pool_ele *dsm_prepare_ppe(struct conn_element *, struct page *);
+void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);
+
+#endif /* HECA_STRUCT_H_ */

@@ -4,6 +4,8 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
 #include "core.h"
+#include "conn.h"
+#include "base.h"
 
 #define HECA_SYSFS_MODULE "heca"
 #define HECA_SYSFS_RDMA "conn"
@@ -397,7 +399,7 @@ done:
 }
 
 /* toplevel sysfs functions */
-void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state)
+void heca_sysfs_cleanup(struct dsm_module_state *dsm_state)
 {
     struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
@@ -408,7 +410,7 @@ void dsm_sysfs_cleanup(struct dsm_module_state *dsm_state)
     kobject_del(dsm_kobjects->dsm_glob_kobject);
 }
 
-int dsm_sysfs_setup(struct dsm_module_state *dsm_state)
+int heca_sysfs_setup(struct dsm_module_state *dsm_state)
 {
     struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 

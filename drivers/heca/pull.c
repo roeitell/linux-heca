@@ -1,6 +1,4 @@
 /*
- * drivers/dsm/dsm_pull.c
- *
  * Benoit Hudzia <benoit.hudzia@sap.com> 2011 (c)
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
@@ -8,6 +6,13 @@
 #include "core.h"
 #define CREATE_TRACE_POINTS
 #include "trace.h"
+#include "struct.h"
+#include "pull.h"
+#include "push.h"
+#include "base.h"
+#include "ops.h"
+#include "conn.h"
+#include "base.h"
 
 static struct kmem_cache *dsm_delayed_fault_cache_kmem;
 unsigned long zero_dsm_pfn __read_mostly;

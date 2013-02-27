@@ -170,7 +170,7 @@ void remove_dsm(struct dsm *dsm)
 /* FIXME: just a dummy lock so that radix_tree functions work */
 DEFINE_SPINLOCK(dsm_lock);
 
-int create_dsm(struct private_data *priv_data, pid_t pid_vnr, __u32 dsm_id)
+int create_dsm(struct private_data *priv_data, __u32 dsm_id)
 {
     int r = 0;
     struct dsm *found_dsm, *new_dsm = NULL;
@@ -189,7 +189,6 @@ int create_dsm(struct private_data *priv_data, pid_t pid_vnr, __u32 dsm_id)
         heca_printk("can't allocate");
         return -ENOMEM;
     }
-    new_dsm->pid_vnr = pid_vnr;
     new_dsm->dsm_id = dsm_id;
     mutex_init(&new_dsm->dsm_mutex);
     INIT_RADIX_TREE(&new_dsm->svm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
@@ -807,17 +806,16 @@ static void destroy_svm_mrs(struct subvirtual_machine *svm)
     } while(1);
 }
 
-int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids, 
-        __u32 flags)
+int create_mr(struct unmap_data *udata)
 {
     int ret = 0, i;
     struct dsm *dsm;
     struct subvirtual_machine *svm = NULL;
     struct memory_region *mr;
 
-    dsm = find_dsm(dsm_id);
+    dsm = find_dsm(udata->dsm_id);
     if (!dsm) {
-        heca_printk(KERN_ERR "can't find dsm %d", dsm_id);
+        heca_printk(KERN_ERR "can't find dsm %d", udata->dsm_id);
         ret = -EFAULT;
         goto out;
     }
@@ -830,8 +828,8 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
     }
 
     /* FIXME: Validate against every kind of overlap! */
-    if (search_mr_by_addr(svm, (unsigned long) addr)) {
-        heca_printk(KERN_ERR "mr already exists at addr 0x%lx", addr);
+    if (search_mr_by_addr(svm, (unsigned long) udata->addr)) {
+        heca_printk(KERN_ERR "mr already exists at addr 0x%lx", udata->addr);
         ret = -EEXIST;
         goto out;
     }
@@ -843,22 +841,24 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
         goto out_free;
     }
 
-    mr->mr_id = mr_id;
-    mr->addr = (unsigned long) addr;
-    mr->sz = sz;
+    mr->mr_id = udata->mr_id;
+    mr->addr = (unsigned long) udata->addr;
+    mr->sz = udata->sz;
+    mr->pid = udata->pid;
+
     if (insert_mr(svm, mr))
         goto out_free;
     
-    mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
+    mr->descriptor = dsm_get_descriptor(dsm, udata->svm_ids);
     if (!mr->descriptor) {
         heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");
         ret = -EFAULT;
         goto out_free;
     }
 
-    for (i = 0; svm_ids[i]; i++) {
+    for (i = 0; udata->svm_ids[i]; i++) {
         struct subvirtual_machine *owner;
-        u32 svm_id = svm_ids[i];
+        u32 svm_id = udata->svm_ids[i];
 
         owner = find_svm(dsm, svm_id);
         if (!owner) {
@@ -873,12 +873,12 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
         release_svm(owner);
     }
 
-    if (flags & UD_COPY_ON_ACCESS)
+    if (udata->flags & UD_COPY_ON_ACCESS)
         mr->flags |= MR_COPY_ON_ACCESS;
 
-
-    if (!(mr->flags & MR_LOCAL) && (flags & UD_AUTO_UNMAP)) {
-        ret = do_unmap_range(dsm, mr->descriptor, addr, addr + sz - 1);
+    if (!(mr->flags & MR_LOCAL) && (udata->flags & UD_AUTO_UNMAP)) {
+        ret = do_unmap_range(dsm, mr->descriptor, udata->addr, 
+                udata->addr + udata->sz - 1);
     }
 
     create_mr_sysfs_entry(dsm, mr);
@@ -891,8 +891,8 @@ out_free:
 out:
     if (svm)
         release_svm(svm);
-    heca_printk(KERN_INFO "register_mr: id [%d] addr [0x%lx] sz [0x%lx]"
-            " --> ret %d", mr_id, addr, sz, ret);
+    heca_printk(KERN_INFO "id [%d] addr [0x%lx] sz [0x%lx]"
+            " --> ret %d", udata->mr_id, udata->addr, udata->sz, ret);
     return ret;
 }
 

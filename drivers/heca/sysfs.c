@@ -13,7 +13,7 @@
 #define HECA_SYSFS_CONF "proc"
 #define HECA_SYSFS_SVM_FMT "svm-%u"
 #define HECA_SYSFS_MR_FMT "mr-%u"
-#define HECA_SYSFS_DSM_FMT "pid-%u--dsm-%u"
+#define HECA_SYSFS_DSM_FMT "dsm-%u"
 
 #define ATTR_NAME(_name) attr_instance_##_name
 
@@ -95,10 +95,8 @@ static ssize_t instance_svm_id_show(struct subvirtual_machine *svm,
 static ssize_t instance_svm_conn_show(struct subvirtual_machine *svm,
         char *data)
 {
-    if (!svm->ele)
-        return 0;
-    if (!svm->ele->cm_id)
-        return 0;
+    if (!svm->ele || (!svm->ele->cm_id))
+        return sprintf(data, "\n");
 
     return sprintf(data, HECA_SYSFS_CONN_FMT "\n", svm->ele->cm_id);
 }
@@ -174,6 +172,11 @@ static ssize_t instance_mr_id_show(struct memory_region *mr, char *data)
     return sprintf(data, "%u\n", mr->mr_id);
 }
 
+static ssize_t instance_mr_pid_show(struct memory_region *mr, char *data)
+{
+    return sprintf(data, "%u\n", mr->pid);
+}
+
 static ssize_t instance_mr_addr_show(struct memory_region *mr, char *data)
 {
     return sprintf(data, "0x%lx\n", mr->addr);
@@ -191,6 +194,8 @@ static ssize_t instance_mr_is_local_show(struct memory_region *mr, char *data)
 
 INSTANCE_ATTR(struct mr_instance_attribute, mr_id, S_IRUGO,
         instance_mr_id_show, NULL);
+INSTANCE_ATTR(struct mr_instance_attribute, mr_pid, S_IRUGO,
+        instance_mr_pid_show, NULL);
 INSTANCE_ATTR(struct mr_instance_attribute, mr_addr, S_IRUGO,
         instance_mr_addr_show, NULL);
 INSTANCE_ATTR(struct mr_instance_attribute, mr_sz, S_IRUGO,
@@ -200,6 +205,7 @@ INSTANCE_ATTR(struct mr_instance_attribute, mr_is_local, S_IRUGO,
 
 static struct mr_instance_attribute *mr_instance_attr[] = {
     &ATTR_NAME(mr_id),
+    &ATTR_NAME(mr_pid),
     &ATTR_NAME(mr_addr),
     &ATTR_NAME(mr_sz),
     &ATTR_NAME(mr_is_local),
@@ -250,12 +256,6 @@ static ssize_t dsm_instance_show(struct kobject *k,
     return 0;
 }
 
-static ssize_t instance_dsm_pid_show(struct dsm *dsm,
-        char *data)
-{
-    return sprintf(data, "%u\n", dsm->pid_vnr);
-}
-
 static ssize_t instance_dsm_id_show(struct dsm *dsm,
         char *data)
 {
@@ -275,15 +275,12 @@ static ssize_t instance_dsm_server_show(struct dsm *dsm,
     return sprintf(data, "%s\n", s);
 }
 
-INSTANCE_ATTR(struct dsm_instance_attribute, dsm_pid, S_IRUGO,
-        instance_dsm_pid_show, NULL);
 INSTANCE_ATTR(struct dsm_instance_attribute, dsm_id, S_IRUGO,
         instance_dsm_id_show, NULL);
 INSTANCE_ATTR(struct dsm_instance_attribute, dsm_server, S_IRUGO,
         instance_dsm_server_show, NULL);
 
 static struct dsm_instance_attribute *dsm_instance_attr[] = {
-    &ATTR_NAME(dsm_pid),
     &ATTR_NAME(dsm_id),
     &ATTR_NAME(dsm_server),
     NULL
@@ -308,7 +305,7 @@ void delete_dsm_sysfs_entry(struct kobject *obj)
 int create_dsm_sysfs_entry(struct dsm *dsm, struct dsm_module_state *dsm_state) {
     return kobject_init_and_add(&dsm->dsm_kobject, &ktype_dsm_instance,
             dsm_state->dsm_kobjects.domains_kobject, HECA_SYSFS_DSM_FMT,
-            dsm->pid_vnr, dsm->dsm_id);
+            dsm->dsm_id);
 }
 
 /* conn sysfs functions */

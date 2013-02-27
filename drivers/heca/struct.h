@@ -78,7 +78,6 @@
  * DSM DATA structure
  */
 struct dsm {
-    pid_t pid_vnr;
     u32 dsm_id;
 
     struct radix_tree_root svm_tree_root;
@@ -233,6 +232,8 @@ struct dsm_message {
 };
 
 struct memory_region {
+    pid_t pid;
+    struct mm_struct *mm;
     unsigned long addr;
     unsigned long sz;
     u32 descriptor;

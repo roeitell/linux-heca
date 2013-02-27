@@ -142,6 +142,11 @@ static int ioctl_svm(int ioctl, void __user *argp)
         return -EFAULT;
     }
 
+    if (!svm_info.pid) {
+        svm_info.pid = sys_getpid();
+        heca_printk(KERN_INFO "no pid defined assuming %d", svm_info.pid);
+    }
+
     switch (ioctl) {
         case HECAIOC_SVM_ADD:
             return create_svm(&svm_info);
@@ -158,12 +163,18 @@ static int unmap_mr(struct unmap_data *udata)
     struct dsm *dsm = NULL;
     struct subvirtual_machine *local_svm = NULL;
     struct memory_region * mr = NULL;
+    struct mm_struct *mm = find_mm_by_pid(udata->pid);
+
+    if (!mm) {
+        heca_printk(KERN_ERR "can't find pid %d", udata->pid);
+        goto out;
+    }
 
     dsm = find_dsm(udata->dsm_id);
     if (!dsm)
         goto out;
 
-    local_svm = find_local_svm_in_dsm(dsm, current->mm);
+    local_svm = find_local_svm_in_dsm(dsm, mm);
     if (!local_svm)
         goto out;
     
@@ -171,7 +182,7 @@ static int unmap_mr(struct unmap_data *udata)
     if (!mr)
         goto out;
 
-    r = do_unmap_range(dsm, mr->descriptor, udata->addr, udata->addr+udata->sz - 1);
+    r = do_unmap_range(dsm, mr);
 
 out:
     if (local_svm)
@@ -187,12 +198,18 @@ static int pushback_mr(struct unmap_data *udata)
     struct memory_region *mr;
     struct page *page;
     struct subvirtual_machine *local_svm = NULL;
+    struct mm_struct *mm = find_mm_by_pid(udata->pid);
+
+    if (!mm) {
+        heca_printk(KERN_ERR "can't find pid %d", udata->pid);
+        goto out;
+    }
 
     dsm = find_dsm(udata->dsm_id);
     if (!dsm)
         goto out;
 
-    local_svm = find_local_svm_in_dsm(dsm, current->mm);
+    local_svm = find_local_svm_in_dsm(dsm, mm);
     if (!local_svm)
         goto out;
 
@@ -203,11 +220,11 @@ static int pushback_mr(struct unmap_data *udata)
         if (!mr)
             goto out;
 
-        page = dsm_find_normal_page(current->mm, addr);
+        page = dsm_find_normal_page(mm, addr);
         if (!page)
             goto out;
 
-        r = dsm_request_page_pull(dsm, local_svm, page, addr, current->mm, mr);
+        r = dsm_request_page_pull(dsm, local_svm, page, addr, mm, mr);
         if (r)
             goto out;
 
@@ -228,8 +245,10 @@ static int ioctl_mr(int ioctl, void __user *argp)
         return -EFAULT;
     }
 
-    if (!udata.pid)
+    if (!udata.pid) {
         udata.pid = sys_getpid();
+        heca_printk(KERN_INFO "no pid defined assuming %d", udata.pid);
+    }
 
     switch (ioctl) {
         case HECAIOC_MR_ADD:

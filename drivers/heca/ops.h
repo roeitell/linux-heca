@@ -20,6 +20,6 @@ int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct page *, unsigned long, struct mm_struct *,
         struct memory_region *);
 int ack_msg(struct conn_element *, struct rx_buf_ele *);
-int do_unmap_range(struct dsm *, int, void *, void *);
+int do_unmap_range(struct dsm *dst, struct memory_region *mr);
 
 #endif /* _HECA_OPS_H */

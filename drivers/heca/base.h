@@ -34,6 +34,7 @@ int create_rcm_listener(struct dsm_module_state *, unsigned long,
 int destroy_rcm_listener(struct dsm_module_state *);
 int init_rcm(void);
 int fini_rcm(void);
+struct mm_struct *find_mm_by_pid(pid_t pid);
 
 #endif /* _HECA_BASE_H */
 

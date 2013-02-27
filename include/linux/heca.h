@@ -19,6 +19,7 @@ struct svm_data {
     __u32 svm_id;
     struct sockaddr_in server;
     int is_local;
+    pid_t pid;
 };
 
 #define MAX_SVM_IDS 3 /*Is NULL terminated */
@@ -31,7 +32,7 @@ struct unmap_data {
     __u32 dsm_id;
     __u32 svm_ids[MAX_SVM_IDS];
     __u32 mr_id;
-    pid_t pid;
+    pid_t pid; /* FIXME: should be derived from svm_ids */
     void *addr;
     size_t sz;
     __u32 flags;

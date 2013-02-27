@@ -92,6 +92,12 @@ static ssize_t instance_svm_id_show(struct subvirtual_machine *svm,
     return sprintf(data, "%u\n", svm->svm_id);
 }
 
+static ssize_t instance_svm_pid_show(struct subvirtual_machine *svm,
+        char *data)
+{
+    return sprintf(data, "%u\n", svm->pid);
+}
+
 static ssize_t instance_svm_conn_show(struct subvirtual_machine *svm,
         char *data)
 {
@@ -109,6 +115,8 @@ static ssize_t instance_svm_is_local_show(struct subvirtual_machine *svm,
 
 INSTANCE_ATTR(struct svm_instance_attribute, svm_id, S_IRUGO,
         instance_svm_id_show, NULL);
+INSTANCE_ATTR(struct svm_instance_attribute, svm_pid, S_IRUGO,
+        instance_svm_pid_show, NULL);
 INSTANCE_ATTR(struct svm_instance_attribute, svm_conn, S_IRUGO,
         instance_svm_conn_show, NULL);
 INSTANCE_ATTR(struct svm_instance_attribute, svm_is_local, S_IRUGO,
@@ -116,6 +124,7 @@ INSTANCE_ATTR(struct svm_instance_attribute, svm_is_local, S_IRUGO,
 
 static struct svm_instance_attribute *svm_instance_attr[] = {
     &ATTR_NAME(svm_id),
+    &ATTR_NAME(svm_pid),
     &ATTR_NAME(svm_conn),
     &ATTR_NAME(svm_is_local),
     NULL

@@ -4,6 +4,7 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
+#include <linux/sched.h>
 #include "core.h"
 #include "trace.h"
 #include "struct.h"
@@ -359,6 +360,14 @@ out:
     return r;
 }
 
+struct mm_struct *find_mm_by_pid(pid_t pid)
+{
+    struct task_struct *task = find_task_by_vpid(pid);
+    if (!task)
+        return NULL;
+    return task->mm;
+}
+
 int create_svm(struct svm_data *svm_info)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -397,22 +406,29 @@ int create_svm(struct svm_data *svm_info)
     /* initial svm data */
     new_svm->svm_id = svm_info->svm_id;
     new_svm->is_local = svm_info->is_local;
+    new_svm->pid = svm_info->pid;
     new_svm->dsm = dsm;
     atomic_set(&new_svm->refs, 2);
 
     /* register local svm */
     if (svm_info->is_local) {
-        /* current process already registered an svm? */
-        found_svm = find_local_svm(current->mm);
+        struct mm_struct *mm = find_mm_by_pid(svm_info->pid);
+        if (!mm) {
+            heca_printk(KERN_ERR "svm %d (dsm %d) PID %d does not exist", 
+                    svm_info->svm_id, svm_info->dsm_id, svm_info->pid);
+            r = -EEXIST;
+            goto out;
+        }
+
+        found_svm = find_local_svm(mm);
         if (found_svm) {
             heca_printk(KERN_ERR "svm already exists for current process");
             r = -EEXIST;
             goto out;
         }
 
-        new_svm->mm = current->mm;
+        new_svm->mm = mm;
         new_svm->dsm->nb_local_svm++;
-
         new_svm->mr_tree_root = RB_ROOT;
         seqlock_init(&new_svm->mr_seq_lock);
         new_svm->mr_cache = NULL;
@@ -812,6 +828,13 @@ int create_mr(struct unmap_data *udata)
     struct dsm *dsm;
     struct subvirtual_machine *svm = NULL;
     struct memory_region *mr;
+    struct mm_struct *mm = find_mm_by_pid(udata->pid);
+
+    if (!mm) {
+        heca_printk(KERN_ERR "can't find pid %d", udata->pid);
+        ret = -EFAULT;
+        goto out;
+    }
 
     dsm = find_dsm(udata->dsm_id);
     if (!dsm) {
@@ -820,7 +843,7 @@ int create_mr(struct unmap_data *udata)
         goto out;
     }
 
-    svm = find_local_svm_in_dsm(dsm, current->mm);
+    svm = find_local_svm_in_dsm(dsm, mm);
     if (!svm) {
         heca_printk(KERN_ERR "local svm not registered");
         ret = -EFAULT;
@@ -877,8 +900,7 @@ int create_mr(struct unmap_data *udata)
         mr->flags |= MR_COPY_ON_ACCESS;
 
     if (!(mr->flags & MR_LOCAL) && (udata->flags & UD_AUTO_UNMAP)) {
-        ret = do_unmap_range(dsm, mr->descriptor, udata->addr, 
-                udata->addr + udata->sz - 1);
+        ret = do_unmap_range(dsm, mr);
     }
 
     create_mr_sysfs_entry(dsm, mr);

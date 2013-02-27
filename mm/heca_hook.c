@@ -44,7 +44,6 @@ EXPORT_SYMBOL(__pte_alloc);
 EXPORT_SYMBOL(vm_normal_page);
 EXPORT_SYMBOL(handle_mm_fault);
 
-
 #include <linux/gfp.h>
 EXPORT_SYMBOL(alloc_pages_vma);
 
@@ -75,6 +74,9 @@ EXPORT_SYMBOL(__mmu_notifier_invalidate_page);
 EXPORT_SYMBOL(pmd_clear_bad);
 EXPORT_SYMBOL(ptep_clear_flush);
 EXPORT_SYMBOL(ptep_set_access_flags);
+
+#include <linux/sched.h>
+EXPORT_SYMBOL(find_task_by_vpid);
 
 #include "internal.h"
 EXPORT_SYMBOL(munlock_vma_page);

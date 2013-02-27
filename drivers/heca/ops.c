@@ -560,13 +560,15 @@ int ack_msg(struct conn_element *ele, struct rx_buf_ele *rx_e)
     return add_dsm_request_msg(ele, ACK, rx_e->dsm_buf);
 }
 
-int do_unmap_range(struct dsm *dsm, int dsc, void *start, void *end)
+int do_unmap_range(struct dsm *dsm, struct memory_region *mr)
 {
     int r = 0;
-    unsigned long it;
+    unsigned long it = mr->addr, end = (mr->addr + mr->sz - 1);
+    int dsc = mr->descriptor;
+    struct mm_struct *mm = find_mm_by_pid(mr->pid);
 
-    for (it = (unsigned long)start; it < (unsigned long)end; it += PAGE_SIZE) {
-        r = dsm_flag_page_remote(current->mm, dsm, dsc, it);
+    for (it = mr->addr; it < end; it += PAGE_SIZE) {
+        r = dsm_flag_page_remote(mm, dsm, dsc, it);
         if (r)
             break;
     }

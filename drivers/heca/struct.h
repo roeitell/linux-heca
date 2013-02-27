@@ -233,7 +233,6 @@ struct dsm_message {
 
 struct memory_region {
     pid_t pid;
-    struct mm_struct *mm;
     unsigned long addr;
     unsigned long sz;
     u32 descriptor;
@@ -252,6 +251,7 @@ struct subvirtual_machine {
     int is_local;
     struct dsm *dsm;
     struct conn_element *ele;
+    pid_t pid;
     struct mm_struct *mm;
     u32 descriptor;
     struct list_head svm_ptr;

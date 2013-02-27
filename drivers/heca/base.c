@@ -145,7 +145,7 @@ void remove_dsm(struct dsm *dsm)
 
     BUG_ON(!dsm);
 
-    dsm_printk(KERN_DEBUG "remove_dsm [enter] dsm=%d", dsm->dsm_id);
+    heca_printk(KERN_DEBUG "<enter> dsm=%d", dsm->dsm_id);
 
     list_for_each_safe (pos, n, &dsm->svm_list) {
         svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
@@ -164,7 +164,7 @@ void remove_dsm(struct dsm *dsm)
     kfree(dsm);
     mutex_unlock(&dsm_state->dsm_state_mutex);
 
-    dsm_printk(KERN_DEBUG "remove_dsm [exit]");
+    heca_printk(KERN_DEBUG "<exit>");
 }
 
 /* FIXME: just a dummy lock so that radix_tree functions work */
@@ -179,14 +179,14 @@ int create_dsm(struct private_data *priv_data, pid_t pid_vnr, __u32 dsm_id)
     /* already exists? (first check; the next one is under lock */
     found_dsm = find_dsm(dsm_id);
     if (found_dsm) {
-        dsm_printk("we already have the dsm in place");
+        heca_printk("we already have the dsm in place");
         return -EEXIST;
     }
 
     /* allocate a new dsm */
     new_dsm = kzalloc(sizeof(*new_dsm), GFP_KERNEL);
     if (!new_dsm) {
-        dsm_printk("can't allocate");
+        heca_printk("can't allocate");
         return -ENOMEM;
     }
     new_dsm->pid_vnr = pid_vnr;
@@ -203,12 +203,12 @@ int create_dsm(struct private_data *priv_data, pid_t pid_vnr, __u32 dsm_id)
             break;
 
         if (r == -ENOMEM) {
-            dsm_printk("radix_tree_preload: ENOMEM retrying ...");
+            heca_printk("radix_tree_preload: ENOMEM retrying ...");
             mdelay(2);
             continue;
         }
 
-        dsm_printk("radix_tree_preload: failed %d", r);
+        heca_printk("radix_tree_preload: failed %d", r);
         goto failed;
     }
 
@@ -220,19 +220,19 @@ int create_dsm(struct private_data *priv_data, pid_t pid_vnr, __u32 dsm_id)
     radix_tree_preload_end();
 
     if (r) {
-        dsm_printk("radix_tree_insert: failed %d", r);
+        heca_printk("radix_tree_insert: failed %d", r);
         goto failed;
     }
 
     r = create_dsm_sysfs_entry(new_dsm, dsm_state);
     if (r) {
-        dsm_printk("create_dsm_sysfs_entry: failed %d", r);
+        heca_printk("create_dsm_sysfs_entry: failed %d", r);
         goto err_delete;
     }
 
     priv_data->dsm = new_dsm;
     list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
-    dsm_printk("registered dsm %p, dsm_id : %u, res: %d \n",
+    heca_printk("registered dsm %p, dsm_id : %u, res: %d",
             new_dsm, dsm_id, r);
     return r;
 
@@ -316,11 +316,11 @@ preload:
     r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
     if (r) {
         if (r == -ENOMEM) {
-            dsm_printk(KERN_ERR "radix_tree_preload: ENOMEM retrying ...");
+            heca_printk(KERN_ERR "radix_tree_preload: ENOMEM retrying ...");
             mdelay(2);
             goto preload;
         }
-        dsm_printk(KERN_ERR "radix_tree_preload: failed %d\n", r);
+        heca_printk(KERN_ERR "radix_tree_preload: failed %d", r);
         goto out;
     }
 
@@ -346,7 +346,7 @@ unlock:
 
     radix_tree_preload_end();
     if (r) {
-        printk(KERN_ERR "failed radix_tree_insert %d\n", r);
+        heca_printk(KERN_ERR "failed radix_tree_insert %d", r);
         radix_tree_delete(&dsm->svm_tree_root, (unsigned long) new_svm->svm_id);
         if (is_svm_local(new_svm)) {
             radix_tree_delete(&dsm->svm_mm_tree_root,
@@ -370,7 +370,7 @@ int create_svm(struct svm_data *svm_info)
     /* allocate a new svm */
     new_svm = kzalloc(sizeof(*new_svm), GFP_KERNEL);
     if (!new_svm) {
-        dsm_printk(KERN_ERR "failed kzalloc");
+        heca_printk(KERN_ERR "failed kzalloc");
         return -ENOMEM;
     }
 
@@ -381,7 +381,7 @@ int create_svm(struct svm_data *svm_info)
         mutex_lock(&dsm->dsm_mutex);
     mutex_unlock(&dsm_state->dsm_state_mutex);
     if (!dsm) {
-        dsm_printk(KERN_ERR "could not find dsm: %d", svm_info->dsm_id);
+        heca_printk(KERN_ERR "could not find dsm: %d", svm_info->dsm_id);
         r = -EFAULT;
         goto no_dsm;
     }
@@ -389,7 +389,7 @@ int create_svm(struct svm_data *svm_info)
     /* already exists? */
     found_svm = find_svm(dsm, svm_info->svm_id);
     if (found_svm) {
-        dsm_printk(KERN_ERR "svm %d (dsm %d) already exists", svm_info->svm_id,
+        heca_printk(KERN_ERR "svm %d (dsm %d) already exists", svm_info->svm_id,
                 svm_info->dsm_id);
         r = -EEXIST;
         goto out;
@@ -406,7 +406,7 @@ int create_svm(struct svm_data *svm_info)
         /* current process already registered an svm? */
         found_svm = find_local_svm(current->mm);
         if (found_svm) {
-            dsm_printk(KERN_ERR "svm already exists for current process\n");
+            heca_printk(KERN_ERR "svm already exists for current process");
             r = -EEXIST;
             goto out;
         }
@@ -431,7 +431,7 @@ int create_svm(struct svm_data *svm_info)
 
     r = create_svm_sysfs_entry(new_svm);
     if (r) {
-        dsm_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
+        heca_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
         goto out;
     }
 
@@ -461,12 +461,12 @@ out:
             svm_info->server.sin_addr.s_addr, svm_info->server.sin_port);
 
         if (r) {
-            dsm_printk(KERN_ERR "connect_svm failed %d", r);
+            heca_printk(KERN_ERR "connect_svm failed %d", r);
             goto out;
         }
     }
 no_dsm:
-    dsm_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d",
+    heca_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d",
             new_svm, r, svm_info->dsm_id, svm_info->svm_id, r);
     return r;
 }
@@ -800,7 +800,7 @@ static void destroy_svm_mrs(struct subvirtual_machine *svm)
         mr = rb_entry(node, struct memory_region, rb_node);
         rb_erase(&mr->rb_node, root);
         write_sequnlock(&svm->mr_seq_lock);
-        dsm_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
+        heca_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
                 svm->dsm->dsm_id, svm->svm_id, mr->mr_id);
         synchronize_rcu();
         kfree(mr);
@@ -817,28 +817,28 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
 
     dsm = find_dsm(dsm_id);
     if (!dsm) {
-        dsm_printk(KERN_ERR "can't find dsm %d", dsm_id);
+        heca_printk(KERN_ERR "can't find dsm %d", dsm_id);
         ret = -EFAULT;
         goto out;
     }
 
     svm = find_local_svm_in_dsm(dsm, current->mm);
     if (!svm) {
-        dsm_printk(KERN_ERR "local svm not registered\n");
+        heca_printk(KERN_ERR "local svm not registered");
         ret = -EFAULT;
         goto out;
     }
 
     /* FIXME: Validate against every kind of overlap! */
     if (search_mr_by_addr(svm, (unsigned long) addr)) {
-        dsm_printk(KERN_ERR "mr already exists at addr 0x%lx", addr);
+        heca_printk(KERN_ERR "mr already exists at addr 0x%lx", addr);
         ret = -EEXIST;
         goto out;
     }
 
     mr = kzalloc(sizeof(struct memory_region), GFP_KERNEL);
     if (!mr) {
-        dsm_printk(KERN_ERR "can't allocate memory for MR");
+        heca_printk(KERN_ERR "can't allocate memory for MR");
         ret = -ENOMEM;
         goto out_free;
     }
@@ -851,7 +851,7 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
     
     mr->descriptor = dsm_get_descriptor(dsm, svm_ids);
     if (!mr->descriptor) {
-        dsm_printk(KERN_ERR "can't find MR descriptor for svm_ids");
+        heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");
         ret = -EFAULT;
         goto out_free;
     }
@@ -862,7 +862,7 @@ int create_mr(__u32 dsm_id, __u32 mr_id, void *addr, size_t sz, __u32 *svm_ids,
 
         owner = find_svm(dsm, svm_id);
         if (!owner) {
-            dsm_printk(KERN_ERR "[i=%d] can't find svm %d", i, svm_id);
+            heca_printk(KERN_ERR "[i=%d] can't find svm %d", i, svm_id);
             ret = -EFAULT;
             goto out_remove_tree;
         }
@@ -891,7 +891,7 @@ out_free:
 out:
     if (svm)
         release_svm(svm);
-    dsm_printk(KERN_INFO "register_mr: id [%d] addr [0x%lx] sz [0x%lx]"
+    heca_printk(KERN_INFO "register_mr: id [%d] addr [0x%lx] sz [0x%lx]"
             " --> ret %d", mr_id, addr, sz, ret);
     return ret;
 }
@@ -940,7 +940,7 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
     if (IS_ERR(rcm->cm_id)) {
         rcm->cm_id = NULL;
         ret = PTR_ERR(rcm->cm_id);
-        dsm_printk(KERN_ERR "Failed rdma_create_id: %d", ret);
+        heca_printk(KERN_ERR "Failed rdma_create_id: %d", ret);
         goto failed;
     }
 
@@ -950,7 +950,7 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
 
     ret = rdma_bind_addr(rcm->cm_id, (struct sockaddr *)&rcm->sin);
     if (ret) {
-        dsm_printk(KERN_ERR "Failed rdma_bind_addr: %d", ret);
+        heca_printk(KERN_ERR "Failed rdma_bind_addr: %d", ret);
         goto failed;
     }
 
@@ -958,7 +958,7 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
     if (IS_ERR(rcm->pd)) {
         ret = PTR_ERR(rcm->pd);
         rcm->pd = NULL;
-        dsm_printk(KERN_ERR "Failed id_alloc_pd: %d", ret);
+        heca_printk(KERN_ERR "Failed id_alloc_pd: %d", ret);
         goto failed;
     }
 
@@ -967,12 +967,12 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
     if (IS_ERR(rcm->listen_cq)) {
         ret = PTR_ERR(rcm->listen_cq);
         rcm->listen_cq = NULL;
-        dsm_printk(KERN_ERR "Failed ib_create_cq: %d", ret);
+        heca_printk(KERN_ERR "Failed ib_create_cq: %d", ret);
         goto failed;
     }
 
     if ((ret = ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))) {
-        dsm_printk(KERN_ERR "Failed ib_req_notify_cq: %d", ret);
+        heca_printk(KERN_ERR "Failed ib_req_notify_cq: %d", ret);
         goto failed;
     }
 
@@ -981,7 +981,7 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
     if (IS_ERR(rcm->mr)) {
         ret = PTR_ERR(rcm->mr);
         rcm->mr = NULL;
-        dsm_printk(KERN_ERR "Failed ib_get_dma_mr: %d", ret);
+        heca_printk(KERN_ERR "Failed ib_get_dma_mr: %d", ret);
         goto failed;
     }
 
@@ -989,7 +989,7 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
 
     ret = rdma_listen(rcm->cm_id, 2);
     if (ret)
-        dsm_printk(KERN_ERR "Failed rdma_listen: %d", ret);
+        heca_printk(KERN_ERR "Failed rdma_listen: %d", ret);
     return 0;
 
 failed:
@@ -1023,7 +1023,7 @@ int destroy_rcm_listener(struct dsm_module_state *dsm_state)
     int rc = 0;
     struct rcm *rcm = dsm_state->rcm;
 
-    dsm_printk(KERN_DEBUG "[enter]");
+    heca_printk(KERN_DEBUG "<enter>");
 
     if (!rcm)
         goto done;
@@ -1062,7 +1062,7 @@ destroy:
     dsm_state->rcm = NULL;
 
 done:
-    dsm_printk(KERN_DEBUG "[exit] %d", rc);
+    heca_printk(KERN_DEBUG "<exit> %d", rc);
     return rc;
 }
 

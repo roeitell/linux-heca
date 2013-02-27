@@ -407,8 +407,8 @@ static int refill_recv_wr(struct conn_element *ele, struct rx_buf_ele *rx_e)
     ret = ib_post_recv(ele->cm_id->qp, &rx_e->recv_wrk_rq_ele->sq_wr,
             &rx_e->recv_wrk_rq_ele->bad_wr);
     if (ret)
-        printk(">[refill_recv_wr] - ERROR IN POSTING THE RECV WR"
-                " ret : %d on offset %d\n", ret, rx_e->id);
+        heca_printk(KERN_ERR "Failed ib_post_recv(offset=%d): %d",
+                rx_e->id, ret);
 
     return ret;
 }
@@ -463,8 +463,8 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             break;
 
         default:
-            printk("[dsm_recv_poll] unhandled message stats addr: %p, status %d"
-                    " id %d\n", rx_e, rx_e->dsm_buf->type, rx_e->id);
+            heca_printk(KERN_ERR "unhandled message stats addr: %p, status %d"
+                    " id %d", rx_e, rx_e->dsm_buf->type, rx_e->id);
             goto err;
     }
 
@@ -501,8 +501,8 @@ static int dsm_send_message_handler(struct conn_element *ele,
             try_release_tx_element(ele, tx_buf_e);
             break;
         default:
-            printk("[dsm_send_poll] unhandled message stats  addr: %p, "
-                    "status %d , id %d \n", tx_buf_e, tx_buf_e->dsm_buf->type,
+            heca_printk(KERN_ERR "unhandled message stats  addr: %p, "
+                    "status %d , id %d", tx_buf_e, tx_buf_e->dsm_buf->type,
                     tx_buf_e->id);
             return 1;
     }
@@ -511,7 +511,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
 
 static void dsm_cq_event_handler(struct ib_event *event, void *data)
 {
-    printk("event %u  data %p\n", event->event, data);
+    heca_printk(KERN_DEBUG "event %u  data %p", event->event, data);
 }
 
 void listener_cq_handle(struct ib_cq *cq, void *cq_context)
@@ -520,8 +520,7 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context)
     int ret = 0;
 
     if (ib_req_notify_cq(cq, IB_CQ_SOLICITED))
-        printk(
-                ">[listener_cq_handle] - ib_req_notify_cq: Failed to get cq event\n");
+        heca_printk(KERN_INFO "Failed ib_req_notify_cq");
 
     if ((ret = ib_poll_cq(cq, 1, &wc)) > 0) {
         if (likely(wc.status == IB_WC_SUCCESS)) {
@@ -529,16 +528,15 @@ void listener_cq_handle(struct ib_cq *cq, void *cq_context)
                 case IB_WC_RECV:
                     break;
                 default: {
-                    printk(
-                            ">[listener_cq_handle] - expected opcode %d got %d\n",
+                    heca_printk(KERN_ERR "expected opcode %d got %d",
                             IB_WC_SEND, wc.opcode);
                     break;
                 }
             }
         } else
-            printk(">[listener_cq_handle] - Unexpected type of wc\n");
+            heca_printk(KERN_ERR "Unexpected type of wc");
     } else if (unlikely(ret < 0)) {
-        printk(">[listener_cq_handle] - recv FAILURE \n");
+        heca_printk(KERN_ERR "recv FAILUREi %d", ret);
     }
 }
 
@@ -583,7 +581,7 @@ static int dsm_send_info(struct conn_element *ele)
     rid->send_wr.num_sge = 1;
     rid->send_wr.opcode = IB_WR_SEND;
     rid->send_wr.send_flags = IB_SEND_SIGNALED;
-    printk(">[dsm_send_info] - sending info\n");
+    heca_printk(KERN_DEBUG "sending info");
     return ib_post_send(ele->cm_id->qp, &rid->send_wr, &rid->send_bad_wr);
 }
 
@@ -639,7 +637,7 @@ static int exchange_info(struct conn_element *ele, int id)
         case RDMA_INFO_SV: {
             ret = dsm_recv_info(ele);
             if (ret) {
-                dsm_printk("could not post the receive work request");
+                heca_printk("could not post the receive work request");
                 goto err;
             }
             ele->rid.send_buf->flag = RDMA_INFO_READY_CL;
@@ -664,11 +662,11 @@ static int exchange_info(struct conn_element *ele, int id)
 
                     inet_ntoa(ele->remote_node_ip, curr, sizeof curr);
                     inet_ntoa(ele_found->remote_node_ip, prev, sizeof prev);
-                    dsm_printk("destroy_connection duplicate: %s former: %s",
+                    heca_printk("destroy_connection duplicate: %s former: %s",
                             curr, prev);
                     rdma_disconnect(ele->cm_id);
                 } else {
-                    dsm_printk("loopback, lets hope for the best");
+                    heca_printk("loopback, lets hope for the best");
                 }
                 erase_rb_conn(ele);
             } else {
@@ -677,7 +675,7 @@ static int exchange_info(struct conn_element *ele, int id)
                 complete(&ele->completion);
                 insert_rb_conn(ele);
                 inet_ntoa(ele->remote_node_ip, curr, sizeof curr);
-                dsm_printk("inserted conn_element to rb_tree: %s", curr);
+                heca_printk("inserted conn_element to rb_tree: %s", curr);
             }
             goto send;
 
@@ -691,7 +689,7 @@ static int exchange_info(struct conn_element *ele, int id)
             goto out;
         }
         default: {
-            dsm_printk(KERN_ERR "unknown RDMA info flag");
+            heca_printk(KERN_ERR "unknown RDMA info flag");
             goto out;
         }
     }
@@ -699,14 +697,14 @@ static int exchange_info(struct conn_element *ele, int id)
 recv_send:
     ret = dsm_recv_info(ele);
     if (ret < 0) {
-        dsm_printk(KERN_ERR "could not post the receive work request");
+        heca_printk(KERN_ERR "could not post the receive work request");
         goto err;
     }
 
 send:
     ret = dsm_send_info(ele);
     if (ret < 0) {
-        dsm_printk(KERN_ERR "could not post the send work request");
+        heca_printk(KERN_ERR "could not post the send work request");
         goto err;
     }
 
@@ -714,7 +712,7 @@ out:
     return ret;
 
 err:
-    dsm_printk(KERN_ERR "no receive info");
+    heca_printk(KERN_ERR "no receive info");
     return ret;
 }
 
@@ -726,16 +724,16 @@ static void dsm_recv_poll(struct ib_cq *cq)
     while (ib_poll_cq(cq, 1, &wc) == 1) {
         if (likely(wc.status == IB_WC_SUCCESS)) {
             if (unlikely(wc.opcode != IB_WC_RECV)) {
-                dsm_printk(KERN_INFO "expected opcode %d got %d",
+                heca_printk(KERN_INFO "expected opcode %d got %d",
                         IB_WC_RECV, wc.opcode);
                 continue;
             }
         } else {
             if (wc.status == IB_WC_WR_FLUSH_ERR) {
-                dsm_printk(KERN_INFO "rx id %llx status %d vendor_err %x",
+                heca_printk(KERN_INFO "rx id %llx status %d vendor_err %x",
                     wc.wr_id, wc.status, wc.vendor_err);
             } else {
-                dsm_printk(KERN_ERR "rx id %llx status %d vendor_err %x",
+                heca_printk(KERN_ERR "rx id %llx status %d vendor_err %x",
                     wc.wr_id, wc.status, wc.vendor_err);
             }
             continue;
@@ -803,7 +801,7 @@ static int connect_client(struct rdma_cm_id *id)
 
     r = rdma_connect(id, &param);
     if (r)
-        printk(">[connect_client] - rdma_connect failed : %d\n", r);
+        heca_printk(KERN_ERR "Failed rdma_connect: %d", r);
 
     return r;
 }
@@ -833,7 +831,7 @@ static inline int setup_qp_attr(struct conn_element *ele)
     struct ib_device_attr dev_attr;
 
     if (ib_query_device(ele->cm_id->device, &dev_attr)) {
-        dsm_printk("Query device failed for %s\n", ele->cm_id->device->name);
+        heca_printk("Query device failed for %s", ele->cm_id->device->name);
         goto out;
     }
     attr->sq_sig_type = IB_SIGNAL_ALL_WR;
@@ -885,30 +883,30 @@ static int setup_qp(struct conn_element *ele)
     ele->qp_attr.send_cq = ib_create_cq(ele->cm_id->device, send_cq_handle,
             dsm_cq_event_handler, (void *) ele, ele->qp_attr.cap.max_send_wr, 0);
     if (IS_ERR(ele->qp_attr.send_cq)) {
-        printk(">[setup_qp] - Cannot create cq\n");
+        heca_printk(KERN_ERR "Cannot create cq");
         goto err1;
     }
 
     if (ib_req_notify_cq(ele->qp_attr.send_cq, IB_CQ_NEXT_COMP)) {
-        printk(">[setup_qp] - Cannot notify cq\n");
+        heca_printk(KERN_ERR "Cannot notify cq");
         goto err2;
     }
 
     ele->qp_attr.recv_cq = ib_create_cq(ele->cm_id->device, recv_cq_handle,
             dsm_cq_event_handler, (void *) ele, ele->qp_attr.cap.max_recv_wr,0);
     if (IS_ERR(ele->qp_attr.recv_cq)) {
-        printk(">[setup_qp] - Cannot create cq\n");
+        heca_printk(KERN_ERR "Cannot create cq");
         goto err3;
     }
 
     if (ib_req_notify_cq(ele->qp_attr.recv_cq, IB_CQ_NEXT_COMP)) {
-        printk(">[setup_qp] - Cannot notify cq\n");
+        heca_printk(KERN_ERR "Cannot notify cq");
         goto err4;
     }
 
     if (create_qp(ele)) {
         goto err5;
-        printk(">[setup_qp] - QP not created --> Cancelled\n");
+        heca_printk(KERN_ERR "QP not created --> Cancelled");
     }
 
     return ret;
@@ -920,7 +918,7 @@ static int setup_qp(struct conn_element *ele)
     err2: ret++;
     ib_destroy_cq(ele->qp_attr.send_cq);
     err1: ret++;
-    printk(">[setup_qp] - Could not setup the qp, error %d occurred\n", ret);
+    heca_printk(KERN_ERR "Could not setup the qp, error %d occurred", ret);
     return ret;
 }
 
@@ -1052,7 +1050,7 @@ static int create_tx_buffer(struct conn_element *ele)
     tx_buff_e = kzalloc((sizeof(struct tx_buf_ele) * ele->tx_buffer.len),
             GFP_KERNEL);
     if (unlikely(!tx_buff_e)) {
-        dsm_printk(KERN_ERR "Can't allocate memory");
+        heca_printk(KERN_ERR "Can't allocate memory");
         return -ENOMEM;
     }
     ele->tx_buffer.tx_buf = tx_buff_e;
@@ -1060,7 +1058,7 @@ static int create_tx_buffer(struct conn_element *ele)
     for (i = 0; i < ele->tx_buffer.len; ++i) {
         tx_buff_e[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
         if (!tx_buff_e[i].dsm_buf) {
-            dsm_printk(KERN_ERR "Failed to allocate .dsm_buf");
+            heca_printk(KERN_ERR "Failed to allocate .dsm_buf");
             ret = -ENOMEM;
             goto err;
         }
@@ -1071,7 +1069,7 @@ static int create_tx_buffer(struct conn_element *ele)
                 tx_buff_e[i].dsm_buf, tx_buff_e[i].dsm_dma.size,
                 tx_buff_e[i].dsm_dma.dir);
         if (unlikely(!tx_buff_e[i].dsm_dma.addr)) {
-            dsm_printk(KERN_ERR "unable to create ib mapping");
+            heca_printk(KERN_ERR "unable to create ib mapping");
             ret = -EFAULT;
             goto err;
         }
@@ -1079,7 +1077,7 @@ static int create_tx_buffer(struct conn_element *ele)
         tx_buff_e[i].wrk_req = kzalloc(sizeof(struct msg_work_request),
                 GFP_KERNEL);
         if (!tx_buff_e[i].wrk_req) {
-            dsm_printk(KERN_ERR "Failed to allocate wrk_req");
+            heca_printk(KERN_ERR "Failed to allocate wrk_req");
             ret = -ENOMEM;
             goto err;
         }
@@ -1087,7 +1085,7 @@ static int create_tx_buffer(struct conn_element *ele)
         tx_buff_e[i].wrk_req->wr_ele = kzalloc(sizeof(struct work_request_ele),
                 GFP_KERNEL);
         if (!tx_buff_e[i].wrk_req->wr_ele) {
-            dsm_printk(KERN_ERR "Failed to allocate wrk_req->wr_ele");
+            heca_printk(KERN_ERR "Failed to allocate wrk_req->wr_ele");
             ret = -ENOMEM;
             goto err;
         }
@@ -1096,7 +1094,7 @@ static int create_tx_buffer(struct conn_element *ele)
         tx_buff_e[i].reply_work_req = kzalloc(sizeof(struct reply_work_request),
                 GFP_KERNEL);
         if (!tx_buff_e[i].reply_work_req) {
-            dsm_printk(KERN_ERR "Failed to allocate reply_work_req");
+            heca_printk(KERN_ERR "Failed to allocate reply_work_req");
             ret = -ENOMEM;
             goto err;
         }
@@ -1104,7 +1102,7 @@ static int create_tx_buffer(struct conn_element *ele)
         tx_buff_e[i].reply_work_req->wr_ele = kzalloc(
                 sizeof(struct work_request_ele), GFP_KERNEL);
         if (!tx_buff_e[i].reply_work_req->wr_ele) {
-            dsm_printk(KERN_ERR "Failed to allocate reply_work_req->wr_ele");
+            heca_printk(KERN_ERR "Failed to allocate reply_work_req->wr_ele");
             ret = -ENOMEM;
             goto err;
         }
@@ -1184,7 +1182,7 @@ err1:
     kfree(rx);
     ele->rx_buffer.rx_buf = 0;
 err_buf:
-    printk(">[create_rx_buffer] - RX BUFFER NOT CREATED\n");
+    heca_printk(KERN_ERR "RX BUFFER NOT CREATED");
     return -1;
 }
 
@@ -1235,26 +1233,26 @@ static int create_rdma_info(struct conn_element *ele)
     format_rdma_info(ele);
     return 0;
 
-    remote_info_buffer_err: printk(
-            ">[create_rdma_info] - ERROR : NO REMOTE INFO BUFFER\n");
+remote_info_buffer_err: 
+    heca_printk(KERN_ERR "ERROR : NO REMOTE INFO BUFFER");
     ib_dma_unmap_single(ele->cm_id->device, rid->recv_dma.addr,
             rid->recv_dma.size, rid->recv_dma.dir);
 
-    recv_info_err: printk(
-            ">[create_rdma_info] - ERROR : NO RECV INFO BUFFER\n");
+recv_info_err:
+    heca_printk(KERN_ERR "ERROR : NO RECV INFO BUFFER");
     kfree(rid->recv_buf);
 
-    recv_mem_err: printk(
-            ">[create_rdma_info] - no memory allocated for the reception buffer\n");
+recv_mem_err:
+    heca_printk(KERN_ERR "no memory allocated for the reception buffer");
     ib_dma_unmap_single(ele->cm_id->device, rid->send_dma.addr,
             rid->send_dma.size, rid->send_dma.dir);
 
-    send_info_err: printk(
-            ">[create_rdma_info] - ERROR : NO SEND INFO BUFFER\n");
+send_info_err:
+    heca_printk(KERN_ERR "ERROR : NO SEND INFO BUFFER");
     kfree(rid->send_buf);
 
-    send_mem_err: printk(
-            ">[create_rdma_info] - no memory allocated for the sending buffer\n");
+send_mem_err:
+    heca_printk("no memory allocated for the sending buffer");
     return -1;
 }
 
@@ -1333,7 +1331,7 @@ static int setup_connection(struct conn_element *ele, int type)
     err3: err++;
     err2: err++;
     err1: err++;
-    printk(">[setup_connection] - Could not setup connection: error %d\n", err);
+    heca_printk(KERN_ERR "Could not setup connection: error %d", err);
     return err;
 }
 
@@ -1384,20 +1382,20 @@ static int client_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
         case RDMA_CM_EVENT_CONNECT_ERROR:
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
-            dsm_printk(KERN_ERR, "could not connect, %d\n", ev->event);
+            heca_printk(KERN_ERR, "could not connect, %d", ev->event);
             complete(&ele->completion);
             break;
 
         case RDMA_CM_EVENT_DEVICE_REMOVAL:
         case RDMA_CM_EVENT_ADDR_CHANGE:
-            dsm_printk(KERN_ERR "unexpected event: %d", ev->event);
+            heca_printk(KERN_ERR "unexpected event: %d", ev->event);
             ret = rdma_disconnect(id);
             if (unlikely(ret))
                 goto disconnect_err;
             break;
 
         default:
-            dsm_printk(KERN_ERR "no special handling: %d", ev->event);
+            heca_printk(KERN_ERR "no special handling: %d", ev->event);
             break;
     }
 
@@ -1414,14 +1412,14 @@ err2:
 err1: 
     err++;
     ret = rdma_disconnect(id);
-    dsm_printk(KERN_ERR, "fatal error %d", err);
+    heca_printk(KERN_ERR, "fatal error %d", err);
     if (unlikely(ret))
         goto disconnect_err;
 
     return ret;
 
 disconnect_err: 
-    dsm_printk(KERN_ERR, "disconection failed");
+    heca_printk(KERN_ERR, "disconection failed");
     return ret;
 }
 
@@ -1448,13 +1446,13 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
 
             ret = setup_connection(ele, 1);
             if (ret) {
-                dsm_printk(KERN_ERR "setup_connection failed: %d", ret);
+                heca_printk(KERN_ERR "setup_connection failed: %d", ret);
                 goto err;
             }
 
             ret = create_conn_sysfs_entry(ele);
             if (ret) {
-                dsm_printk(KERN_ERR "create_conn_sysfs_entry failed: %d",
+                heca_printk(KERN_ERR "create_conn_sysfs_entry failed: %d",
                     ret);
                 goto err;
             }
@@ -1479,7 +1477,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
         case RDMA_CM_EVENT_UNREACHABLE:
         case RDMA_CM_EVENT_REJECTED:
         case RDMA_CM_EVENT_ADDR_CHANGE:
-            dsm_printk(KERN_ERR "unexpected event: %d", ev->event);
+            heca_printk(KERN_ERR "unexpected event: %d", ev->event);
 
             ret = rdma_disconnect(id);
             if (unlikely(ret))
@@ -1487,7 +1485,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
             break;
 
         default:
-            dsm_printk(KERN_ERR "no special handling: %d", ev->event);
+            heca_printk(KERN_ERR "no special handling: %d", ev->event);
             break;
     }
 
@@ -1495,7 +1493,7 @@ out:
     return ret;
 
 disconnect_err: 
-    dsm_printk(KERN_ERR "disconnect failed");
+    heca_printk(KERN_ERR "disconnect failed");
 err: 
     vfree(ele);
     ele = 0;
@@ -1591,7 +1589,7 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
         goto err1;
 
     if (create_conn_sysfs_entry(ele)) {
-        dsm_printk(KERN_ERR "create_conn_sysfs_entry failed");
+        heca_printk(KERN_ERR "create_conn_sysfs_entry failed");
         goto err1;
     }
 
@@ -1614,44 +1612,44 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
 
     dsm = find_dsm(dsm_id);
     if (!dsm) {
-        dsm_printk(KERN_ERR "can't find dsm %d", dsm_id);
+        heca_printk(KERN_ERR "can't find dsm %d", dsm_id);
         return -EFAULT;
     }
 
-    dsm_printk(KERN_ERR "connecting to dsm_id: %u [0x%p], svm_id: %u",
+    heca_printk(KERN_ERR "connecting to dsm_id: %u [0x%p], svm_id: %u",
         dsm_id, dsm, svm_id);
 
     mutex_lock(&dsm->dsm_mutex);
     svm = find_svm(dsm, svm_id);
     if (!svm) {
-        dsm_printk(KERN_ERR "can't find svm %d", svm_id);
+        heca_printk(KERN_ERR "can't find svm %d", svm_id);
         goto no_svm;
     }
 
     cele = search_rb_conn(ip_addr);
     if (cele) {
-        dsm_printk(KERN_ERR "has existing connection to %pI4", &ip_addr);
+        heca_printk(KERN_ERR "has existing connection to %pI4", &ip_addr);
         /* BUG_ON(svm->ele != cele); */
         goto done;
     }
 
     r = create_connection(dsm_state->rcm, ip_addr, port);
     if (r) {
-        dsm_printk(KERN_ERR "create_connection failed %d", r);
+        heca_printk(KERN_ERR "create_connection failed %d", r);
         goto failed;
     }
 
     might_sleep();
     cele = search_rb_conn(ip_addr);
     if (!cele) {
-        dsm_printk(KERN_ERR "conneciton does not exist", r);
+        heca_printk(KERN_ERR "conneciton does not exist", r);
         r = -ENOLINK;
         goto failed;
     }
 
     wait_for_completion(&cele->completion);
     if (!atomic_read(&cele->alive)) {
-        dsm_printk(KERN_ERR "conneciton is not alive ... aborting");
+        heca_printk(KERN_ERR "conneciton is not alive ... aborting");
         r = -ENOLINK;
         goto failed;
     }
@@ -1663,7 +1661,7 @@ failed:
     release_svm(svm);
 no_svm:
     mutex_unlock(&dsm->dsm_mutex);
-    dsm_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
+    heca_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
         dsm_id, svm_id, &ip_addr, r);
     return r;
 }
@@ -1801,7 +1799,7 @@ retry:
     }
 
     if (ret && ret != -ENOTCONN) {
-        dsm_printk("ib_post_send() returned %d on type 0x%x", ret, type);
+        heca_printk("ib_post_send() returned %d on type 0x%x", ret, type);
         BUG();
     }
     return ret;

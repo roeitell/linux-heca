@@ -27,7 +27,7 @@
 /* default sysfs functions */
 static void kobj_default_release(struct kobject *kobj)
 {
-    dsm_printk(KERN_DEBUG "Releasing kobject %p", kobj);
+    heca_printk(KERN_DEBUG "Releasing kobject %p", kobj);
 }
 
 #if 0

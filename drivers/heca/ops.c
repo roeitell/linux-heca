@@ -218,7 +218,7 @@ fail:
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
 {
-    printk("[process_svm_status] removing svm %d\n", rx_buf_e->dsm_buf->src_id);
+    heca_printk(KERN_DEBUG "removing svm %d", rx_buf_e->dsm_buf->src_id);
     remove_svm(rx_buf_e->dsm_buf->dsm_id, rx_buf_e->dsm_buf->src_id);
     return 1;
 }
@@ -286,7 +286,7 @@ static void handle_page_request_fail(struct conn_element *ele,
             type = PAGE_REQUEST_FAIL;
             break;
         default:
-            dsm_printk("Unhandled type: %d\n", msg->type);
+            heca_printk("Unhandled type: %d", msg->type);
             return;
     }
 

@@ -61,10 +61,10 @@
 /* dsm.c */
 #define ntohll(x) be64_to_cpu(x)
 #define htonll(x) cpu_to_be64(x)
-void __dsm_printk(unsigned int level, const char *path, int line,
+void __heca_printk(unsigned int level, const char *path, int line,
         const char *func, const char *format, ...);
-#define dsm_printk(fmt, args...) \
-    __dsm_printk(0, __FILE__, __LINE__, __func__, fmt, ##args);
+#define heca_printk(fmt, args...) \
+    __heca_printk(0, __FILE__, __LINE__, __func__, fmt, ##args);
 
 #endif /* HECA_CORE_H_ */
 

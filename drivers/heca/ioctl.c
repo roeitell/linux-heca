@@ -36,14 +36,14 @@ static const char *sanity_file_name(const char *path)
 }
 #endif
 
-void __dsm_printk(unsigned int level, const char *path, int line,
+void __heca_printk(unsigned int level, const char *path, int line,
         const char *func, const char *format, ...)
 {
 #if defined(CONFIG_HECA_DEBUG) || defined(CONFIG_HECA_VERBOSE_PRINTK)
     va_list args;
 #ifdef CONFIG_HECA_VERBOSE_PRINTK
     struct va_format vaf;
-    char verbose_fmt[] = KERN_DEFAULT "DSM %s:%d (%s) %pV";
+    char verbose_fmt[] = KERN_DEFAULT "DSM %s:%d [%s] %pV";
 #endif
 
 #ifdef CONFIG_HECA_DEBUG
@@ -70,7 +70,7 @@ void __dsm_printk(unsigned int level, const char *path, int line,
     va_end(args);
 #endif
 }
-EXPORT_SYMBOL(__dsm_printk);
+EXPORT_SYMBOL(__heca_printk);
 
 static int deregister_dsm(struct private_data *priv_data, pid_t pid_vnr,
         __u32 dsm_id)
@@ -79,7 +79,7 @@ static int deregister_dsm(struct private_data *priv_data, pid_t pid_vnr,
     int rc = 0;
     struct dsm *dsm = priv_data->dsm;
 
-    dsm_printk(KERN_DEBUG "deregister_dsm [enter] dsm_id=%d", dsm_id);
+    heca_printk(KERN_DEBUG "<enter> dsm_id=%d", dsm_id);
 
     BUG_ON(!dsm_state);
 
@@ -105,7 +105,7 @@ static int deregister_dsm(struct private_data *priv_data, pid_t pid_vnr,
     }
 
 done:
-    dsm_printk(KERN_DEBUG "deregister_dsm [exit] %d", rc);
+    heca_printk(KERN_DEBUG "<exit> %d", rc);
     return rc;
 }
 
@@ -115,23 +115,23 @@ static int register_dsm(struct private_data *priv_data,
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int rc;
 
-    dsm_printk(KERN_DEBUG "[enter]");
+    heca_printk(KERN_DEBUG "<enter>");
 
     if ((rc = create_rcm_listener(dsm_state, svm_info->server.sin_addr.s_addr,
             svm_info->server.sin_port))) {
-        dsm_printk(KERN_ERR "create_rcm %d", rc);
+        heca_printk(KERN_ERR "create_rcm %d", rc);
         goto done;
     }
 
     if ((rc = create_dsm(priv_data, svm_info->pid_vnr, svm_info->dsm_id))) {
-        dsm_printk(KERN_ERR "create_dsm %d", rc);
+        heca_printk(KERN_ERR "create_dsm %d", rc);
         goto done;
     }
 
 done:
     if (rc)
         deregister_dsm(priv_data, svm_info->pid_vnr, svm_info->dsm_id);
-    dsm_printk(KERN_DEBUG "[exit] %d", rc);
+    heca_printk(KERN_DEBUG "<exit> %d", rc);
     return rc;
 }
 
@@ -140,7 +140,7 @@ static int ioctl_svm(int ioctl, void __user *argp)
     struct svm_data svm_info;
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
-        dsm_printk(KERN_ERR "copy_from_user failed");
+        heca_printk(KERN_ERR "copy_from_user failed");
         return -EFAULT;
     }
 
@@ -229,7 +229,7 @@ static int ioctl_mr(int ioctl, void __user *argp)
     struct unmap_data udata;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata)) {
-        dsm_printk(KERN_ERR "copy_from_user failed");
+        heca_printk(KERN_ERR "copy_from_user failed");
         return -EFAULT;
     }
 
@@ -271,7 +271,7 @@ static int release(struct inode *inode, struct file *f)
     struct subvirtual_machine *svm = NULL;
     struct dsm *dsm;
 
-    dsm_printk(KERN_DEBUG "release [enter]");
+    heca_printk(KERN_DEBUG "<enter>");
 
     if (!priv_data)
         goto final;
@@ -282,7 +282,7 @@ static int release(struct inode *inode, struct file *f)
     while (!list_empty(&dsm->svm_list)) {
         svm = list_first_entry(&dsm->svm_list, struct subvirtual_machine,
             svm_ptr);
-        dsm_printk(KERN_ERR "removing svm_id: %d from list of svms",
+        heca_printk(KERN_ERR "removing svm_id: %d from list of svms",
             svm->svm_id);
         remove_svm(dsm->dsm_id, svm->svm_id);
     }
@@ -293,7 +293,7 @@ done:
     f->private_data = NULL;
     kfree(priv_data);
 final:
-    dsm_printk(KERN_DEBUG "release [exit]");
+    heca_printk(KERN_DEBUG "<exit>");
     return 0;
 }
 
@@ -304,7 +304,7 @@ static long ioctl_dsm(struct private_data *priv_data, unsigned int ioctl,
     int rc = -EFAULT;
 
     if ((rc = copy_from_user((void *) &svm_info, argp, sizeof svm_info))) {
-        dsm_printk(KERN_ERR "copy_from_user %d", rc);
+        heca_printk(KERN_ERR "copy_from_user %d", rc);
         goto failed;
     }
 
@@ -330,7 +330,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     void __user *argp = (void __user *) arg;
     int r = -EINVAL;
 
-    dsm_printk(KERN_DEBUG "ioctl [enter] ioctl=0x%X", ioctl);
+    heca_printk(KERN_DEBUG "<enter> ioctl=0x%X", ioctl);
 
     BUG_ON(!priv_data);
 
@@ -343,7 +343,7 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
     }
 
     if (!priv_data->dsm) {
-        dsm_printk(KERN_ERR "module not initiated - existing");
+        heca_printk(KERN_ERR "module not initiated - existing");
         goto out;
     }
 
@@ -362,10 +362,10 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
             goto out;
     }
     r = -EINVAL;
-    dsm_printk(KERN_ERR "ioctl 0x%X not supported", ioctl);
+    heca_printk(KERN_ERR "ioctl 0x%X not supported", ioctl);
 
 out: 
-    dsm_printk(KERN_DEBUG "ioctl [exit] ioctl=0x%X: %d", ioctl, r);
+    heca_printk(KERN_DEBUG "<exit> ioctl=0x%X: %d", ioctl, r);
     return r;
 }
 
@@ -387,7 +387,7 @@ static int dsm_init(void)
     struct dsm_module_state *dsm_state = create_dsm_module_state();
     int rc;
 
-    dsm_printk(KERN_DEBUG "dsm_init [enter]");
+    heca_printk(KERN_DEBUG "<enter>");
 
     BUG_ON(!dsm_state);
     dsm_zero_pfn_init();
@@ -396,7 +396,7 @@ static int dsm_init(void)
     rc = misc_register(&rdma_misc);
     init_rcm();
 
-    dsm_printk(KERN_DEBUG "dsm_init [exit] %d", rc);
+    heca_printk(KERN_DEBUG "<exit> %d", rc);
     return rc;
 }
 module_init(dsm_init);
@@ -414,9 +414,8 @@ static void dsm_exit(void)
 }
 module_exit(dsm_exit);
 
-MODULE_VERSION("0.0.1");
+MODULE_VERSION("0.2.0");
 MODULE_AUTHOR("Benoit Hudzia");
-MODULE_DESCRIPTION("Distributed Shared memory Module");
+MODULE_DESCRIPTION("Hecatonchire Module");
 MODULE_LICENSE("GPL");
-
 

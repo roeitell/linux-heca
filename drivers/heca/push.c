@@ -769,7 +769,7 @@ retry:
     r = 0;
     vma = find_vma(mm, addr);
     if (unlikely(!vma || vma->vm_start > addr)) {
-        printk("[dsm_flag_page_remote] no vma \n");
+        heca_printk(KERN_ERR "no vma");
         goto out;
     }
 
@@ -778,7 +778,7 @@ retry:
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
         if (!dsm_initiate_fault(mm, addr, 1)) {
-            printk("[dsm_flag_page_remote] no pgd\n");
+            heca_printk(KERN_ERR "no pgd");
             r = -EFAULT;
             goto out;
         }
@@ -788,7 +788,7 @@ retry:
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
         if (!dsm_initiate_fault(mm, addr, 1)) {
-            printk("[dsm_flag_page_remote] no pud\n");
+            heca_printk(KERN_ERR "no pud");
             r = -EFAULT;
             goto out;
         }
@@ -802,7 +802,7 @@ retry:
     }
     if (unlikely(pmd_bad(*pmd))) {
         pmd_clear_bad(pmd);
-        printk("[dsm_flag_page_remote] bad pmd \n");
+        heca_printk(KERN_ERR "bad pmd");
         goto out;
     }
     if (unlikely(pmd_trans_huge(*pmd))) {
@@ -839,7 +839,7 @@ retry:
             } else {
                 pte_unmap_unlock(pte, ptl);
                 if (!dsm_initiate_fault(mm, addr, 1)) {
-                    printk("[*] failed at faulting \n");
+                    heca_printk(KERN_ERR "failed at faulting");
                     r = -EFAULT;
                     goto out;
                 }
@@ -855,19 +855,19 @@ retry:
         }
     }
     if (PageTransHuge(page)) {
-        printk("[*] we have a huge page \n");
+        heca_printk(KERN_ERR "we have a huge page");
         if (!PageHuge(page) && PageAnon(page)) {
             if (unlikely(split_huge_page(page))) {
-                printk("[*] failed at splitting page \n");
+                heca_printk(KERN_ERR "failed at splitting page");
                 goto out;
             }
         }
     }
     if (PageKsm(page)) {
-        printk("[dsm_flag_page_remote] KSM page\n");
+        heca_printk(KERN_ERR "KSM page");
         pte_unmap_unlock(pte, ptl);
         if (!dsm_initiate_fault(mm, addr, 1)) {
-            printk("[dsm_extract_page] ksm_madvise ret : %d\n", r);
+            heca_printk(KERN_ERR "ksm_madvise ret : %d", r);
             // DSM1 : better ksm error handling required.
             r = -EFAULT;
             goto out;
@@ -876,7 +876,7 @@ retry:
     }
 
     if (!trylock_page(page)) {
-        printk("[dsm_flag_page_remote] coudln't lock page \n");
+        heca_printk(KERN_ERR "coudln't lock page");
         r = -EFAULT;
         goto out_pte_unlock;
     }

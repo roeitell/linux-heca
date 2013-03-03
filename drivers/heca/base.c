@@ -918,6 +918,85 @@ out:
     return ret;
 }
 
+int unmap_mr(struct unmap_data *udata)
+{
+    int r = -EFAULT;
+    struct dsm *dsm = NULL;
+    struct subvirtual_machine *local_svm = NULL;
+    struct memory_region * mr = NULL;
+    struct mm_struct *mm = find_mm_by_pid(udata->pid);
+
+    if (!mm) {
+        heca_printk(KERN_ERR "can't find pid %d", udata->pid);
+        goto out;
+    }
+
+    dsm = find_dsm(udata->dsm_id);
+    if (!dsm)
+        goto out;
+
+    local_svm = find_local_svm_in_dsm(dsm, mm);
+    if (!local_svm)
+        goto out;
+    
+    mr = search_mr_by_addr(local_svm, (unsigned long) udata->addr);
+    if (!mr)
+        goto out;
+
+    r = do_unmap_range(dsm, mr);
+
+out:
+    if (local_svm)
+        release_svm(local_svm);
+    return r;
+}
+
+int pushback_mr(struct unmap_data *udata)
+{
+    int r = -EFAULT;
+    unsigned long addr, start_addr;
+    struct dsm *dsm;
+    struct memory_region *mr;
+    struct page *page;
+    struct subvirtual_machine *local_svm = NULL;
+    struct mm_struct *mm = find_mm_by_pid(udata->pid);
+
+    if (!mm) {
+        heca_printk(KERN_ERR "can't find pid %d", udata->pid);
+        goto out;
+    }
+
+    dsm = find_dsm(udata->dsm_id);
+    if (!dsm)
+        goto out;
+
+    local_svm = find_local_svm_in_dsm(dsm, mm);
+    if (!local_svm)
+        goto out;
+
+    addr = start_addr = ((unsigned long) udata->addr) & PAGE_MASK;
+    while (addr < start_addr + udata->sz) {
+
+        mr = search_mr_by_addr(local_svm, addr);
+        if (!mr)
+            goto out;
+
+        page = dsm_find_normal_page(mm, addr);
+        if (!page)
+            goto out;
+
+        r = dsm_request_page_pull(dsm, local_svm, page, addr, mm, mr);
+        if (r)
+            goto out;
+
+        addr += PAGE_SIZE;
+    }
+out:
+    if (local_svm)
+        release_svm(local_svm);
+    return r;
+}
+
 /*
  * rcm funcs
  */

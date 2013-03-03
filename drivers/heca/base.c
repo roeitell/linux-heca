@@ -368,7 +368,7 @@ struct mm_struct *find_mm_by_pid(pid_t pid)
     return task->mm;
 }
 
-int create_svm(struct svm_data *svm_info)
+int create_svm(struct hecaioc_svm *svm_info)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int r = 0;
@@ -473,7 +473,7 @@ out:
 
     if (!svm_info->is_local) {
         r = connect_svm(svm_info->dsm_id, svm_info->svm_id, 
-            svm_info->server.sin_addr.s_addr, svm_info->server.sin_port);
+            svm_info->remote.sin_addr.s_addr, svm_info->remote.sin_port);
 
         if (r) {
             heca_printk(KERN_ERR "connect_svm failed %d", r);

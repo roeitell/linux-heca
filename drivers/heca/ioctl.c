@@ -108,34 +108,34 @@ done:
 }
 
 static int register_dsm(struct private_data *priv_data, 
-        struct svm_data *svm_info)
+        struct hecaioc_dsm *dsm_info)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
     int rc;
 
     heca_printk(KERN_DEBUG "<enter>");
 
-    if ((rc = create_rcm_listener(dsm_state, svm_info->server.sin_addr.s_addr,
-            svm_info->server.sin_port))) {
+    if ((rc = create_rcm_listener(dsm_state, dsm_info->local.sin_addr.s_addr,
+            dsm_info->local.sin_port))) {
         heca_printk(KERN_ERR "create_rcm %d", rc);
         goto done;
     }
 
-    if ((rc = create_dsm(priv_data, svm_info->dsm_id))) {
+    if ((rc = create_dsm(priv_data, dsm_info->dsm_id))) {
         heca_printk(KERN_ERR "create_dsm %d", rc);
         goto done;
     }
 
 done:
     if (rc)
-        deregister_dsm(priv_data, svm_info->dsm_id);
+        deregister_dsm(priv_data, dsm_info->dsm_id);
     heca_printk(KERN_DEBUG "<exit> %d", rc);
     return rc;
 }
 
 static int ioctl_svm(int ioctl, void __user *argp)
 {
-    struct svm_data svm_info;
+    struct hecaioc_svm svm_info;
 
     if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
         heca_printk(KERN_ERR "copy_from_user failed");
@@ -234,19 +234,19 @@ final:
 static long ioctl_dsm(struct private_data *priv_data, unsigned int ioctl,
     void __user *argp)
 {
-    struct svm_data svm_info;
+    struct hecaioc_dsm dsm_info;
     int rc = -EFAULT;
 
-    if ((rc = copy_from_user((void *) &svm_info, argp, sizeof svm_info))) {
+    if ((rc = copy_from_user((void *) &dsm_info, argp, sizeof dsm_info))) {
         heca_printk(KERN_ERR "copy_from_user %d", rc);
         goto failed;
     }
 
     switch (ioctl) {
         case HECAIOC_DSM_INIT:
-            return register_dsm(priv_data, &svm_info);
+            return register_dsm(priv_data, &dsm_info);
         case HECAIOC_DSM_FINI:
-            return deregister_dsm(priv_data, svm_info.dsm_id);
+            return deregister_dsm(priv_data, dsm_info.dsm_id);
         default:
             goto failed;
     }

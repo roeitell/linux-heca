@@ -30,7 +30,7 @@ inline struct subvirtual_machine *find_svm(struct dsm *, u32);
 inline struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
         struct mm_struct *);
 inline struct subvirtual_machine *find_local_svm(struct mm_struct *);
-int create_svm(struct svm_data *svm_info);
+int create_svm(struct hecaioc_svm *svm_info);
 inline void release_svm(struct subvirtual_machine *);
 void remove_svm(u32, u32);
 

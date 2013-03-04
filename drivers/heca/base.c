@@ -900,7 +900,7 @@ int create_mr(struct hecaioc_mr *udata)
         mr->flags |= MR_COPY_ON_ACCESS;
 
     if (!(mr->flags & MR_LOCAL) && (udata->flags & UD_AUTO_UNMAP)) {
-        ret = do_unmap_range(dsm, mr);
+        ret = unmap_range(dsm, mr->descriptor, mr->pid, mr->addr, mr->sz);
     }
 
     create_mr_sysfs_entry(dsm, mr);
@@ -941,7 +941,8 @@ int unmap_ps(struct hecaioc_ps *udata)
     if (!mr)
         goto out;
 
-    r = do_unmap_range(dsm, mr);
+    r = unmap_range(dsm, mr->descriptor, udata->pid, (unsigned long)
+            udata->addr, udata->sz);
 
 out:
     if (local_svm)

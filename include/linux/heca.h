@@ -37,7 +37,6 @@ struct hecaioc_mr {
     __u32 dsm_id;
     __u32 svm_ids[MAX_SVM_IDS];
     __u32 mr_id;
-    pid_t pid; /* FIXME: should be derived from svm_ids */
     void *addr;
     size_t sz;
     __u32 flags;

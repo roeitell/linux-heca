@@ -232,7 +232,6 @@ struct dsm_message {
 };
 
 struct memory_region {
-    pid_t pid;
     unsigned long addr;
     unsigned long sz;
     u32 descriptor;

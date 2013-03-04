@@ -38,9 +38,11 @@ void remove_svm(u32, u32);
 struct memory_region *find_mr(struct subvirtual_machine *, u32);
 struct memory_region *search_mr_by_addr(struct subvirtual_machine *,
         unsigned long);
-int create_mr(struct unmap_data *udata);
-int pushback_mr(struct unmap_data *udata);
-int unmap_mr(struct unmap_data *udata);
+int create_mr(struct hecaioc_mr *udata);
+
+/* ps */
+int pushback_ps(struct hecaioc_ps *udata);
+int unmap_ps(struct hecaioc_ps *udata);
 
 /* rcm */
 int create_rcm_listener(struct dsm_module_state *, unsigned long,

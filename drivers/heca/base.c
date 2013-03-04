@@ -822,7 +822,7 @@ static void destroy_svm_mrs(struct subvirtual_machine *svm)
     } while(1);
 }
 
-int create_mr(struct unmap_data *udata)
+int create_mr(struct hecaioc_mr *udata)
 {
     int ret = 0, i;
     struct dsm *dsm;
@@ -918,12 +918,12 @@ out:
     return ret;
 }
 
-int unmap_mr(struct unmap_data *udata)
+int unmap_ps(struct hecaioc_ps *udata)
 {
     int r = -EFAULT;
     struct dsm *dsm = NULL;
     struct subvirtual_machine *local_svm = NULL;
-    struct memory_region * mr = NULL;
+    struct memory_region *mr = NULL;
     struct mm_struct *mm = find_mm_by_pid(udata->pid);
 
     if (!mm) {
@@ -931,14 +931,12 @@ int unmap_mr(struct unmap_data *udata)
         goto out;
     }
 
-    dsm = find_dsm(udata->dsm_id);
-    if (!dsm)
-        goto out;
-
-    local_svm = find_local_svm_in_dsm(dsm, mm);
+    local_svm = find_local_svm(mm);
     if (!local_svm)
         goto out;
-    
+
+    dsm = local_svm->dsm;
+
     mr = search_mr_by_addr(local_svm, (unsigned long) udata->addr);
     if (!mr)
         goto out;
@@ -951,7 +949,7 @@ out:
     return r;
 }
 
-int pushback_mr(struct unmap_data *udata)
+int pushback_ps(struct hecaioc_ps *udata)
 {
     int r = -EFAULT;
     unsigned long addr, start_addr;
@@ -966,13 +964,11 @@ int pushback_mr(struct unmap_data *udata)
         goto out;
     }
 
-    dsm = find_dsm(udata->dsm_id);
-    if (!dsm)
-        goto out;
-
-    local_svm = find_local_svm_in_dsm(dsm, mm);
+    local_svm = find_local_svm(mm);
     if (!local_svm)
         goto out;
+
+    dsm = local_svm->dsm;
 
     addr = start_addr = ((unsigned long) udata->addr) & PAGE_MASK;
     while (addr < start_addr + udata->sz) {

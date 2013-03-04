@@ -159,7 +159,7 @@ static int ioctl_svm(int ioctl, void __user *argp)
 
 static int ioctl_mr(int ioctl, void __user *argp)
 {
-    struct unmap_data udata;
+    struct hecaioc_mr udata;
 
     if (copy_from_user((void *) &udata, argp, sizeof udata)) {
         heca_printk(KERN_ERR "copy_from_user failed");
@@ -174,10 +174,30 @@ static int ioctl_mr(int ioctl, void __user *argp)
     switch (ioctl) {
         case HECAIOC_MR_ADD:
             return create_mr(&udata);
-        case HECAIOC_MR_PUSHBACK:
-            return pushback_mr(&udata);
-        case HECAIOC_MR_UNMAP:
-            return unmap_mr(&udata);
+    }
+
+    return -EINVAL;
+}
+
+static int ioctl_ps(int ioctl, void __user *argp)
+{
+    struct hecaioc_ps udata;
+
+    if (copy_from_user((void *) &udata, argp, sizeof udata)) {
+        heca_printk(KERN_ERR "copy_from_user failed");
+        return -EFAULT;
+    }
+
+    if (!udata.pid) {
+        udata.pid = sys_getpid();
+        heca_printk(KERN_INFO "no pid defined assuming %d", udata.pid);
+    }
+
+    switch (ioctl) {
+        case HECAIOC_PS_PUSHBACK:
+            return pushback_ps(&udata);
+        case HECAIOC_PS_UNMAP:
+            return unmap_ps(&udata);
     }
 
     return -EINVAL;
@@ -287,11 +307,17 @@ static long ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
     switch (ioctl) {
         case HECAIOC_MR_ADD:
-        case HECAIOC_MR_PUSHBACK:
-        case HECAIOC_MR_UNMAP:
             r = ioctl_mr(ioctl, argp);
             goto out;
     }
+
+    switch (ioctl) {
+        case HECAIOC_PS_PUSHBACK:
+        case HECAIOC_PS_UNMAP:
+            r = ioctl_ps(ioctl, argp);
+            goto out;
+    }
+
     r = -EINVAL;
     heca_printk(KERN_ERR "ioctl 0x%X not supported", ioctl);
 

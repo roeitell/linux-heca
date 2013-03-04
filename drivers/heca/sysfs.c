@@ -181,11 +181,6 @@ static ssize_t instance_mr_id_show(struct memory_region *mr, char *data)
     return sprintf(data, "%u\n", mr->mr_id);
 }
 
-static ssize_t instance_mr_pid_show(struct memory_region *mr, char *data)
-{
-    return sprintf(data, "%u\n", mr->pid);
-}
-
 static ssize_t instance_mr_addr_show(struct memory_region *mr, char *data)
 {
     return sprintf(data, "0x%lx\n", mr->addr);
@@ -203,8 +198,6 @@ static ssize_t instance_mr_is_local_show(struct memory_region *mr, char *data)
 
 INSTANCE_ATTR(struct mr_instance_attribute, mr_id, S_IRUGO,
         instance_mr_id_show, NULL);
-INSTANCE_ATTR(struct mr_instance_attribute, mr_pid, S_IRUGO,
-        instance_mr_pid_show, NULL);
 INSTANCE_ATTR(struct mr_instance_attribute, mr_addr, S_IRUGO,
         instance_mr_addr_show, NULL);
 INSTANCE_ATTR(struct mr_instance_attribute, mr_sz, S_IRUGO,
@@ -214,7 +207,6 @@ INSTANCE_ATTR(struct mr_instance_attribute, mr_is_local, S_IRUGO,
 
 static struct mr_instance_attribute *mr_instance_attr[] = {
     &ATTR_NAME(mr_id),
-    &ATTR_NAME(mr_pid),
     &ATTR_NAME(mr_addr),
     &ATTR_NAME(mr_sz),
     &ATTR_NAME(mr_is_local),

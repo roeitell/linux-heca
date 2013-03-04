@@ -33,7 +33,7 @@ struct hecaioc_svm {
 #define UD_AUTO_UNMAP           (1 << 0)
 #define UD_COPY_ON_ACCESS       (1 << 1)
 
-struct unmap_data {
+struct hecaioc_mr {
     __u32 dsm_id;
     __u32 svm_ids[MAX_SVM_IDS];
     __u32 mr_id;
@@ -43,14 +43,24 @@ struct unmap_data {
     __u32 flags;
 };
 
+struct hecaioc_ps {
+    pid_t pid;
+    void *addr;
+    size_t sz;
+};
+
 #define HECAIOC                      0xFF
+
 #define HECAIOC_DSM_INIT             _IOW(HECAIOC, 0xA0, struct hecaioc_dsm)
 #define HECAIOC_DSM_FINI             _IOW(HECAIOC, 0xA1, struct hecaioc_dsm)
+
 #define HECAIOC_SVM_ADD              _IOW(HECAIOC, 0xB0, struct hecaioc_svm)
 #define HECAIOC_SVM_RM               _IOW(HECAIOC, 0xB1, struct hecaioc_svm)
-#define HECAIOC_MR_ADD               _IOW(HECAIOC, 0xC0, struct unmap_data)
-#define HECAIOC_MR_PUSHBACK          _IOW(HECAIOC, 0xC1, struct unmap_data)
-#define HECAIOC_MR_UNMAP             _IOW(HECAIOC, 0xC2, struct unmap_data)
+
+#define HECAIOC_MR_ADD               _IOW(HECAIOC, 0xC0, struct hecaioc_mr)
+
+#define HECAIOC_PS_PUSHBACK          _IOW(HECAIOC, 0xD0, struct hecaioc_ps)
+#define HECAIOC_PS_UNMAP             _IOW(HECAIOC, 0xD1, struct hecaioc_ps)
 
 #endif /* DSM_H_ */
 

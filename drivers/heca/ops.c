@@ -565,7 +565,11 @@ int unmap_range(struct dsm *dsm, int dsc, pid_t pid, unsigned long addr,
 {
     int r = 0;
     unsigned long it = addr, end = (addr + sz - 1);
-    struct mm_struct *mm = find_mm_by_pid(pid);
+    struct mm_struct *mm;
+
+    BUG_ON(!pid);
+  
+    mm = find_mm_by_pid(pid);
 
     for (it = addr; it < end; it += PAGE_SIZE) {
         r = dsm_flag_page_remote(mm, dsm, dsc, it);

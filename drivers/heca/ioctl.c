@@ -166,11 +166,6 @@ static int ioctl_mr(int ioctl, void __user *argp)
         return -EFAULT;
     }
 
-    if (!udata.pid) {
-        udata.pid = sys_getpid();
-        heca_printk(KERN_INFO "no pid defined assuming %d", udata.pid);
-    }
-
     switch (ioctl) {
         case HECAIOC_MR_ADD:
             return create_mr(&udata);

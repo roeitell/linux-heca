@@ -716,7 +716,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
         if (address == -EFAULT)
             continue;
 
-        svm = find_local_svm(vma->vm_mm);
+        svm = find_local_svm_from_mm(vma->vm_mm);
         if (!svm)
             continue;
 

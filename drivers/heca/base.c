@@ -254,6 +254,21 @@ static inline int is_svm_local(struct subvirtual_machine *svm)
     return !!svm->mm;
 }
 
+static inline int grab_svm(struct subvirtual_machine *svm)
+{
+#if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
+# ifdef CONFIG_PREEMPT_COUNT
+    BUG_ON(!in_atomic());
+# endif
+    BUG_ON(atomic_read(&svm->refs) == 0);
+    atomic_inc(&svm->refs);
+#else
+    if (!atomic_inc_not_zero(&svm->refs))
+        return -1;
+#endif
+    return 0;
+}
+
 static struct subvirtual_machine *_find_svm_in_tree(
         struct radix_tree_root *root, unsigned long svm_id)
 {
@@ -273,16 +288,10 @@ repeat:
             if (radix_tree_deref_retry(svm))
                 goto repeat;
         }
-#if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
-# ifdef CONFIG_PREEMPT_COUNT
-        BUG_ON(!in_atomic());
-# endif
-        BUG_ON(atomic_read(&svm->refs) == 0);
-        atomic_inc(&svm->refs);
-#else
-        if (!atomic_inc_not_zero(&svm->refs))
+
+        if (grab_svm(svm))
             goto repeat;
-#endif
+
     }
 
 out:
@@ -301,7 +310,7 @@ inline struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *dsm,
     return _find_svm_in_tree(&dsm->svm_mm_tree_root, (unsigned long) mm);
 }
 
-inline struct subvirtual_machine *find_local_svm(struct mm_struct *mm)
+inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm)
 {
     return _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
             (unsigned long) mm);
@@ -420,7 +429,7 @@ int create_svm(struct hecaioc_svm *svm_info)
             goto out;
         }
 
-        found_svm = find_local_svm(mm);
+        found_svm = find_local_svm_from_mm(mm);
         if (found_svm) {
             heca_printk(KERN_ERR "svm already exists for current process");
             r = -EEXIST;
@@ -822,19 +831,27 @@ static void destroy_svm_mrs(struct subvirtual_machine *svm)
     } while(1);
 }
 
+static struct subvirtual_machine *find_local_svm_from_list(struct dsm *dsm)
+{
+    struct subvirtual_machine *tmp_svm;
+
+    list_for_each_entry (tmp_svm, &dsm->svm_list, svm_ptr) {
+        if (!is_svm_local(tmp_svm))
+            continue;
+        heca_printk(KERN_DEBUG "dsm %d local svm is %d", dsm->dsm_id,
+                tmp_svm->svm_id);
+        grab_svm(tmp_svm);
+        return tmp_svm;
+    }
+    return NULL;
+}
+
 int create_mr(struct hecaioc_mr *udata)
 {
     int ret = 0, i;
     struct dsm *dsm;
-    struct subvirtual_machine *svm = NULL;
-    struct memory_region *mr;
-    struct mm_struct *mm = find_mm_by_pid(udata->pid);
-
-    if (!mm) {
-        heca_printk(KERN_ERR "can't find pid %d", udata->pid);
-        ret = -EFAULT;
-        goto out;
-    }
+    struct memory_region *mr = NULL;
+    struct subvirtual_machine *local_svm = NULL;
 
     dsm = find_dsm(udata->dsm_id);
     if (!dsm) {
@@ -843,15 +860,15 @@ int create_mr(struct hecaioc_mr *udata)
         goto out;
     }
 
-    svm = find_local_svm_in_dsm(dsm, mm);
-    if (!svm) {
-        heca_printk(KERN_ERR "local svm not registered");
+    local_svm = find_local_svm_from_list(dsm);
+    if (!local_svm) {
+        heca_printk(KERN_ERR "can't find local svm for dsm %d", udata->dsm_id);
         ret = -EFAULT;
         goto out;
     }
 
     /* FIXME: Validate against every kind of overlap! */
-    if (search_mr_by_addr(svm, (unsigned long) udata->addr)) {
+    if (search_mr_by_addr(local_svm, (unsigned long) udata->addr)) {
         heca_printk(KERN_ERR "mr already exists at addr 0x%lx", udata->addr);
         ret = -EEXIST;
         goto out;
@@ -867,9 +884,8 @@ int create_mr(struct hecaioc_mr *udata)
     mr->mr_id = udata->mr_id;
     mr->addr = (unsigned long) udata->addr;
     mr->sz = udata->sz;
-    mr->pid = udata->pid;
 
-    if (insert_mr(svm, mr))
+    if (insert_mr(local_svm, mr))
         goto out_free;
     
     mr->descriptor = dsm_get_descriptor(dsm, udata->svm_ids);
@@ -890,8 +906,9 @@ int create_mr(struct hecaioc_mr *udata)
             goto out_remove_tree;
         }
 
-        if (is_svm_local(owner))
+        if (is_svm_local(owner)) {
             mr->flags |= MR_LOCAL;
+        }
 
         release_svm(owner);
     }
@@ -900,19 +917,20 @@ int create_mr(struct hecaioc_mr *udata)
         mr->flags |= MR_COPY_ON_ACCESS;
 
     if (!(mr->flags & MR_LOCAL) && (udata->flags & UD_AUTO_UNMAP)) {
-        ret = unmap_range(dsm, mr->descriptor, mr->pid, mr->addr, mr->sz);
+        ret = unmap_range(dsm, mr->descriptor, local_svm->pid, mr->addr,
+                mr->sz);
     }
 
     create_mr_sysfs_entry(dsm, mr);
     goto out;
 
 out_remove_tree:
-    rb_erase(&mr->rb_node, &svm->mr_tree_root);
+    rb_erase(&mr->rb_node, &local_svm->mr_tree_root);
 out_free:
     kfree(mr);
 out:
-    if (svm)
-        release_svm(svm);
+    if (local_svm)
+        release_svm(local_svm);
     heca_printk(KERN_INFO "id [%d] addr [0x%lx] sz [0x%lx]"
             " --> ret %d", udata->mr_id, udata->addr, udata->sz, ret);
     return ret;
@@ -931,7 +949,7 @@ int unmap_ps(struct hecaioc_ps *udata)
         goto out;
     }
 
-    local_svm = find_local_svm(mm);
+    local_svm = find_local_svm_from_mm(mm);
     if (!local_svm)
         goto out;
 
@@ -965,7 +983,7 @@ int pushback_ps(struct hecaioc_ps *udata)
         goto out;
     }
 
-    local_svm = find_local_svm(mm);
+    local_svm = find_local_svm_from_mm(mm);
     if (!local_svm)
         goto out;
 

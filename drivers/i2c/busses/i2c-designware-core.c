@@ -25,6 +25,7 @@
  * ----------------------------------------------------------------------------
  *
  */
+#include <linux/export.h>
 #include <linux/clk.h>
 #include <linux/errno.h>
 #include <linux/err.h>
@@ -33,6 +34,7 @@
 #include <linux/io.h>
 #include <linux/pm_runtime.h>
 #include <linux/delay.h>
+#include <linux/module.h>
 #include "i2c-designware-core.h"
 
 /*
@@ -316,6 +318,7 @@ int i2c_dw_init(struct dw_i2c_dev *dev)
 	dw_writel(dev, dev->master_cfg , DW_IC_CON);
 	return 0;
 }
+EXPORT_SYMBOL_GPL(i2c_dw_init);
 
 /*
  * Waiting for bus not busy
@@ -368,7 +371,7 @@ static void i2c_dw_xfer_init(struct dw_i2c_dev *dev)
  * messages into the tx buffer.  Even if the size of i2c_msg data is
  * longer than the size of the tx buffer, it handles everything.
  */
-void
+static void
 i2c_dw_xfer_msg(struct dw_i2c_dev *dev)
 {
 	struct i2c_msg *msgs = dev->msgs;
@@ -410,11 +413,23 @@ i2c_dw_xfer_msg(struct dw_i2c_dev *dev)
 		rx_limit = dev->rx_fifo_depth - dw_readl(dev, DW_IC_RXFLR);
 
 		while (buf_len > 0 && tx_limit > 0 && rx_limit > 0) {
+			u32 cmd = 0;
+
+			/*
+			 * If IC_EMPTYFIFO_HOLD_MASTER_EN is set we must
+			 * manually set the stop bit. However, it cannot be
+			 * detected from the registers so we set it always
+			 * when writing/reading the last byte.
+			 */
+			if (dev->msg_write_idx == dev->msgs_num - 1 &&
+			    buf_len == 1)
+				cmd |= BIT(9);
+
 			if (msgs[dev->msg_write_idx].flags & I2C_M_RD) {
-				dw_writel(dev, 0x100, DW_IC_DATA_CMD);
+				dw_writel(dev, cmd | 0x100, DW_IC_DATA_CMD);
 				rx_limit--;
 			} else
-				dw_writel(dev, *buf++, DW_IC_DATA_CMD);
+				dw_writel(dev, cmd | *buf++, DW_IC_DATA_CMD);
 			tx_limit--; buf_len--;
 		}
 
@@ -568,12 +583,14 @@ done:
 
 	return ret;
 }
+EXPORT_SYMBOL_GPL(i2c_dw_xfer);
 
 u32 i2c_dw_func(struct i2c_adapter *adap)
 {
 	struct dw_i2c_dev *dev = i2c_get_adapdata(adap);
 	return dev->functionality;
 }
+EXPORT_SYMBOL_GPL(i2c_dw_func);
 
 static u32 i2c_dw_read_clear_intrbits(struct dw_i2c_dev *dev)
 {
@@ -678,17 +695,20 @@ tx_aborted:
 
 	return IRQ_HANDLED;
 }
+EXPORT_SYMBOL_GPL(i2c_dw_isr);
 
 void i2c_dw_enable(struct dw_i2c_dev *dev)
 {
        /* Enable the adapter */
 	dw_writel(dev, 1, DW_IC_ENABLE);
 }
+EXPORT_SYMBOL_GPL(i2c_dw_enable);
 
 u32 i2c_dw_is_enabled(struct dw_i2c_dev *dev)
 {
 	return dw_readl(dev, DW_IC_ENABLE);
 }
+EXPORT_SYMBOL_GPL(i2c_dw_is_enabled);
 
 void i2c_dw_disable(struct dw_i2c_dev *dev)
 {
@@ -699,18 +719,25 @@ void i2c_dw_disable(struct dw_i2c_dev *dev)
 	dw_writel(dev, 0, DW_IC_INTR_MASK);
 	dw_readl(dev, DW_IC_CLR_INTR);
 }
+EXPORT_SYMBOL_GPL(i2c_dw_disable);
 
 void i2c_dw_clear_int(struct dw_i2c_dev *dev)
 {
 	dw_readl(dev, DW_IC_CLR_INTR);
 }
+EXPORT_SYMBOL_GPL(i2c_dw_clear_int);
 
 void i2c_dw_disable_int(struct dw_i2c_dev *dev)
 {
 	dw_writel(dev, 0, DW_IC_INTR_MASK);
 }
+EXPORT_SYMBOL_GPL(i2c_dw_disable_int);
 
 u32 i2c_dw_read_comp_param(struct dw_i2c_dev *dev)
 {
 	return dw_readl(dev, DW_IC_COMP_PARAM_1);
 }
+EXPORT_SYMBOL_GPL(i2c_dw_read_comp_param);
+
+MODULE_DESCRIPTION("Synopsys DesignWare I2C bus adapter core");
+MODULE_LICENSE("GPL");

@@ -251,7 +251,7 @@ out_ok:
 }
 
 static struct dentry *udf_lookup(struct inode *dir, struct dentry *dentry,
-				 struct nameidata *nd)
+				 unsigned int flags)
 {
 	struct inode *inode = NULL;
 	struct fileIdentDesc cfi;
@@ -551,7 +551,7 @@ static int udf_delete_entry(struct inode *inode, struct fileIdentDesc *fi,
 }
 
 static int udf_create(struct inode *dir, struct dentry *dentry, umode_t mode,
-		      struct nameidata *nd)
+		      bool excl)
 {
 	struct udf_fileident_bh fibh;
 	struct inode *inode;
@@ -1270,15 +1270,16 @@ static int udf_encode_fh(struct inode *inode, __u32 *fh, int *lenp,
 
 	if (parent && (len < 5)) {
 		*lenp = 5;
-		return 255;
+		return FILEID_INVALID;
 	} else if (len < 3) {
 		*lenp = 3;
-		return 255;
+		return FILEID_INVALID;
 	}
 
 	*lenp = 3;
 	fid->udf.block = location.logicalBlockNum;
 	fid->udf.partref = location.partitionReferenceNum;
+	fid->udf.parent_partref = 0;
 	fid->udf.generation = inode->i_generation;
 
 	if (parent) {

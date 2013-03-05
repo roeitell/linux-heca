@@ -1,8 +1,7 @@
 /*
- *  arch/s390/kernel/ipl.c
  *    ipl/reipl/dump support for Linux on s390.
  *
- *    Copyright IBM Corp. 2005,2012
+ *    Copyright IBM Corp. 2005, 2012
  *    Author(s): Michael Holzheu <holzheu@de.ibm.com>
  *		 Heiko Carstens <heiko.carstens@de.ibm.com>
  *		 Volker Sameske <sameske@de.ibm.com>
@@ -1415,6 +1414,16 @@ static struct kobj_attribute dump_type_attr =
 
 static struct kset *dump_kset;
 
+static void diag308_dump(void *dump_block)
+{
+	diag308(DIAG308_SET, dump_block);
+	while (1) {
+		if (diag308(DIAG308_DUMP, NULL) != 0x302)
+			break;
+		udelay_simple(USEC_PER_SEC);
+	}
+}
+
 static void __dump_run(void *unused)
 {
 	struct ccw_dev_id devid;
@@ -1433,12 +1442,10 @@ static void __dump_run(void *unused)
 		__cpcmd(buf, NULL, 0, NULL);
 		break;
 	case DUMP_METHOD_CCW_DIAG:
-		diag308(DIAG308_SET, dump_block_ccw);
-		diag308(DIAG308_DUMP, NULL);
+		diag308_dump(dump_block_ccw);
 		break;
 	case DUMP_METHOD_FCP_DIAG:
-		diag308(DIAG308_SET, dump_block_fcp);
-		diag308(DIAG308_DUMP, NULL);
+		diag308_dump(dump_block_fcp);
 		break;
 	default:
 		break;
@@ -1528,15 +1535,12 @@ static struct shutdown_action __refdata dump_action = {
 
 static void dump_reipl_run(struct shutdown_trigger *trigger)
 {
-	struct {
-		void	*addr;
-		__u32	csum;
-	} __packed ipib;
+	unsigned long ipib = (unsigned long) reipl_block_actual;
+	unsigned int csum;
 
-	ipib.csum = csum_partial(reipl_block_actual,
-				 reipl_block_actual->hdr.len, 0);
-	ipib.addr = reipl_block_actual;
-	memcpy_absolute(&S390_lowcore.ipib, &ipib, sizeof(ipib));
+	csum = csum_partial(reipl_block_actual, reipl_block_actual->hdr.len, 0);
+	mem_assign_absolute(S390_lowcore.ipib, ipib);
+	mem_assign_absolute(S390_lowcore.ipib_checksum, csum);
 	dump_run(trigger);
 }
 
@@ -1587,7 +1591,7 @@ static struct kset *vmcmd_kset;
 
 static void vmcmd_run(struct shutdown_trigger *trigger)
 {
-	char *cmd, *next_cmd;
+	char *cmd;
 
 	if (strcmp(trigger->name, ON_REIPL_STR) == 0)
 		cmd = vmcmd_on_reboot;
@@ -1604,15 +1608,7 @@ static void vmcmd_run(struct shutdown_trigger *trigger)
 
 	if (strlen(cmd) == 0)
 		return;
-	do {
-		next_cmd = strchr(cmd, '\n');
-		if (next_cmd) {
-			next_cmd[0] = 0;
-			next_cmd += 1;
-		}
-		__cpcmd(cmd, NULL, 0, NULL);
-		cmd = next_cmd;
-	} while (cmd != NULL);
+	__cpcmd(cmd, NULL, 0, NULL);
 }
 
 static int vmcmd_init(void)

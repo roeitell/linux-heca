@@ -14,6 +14,18 @@
 
 #include <linux/perf_event.h>
 
+#if 0
+#undef wrmsrl
+#define wrmsrl(msr, val) 						\
+do {									\
+	unsigned int _msr = (msr);					\
+	u64 _val = (val);						\
+	trace_printk("wrmsrl(%x, %Lx)\n", (unsigned int)(_msr),		\
+			(unsigned long long)(_val));			\
+	native_write_msr((_msr), (u32)(_val), (u32)(_val >> 32));	\
+} while (0)
+#endif
+
 /*
  *          |   NHM/WSM    |      SNB     |
  * register -------------------------------
@@ -57,7 +69,7 @@ struct amd_nb {
 };
 
 /* The maximal number of PEBS events: */
-#define MAX_PEBS_EVENTS		4
+#define MAX_PEBS_EVENTS		8
 
 /*
  * A debug store configuration.
@@ -313,6 +325,8 @@ struct x86_pmu {
 	int		(*schedule_events)(struct cpu_hw_events *cpuc, int n, int *assign);
 	unsigned	eventsel;
 	unsigned	perfctr;
+	int		(*addr_offset)(int index, bool eventsel);
+	int		(*rdpmc_index)(int index);
 	u64		(*event_map)(int);
 	int		max_events;
 	int		num_counters;
@@ -342,6 +356,8 @@ struct x86_pmu {
 	int		attr_rdpmc;
 	struct attribute **format_attrs;
 
+	ssize_t		(*events_sysfs_show)(char *page, u64 config);
+
 	/*
 	 * CPU Hotplug hooks
 	 */
@@ -349,6 +365,8 @@ struct x86_pmu {
 	void		(*cpu_starting)(int cpu);
 	void		(*cpu_dying)(int cpu);
 	void		(*cpu_dead)(int cpu);
+
+	void		(*check_microcode)(void);
 	void		(*flush_branch_stack)(void);
 
 	/*
@@ -360,12 +378,16 @@ struct x86_pmu {
 	/*
 	 * Intel DebugStore bits
 	 */
-	int		bts, pebs;
-	int		bts_active, pebs_active;
+	unsigned int	bts		:1,
+			bts_active	:1,
+			pebs		:1,
+			pebs_active	:1,
+			pebs_broken	:1;
 	int		pebs_record_size;
 	void		(*drain_pebs)(struct pt_regs *regs);
 	struct event_constraint *pebs_constraints;
 	void		(*pebs_aliases)(struct perf_event *event);
+	int 		max_pebs_events;
 
 	/*
 	 * Intel LBR
@@ -426,28 +448,21 @@ extern u64 __read_mostly hw_cache_extra_regs
 
 u64 x86_perf_event_update(struct perf_event *event);
 
-static inline int x86_pmu_addr_offset(int index)
-{
-	int offset;
-
-	/* offset = X86_FEATURE_PERFCTR_CORE ? index << 1 : index */
-	alternative_io(ASM_NOP2,
-		       "shll $1, %%eax",
-		       X86_FEATURE_PERFCTR_CORE,
-		       "=a" (offset),
-		       "a"  (index));
-
-	return offset;
-}
-
 static inline unsigned int x86_pmu_config_addr(int index)
 {
-	return x86_pmu.eventsel + x86_pmu_addr_offset(index);
+	return x86_pmu.eventsel + (x86_pmu.addr_offset ?
+				   x86_pmu.addr_offset(index, true) : index);
 }
 
 static inline unsigned int x86_pmu_event_addr(int index)
 {
-	return x86_pmu.perfctr + x86_pmu_addr_offset(index);
+	return x86_pmu.perfctr + (x86_pmu.addr_offset ?
+				  x86_pmu.addr_offset(index, false) : index);
+}
+
+static inline int x86_pmu_rdpmc_index(int index)
+{
+	return x86_pmu.rdpmc_index ? x86_pmu.rdpmc_index(index) : index;
 }
 
 int x86_setup_perfctr(struct perf_event *event);
@@ -468,6 +483,8 @@ static inline void __x86_pmu_enable_event(struct hw_perf_event *hwc,
 
 void x86_pmu_enable_all(int added);
 
+int perf_assign_events(struct event_constraint **constraints, int n,
+			int wmin, int wmax, int *assign);
 int x86_schedule_events(struct cpu_hw_events *cpuc, int n, int *assign);
 
 void x86_pmu_stop(struct perf_event *event, int flags);
@@ -495,6 +512,29 @@ static inline bool kernel_ip(unsigned long ip)
 	return (long)ip < 0;
 #endif
 }
+
+/*
+ * Not all PMUs provide the right context information to place the reported IP
+ * into full context. Specifically segment registers are typically not
+ * supplied.
+ *
+ * Assuming the address is a linear address (it is for IBS), we fake the CS and
+ * vm86 mode using the known zero-based code segment and 'fix up' the registers
+ * to reflect this.
+ *
+ * Intel PEBS/LBR appear to typically provide the effective address, nothing
+ * much we can do about that but pray and treat it like a linear address.
+ */
+static inline void set_linear_ip(struct pt_regs *regs, unsigned long ip)
+{
+	regs->cs = kernel_ip(ip) ? __KERNEL_CS : __USER_CS;
+	if (regs->flags & X86_VM_MASK)
+		regs->flags ^= (PERF_EFLAGS_VM | X86_VM_MASK);
+	regs->ip = ip;
+}
+
+ssize_t x86_event_sysfs_show(char *page, u64 config, u64 event);
+ssize_t intel_event_sysfs_show(char *page, u64 config);
 
 #ifdef CONFIG_CPU_SUP_AMD
 
@@ -546,6 +586,8 @@ extern struct event_constraint intel_westmere_pebs_event_constraints[];
 
 extern struct event_constraint intel_snb_pebs_event_constraints[];
 
+extern struct event_constraint intel_ivb_pebs_event_constraints[];
+
 struct event_constraint *intel_pebs_constraints(struct perf_event *event);
 
 void intel_pmu_pebs_enable(struct perf_event *event);
@@ -583,6 +625,8 @@ int intel_pmu_setup_lbr_filter(struct perf_event *event);
 int p4_pmu_init(void);
 
 int p6_pmu_init(void);
+
+int knc_pmu_init(void);
 
 #else /* CONFIG_CPU_SUP_INTEL */
 

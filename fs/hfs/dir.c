@@ -18,7 +18,7 @@
  * hfs_lookup()
  */
 static struct dentry *hfs_lookup(struct inode *dir, struct dentry *dentry,
-				 struct nameidata *nd)
+				 unsigned int flags)
 {
 	hfs_cat_rec rec;
 	struct hfs_find_data fd;
@@ -51,7 +51,7 @@ done:
  */
 static int hfs_readdir(struct file *filp, void *dirent, filldir_t filldir)
 {
-	struct inode *inode = filp->f_path.dentry->d_inode;
+	struct inode *inode = file_inode(filp);
 	struct super_block *sb = inode->i_sb;
 	int len, err;
 	char strbuf[HFS_MAX_NAMELEN];
@@ -187,7 +187,7 @@ static int hfs_dir_release(struct inode *inode, struct file *file)
  * the directory and the name (and its length) of the new file.
  */
 static int hfs_create(struct inode *dir, struct dentry *dentry, umode_t mode,
-		      struct nameidata *nd)
+		      bool excl)
 {
 	struct inode *inode;
 	int res;

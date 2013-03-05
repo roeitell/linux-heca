@@ -27,7 +27,6 @@
 #include <linux/interrupt.h>
 #include <linux/slab.h>
 #include <linux/module.h>
-#include <linux/version.h>
 #include <linux/iio/events.h>
 #include <linux/iio/iio.h>
 #include <linux/iio/sysfs.h>
@@ -291,59 +290,6 @@ static const u8 device_channel_config[] = {
 	ALSPRX2,
 	ALSPRX2
 };
-
-/**
- * tsl2x7x_parse_buffer() - parse a decimal result from a buffer.
- * @*buf:                   pointer to char buffer to parse
- * @*result:                pointer to buffer to contain
- *                          resulting interger / decimal as ints.
- *
- */
-static int
-tsl2x7x_parse_buffer(const char *buf, struct tsl2x7x_parse_result *result)
-{
-	int integer = 0, fract = 0, fract_mult = 100000;
-	bool integer_part = true, negative = false;
-
-	if (buf[0] == '-') {
-		negative = true;
-		buf++;
-	}
-
-	while (*buf) {
-		if ('0' <= *buf && *buf <= '9') {
-			if (integer_part)
-				integer = integer*10 + *buf - '0';
-			else {
-				fract += fract_mult*(*buf - '0');
-				if (fract_mult == 1)
-					break;
-				fract_mult /= 10;
-			}
-		} else if (*buf == '\n') {
-			if (*(buf + 1) == '\0')
-				break;
-			else
-				return -EINVAL;
-		} else if (*buf == '.') {
-			integer_part = false;
-		} else {
-			return -EINVAL;
-		}
-		buf++;
-	}
-	if (negative) {
-		if (integer)
-			integer = -integer;
-		else
-			fract = -fract;
-	}
-
-	result->integer = integer;
-	result->fract = fract;
-
-	return 0;
-}
 
 /**
  * tsl2x7x_i2c_read() - Read a byte from a register.
@@ -737,7 +683,7 @@ static int tsl2x7x_chip_on(struct iio_dev *indio_dev)
 		return -EINVAL;
 	}
 
-	/* determine als integration regster */
+	/* determine als integration register */
 	als_count = (chip->tsl2x7x_settings.als_time * 100 + 135) / 270;
 	if (als_count == 0)
 		als_count = 1; /* ensure at least one cycle */
@@ -1037,13 +983,12 @@ static ssize_t tsl2x7x_als_time_store(struct device *dev,
 	struct iio_dev *indio_dev = dev_to_iio_dev(dev);
 	struct tsl2X7X_chip *chip = iio_priv(indio_dev);
 	struct tsl2x7x_parse_result result;
+	int ret;
 
-	result.integer = 0;
-	result.fract = 0;
+	ret = iio_str_to_fixpoint(buf, 100, &result.integer, &result.fract);
+	if (ret)
+		return ret;
 
-	tsl2x7x_parse_buffer(buf, &result);
-
-	result.fract /= 1000;
 	result.fract /= 3;
 	chip->tsl2x7x_settings.als_time =
 			(TSL2X7X_MAX_TIMER_CNT - (u8)result.fract);
@@ -1110,12 +1055,12 @@ static ssize_t tsl2x7x_als_persistence_store(struct device *dev,
 	struct tsl2X7X_chip *chip = iio_priv(indio_dev);
 	struct tsl2x7x_parse_result result;
 	int y, z, filter_delay;
+	int ret;
 
-	result.integer = 0;
-	result.fract = 0;
-	tsl2x7x_parse_buffer(buf, &result);
+	ret = iio_str_to_fixpoint(buf, 100, &result.integer, &result.fract);
+	if (ret)
+		return ret;
 
-	result.fract /= 1000;
 	y = (TSL2X7X_MAX_TIMER_CNT - (u8)chip->tsl2x7x_settings.als_time) + 1;
 	z = y * TSL2X7X_MIN_ITIME;
 
@@ -1156,12 +1101,12 @@ static ssize_t tsl2x7x_prox_persistence_store(struct device *dev,
 	struct tsl2X7X_chip *chip = iio_priv(indio_dev);
 	struct tsl2x7x_parse_result result;
 	int y, z, filter_delay;
+	int ret;
 
-	result.integer = 0;
-	result.fract = 0;
-	tsl2x7x_parse_buffer(buf, &result);
+	ret = iio_str_to_fixpoint(buf, 100, &result.integer, &result.fract);
+	if (ret)
+		return ret;
 
-	result.fract /= 1000;
 	y = (TSL2X7X_MAX_TIMER_CNT - (u8)chip->tsl2x7x_settings.prx_time) + 1;
 	z = y * TSL2X7X_MIN_ITIME;
 
@@ -1898,7 +1843,7 @@ static const struct tsl2x7x_chip_info tsl2x7x_chip_info_tbl[] = {
 	},
 };
 
-static int __devinit tsl2x7x_probe(struct i2c_client *clientp,
+static int tsl2x7x_probe(struct i2c_client *clientp,
 	const struct i2c_device_id *id)
 {
 	int ret;
@@ -2027,16 +1972,15 @@ static int tsl2x7x_resume(struct device *dev)
 	return ret;
 }
 
-static int __devexit tsl2x7x_remove(struct i2c_client *client)
+static int tsl2x7x_remove(struct i2c_client *client)
 {
-	struct tsl2X7X_chip *chip = i2c_get_clientdata(client);
-	struct iio_dev *indio_dev = iio_priv_to_dev(chip);
+	struct iio_dev *indio_dev = i2c_get_clientdata(client);
 
 	tsl2x7x_chip_off(indio_dev);
 
 	iio_device_unregister(indio_dev);
 	if (client->irq)
-		free_irq(client->irq, chip->client->name);
+		free_irq(client->irq, indio_dev);
 
 	iio_device_free(indio_dev);
 
@@ -2072,7 +2016,7 @@ static struct i2c_driver tsl2x7x_driver = {
 	},
 	.id_table = tsl2x7x_idtable,
 	.probe = tsl2x7x_probe,
-	.remove = __devexit_p(tsl2x7x_remove),
+	.remove = tsl2x7x_remove,
 };
 
 module_i2c_driver(tsl2x7x_driver);

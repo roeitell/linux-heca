@@ -388,8 +388,6 @@ static int pppol2tp_xmit(struct ppp_channel *chan, struct sk_buff *skb)
 	struct l2tp_session *session;
 	struct l2tp_tunnel *tunnel;
 	struct pppol2tp_session *ps;
-	int old_headroom;
-	int new_headroom;
 	int uhlen, headroom;
 
 	if (sock_flag(sk, SOCK_DEAD) || !(sk->sk_state & PPPOX_CONNECTED))
@@ -408,7 +406,6 @@ static int pppol2tp_xmit(struct ppp_channel *chan, struct sk_buff *skb)
 	if (tunnel == NULL)
 		goto abort_put_sess;
 
-	old_headroom = skb_headroom(skb);
 	uhlen = (tunnel->encap == L2TP_ENCAPTYPE_UDP) ? sizeof(struct udphdr) : 0;
 	headroom = NET_SKB_PAD +
 		   sizeof(struct iphdr) + /* IP header */
@@ -417,9 +414,6 @@ static int pppol2tp_xmit(struct ppp_channel *chan, struct sk_buff *skb)
 		   sizeof(ppph);	/* PPP header */
 	if (skb_cow_head(skb, headroom))
 		goto abort_put_sess_tun;
-
-	new_headroom = skb_headroom(skb);
-	skb->truesize += new_headroom - old_headroom;
 
 	/* Setup PPP header */
 	__skb_push(skb, sizeof(ppph));
@@ -1522,8 +1516,8 @@ static int pppol2tp_session_getsockopt(struct sock *sk,
  * handler, according to whether the PPPoX socket is a for a regular session
  * or the special tunnel type.
  */
-static int pppol2tp_getsockopt(struct socket *sock, int level,
-			       int optname, char __user *optval, int __user *optlen)
+static int pppol2tp_getsockopt(struct socket *sock, int level, int optname,
+			       char __user *optval, int __user *optlen)
 {
 	struct sock *sk = sock->sk;
 	struct l2tp_session *session;
@@ -1535,7 +1529,7 @@ static int pppol2tp_getsockopt(struct socket *sock, int level,
 	if (level != SOL_PPPOL2TP)
 		return udp_prot.getsockopt(sk, level, optname, optval, optlen);
 
-	if (get_user(len, (int __user *) optlen))
+	if (get_user(len, optlen))
 		return -EFAULT;
 
 	len = min_t(unsigned int, len, sizeof(int));
@@ -1568,7 +1562,7 @@ static int pppol2tp_getsockopt(struct socket *sock, int level,
 		err = pppol2tp_session_getsockopt(sk, session, optname, &val);
 
 	err = -EFAULT;
-	if (put_user(len, (int __user *) optlen))
+	if (put_user(len, optlen))
 		goto end_put_sess;
 
 	if (copy_to_user((void __user *) optval, &val, len))
@@ -1789,7 +1783,8 @@ static __net_init int pppol2tp_init_net(struct net *net)
 	struct proc_dir_entry *pde;
 	int err = 0;
 
-	pde = proc_net_fops_create(net, "pppol2tp", S_IRUGO, &pppol2tp_proc_fops);
+	pde = proc_create("pppol2tp", S_IRUGO, net->proc_net,
+			  &pppol2tp_proc_fops);
 	if (!pde) {
 		err = -ENOMEM;
 		goto out;
@@ -1801,7 +1796,7 @@ out:
 
 static __net_exit void pppol2tp_exit_net(struct net *net)
 {
-	proc_net_remove(net, "pppol2tp");
+	remove_proc_entry("pppol2tp", net->proc_net);
 }
 
 static struct pernet_operations pppol2tp_net_ops = {

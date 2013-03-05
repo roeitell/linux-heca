@@ -144,7 +144,7 @@ void netxen_release_tx_buffers(struct netxen_adapter *adapter)
 					 buffrag->length, PCI_DMA_TODEVICE);
 			buffrag->dma = 0ULL;
 		}
-		for (j = 0; j < cmd_buf->frag_count; j++) {
+		for (j = 1; j < cmd_buf->frag_count; j++) {
 			buffrag++;
 			if (buffrag->dma) {
 				pci_unmap_page(adapter->pdev, buffrag->dma,
@@ -197,41 +197,33 @@ int netxen_alloc_sw_resources(struct netxen_adapter *adapter)
 	struct nx_host_sds_ring *sds_ring;
 	struct nx_host_tx_ring *tx_ring;
 	struct netxen_rx_buffer *rx_buf;
-	int ring, i, size;
+	int ring, i;
 
 	struct netxen_cmd_buffer *cmd_buf_arr;
 	struct net_device *netdev = adapter->netdev;
-	struct pci_dev *pdev = adapter->pdev;
 
-	size = sizeof(struct nx_host_tx_ring);
-	tx_ring = kzalloc(size, GFP_KERNEL);
-	if (tx_ring == NULL) {
-		dev_err(&pdev->dev, "%s: failed to allocate tx ring struct\n",
-		       netdev->name);
+	tx_ring = kzalloc(sizeof(struct nx_host_tx_ring), GFP_KERNEL);
+	if (tx_ring == NULL)
 		return -ENOMEM;
-	}
+
 	adapter->tx_ring = tx_ring;
 
 	tx_ring->num_desc = adapter->num_txd;
 	tx_ring->txq = netdev_get_tx_queue(netdev, 0);
 
 	cmd_buf_arr = vzalloc(TX_BUFF_RINGSIZE(tx_ring));
-	if (cmd_buf_arr == NULL) {
-		dev_err(&pdev->dev, "%s: failed to allocate cmd buffer ring\n",
-		       netdev->name);
+	if (cmd_buf_arr == NULL)
 		goto err_out;
-	}
+
 	tx_ring->cmd_buf_arr = cmd_buf_arr;
 
 	recv_ctx = &adapter->recv_ctx;
 
-	size = adapter->max_rds_rings * sizeof (struct nx_host_rds_ring);
-	rds_ring = kzalloc(size, GFP_KERNEL);
-	if (rds_ring == NULL) {
-		dev_err(&pdev->dev, "%s: failed to allocate rds ring struct\n",
-		       netdev->name);
+	rds_ring = kcalloc(adapter->max_rds_rings,
+			   sizeof(struct nx_host_rds_ring), GFP_KERNEL);
+	if (rds_ring == NULL)
 		goto err_out;
-	}
+
 	recv_ctx->rds_rings = rds_ring;
 
 	for (ring = 0; ring < adapter->max_rds_rings; ring++) {
@@ -1437,8 +1429,6 @@ netxen_handle_linkevent(struct netxen_adapter *adapter, nx_fw_msg_t *msg)
 				netdev->name, cable_len);
 	}
 
-	netxen_advert_link_change(adapter, link_status);
-
 	/* update link parameters */
 	if (duplex == LINKEVENT_FULL_DUPLEX)
 		adapter->link_duplex = DUPLEX_FULL;
@@ -1447,6 +1437,8 @@ netxen_handle_linkevent(struct netxen_adapter *adapter, nx_fw_msg_t *msg)
 	adapter->module_type = module;
 	adapter->link_autoneg = autoneg;
 	adapter->link_speed = link_speed;
+
+	netxen_advert_link_change(adapter, link_status);
 }
 
 static void
@@ -1531,8 +1523,6 @@ static struct sk_buff *netxen_process_rxbuf(struct netxen_adapter *adapter,
 		skb->ip_summed = CHECKSUM_UNNECESSARY;
 	} else
 		skb->ip_summed = CHECKSUM_NONE;
-
-	skb->dev = adapter->netdev;
 
 	buffer->skb = NULL;
 no_skb:

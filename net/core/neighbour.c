@@ -290,15 +290,7 @@ static struct neighbour *neigh_alloc(struct neigh_table *tbl, struct net_device 
 			goto out_entries;
 	}
 
-	if (tbl->entry_size)
-		n = kzalloc(tbl->entry_size, GFP_ATOMIC);
-	else {
-		int sz = sizeof(*n) + tbl->key_len;
-
-		sz = ALIGN(sz, NEIGH_PRIV_ALIGN);
-		sz += dev->neigh_priv_len;
-		n = kzalloc(sz, GFP_ATOMIC);
-	}
+	n = kzalloc(tbl->entry_size + dev->neigh_priv_len, GFP_ATOMIC);
 	if (!n)
 		goto out_entries;
 
@@ -474,8 +466,8 @@ struct neighbour *neigh_lookup_nodev(struct neigh_table *tbl, struct net *net,
 }
 EXPORT_SYMBOL(neigh_lookup_nodev);
 
-struct neighbour *neigh_create(struct neigh_table *tbl, const void *pkey,
-			       struct net_device *dev)
+struct neighbour *__neigh_create(struct neigh_table *tbl, const void *pkey,
+				 struct net_device *dev, bool want_ref)
 {
 	u32 hash_val;
 	int key_len = tbl->key_len;
@@ -535,14 +527,16 @@ struct neighbour *neigh_create(struct neigh_table *tbl, const void *pkey,
 	     n1 = rcu_dereference_protected(n1->next,
 			lockdep_is_held(&tbl->lock))) {
 		if (dev == n1->dev && !memcmp(n1->primary_key, pkey, key_len)) {
-			neigh_hold(n1);
+			if (want_ref)
+				neigh_hold(n1);
 			rc = n1;
 			goto out_tbl_unlock;
 		}
 	}
 
 	n->dead = 0;
-	neigh_hold(n);
+	if (want_ref)
+		neigh_hold(n);
 	rcu_assign_pointer(n->next,
 			   rcu_dereference_protected(nht->hash_buckets[hash_val],
 						     lockdep_is_held(&tbl->lock)));
@@ -558,7 +552,7 @@ out_neigh_release:
 	neigh_release(n);
 	goto out;
 }
-EXPORT_SYMBOL(neigh_create);
+EXPORT_SYMBOL(__neigh_create);
 
 static u32 pneigh_hash(const void *pkey, int key_len)
 {
@@ -776,6 +770,9 @@ static void neigh_periodic_work(struct work_struct *work)
 	nht = rcu_dereference_protected(tbl->nht,
 					lockdep_is_held(&tbl->lock));
 
+	if (atomic_read(&tbl->entries) < tbl->gc_thresh1)
+		goto out;
+
 	/*
 	 *	periodically recompute ReachableTime from random function
 	 */
@@ -830,6 +827,7 @@ next_elt:
 		nht = rcu_dereference_protected(tbl->nht,
 						lockdep_is_held(&tbl->lock));
 	}
+out:
 	/* Cycle through all hash buckets every base_reachable_time/2 ticks.
 	 * ARP entry timeouts range from 1/2 base_reachable_time to 3/2
 	 * base_reachable_time.
@@ -1199,10 +1197,23 @@ int neigh_update(struct neighbour *neigh, const u8 *lladdr, u8 new,
 			write_unlock_bh(&neigh->lock);
 
 			rcu_read_lock();
-			/* On shaper/eql skb->dst->neighbour != neigh :( */
-			if (dst && (n2 = dst_get_neighbour_noref(dst)) != NULL)
-				n1 = n2;
+
+			/* Why not just use 'neigh' as-is?  The problem is that
+			 * things such as shaper, eql, and sch_teql can end up
+			 * using alternative, different, neigh objects to output
+			 * the packet in the output path.  So what we need to do
+			 * here is re-lookup the top-level neigh in the path so
+			 * we can reinject the packet there.
+			 */
+			n2 = NULL;
+			if (dst) {
+				n2 = dst_neigh_lookup_skb(dst, skb);
+				if (n2)
+					n1 = n2;
+			}
 			n1->output(n1, skb);
+			if (n2)
+				neigh_release(n2);
 			rcu_read_unlock();
 
 			write_lock_bh(&neigh->lock);
@@ -1286,8 +1297,6 @@ int neigh_resolve_output(struct neighbour *neigh, struct sk_buff *skb)
 	if (!dst)
 		goto discard;
 
-	__skb_pull(skb, skb_network_offset(skb));
-
 	if (!neigh_event_send(neigh, skb)) {
 		int err;
 		struct net_device *dev = neigh->dev;
@@ -1297,6 +1306,7 @@ int neigh_resolve_output(struct neighbour *neigh, struct sk_buff *skb)
 			neigh_hh_init(neigh, dst);
 
 		do {
+			__skb_pull(skb, skb_network_offset(skb));
 			seq = read_seqbegin(&neigh->ha_lock);
 			err = dev_hard_header(skb, dev, ntohs(skb->protocol),
 					      neigh->ha, NULL, skb->len);
@@ -1327,9 +1337,8 @@ int neigh_connected_output(struct neighbour *neigh, struct sk_buff *skb)
 	unsigned int seq;
 	int err;
 
-	__skb_pull(skb, skb_network_offset(skb));
-
 	do {
+		__skb_pull(skb, skb_network_offset(skb));
 		seq = read_seqbegin(&neigh->ha_lock);
 		err = dev_hard_header(skb, dev, ntohs(skb->protocol),
 				      neigh->ha, NULL, skb->len);
@@ -1529,8 +1538,14 @@ static void neigh_table_init_no_netlink(struct neigh_table *tbl)
 	if (!tbl->nht || !tbl->phash_buckets)
 		panic("cannot allocate neighbour cache hashes");
 
+	if (!tbl->entry_size)
+		tbl->entry_size = ALIGN(offsetof(struct neighbour, primary_key) +
+					tbl->key_len, NEIGH_PRIV_ALIGN);
+	else
+		WARN_ON(tbl->entry_size % NEIGH_PRIV_ALIGN);
+
 	rwlock_init(&tbl->lock);
-	INIT_DELAYED_WORK_DEFERRABLE(&tbl->gc_work, neigh_periodic_work);
+	INIT_DEFERRABLE_WORK(&tbl->gc_work, neigh_periodic_work);
 	schedule_delayed_work(&tbl->gc_work, tbl->parms.reachable_time);
 	setup_timer(&tbl->proxy_timer, neigh_proxy_process, (unsigned long)tbl);
 	skb_queue_head_init_class(&tbl->proxy_queue,
@@ -1774,8 +1789,7 @@ static int neightbl_fill_parms(struct sk_buff *skb, struct neigh_parms *parms)
 	    nla_put_u32(skb, NDTPA_QUEUE_LENBYTES, parms->queue_len_bytes) ||
 	    /* approximative value for deprecated QUEUE_LEN (in packets) */
 	    nla_put_u32(skb, NDTPA_QUEUE_LEN,
-			DIV_ROUND_UP(parms->queue_len_bytes,
-				     SKB_TRUESIZE(ETH_FRAME_LEN))) ||
+			parms->queue_len_bytes / SKB_TRUESIZE(ETH_FRAME_LEN)) ||
 	    nla_put_u32(skb, NDTPA_PROXY_QLEN, parms->proxy_qlen) ||
 	    nla_put_u32(skb, NDTPA_APP_PROBES, parms->app_probes) ||
 	    nla_put_u32(skb, NDTPA_UCAST_PROBES, parms->ucast_probes) ||
@@ -2087,7 +2101,7 @@ static int neightbl_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 		if (tidx < tbl_skip || (family && tbl->family != family))
 			continue;
 
-		if (neightbl_fill_info(skb, tbl, NETLINK_CB(cb->skb).pid,
+		if (neightbl_fill_info(skb, tbl, NETLINK_CB(cb->skb).portid,
 				       cb->nlh->nlmsg_seq, RTM_NEWNEIGHTBL,
 				       NLM_F_MULTI) <= 0)
 			break;
@@ -2100,7 +2114,7 @@ static int neightbl_dump_info(struct sk_buff *skb, struct netlink_callback *cb)
 				goto next;
 
 			if (neightbl_fill_param_info(skb, tbl, p,
-						     NETLINK_CB(cb->skb).pid,
+						     NETLINK_CB(cb->skb).portid,
 						     cb->nlh->nlmsg_seq,
 						     RTM_NEWNEIGHTBL,
 						     NLM_F_MULTI) <= 0)
@@ -2229,7 +2243,7 @@ static int neigh_dump_table(struct neigh_table *tbl, struct sk_buff *skb,
 				continue;
 			if (idx < s_idx)
 				goto next;
-			if (neigh_fill_info(skb, n, NETLINK_CB(cb->skb).pid,
+			if (neigh_fill_info(skb, n, NETLINK_CB(cb->skb).portid,
 					    cb->nlh->nlmsg_seq,
 					    RTM_NEWNEIGH,
 					    NLM_F_MULTI) <= 0) {
@@ -2266,7 +2280,7 @@ static int pneigh_dump_table(struct neigh_table *tbl, struct sk_buff *skb,
 				continue;
 			if (idx < s_idx)
 				goto next;
-			if (pneigh_fill_info(skb, n, NETLINK_CB(cb->skb).pid,
+			if (pneigh_fill_info(skb, n, NETLINK_CB(cb->skb).portid,
 					    cb->nlh->nlmsg_seq,
 					    RTM_NEWNEIGH,
 					    NLM_F_MULTI, tbl) <= 0) {
@@ -2757,6 +2771,8 @@ EXPORT_SYMBOL(neigh_app_ns);
 #endif /* CONFIG_ARPD */
 
 #ifdef CONFIG_SYSCTL
+static int zero;
+static int unres_qlen_max = INT_MAX / SKB_TRUESIZE(ETH_FRAME_LEN);
 
 static int proc_unres_qlen(ctl_table *ctl, int write, void __user *buffer,
 			   size_t *lenp, loff_t *ppos)
@@ -2764,9 +2780,13 @@ static int proc_unres_qlen(ctl_table *ctl, int write, void __user *buffer,
 	int size, ret;
 	ctl_table tmp = *ctl;
 
+	tmp.extra1 = &zero;
+	tmp.extra2 = &unres_qlen_max;
 	tmp.data = &size;
-	size = DIV_ROUND_UP(*(int *)ctl->data, SKB_TRUESIZE(ETH_FRAME_LEN));
-	ret = proc_dointvec(&tmp, write, buffer, lenp, ppos);
+
+	size = *(int *)ctl->data / SKB_TRUESIZE(ETH_FRAME_LEN);
+	ret = proc_dointvec_minmax(&tmp, write, buffer, lenp, ppos);
+
 	if (write && !ret)
 		*(int *)ctl->data = size * SKB_TRUESIZE(ETH_FRAME_LEN);
 	return ret;
@@ -2852,7 +2872,8 @@ static struct neigh_sysctl_table {
 			.procname	= "unres_qlen_bytes",
 			.maxlen		= sizeof(int),
 			.mode		= 0644,
-			.proc_handler	= proc_dointvec,
+			.extra1		= &zero,
+			.proc_handler   = proc_dointvec_minmax,
 		},
 		[NEIGH_VAR_PROXY_QLEN] = {
 			.procname	= "proxy_qlen",
@@ -2973,6 +2994,10 @@ int neigh_sysctl_register(struct net_device *dev, struct neigh_parms *p,
 		t->neigh_vars[NEIGH_VAR_BASE_REACHABLE_TIME_MS].proc_handler = handler;
 		t->neigh_vars[NEIGH_VAR_BASE_REACHABLE_TIME_MS].extra1 = dev;
 	}
+
+	/* Don't export sysctls to unprivileged users */
+	if (neigh_parms_net(p)->user_ns != &init_user_ns)
+		t->neigh_vars[0].procname = NULL;
 
 	snprintf(neigh_path, sizeof(neigh_path), "net/%s/neigh/%s",
 		p_name, dev_name_source);

@@ -570,7 +570,7 @@ static int pppoe_release(struct socket *sock)
 
 	po = pppox_sk(sk);
 
-	if (sk->sk_state & (PPPOX_CONNECTED | PPPOX_BOUND)) {
+	if (sk->sk_state & (PPPOX_CONNECTED | PPPOX_BOUND | PPPOX_ZOMBIE)) {
 		dev_put(po->pppoe_dev);
 		po->pppoe_dev = NULL;
 	}
@@ -1134,7 +1134,7 @@ static __net_init int pppoe_init_net(struct net *net)
 
 	rwlock_init(&pn->hash_lock);
 
-	pde = proc_net_fops_create(net, "pppoe", S_IRUGO, &pppoe_seq_fops);
+	pde = proc_create("pppoe", S_IRUGO, net->proc_net, &pppoe_seq_fops);
 #ifdef CONFIG_PROC_FS
 	if (!pde)
 		return -ENOMEM;
@@ -1145,7 +1145,7 @@ static __net_init int pppoe_init_net(struct net *net)
 
 static __net_exit void pppoe_exit_net(struct net *net)
 {
-	proc_net_remove(net, "pppoe");
+	remove_proc_entry("pppoe", net->proc_net);
 }
 
 static struct pernet_operations pppoe_net_ops = {

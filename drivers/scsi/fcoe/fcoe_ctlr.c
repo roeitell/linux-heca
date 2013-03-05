@@ -788,11 +788,11 @@ static unsigned long fcoe_ctlr_age_fcfs(struct fcoe_ctlr *fip)
 	unsigned long deadline;
 	unsigned long sel_time = 0;
 	struct list_head del_list;
-	struct fcoe_dev_stats *stats;
+	struct fc_stats *stats;
 
 	INIT_LIST_HEAD(&del_list);
 
-	stats = per_cpu_ptr(fip->lp->dev_stats, get_cpu());
+	stats = per_cpu_ptr(fip->lp->stats, get_cpu());
 
 	list_for_each_entry_safe(fcf, next, &fip->fcfs, list) {
 		deadline = fcf->time + fcf->fka_period + fcf->fka_period / 2;
@@ -1104,8 +1104,8 @@ static void fcoe_ctlr_recv_els(struct fcoe_ctlr *fip, struct sk_buff *skb)
 	struct fc_frame_header *fh = NULL;
 	struct fip_desc *desc;
 	struct fip_encaps *els;
-	struct fcoe_dev_stats *stats;
 	struct fcoe_fcf *sel;
+	struct fc_stats *stats;
 	enum fip_desc_type els_dtype = 0;
 	u8 els_op;
 	u8 sub;
@@ -1249,7 +1249,7 @@ static void fcoe_ctlr_recv_els(struct fcoe_ctlr *fip, struct sk_buff *skb)
 	fr_dev(fp) = lport;
 	fr_encaps(fp) = els_dtype;
 
-	stats = per_cpu_ptr(lport->dev_stats, get_cpu());
+	stats = per_cpu_ptr(lport->stats, get_cpu());
 	stats->RxFrames++;
 	stats->RxWords += skb->len / FIP_BPW;
 	put_cpu();
@@ -1291,8 +1291,16 @@ static void fcoe_ctlr_recv_clr_vlink(struct fcoe_ctlr *fip,
 
 	LIBFCOE_FIP_DBG(fip, "Clear Virtual Link received\n");
 
-	if (!fcf || !lport->port_id)
+	if (!fcf || !lport->port_id) {
+		/*
+		 * We are yet to select best FCF, but we got CVL in the
+		 * meantime. reset the ctlr and let it rediscover the FCF
+		 */
+		mutex_lock(&fip->ctlr_mutex);
+		fcoe_ctlr_reset(fip);
+		mutex_unlock(&fip->ctlr_mutex);
 		return;
+	}
 
 	/*
 	 * mask of required descriptors.  Validating each one clears its bit.
@@ -1353,7 +1361,7 @@ static void fcoe_ctlr_recv_clr_vlink(struct fcoe_ctlr *fip,
 						      ntoh24(vp->fd_fc_id));
 			if (vn_port && (vn_port == lport)) {
 				mutex_lock(&fip->ctlr_mutex);
-				per_cpu_ptr(lport->dev_stats,
+				per_cpu_ptr(lport->stats,
 					    get_cpu())->VLinkFailureCount++;
 				put_cpu();
 				fcoe_ctlr_reset(fip);
@@ -1383,8 +1391,7 @@ static void fcoe_ctlr_recv_clr_vlink(struct fcoe_ctlr *fip,
 		 * followed by physical port
 		 */
 		mutex_lock(&fip->ctlr_mutex);
-		per_cpu_ptr(lport->dev_stats,
-			    get_cpu())->VLinkFailureCount++;
+		per_cpu_ptr(lport->stats, get_cpu())->VLinkFailureCount++;
 		put_cpu();
 		fcoe_ctlr_reset(fip);
 		mutex_unlock(&fip->ctlr_mutex);
@@ -1552,15 +1559,6 @@ static struct fcoe_fcf *fcoe_ctlr_select(struct fcoe_ctlr *fip)
 				fcf->fabric_name, fcf->vfid, fcf->fcf_mac,
 				fcf->fc_map, fcoe_ctlr_mtu_valid(fcf),
 				fcf->flogi_sent, fcf->pri);
-		if (fcf->fabric_name != first->fabric_name ||
-		    fcf->vfid != first->vfid ||
-		    fcf->fc_map != first->fc_map) {
-			LIBFCOE_FIP_DBG(fip, "Conflicting fabric, VFID, "
-					"or FC-MAP\n");
-			return NULL;
-		}
-		if (fcf->flogi_sent)
-			continue;
 		if (!fcoe_ctlr_fcf_usable(fcf)) {
 			LIBFCOE_FIP_DBG(fip, "FCF for fab %16.16llx "
 					"map %x %svalid %savailable\n",
@@ -1570,6 +1568,15 @@ static struct fcoe_fcf *fcoe_ctlr_select(struct fcoe_ctlr *fip)
 					"" : "un");
 			continue;
 		}
+		if (fcf->fabric_name != first->fabric_name ||
+		    fcf->vfid != first->vfid ||
+		    fcf->fc_map != first->fc_map) {
+			LIBFCOE_FIP_DBG(fip, "Conflicting fabric, VFID, "
+					"or FC-MAP\n");
+			return NULL;
+		}
+		if (fcf->flogi_sent)
+			continue;
 		if (!best || fcf->pri < best->pri || best->flogi_sent)
 			best = fcf;
 	}
@@ -2145,7 +2152,7 @@ static void fcoe_ctlr_vn_restart(struct fcoe_ctlr *fip)
 	 */
 	port_id = fip->port_id;
 	if (fip->probe_tries)
-		port_id = prandom32(&fip->rnd_state) & 0xffff;
+		port_id = prandom_u32_state(&fip->rnd_state) & 0xffff;
 	else if (!port_id)
 		port_id = fip->lp->wwpn & 0xffff;
 	if (!port_id || port_id == 0xffff)
@@ -2170,7 +2177,7 @@ static void fcoe_ctlr_vn_restart(struct fcoe_ctlr *fip)
 static void fcoe_ctlr_vn_start(struct fcoe_ctlr *fip)
 {
 	fip->probe_tries = 0;
-	prandom32_seed(&fip->rnd_state, fip->lp->wwpn);
+	prandom_seed_state(&fip->rnd_state, fip->lp->wwpn);
 	fcoe_ctlr_vn_restart(fip);
 }
 
@@ -2865,22 +2872,21 @@ void fcoe_fcf_get_selected(struct fcoe_fcf_device *fcf_dev)
 }
 EXPORT_SYMBOL(fcoe_fcf_get_selected);
 
-void fcoe_ctlr_get_fip_mode(struct fcoe_ctlr_device *ctlr_dev)
+void fcoe_ctlr_set_fip_mode(struct fcoe_ctlr_device *ctlr_dev)
 {
 	struct fcoe_ctlr *ctlr = fcoe_ctlr_device_priv(ctlr_dev);
 
 	mutex_lock(&ctlr->ctlr_mutex);
-	switch (ctlr->mode) {
-	case FIP_MODE_FABRIC:
-		ctlr_dev->mode = FIP_CONN_TYPE_FABRIC;
+	switch (ctlr_dev->mode) {
+	case FIP_CONN_TYPE_VN2VN:
+		ctlr->mode = FIP_MODE_VN2VN;
 		break;
-	case FIP_MODE_VN2VN:
-		ctlr_dev->mode = FIP_CONN_TYPE_VN2VN;
-		break;
+	case FIP_CONN_TYPE_FABRIC:
 	default:
-		ctlr_dev->mode = FIP_CONN_TYPE_UNKNOWN;
+		ctlr->mode = FIP_MODE_FABRIC;
 		break;
 	}
+
 	mutex_unlock(&ctlr->ctlr_mutex);
 }
-EXPORT_SYMBOL(fcoe_ctlr_get_fip_mode);
+EXPORT_SYMBOL(fcoe_ctlr_set_fip_mode);

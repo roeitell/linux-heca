@@ -10,7 +10,7 @@ config SUNRPC_BACKCHANNEL
 
 config SUNRPC_XPRT_RDMA
 	tristate
-	depends on SUNRPC && INFINIBAND && INFINIBAND_ADDR_TRANS && EXPERIMENTAL
+	depends on SUNRPC && INFINIBAND && INFINIBAND_ADDR_TRANS
 	default SUNRPC && INFINIBAND
 	help
 	  This option allows the NFS client and server to support
@@ -20,6 +20,11 @@ config SUNRPC_XPRT_RDMA
 	  choose M here: the module will be called xprtrdma.
 
 	  If unsure, say N.
+
+config SUNRPC_SWAP
+	bool
+	depends on SUNRPC
+	select NETVM
 
 config RPCSEC_GSS_KRB5
 	tristate "Secure RPC: Kerberos V mechanism"

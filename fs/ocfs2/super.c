@@ -1818,6 +1818,11 @@ static int ocfs2_initialize_mem_caches(void)
 
 static void ocfs2_free_mem_caches(void)
 {
+	/*
+	 * Make sure all delayed rcu free inodes are flushed before we
+	 * destroy cache.
+	 */
+	rcu_barrier();
 	if (ocfs2_inode_cachep)
 		kmem_cache_destroy(ocfs2_inode_cachep);
 	ocfs2_inode_cachep = NULL;
@@ -2520,8 +2525,7 @@ static int ocfs2_check_volume(struct ocfs2_super *osb)
 		mlog_errno(status);
 
 finally:
-	if (local_alloc)
-		kfree(local_alloc);
+	kfree(local_alloc);
 
 	if (status)
 		mlog_errno(status);
@@ -2548,8 +2552,7 @@ static void ocfs2_delete_osb(struct ocfs2_super *osb)
 	 * we free it here.
 	 */
 	kfree(osb->journal);
-	if (osb->local_alloc_copy)
-		kfree(osb->local_alloc_copy);
+	kfree(osb->local_alloc_copy);
 	kfree(osb->uuid_str);
 	ocfs2_put_dlm_debug(osb->osb_dlm_debug);
 	memset(osb, 0, sizeof(struct ocfs2_super));

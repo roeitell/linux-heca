@@ -37,6 +37,8 @@
 #include <linux/notifier.h>
 #include <linux/suspend.h>
 #include <linux/rwsem.h>
+#include <linux/ptrace.h>
+#include <linux/async.h>
 #include <asm/uaccess.h>
 
 #include <trace/events/module.h>
@@ -44,6 +46,13 @@
 extern int max_threads;
 
 static struct workqueue_struct *khelper_wq;
+
+/*
+ * kmod_thread_locker is used for deadlock avoidance.  There is no explicit
+ * locking to protect this global - it is private to the singleton khelper
+ * thread and should only ever be modified by that thread.
+ */
+static const struct task_struct *kmod_thread_locker;
 
 #define CAP_BSET	(void *)1
 #define CAP_PI		(void *)2
@@ -121,6 +130,14 @@ int __request_module(bool wait, const char *fmt, ...)
 	static atomic_t kmod_concurrent = ATOMIC_INIT(0);
 #define MAX_KMOD_CONCURRENT 50	/* Completely arbitrary value - KAO */
 	static int kmod_loop_msg;
+
+	/*
+	 * We don't allow synchronous module loading from async.  Module
+	 * init may invoke async_synchronize_full() which will end up
+	 * waiting for this task which already is waiting for the module
+	 * loading to complete, leading to a deadlock.
+	 */
+	WARN_ON_ONCE(wait && current_is_async());
 
 	va_start(args, fmt);
 	ret = vsnprintf(module_name, MODULE_NAME_LEN, fmt, args);
@@ -211,14 +228,23 @@ static int ____call_usermodehelper(void *data)
 
 	commit_creds(new);
 
-	retval = kernel_execve(sub_info->path,
-			       (const char *const *)sub_info->argv,
-			       (const char *const *)sub_info->envp);
+	retval = do_execve(sub_info->path,
+			   (const char __user *const __user *)sub_info->argv,
+			   (const char __user *const __user *)sub_info->envp);
+	if (!retval)
+		return 0;
 
 	/* Exec failed? */
 fail:
 	sub_info->retval = retval;
-	return 0;
+	do_exit(0);
+}
+
+static int call_helper(void *data)
+{
+	/* Worker thread started blocking khelper thread. */
+	kmod_thread_locker = current;
+	return ____call_usermodehelper(data);
 }
 
 static void call_usermodehelper_freeinfo(struct subprocess_info *info)
@@ -278,7 +304,7 @@ static int wait_for_helper(void *data)
 	}
 
 	umh_complete(sub_info);
-	return 0;
+	do_exit(0);
 }
 
 /* This is run by khelper thread  */
@@ -295,9 +321,12 @@ static void __call_usermodehelper(struct work_struct *work)
 	if (wait == UMH_WAIT_PROC)
 		pid = kernel_thread(wait_for_helper, sub_info,
 				    CLONE_FS | CLONE_FILES | SIGCHLD);
-	else
-		pid = kernel_thread(____call_usermodehelper, sub_info,
+	else {
+		pid = kernel_thread(call_helper, sub_info,
 				    CLONE_VFORK | SIGCHLD);
+		/* Worker thread stopped blocking khelper thread. */
+		kmod_thread_locker = NULL;
+	}
 
 	switch (wait) {
 	case UMH_NO_WAIT:
@@ -548,6 +577,16 @@ int call_usermodehelper_exec(struct subprocess_info *sub_info, int wait)
 		retval = -EBUSY;
 		goto out;
 	}
+	/*
+	 * Worker thread must not wait for khelper thread at below
+	 * wait_for_completion() if the thread was created with CLONE_VFORK
+	 * flag, for khelper thread is already waiting for the thread at
+	 * wait_for_completion() in do_fork().
+	 */
+	if (wait != UMH_NO_WAIT && current == kmod_thread_locker) {
+		retval = -EBUSY;
+		goto out;
+	}
 
 	sub_info->complete = &done;
 	sub_info->wait = wait;
@@ -577,6 +616,12 @@ unlock:
 	return retval;
 }
 
+/*
+ * call_usermodehelper_fns() will not run the caller-provided cleanup function
+ * if a memory allocation failure is experienced.  So the caller might need to
+ * check the call_usermodehelper_fns() return value: if it is -ENOMEM, perform
+ * the necessaary cleanup within the caller.
+ */
 int call_usermodehelper_fns(
 	char *path, char **argv, char **envp, int wait,
 	int (*init)(struct subprocess_info *info, struct cred *new),

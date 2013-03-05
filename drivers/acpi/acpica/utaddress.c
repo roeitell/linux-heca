@@ -5,7 +5,7 @@
  *****************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2012, Intel Corp.
+ * Copyright (C) 2000 - 2013, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -53,8 +53,8 @@ ACPI_MODULE_NAME("utaddress")
  * FUNCTION:    acpi_ut_add_address_range
  *
  * PARAMETERS:  space_id            - Address space ID
- *              Address             - op_region start address
- *              Length              - op_region length
+ *              address             - op_region start address
+ *              length              - op_region length
  *              region_node         - op_region namespace node
  *
  * RETURN:      Status
@@ -186,9 +186,9 @@ acpi_ut_remove_address_range(acpi_adr_space_type space_id,
  * FUNCTION:    acpi_ut_check_address_range
  *
  * PARAMETERS:  space_id            - Address space ID
- *              Address             - Start address
- *              Length              - Length of address range
- *              Warn                - TRUE if warning on overlap desired
+ *              address             - Start address
+ *              length              - Length of address range
+ *              warn                - TRUE if warning on overlap desired
  *
  * RETURN:      Count of the number of conflicts detected. Zero is always
  *              returned for Space IDs other than Memory or I/O.
@@ -214,7 +214,7 @@ acpi_ut_check_address_range(acpi_adr_space_type space_id,
 
 	if ((space_id != ACPI_ADR_SPACE_SYSTEM_MEMORY) &&
 	    (space_id != ACPI_ADR_SPACE_SYSTEM_IO)) {
-		return_UINT32(0);
+		return_VALUE(0);
 	}
 
 	range_info = acpi_gbl_address_range_list[space_id];
@@ -256,7 +256,7 @@ acpi_ut_check_address_range(acpi_adr_space_type space_id,
 		range_info = range_info->next;
 	}
 
-	return_UINT32(overlap_count);
+	return_VALUE(overlap_count);
 }
 
 /*******************************************************************************

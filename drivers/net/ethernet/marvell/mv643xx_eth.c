@@ -412,7 +412,6 @@ struct mv643xx_eth_private {
 	u8 work_rx_refill;
 
 	int skb_size;
-	struct sk_buff_head rx_recycle;
 
 	/*
 	 * RX state.
@@ -673,9 +672,7 @@ static int rxq_refill(struct rx_queue *rxq, int budget)
 		struct rx_desc *rx_desc;
 		int size;
 
-		skb = __skb_dequeue(&mp->rx_recycle);
-		if (skb == NULL)
-			skb = netdev_alloc_skb(mp->dev, mp->skb_size);
+		skb = netdev_alloc_skb(mp->dev, mp->skb_size);
 
 		if (skb == NULL) {
 			mp->oom = 1;
@@ -989,14 +986,7 @@ static int txq_reclaim(struct tx_queue *txq, int budget, int force)
 				       desc->byte_cnt, DMA_TO_DEVICE);
 		}
 
-		if (skb != NULL) {
-			if (skb_queue_len(&mp->rx_recycle) <
-					mp->rx_ring_size &&
-			    skb_recycle_check(skb, mp->skb_size))
-				__skb_queue_head(&mp->rx_recycle, skb);
-			else
-				dev_kfree_skb(skb);
-		}
+		dev_kfree_skb(skb);
 	}
 
 	__netif_tx_unlock(nq);
@@ -1889,14 +1879,12 @@ static int rxq_init(struct mv643xx_eth_private *mp, int index)
 	memset(rxq->rx_desc_area, 0, size);
 
 	rxq->rx_desc_area_size = size;
-	rxq->rx_skb = kmalloc(rxq->rx_ring_size * sizeof(*rxq->rx_skb),
-								GFP_KERNEL);
-	if (rxq->rx_skb == NULL) {
-		netdev_err(mp->dev, "can't allocate rx skb ring\n");
+	rxq->rx_skb = kmalloc_array(rxq->rx_ring_size, sizeof(*rxq->rx_skb),
+				    GFP_KERNEL);
+	if (rxq->rx_skb == NULL)
 		goto out_free;
-	}
 
-	rx_desc = (struct rx_desc *)rxq->rx_desc_area;
+	rx_desc = rxq->rx_desc_area;
 	for (i = 0; i < rxq->rx_ring_size; i++) {
 		int nexti;
 
@@ -2001,7 +1989,7 @@ static int txq_init(struct mv643xx_eth_private *mp, int index)
 
 	txq->tx_desc_area_size = size;
 
-	tx_desc = (struct tx_desc *)txq->tx_desc_area;
+	tx_desc = txq->tx_desc_area;
 	for (i = 0; i < txq->tx_ring_size; i++) {
 		struct tx_desc *txd = tx_desc + i;
 		int nexti;
@@ -2349,8 +2337,6 @@ static int mv643xx_eth_open(struct net_device *dev)
 
 	napi_enable(&mp->napi);
 
-	skb_queue_head_init(&mp->rx_recycle);
-
 	mp->int_mask = INT_EXT;
 
 	for (i = 0; i < mp->rxq_count; i++) {
@@ -2444,8 +2430,6 @@ static int mv643xx_eth_stop(struct net_device *dev)
 	mv643xx_eth_get_stats(dev);
 	mib_counters_update(mp);
 	del_timer_sync(&mp->mib_counters_timer);
-
-	skb_queue_purge(&mp->rx_recycle);
 
 	for (i = 0; i < mp->rxq_count; i++)
 		rxq_deinit(mp->rxq + i);
@@ -2803,7 +2787,7 @@ static void phy_init(struct mv643xx_eth_private *mp, int speed, int duplex)
 
 	phy_reset(mp);
 
-	phy_attach(mp->dev, dev_name(&phy->dev), 0, PHY_INTERFACE_MODE_GMII);
+	phy_attach(mp->dev, dev_name(&phy->dev), PHY_INTERFACE_MODE_GMII);
 
 	if (speed == 0) {
 		phy->autoneg = AUTONEG_ENABLE;
@@ -2983,6 +2967,12 @@ static int mv643xx_eth_probe(struct platform_device *pdev)
 	return 0;
 
 out:
+#if defined(CONFIG_HAVE_CLK)
+	if (!IS_ERR(mp->clk)) {
+		clk_disable_unprepare(mp->clk);
+		clk_put(mp->clk);
+	}
+#endif
 	free_netdev(dev);
 
 	return err;

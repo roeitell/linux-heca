@@ -16,13 +16,13 @@
 #include <linux/memblock.h>
 #include <linux/fs.h>
 #include <linux/vmalloc.h>
+#include <linux/sizes.h>
 
 #include <asm/cp15.h>
 #include <asm/cputype.h>
 #include <asm/sections.h>
 #include <asm/cachetype.h>
 #include <asm/setup.h>
-#include <asm/sizes.h>
 #include <asm/smp_plat.h>
 #include <asm/tlb.h>
 #include <asm/highmem.h>
@@ -31,6 +31,7 @@
 
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
+#include <asm/mach/pci.h>
 
 #include "mm.h"
 
@@ -56,6 +57,9 @@ static unsigned int cachepolicy __initdata = CPOLICY_WRITEBACK;
 static unsigned int ecc_mask __initdata = 0;
 pgprot_t pgprot_user;
 pgprot_t pgprot_kernel;
+pgprot_t pgprot_hyp_device;
+pgprot_t pgprot_s2;
+pgprot_t pgprot_s2_device;
 
 EXPORT_SYMBOL(pgprot_user);
 EXPORT_SYMBOL(pgprot_kernel);
@@ -65,7 +69,14 @@ struct cachepolicy {
 	unsigned int	cr_mask;
 	pmdval_t	pmd;
 	pteval_t	pte;
+	pteval_t	pte_s2;
 };
+
+#ifdef CONFIG_ARM_LPAE
+#define s2_policy(policy)	policy
+#else
+#define s2_policy(policy)	0
+#endif
 
 static struct cachepolicy cache_policies[] __initdata = {
 	{
@@ -73,26 +84,31 @@ static struct cachepolicy cache_policies[] __initdata = {
 		.cr_mask	= CR_W|CR_C,
 		.pmd		= PMD_SECT_UNCACHED,
 		.pte		= L_PTE_MT_UNCACHED,
+		.pte_s2		= s2_policy(L_PTE_S2_MT_UNCACHED),
 	}, {
 		.policy		= "buffered",
 		.cr_mask	= CR_C,
 		.pmd		= PMD_SECT_BUFFERED,
 		.pte		= L_PTE_MT_BUFFERABLE,
+		.pte_s2		= s2_policy(L_PTE_S2_MT_UNCACHED),
 	}, {
 		.policy		= "writethrough",
 		.cr_mask	= 0,
 		.pmd		= PMD_SECT_WT,
 		.pte		= L_PTE_MT_WRITETHROUGH,
+		.pte_s2		= s2_policy(L_PTE_S2_MT_WRITETHROUGH),
 	}, {
 		.policy		= "writeback",
 		.cr_mask	= 0,
 		.pmd		= PMD_SECT_WB,
 		.pte		= L_PTE_MT_WRITEBACK,
+		.pte_s2		= s2_policy(L_PTE_S2_MT_WRITEBACK),
 	}, {
 		.policy		= "writealloc",
 		.cr_mask	= 0,
 		.pmd		= PMD_SECT_WBWA,
 		.pte		= L_PTE_MT_WRITEALLOC,
+		.pte_s2		= s2_policy(L_PTE_S2_MT_WRITEBACK),
 	}
 };
 
@@ -216,7 +232,7 @@ static struct mem_type mem_types[] = {
 		.prot_l1	= PMD_TYPE_TABLE,
 		.prot_sect	= PROT_SECT_DEVICE | PMD_SECT_WB,
 		.domain		= DOMAIN_IO,
-	},	
+	},
 	[MT_DEVICE_WC] = {	/* ioremap_wc */
 		.prot_pte	= PROT_PTE_DEVICE | L_PTE_MT_DEV_WC,
 		.prot_l1	= PMD_TYPE_TABLE,
@@ -282,7 +298,7 @@ static struct mem_type mem_types[] = {
 	},
 	[MT_MEMORY_SO] = {
 		.prot_pte  = L_PTE_PRESENT | L_PTE_YOUNG | L_PTE_DIRTY |
-				L_PTE_MT_UNCACHED,
+				L_PTE_MT_UNCACHED | L_PTE_XN,
 		.prot_l1   = PMD_TYPE_TABLE,
 		.prot_sect = PMD_TYPE_SECT | PMD_SECT_AP_WRITE | PMD_SECT_S |
 				PMD_SECT_UNCACHED | PMD_SECT_XN,
@@ -309,6 +325,7 @@ static void __init build_mem_type_table(void)
 	struct cachepolicy *cp;
 	unsigned int cr = get_cr();
 	pteval_t user_pgprot, kern_pgprot, vecs_pgprot;
+	pteval_t hyp_device_pgprot, s2_pgprot, s2_device_pgprot;
 	int cpu_arch = cpu_architecture();
 	int i;
 
@@ -420,24 +437,9 @@ static void __init build_mem_type_table(void)
 	 */
 	cp = &cache_policies[cachepolicy];
 	vecs_pgprot = kern_pgprot = user_pgprot = cp->pte;
+	s2_pgprot = cp->pte_s2;
+	hyp_device_pgprot = s2_device_pgprot = mem_types[MT_DEVICE].prot_pte;
 
-	/*
-	 * Only use write-through for non-SMP systems
-	 */
-	if (!is_smp() && cpu_arch >= CPU_ARCH_ARMv5 && cachepolicy > CPOLICY_WRITETHROUGH)
-		vecs_pgprot = cache_policies[CPOLICY_WRITETHROUGH].pte;
-
-	/*
-	 * Enable CPU-specific coherency if supported.
-	 * (Only available on XSC3 at the moment.)
-	 */
-	if (arch_is_coherent() && cpu_is_xsc3()) {
-		mem_types[MT_MEMORY].prot_sect |= PMD_SECT_S;
-		mem_types[MT_MEMORY].prot_pte |= L_PTE_SHARED;
-		mem_types[MT_MEMORY_DMA_READY].prot_pte |= L_PTE_SHARED;
-		mem_types[MT_MEMORY_NONCACHED].prot_sect |= PMD_SECT_S;
-		mem_types[MT_MEMORY_NONCACHED].prot_pte |= L_PTE_SHARED;
-	}
 	/*
 	 * ARMv6 and above have extended page tables.
 	 */
@@ -460,6 +462,7 @@ static void __init build_mem_type_table(void)
 			user_pgprot |= L_PTE_SHARED;
 			kern_pgprot |= L_PTE_SHARED;
 			vecs_pgprot |= L_PTE_SHARED;
+			s2_pgprot |= L_PTE_SHARED;
 			mem_types[MT_DEVICE_WC].prot_sect |= PMD_SECT_S;
 			mem_types[MT_DEVICE_WC].prot_pte |= L_PTE_SHARED;
 			mem_types[MT_DEVICE_CACHED].prot_sect |= PMD_SECT_S;
@@ -504,7 +507,7 @@ static void __init build_mem_type_table(void)
 #endif
 
 	for (i = 0; i < 16; i++) {
-		unsigned long v = pgprot_val(protection_map[i]);
+		pteval_t v = pgprot_val(protection_map[i]);
 		protection_map[i] = __pgprot(v | user_pgprot);
 	}
 
@@ -514,6 +517,9 @@ static void __init build_mem_type_table(void)
 	pgprot_user   = __pgprot(L_PTE_PRESENT | L_PTE_YOUNG | user_pgprot);
 	pgprot_kernel = __pgprot(L_PTE_PRESENT | L_PTE_YOUNG |
 				 L_PTE_DIRTY | kern_pgprot);
+	pgprot_s2  = __pgprot(L_PTE_PRESENT | L_PTE_YOUNG | s2_pgprot);
+	pgprot_s2_device  = __pgprot(s2_device_pgprot);
+	pgprot_hyp_device  = __pgprot(hyp_device_pgprot);
 
 	mem_types[MT_LOW_VECTORS].prot_l1 |= ecc_mask;
 	mem_types[MT_HIGH_VECTORS].prot_l1 |= ecc_mask;
@@ -773,22 +779,41 @@ void __init iotable_init(struct map_desc *io_desc, int nr)
 {
 	struct map_desc *md;
 	struct vm_struct *vm;
+	struct static_vm *svm;
 
 	if (!nr)
 		return;
 
-	vm = early_alloc_aligned(sizeof(*vm) * nr, __alignof__(*vm));
+	svm = early_alloc_aligned(sizeof(*svm) * nr, __alignof__(*svm));
 
 	for (md = io_desc; nr; md++, nr--) {
 		create_mapping(md);
+
+		vm = &svm->vm;
 		vm->addr = (void *)(md->virtual & PAGE_MASK);
 		vm->size = PAGE_ALIGN(md->length + (md->virtual & ~PAGE_MASK));
-		vm->phys_addr = __pfn_to_phys(md->pfn); 
-		vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING; 
+		vm->phys_addr = __pfn_to_phys(md->pfn);
+		vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING;
 		vm->flags |= VM_ARM_MTYPE(md->type);
 		vm->caller = iotable_init;
-		vm_area_add_early(vm++);
+		add_static_vm_early(svm++);
 	}
+}
+
+void __init vm_reserve_area_early(unsigned long addr, unsigned long size,
+				  void *caller)
+{
+	struct vm_struct *vm;
+	struct static_vm *svm;
+
+	svm = early_alloc_aligned(sizeof(*svm), __alignof__(*svm));
+
+	vm = &svm->vm;
+	vm->addr = (void *)addr;
+	vm->size = size;
+	vm->flags = VM_IOREMAP | VM_ARM_EMPTY_MAPPING;
+	vm->caller = caller;
+	add_static_vm_early(svm);
 }
 
 #ifndef CONFIG_ARM_LPAE
@@ -808,26 +833,18 @@ void __init iotable_init(struct map_desc *io_desc, int nr)
 
 static void __init pmd_empty_section_gap(unsigned long addr)
 {
-	struct vm_struct *vm;
-
-	vm = early_alloc_aligned(sizeof(*vm), __alignof__(*vm));
-	vm->addr = (void *)addr;
-	vm->size = SECTION_SIZE;
-	vm->flags = VM_IOREMAP | VM_ARM_STATIC_MAPPING;
-	vm->caller = pmd_empty_section_gap;
-	vm_area_add_early(vm);
+	vm_reserve_area_early(addr, SECTION_SIZE, pmd_empty_section_gap);
 }
 
 static void __init fill_pmd_gaps(void)
 {
+	struct static_vm *svm;
 	struct vm_struct *vm;
 	unsigned long addr, next = 0;
 	pmd_t *pmd;
 
-	/* we're still single threaded hence no lock needed here */
-	for (vm = vmlist; vm; vm = vm->next) {
-		if (!(vm->flags & VM_ARM_STATIC_MAPPING))
-			continue;
+	list_for_each_entry(svm, &static_vmlist, list) {
+		vm = &svm->vm;
 		addr = (unsigned long)vm->addr;
 		if (addr < next)
 			continue;
@@ -862,6 +879,37 @@ static void __init fill_pmd_gaps(void)
 
 #else
 #define fill_pmd_gaps() do { } while (0)
+#endif
+
+#if defined(CONFIG_PCI) && !defined(CONFIG_NEED_MACH_IO_H)
+static void __init pci_reserve_io(void)
+{
+	struct static_vm *svm;
+
+	svm = find_static_vm_vaddr((void *)PCI_IO_VIRT_BASE);
+	if (svm)
+		return;
+
+	vm_reserve_area_early(PCI_IO_VIRT_BASE, SZ_2M, pci_reserve_io);
+}
+#else
+#define pci_reserve_io() do { } while (0)
+#endif
+
+#ifdef CONFIG_DEBUG_LL
+void __init debug_ll_io_init(void)
+{
+	struct map_desc map;
+
+	debug_ll_addr(&map.pfn, &map.virtual);
+	if (!map.pfn || !map.virtual)
+		return;
+	map.pfn = __phys_to_pfn(map.pfn);
+	map.virtual &= PAGE_MASK;
+	map.length = PAGE_SIZE;
+	map.type = MT_DEVICE;
+	create_mapping(&map);
+}
 #endif
 
 static void * __initdata vmalloc_min =
@@ -967,8 +1015,8 @@ void __init sanity_check_meminfo(void)
 		 * Check whether this memory bank would partially overlap
 		 * the vmalloc area.
 		 */
-		if (__va(bank->start + bank->size) > vmalloc_min ||
-		    __va(bank->start + bank->size) < __va(bank->start)) {
+		if (__va(bank->start + bank->size - 1) >= vmalloc_min ||
+		    __va(bank->start + bank->size - 1) <= __va(bank->start)) {
 			unsigned long newsize = vmalloc_min - __va(bank->start);
 			printk(KERN_NOTICE "Truncating RAM at %.8llx-%.8llx "
 			       "to -%.8llx (vmalloc region overlap).\n",
@@ -1146,6 +1194,9 @@ static void __init devicemaps_init(struct machine_desc *mdesc)
 	if (mdesc->map_io)
 		mdesc->map_io();
 	fill_pmd_gaps();
+
+	/* Reserve fixed i/o space in VMALLOC region */
+	pci_reserve_io();
 
 	/*
 	 * Finally flush the caches and tlb to ensure that we're in a

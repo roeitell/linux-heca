@@ -1,30 +1,13 @@
 #ifndef _LINUX_SOCKET_H
 #define _LINUX_SOCKET_H
 
-/*
- * Desired design of maximum size and alignment (see RFC2553)
- */
-#define _K_SS_MAXSIZE	128	/* Implementation specific max size */
-#define _K_SS_ALIGNSIZE	(__alignof__ (struct sockaddr *))
-				/* Implementation specific desired alignment */
-
-typedef unsigned short __kernel_sa_family_t;
-
-struct __kernel_sockaddr_storage {
-	__kernel_sa_family_t	ss_family;		/* address family */
-	/* Following field(s) are implementation specific */
-	char		__data[_K_SS_MAXSIZE - sizeof(unsigned short)];
-				/* space to achieve desired size, */
-				/* _SS_MAXSIZE value minus size of ss_family */
-} __attribute__ ((aligned(_K_SS_ALIGNSIZE)));	/* force desired alignment */
-
-#ifdef __KERNEL__
 
 #include <asm/socket.h>			/* arch-dependent defines	*/
 #include <linux/sockios.h>		/* the SIOCxxx I/O controls	*/
 #include <linux/uio.h>			/* iovec support		*/
 #include <linux/types.h>		/* pid_t			*/
 #include <linux/compiler.h>		/* __user			*/
+#include <uapi/linux/socket.h>
 
 struct pid;
 struct cred;
@@ -195,7 +178,8 @@ struct ucred {
 #define AF_CAIF		37	/* CAIF sockets			*/
 #define AF_ALG		38	/* Algorithm sockets		*/
 #define AF_NFC		39	/* NFC sockets			*/
-#define AF_MAX		40	/* For now.. */
+#define AF_VSOCK	40	/* vSockets			*/
+#define AF_MAX		41	/* For now.. */
 
 /* Protocol families, same as address families. */
 #define PF_UNSPEC	AF_UNSPEC
@@ -238,6 +222,7 @@ struct ucred {
 #define PF_CAIF		AF_CAIF
 #define PF_ALG		AF_ALG
 #define PF_NFC		AF_NFC
+#define PF_VSOCK	AF_VSOCK
 #define PF_MAX		AF_MAX
 
 /* Maximum queue length specifiable by listen.  */
@@ -268,6 +253,7 @@ struct ucred {
 #define MSG_SENDPAGE_NOTLAST 0x20000 /* sendpage() internal : not the last page */
 #define MSG_EOF         MSG_FIN
 
+#define MSG_FASTOPEN	0x20000000	/* Send data in TCP SYN */
 #define MSG_CMSG_CLOEXEC 0x40000000	/* Set close_on_exit for file
 					   descriptor received through
 					   SCM_RIGHTS */
@@ -339,5 +325,4 @@ extern int __sys_recvmmsg(int fd, struct mmsghdr __user *mmsg, unsigned int vlen
 			  unsigned int flags, struct timespec *timeout);
 extern int __sys_sendmmsg(int fd, struct mmsghdr __user *mmsg,
 			  unsigned int vlen, unsigned int flags);
-#endif /* not kernel and not glibc */
 #endif /* _LINUX_SOCKET_H */

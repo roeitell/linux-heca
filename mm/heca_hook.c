@@ -11,6 +11,7 @@ const struct heca_hook_struct *heca_hook_read(void)
 
     rcu_read_lock();
     hook = rcu_dereference(heca_hook);
+    rcu_read_unlock();
     return hook;
 #else
     return NULL;
@@ -21,7 +22,6 @@ EXPORT_SYMBOL(heca_hook_read);
 void heca_hook_release(void)
 {
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-    rcu_read_unlock();
 #endif
 }
 EXPORT_SYMBOL(heca_hook_release);

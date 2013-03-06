@@ -790,8 +790,7 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 
                 if (hook && hook->pushback_page(page)) {
                     nr_dirty++;
-                    unlock_page(page);
-                    goto keep;
+                    goto keep_locked;
                 }
             }
 #endif

@@ -324,9 +324,10 @@ retry:
 
 out:
     pte_unmap_unlock(pd.pte, ptl);
-    mmu_notifier_invalidate_page(mm, addr);
-    if (release)
+    if (release) {
+        mmu_notifier_invalidate_page(mm, addr);
         page_cache_release(page);
+    }
 out_mm:
     up_read(&mm->mmap_sem);
     return r;
@@ -684,7 +685,7 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
 /*
  * Return 0 => page dsm or not dsm_remote => try to swap out
  * Return 1 => page is dsm => do not swap out (not necessarily scheduled yet to
- *             be pushed back, could only be done in next cycle)
+ *             be pushed back, could also be done in next cycle)
  */
 static int _push_back_if_remote_dsm_page(struct page *page)
 {
@@ -735,7 +736,6 @@ static int _push_back_if_remote_dsm_page(struct page *page)
 
         ret = 1;
         break;
-
     }
 
     page_unlock_anon_vma_read(anon_vma);
@@ -754,7 +754,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 {
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0;
+    int r = 0, release = 0;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -895,11 +895,14 @@ retry:
     // this is a page flagging without data exchange so we can free the page
 
     unlock_page(page);
-    mmu_notifier_invalidate_page(mm, addr);
-    page_cache_release(page);
+    release = 1;
 
 out_pte_unlock:
     pte_unmap_unlock(pte, ptl);
+    if (release) {
+        mmu_notifier_invalidate_page(mm, addr);
+        page_cache_release(page);
+    }
 out:
     up_read(&mm->mmap_sem);
     return r;

@@ -18,7 +18,6 @@ EXPORT_SYMBOL(dsm_hook_read);
 void dsm_hook_write(const struct dsm_hook_struct *hook)
 {
     rcu_assign_pointer(dsm_hook, hook);
-    synchronize_rcu();
 }
 EXPORT_SYMBOL(dsm_hook_write);
 

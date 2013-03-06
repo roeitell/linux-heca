@@ -2913,7 +2913,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
         }
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
         else if (is_dsm_entry(entry)) {
-            const struct dsm_hook_struct *hook = dsm_hook_read();
+            const struct heca_hook_struct *hook = heca_hook_read();
 
             if (hook) {
                 ret = hook->fetch_page(mm, vma, address,
@@ -2922,6 +2922,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
                 print_bad_pte(vma, address, orig_pte, NULL);
                 ret = VM_FAULT_SIGBUS;
             }
+            heca_hook_release();
             goto out;
 		}
 #endif

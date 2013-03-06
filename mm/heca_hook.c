@@ -1,26 +1,40 @@
 #include <linux/export.h>
 #include <linux/heca_hook.h>
 
-const struct dsm_hook_struct *dsm_hook;
-EXPORT_SYMBOL(dsm_hook);
-#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-const struct dsm_hook_struct *dsm_hook_read(void)
+const struct heca_hook_struct *heca_hook;
+EXPORT_SYMBOL(heca_hook);
+
+const struct heca_hook_struct *heca_hook_read(void)
 {
-    const struct dsm_hook_struct *hook;
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+    const struct heca_hook_struct *hook;
 
     rcu_read_lock();
-    hook = dsm_hook;
-    rcu_read_unlock();
+    hook = rcu_dereference(heca_hook);
     return hook;
+#else
+    return NULL;
+#endif
 }
-EXPORT_SYMBOL(dsm_hook_read);
+EXPORT_SYMBOL(heca_hook_read);
 
-void dsm_hook_write(const struct dsm_hook_struct *hook)
+void heca_hook_release(void)
 {
-    rcu_assign_pointer(dsm_hook, hook);
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+    rcu_read_unlock();
+#endif
 }
-EXPORT_SYMBOL(dsm_hook_write);
+EXPORT_SYMBOL(heca_hook_release);
 
+void heca_hook_write(const struct heca_hook_struct *hook)
+{
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+    rcu_assign_pointer(heca_hook, hook);
+#endif
+}
+EXPORT_SYMBOL(heca_hook_write);
+
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
 #include <linux/writeback.h>
 EXPORT_SYMBOL(set_page_dirty_balance);
 
@@ -81,13 +95,18 @@ EXPORT_SYMBOL(find_task_by_vpid);
 EXPORT_SYMBOL(munlock_vma_page);
 
 #else
-const struct dsm_hook_struct *dsm_hook_read(void) {
+const struct heca_hook_struct *heca_hook_read(void)
+{
     return NULL;
 }
-EXPORT_SYMBOL(dsm_hook_read);
 
-void dsm_hook_write(const struct dsm_hook_struct *hook) {
+void heca_hook_release(void)
+{
 }
-EXPORT_SYMBOL(dsm_hook_write);
+
+void heca_hook_write(const struct heca_hook_struct *hook)
+{
+}
 #endif
+
 

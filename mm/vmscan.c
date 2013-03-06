@@ -749,13 +749,16 @@ static unsigned long shrink_page_list(struct list_head *page_list,
 
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
             {
-                const struct dsm_hook_struct *hook = dsm_hook_read();
+                const struct heca_hook_struct *hook = heca_hook_read();
 
                 if (hook && hook->pushback_page(page)) {
                     nr_dirty++;
                     unlock_page(page);
+                    heca_hook_release();
                     goto keep;
                 }
+
+                heca_hook_release();
             }
 #endif
 

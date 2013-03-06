@@ -860,12 +860,13 @@ long wait_iff_congested(struct zone *zone, int sync, long timeout)
 	unsigned long start = jiffies;
 	DEFINE_WAIT(wait);
 	wait_queue_head_t *wqh = &congestion_wqh[sync];
-    int dsm_congested = 0;
+    int heca_congested = 0;
 
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
     {
-        const struct dsm_hook_struct *hook = dsm_hook_read();
-        dsm_congested = hook && hook->is_congested();
+        const struct heca_hook_struct *hook = heca_hook_read();
+        heca_congested = hook && hook->is_congested();
+        heca_hook_release();
     }
 #endif
 	/*
@@ -873,7 +874,7 @@ long wait_iff_congested(struct zone *zone, int sync, long timeout)
 	 * encountered in the current zone, yield if necessary instead
 	 * of sleeping on the congestion queue
 	 */
-	if (!dsm_congested && (atomic_read(&nr_bdi_congested[sync]) == 0 ||
+	if (!heca_congested && (atomic_read(&nr_bdi_congested[sync]) == 0 ||
 			!zone_is_reclaim_congested(zone))) {
 		cond_resched();
 

@@ -327,7 +327,7 @@ static struct file_operations rdma_fops = { .owner = THIS_MODULE,
 static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "heca",
     &rdma_fops, };
 
-const struct dsm_hook_struct my_dsm_hook = {
+const struct heca_hook_struct my_heca_hook = {
     .name = "HECA",
     .fetch_page = dsm_swap_wrapper,
     .pushback_page = push_back_if_remote_dsm_page,
@@ -344,7 +344,7 @@ static int dsm_init(void)
     BUG_ON(!dsm_state);
     dsm_zero_pfn_init();
     heca_sysfs_setup(dsm_state);
-    dsm_hook_write(&my_dsm_hook);
+    heca_hook_write(&my_heca_hook);
     rc = misc_register(&rdma_misc);
     init_rcm();
 
@@ -359,7 +359,7 @@ static void dsm_exit(void)
 
     fini_rcm();
     misc_deregister(&rdma_misc);
-    dsm_hook_write(NULL);
+    heca_hook_write(NULL);
     heca_sysfs_cleanup(dsm_state);
     dsm_zero_pfn_exit();
     destroy_dsm_module_state();

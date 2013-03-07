@@ -866,7 +866,7 @@ long wait_iff_congested(struct zone *zone, int sync, long timeout)
     {
         const struct heca_hook_struct *hook = heca_hook_read();
         heca_congested = hook && hook->is_congested();
-        heca_hook_release();
+        heca_hook_release(hook);
     }
 #endif
 	/*

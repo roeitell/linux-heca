@@ -2922,7 +2922,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
                 print_bad_pte(vma, address, orig_pte, NULL);
                 ret = VM_FAULT_SIGBUS;
             }
-            heca_hook_release();
+            heca_hook_release(hook);
             goto out;
 		}
 #endif

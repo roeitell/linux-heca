@@ -344,9 +344,9 @@ static int dsm_init(void)
     BUG_ON(!dsm_state);
     dsm_zero_pfn_init();
     heca_sysfs_setup(dsm_state);
-    heca_hook_write(&my_heca_hook);
     rc = misc_register(&rdma_misc);
     init_rcm();
+    BUG_ON(heca_hook_register(&my_heca_hook));
 
     heca_printk(KERN_DEBUG "<exit> %d", rc);
     return rc;
@@ -357,12 +357,14 @@ static void dsm_exit(void)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
 
+    heca_printk(KERN_DEBUG "<enter>");
+    BUG_ON(heca_hook_unregister());
     fini_rcm();
     misc_deregister(&rdma_misc);
-    heca_hook_write(NULL);
     heca_sysfs_cleanup(dsm_state);
     dsm_zero_pfn_exit();
     destroy_dsm_module_state();
+    heca_printk(KERN_DEBUG "<exit>");
 }
 module_exit(dsm_exit);
 

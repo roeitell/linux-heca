@@ -1,38 +1,68 @@
 #include <linux/export.h>
+#include <linux/spinlock.h>
 #include <linux/heca_hook.h>
 
-const struct heca_hook_struct *heca_hook;
-EXPORT_SYMBOL(heca_hook);
+static const struct heca_hook_struct *heca_hook;
+static atomic_t refcount = ATOMIC_INIT(0);
 
 const struct heca_hook_struct *heca_hook_read(void)
 {
+    const struct heca_hook_struct *hook = NULL;
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-    const struct heca_hook_struct *hook;
-
-    rcu_read_lock();
-    hook = rcu_dereference(heca_hook);
-    rcu_read_unlock();
-    return hook;
-#else
-    return NULL;
+    if (!ACCESS_ONCE(heca_hook))
+        return NULL;
+    if (atomic_inc_not_zero(&refcount)) {
+        hook = ACCESS_ONCE(heca_hook);
+        if (unlikely(!hook))
+            atomic_dec(&refcount);
+    }
 #endif
+    return hook;
 }
 EXPORT_SYMBOL(heca_hook_read);
 
-void heca_hook_release(void)
+void heca_hook_release(const struct heca_hook_struct *hook)
 {
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+    if (hook)
+        atomic_dec(&refcount);
 #endif
 }
 EXPORT_SYMBOL(heca_hook_release);
 
-void heca_hook_write(const struct heca_hook_struct *hook)
+int heca_hook_register(const struct heca_hook_struct *hook)
 {
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-    rcu_assign_pointer(heca_hook, hook);
+    if (!atomic_cmpxchg(&refcount, 0, -1)) {
+        heca_hook = hook;
+        smp_mb();
+        atomic_add(2, &refcount);
+        return 0;
+    }
+    return -EFAULT;
 #endif
+    return 0;
 }
-EXPORT_SYMBOL(heca_hook_write);
+EXPORT_SYMBOL(heca_hook_register);
+
+int heca_hook_unregister(void)
+{
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+    heca_hook = NULL;
+    might_sleep();
+    for (;;) {
+        if (atomic_cmpxchg(&refcount, 1, 0) == 1) {
+            heca_hook = NULL;
+            return 0;
+        }
+        BUG_ON(!atomic_read(&refcount));
+        cond_resched();
+    }
+    return -EFAULT;
+#endif
+    return 0;
+}
+EXPORT_SYMBOL(heca_hook_unregister);
 
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
 #include <linux/writeback.h>

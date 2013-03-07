@@ -24,7 +24,8 @@ struct heca_hook_struct {
 };
 
 const struct heca_hook_struct *heca_hook_read(void);
-void heca_hook_release(void);
-void heca_hook_write(const struct heca_hook_struct *hook);
+void heca_hook_release(const struct heca_hook_struct *hook);
+int heca_hook_register(const struct heca_hook_struct *hook);
+int heca_hook_unregister(void);
 #endif /* HECA_HOOK_H_ */
 

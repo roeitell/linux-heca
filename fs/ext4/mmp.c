@@ -44,6 +44,11 @@ static int write_mmp_block(struct super_block *sb, struct buffer_head *bh)
 {
 	struct mmp_struct *mmp = (struct mmp_struct *)(bh->b_data);
 
+	/*
+	 * We protect against freezing so that we don't create dirty buffers
+	 * on frozen filesystem.
+	 */
+	sb_start_write(sb);
 	ext4_mmp_csum_set(sb, mmp);
 	mark_buffer_dirty(bh);
 	lock_buffer(bh);
@@ -51,6 +56,7 @@ static int write_mmp_block(struct super_block *sb, struct buffer_head *bh)
 	get_bh(bh);
 	submit_bh(WRITE_SYNC, bh);
 	wait_on_buffer(bh);
+	sb_end_write(sb);
 	if (unlikely(!buffer_uptodate(bh)))
 		return 1;
 
@@ -74,6 +80,8 @@ static int read_mmp_block(struct super_block *sb, struct buffer_head **bh,
 	 * is not blocked in the elevator. */
 	if (!*bh)
 		*bh = sb_getblk(sb, mmp_block);
+	if (!*bh)
+		return -ENOMEM;
 	if (*bh) {
 		get_bh(*bh);
 		lock_buffer(*bh);

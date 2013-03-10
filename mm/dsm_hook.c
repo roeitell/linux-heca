@@ -71,6 +71,8 @@ EXPORT_SYMBOL(try_to_free_swap);
 #include <linux/mmu_notifier.h>
 EXPORT_SYMBOL(__mmu_notifier_change_pte);
 EXPORT_SYMBOL(__mmu_notifier_invalidate_page);
+EXPORT_SYMBOL(__mmu_notifier_invalidate_range_start);
+EXPORT_SYMBOL(__mmu_notifier_invalidate_range_end);
 
 #include <asm-generic/pgtable.h>
 EXPORT_SYMBOL(pmd_clear_bad);

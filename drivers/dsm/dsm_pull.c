@@ -104,6 +104,7 @@ static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
     int ret = 0;
     int page_mkwrite = 0;
     struct page *dirty_page = NULL;
+    unsigned long mmun_start = 0, mmun_end = 0;
 
     old_page = vm_normal_page(vma, address, orig_pte);
     if (!old_page) {
@@ -188,6 +189,8 @@ reuse:
         if (!page_mkwrite) {
             wait_on_page_locked(dirty_page);
             set_page_dirty_balance(dirty_page, page_mkwrite);
+            if (vma->vm_file)
+                file_update_time(vma->vm_file);
         }
         put_page(dirty_page);
         if (page_mkwrite) {
@@ -200,9 +203,6 @@ reuse:
                 balance_dirty_pages_ratelimited(mapping);
             }
         }
-
-        if (vma->vm_file)
-            file_update_time(vma->vm_file);
 
         return ret;
     }
@@ -228,6 +228,10 @@ gotten:
 
     if (mem_cgroup_newpage_charge(new_page, mm, GFP_KERNEL))
         goto oom_free_new;
+
+    mmun_start = address & PAGE_MASK;
+    mmun_end = mmun_start + PAGE_SIZE;
+    mmu_notifier_invalidate_range_start(mm, mmun_start, mmun_end);
 
     page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
     if (likely(pte_same(*page_table, orig_pte))) {
@@ -259,6 +263,8 @@ gotten:
         page_cache_release(new_page);
 unlock:
     pte_unmap_unlock(page_table, ptl);
+    if (mmun_end > mmun_start)
+        mmu_notifier_invalidate_range_end(mm, mmun_start, mmun_end);
     if (old_page) {
         if ((ret & VM_FAULT_WRITE) && (vma->vm_flags & VM_LOCKED)) {
             lock_page(old_page); /* LRU manipulation */

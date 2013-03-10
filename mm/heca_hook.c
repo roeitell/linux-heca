@@ -35,7 +35,6 @@ int heca_hook_register(const struct heca_hook_struct *hook)
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
     if (!atomic_cmpxchg(&refcount, 0, -1)) {
         heca_hook = hook;
-        smp_mb();
         atomic_add(2, &refcount);
         return 0;
     }
@@ -55,10 +54,10 @@ int heca_hook_unregister(void)
             heca_hook = NULL;
             return 0;
         }
-        BUG_ON(!atomic_read(&refcount));
+        if (!atomic_read(&refcount))
+            break;
         cond_resched();
     }
-    return -EFAULT;
 #endif
     return 0;
 }

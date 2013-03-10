@@ -169,8 +169,6 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
 int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         unsigned long addr) 
 {
-    int i;
-
     pd->pte = NULL;
     pd->vma = find_vma(mm, addr);
     if (unlikely(!pd->vma || pd->vma->vm_start > addr))
@@ -194,15 +192,17 @@ int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
     }
 
     if (unlikely(pmd_trans_huge(*(pd->pmd)))) {
-        spin_lock(&mm->page_table_lock);
-        i = pmd_trans_splitting(*(pd->pmd));
-        spin_unlock(&mm->page_table_lock);
-
-        if (unlikely(i))
-            wait_split_huge_page(pd->vma->anon_vma, pd->pmd);
-        else
-            split_huge_page_pmd(mm, pd->pmd);
-
+        if (likely(pmd_trans_huge(*(pd->pmd)))) {
+            if (unlikely(pmd_trans_splitting(*(pd->pmd)))) {
+                spin_unlock(&mm->page_table_lock);
+                wait_split_huge_page(pd->vma->anon_vma, pd->pmd);
+            } else {
+                spin_unlock(&mm->page_table_lock);
+                split_huge_page_pmd(pd->vma, addr, pd->pmd);
+            }
+        } else {
+            spin_unlock(&mm->page_table_lock);
+        }
     }
     pd->pte = pte_offset_map(pd->pmd, addr);
     return !pd->pte;
@@ -252,7 +252,7 @@ int dsm_try_unmap_page(struct mm_struct *mm, unsigned long addr,
     struct page *page;
     spinlock_t *ptl;
     pte_t pte_entry;
-    int r;
+    int r, release = 0;
 
     down_read(&mm->mmap_sem);
 
@@ -313,16 +313,20 @@ retry:
     }
 
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-    ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+    ptep_clear_flush(pd.vma, addr, pd.pte);
     set_pte_at(mm, addr, pd.pte,
             dsm_descriptor_to_pte(remote_svm->descriptor, 0));
 
     page_remove_rmap(page);
-    page_cache_release(page);
+    release = 1;
     dec_mm_counter(mm, MM_ANONPAGES);
 
 out:
     pte_unmap_unlock(pd.pte, ptl);
+    if (release) {
+        mmu_notifier_invalidate_page(mm, addr);
+        page_cache_release(page);
+    }
 out_mm:
     up_read(&mm->mmap_sem);
     return r;
@@ -426,17 +430,19 @@ retry:
     page_cache_get(page);
 
     flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-    ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+    ptep_clear_flush(pd.vma, addr, pd.pte);
     set_pte_at(mm, addr, pd.pte,
             dsm_descriptor_to_pte(remote_svm->descriptor, DSM_INFLIGHT));
 
     page_remove_rmap(page);
-    page_cache_release(page);
+
     dec_mm_counter(mm, MM_ANONPAGES);
 
     *return_pte = *(pd.pte);
 
     pte_unmap_unlock(pd.pte, ptl);
+    mmu_notifier_invalidate_page(mm, addr);
+    page_cache_release(page);
 out: 
     return page;
     
@@ -485,16 +491,17 @@ retry:
         }
 
         flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-        ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+        ptep_clear_flush(pd.vma, addr, pd.pte);
         if (dpc->svms.num > 1) {
             pte_flag = DSM_PUSHING;
             clear_pte_flag = 1; /* race condition */
         }
         set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(dpc->tag, pte_flag));
         page_remove_rmap(page);
-        page_cache_release(page);
         dec_mm_counter(mm, MM_ANONPAGES);
         pte_unmap_unlock(pd.pte, ptl);
+        mmu_notifier_invalidate_page(mm, addr);
+        page_cache_release(page);
         unlock_page(page);
 
     /* racing with the first response */
@@ -683,6 +690,7 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
 static int _push_back_if_remote_dsm_page(struct page *page)
 {
     struct anon_vma *anon_vma;
+    pgoff_t pgoff;
     struct anon_vma_chain *avc;
     int ret = 0;
 
@@ -693,13 +701,13 @@ static int _push_back_if_remote_dsm_page(struct page *page)
     if (page_mapcount(page) > 1)
         goto out;
 
-    anon_vma = page_lock_anon_vma(page);
+    anon_vma = page_lock_anon_vma_read(page);
     if (!anon_vma)
         goto out;
 
     /* note: should actually find only one relevant vma */
-    list_for_each_entry(avc, &anon_vma->head, same_anon_vma)
-    {
+    pgoff = page->index << (PAGE_CACHE_SHIFT - PAGE_SHIFT);
+    anon_vma_interval_tree_foreach(avc, &anon_vma->rb_root, pgoff, pgoff) {
         struct vm_area_struct *vma = avc->vma;
         unsigned long address;
         struct subvirtual_machine *svm;
@@ -730,7 +738,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
         break;
     }
 
-    page_unlock_anon_vma(anon_vma);
+    page_unlock_anon_vma_read(anon_vma);
 out:
     return ret;
 }
@@ -746,7 +754,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
 {
     spinlock_t *ptl;
     pte_t *pte;
-    int r = 0, page_no = 0;
+    int r = 0, release = 0;
     struct page *page = 0;
     struct vm_area_struct *vma;
     pgd_t *pgd;
@@ -800,14 +808,17 @@ retry:
     }
     if (unlikely(pmd_trans_huge(*pmd))) {
         spin_lock(&mm->page_table_lock);
-        if (unlikely(pmd_trans_splitting(*pmd))) {
-            spin_unlock(&mm->page_table_lock);
-            wait_split_huge_page(vma->anon_vma, pmd);
+        if (likely(pmd_trans_huge(*pmd))) {
+            if (unlikely(pmd_trans_splitting(*pmd))) {
+                spin_unlock(&mm->page_table_lock);
+                wait_split_huge_page(vma->anon_vma, pmd);
+            } else {
+                spin_unlock(&mm->page_table_lock);
+                split_huge_page_pmd(vma, addr, pmd);
+            }
         } else {
             spin_unlock(&mm->page_table_lock);
-            split_huge_page_pmd(mm, pmd);
         }
-
     }
 
     // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
@@ -875,7 +886,7 @@ retry:
     }
 
     flush_cache_page(vma, addr, pte_pfn(*pte));
-    ptep_clear_flush_notify(vma, addr, pte);
+    ptep_clear_flush(vma, addr, pte);
     set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(descriptor, 0));
     page_remove_rmap(page);
 
@@ -884,10 +895,14 @@ retry:
     // this is a page flagging without data exchange so we can free the page
 
     unlock_page(page);
-    page_cache_release(page);
+    release = 1;
 
 out_pte_unlock:
     pte_unmap_unlock(pte, ptl);
+    if (release) {
+        mmu_notifier_invalidate_page(mm, addr);
+        page_cache_release(page);
+    }
 out:
     up_read(&mm->mmap_sem);
     return r;

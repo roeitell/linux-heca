@@ -191,7 +191,7 @@ static int siw_rx_umem(struct siw_iwarp_rx *rctx, int len, int umem_ends)
 		bytes  = min(len, (int)PAGE_SIZE - pg_off);
 		p_list = &chunk->page_list[rctx->pg_idx];
 
-		dest = kmap_atomic(sg_page(p_list), KM_SOFTIRQ0);
+		dest = kmap_atomic(sg_page(p_list));
 
 		rv = skb_copy_bits(rctx->skb, rctx->skb_offset, dest + pg_off,
 				   bytes);
@@ -211,7 +211,7 @@ static int siw_rx_umem(struct siw_iwarp_rx *rctx, int len, int umem_ends)
 			pg_off += bytes;
 		}
 
-		kunmap_atomic(dest, KM_SOFTIRQ0);
+		kunmap_atomic(dest);
 
 		if (unlikely(rv)) {
 			rctx->skb_copied += copied;

@@ -26,10 +26,10 @@ EXPORT_SYMBOL(dsm_hook_write);
 EXPORT_SYMBOL(set_page_dirty_balance);
 
 #include <linux/rmap.h>
-EXPORT_SYMBOL(page_lock_anon_vma);
+EXPORT_SYMBOL(page_lock_anon_vma_read);
+EXPORT_SYMBOL(page_unlock_anon_vma_read);
 EXPORT_SYMBOL(page_remove_rmap);
 EXPORT_SYMBOL(page_address_in_vma);
-EXPORT_SYMBOL(page_unlock_anon_vma);
 EXPORT_SYMBOL(page_add_new_anon_rmap);
 EXPORT_SYMBOL(anon_vma_prepare);
 EXPORT_SYMBOL(page_move_anon_rmap);
@@ -43,7 +43,8 @@ EXPORT_SYMBOL(ksm_madvise);
 EXPORT_SYMBOL(__pte_alloc);
 EXPORT_SYMBOL(vm_normal_page);
 EXPORT_SYMBOL(handle_mm_fault);
-
+EXPORT_SYMBOL(anon_vma_interval_tree_iter_first);
+EXPORT_SYMBOL(anon_vma_interval_tree_iter_next);
 
 #include <linux/gfp.h>
 EXPORT_SYMBOL(alloc_pages_vma);

@@ -11,6 +11,7 @@
 #include "push.h"
 #include "conn.h"
 #include "base.h"
+#include "task.h"
 
 static struct kmem_cache *kmem_deferred_gup_cache;
 

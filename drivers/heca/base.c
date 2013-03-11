@@ -4,7 +4,6 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
-#include <linux/sched.h>
 #include "core.h"
 #include "trace.h"
 #include "struct.h"
@@ -14,6 +13,7 @@
 #include "push.h"
 #include "sysfs.h"
 #include "ops.h"
+#include "task.h"
 
 /*
  * dsm_module_state funcs
@@ -369,14 +369,6 @@ out:
     return r;
 }
 
-struct mm_struct *find_mm_by_pid(pid_t pid)
-{
-    struct task_struct *task = find_task_by_vpid(pid);
-    if (!task)
-        return NULL;
-    return task->mm;
-}
-
 int create_svm(struct hecaioc_svm *svm_info)
 {
     struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -421,11 +413,12 @@ int create_svm(struct hecaioc_svm *svm_info)
 
     /* register local svm */
     if (svm_info->is_local) {
-        struct mm_struct *mm = find_mm_by_pid(svm_info->pid);
+        struct mm_struct *mm;
+       
+        mm = find_mm_by_pid(new_svm->pid);
         if (!mm) {
-            heca_printk(KERN_ERR "svm %d (dsm %d) PID %d does not exist", 
-                    svm_info->svm_id, svm_info->dsm_id, svm_info->pid);
-            r = -EEXIST;
+            heca_printk(KERN_ERR "can't find pid %d", new_svm->pid);
+            r = -ESRCH;
             goto out;
         }
 
@@ -1181,4 +1174,5 @@ done:
     heca_printk(KERN_DEBUG "<exit> %d", rc);
     return rc;
 }
+
 

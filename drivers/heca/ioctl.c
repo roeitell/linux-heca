@@ -13,17 +13,13 @@
 #include "push.h"
 #include "pull.h"
 #include "ops.h"
+#include "task.h"
 
 #ifdef CONFIG_HECA_DEBUG
 static int debug = 1;
 module_param(debug, int, 0644);
 MODULE_PARM_DESC(debug, "Debug level (0 = disable)");
 #endif
-
-static pid_t sys_getpid(void)
-{
-    return task_pid_vnr(current);
-}
 
 #ifdef CONFIG_HECA_VERBOSE_PRINTK
 /* strip the leading path if the given path is absolute */
@@ -143,7 +139,7 @@ static int ioctl_svm(int ioctl, void __user *argp)
     }
 
     if (!svm_info.pid) {
-        svm_info.pid = sys_getpid();
+        svm_info.pid = task_pid_vnr(current);
         heca_printk(KERN_INFO "no pid defined assuming %d", svm_info.pid);
     }
 
@@ -184,7 +180,7 @@ static int ioctl_ps(int ioctl, void __user *argp)
     }
 
     if (!udata.pid) {
-        udata.pid = sys_getpid();
+        udata.pid = task_pid_vnr(current);
         heca_printk(KERN_INFO "no pid defined assuming %d", udata.pid);
     }
 
@@ -321,17 +317,27 @@ out:
     return r;
 }
 
-static struct file_operations rdma_fops = { .owner = THIS_MODULE,
-    .release = release, .unlocked_ioctl = ioctl, .open = open,
-    .llseek = noop_llseek, };
-static struct miscdevice rdma_misc = { MISC_DYNAMIC_MINOR, "heca",
-    &rdma_fops, };
+static struct file_operations rdma_fops = {
+    .owner = THIS_MODULE,
+    .release = release,
+    .unlocked_ioctl = ioctl,
+    .open = open,
+    .llseek = noop_llseek,
+};
+
+static struct miscdevice rdma_misc = {
+    MISC_DYNAMIC_MINOR,
+    "heca",
+    &rdma_fops,
+};
 
 const struct heca_hook_struct my_heca_hook = {
     .name = "HECA",
     .fetch_page = dsm_swap_wrapper,
     .pushback_page = push_back_if_remote_dsm_page,
     .is_congested = dsm_is_congested,
+    .attach_task = heca_attach_task,
+    .detach_task = heca_detach_task,
 };
 
 static int dsm_init(void)

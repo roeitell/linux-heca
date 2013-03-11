@@ -50,8 +50,8 @@ struct hecaioc_ps {
 
 #define HECAIOC                      0xFF
 
-#define HECAIOC_DSM_INIT             _IOW(HECAIOC, 0xA0, struct hecaioc_dsm)
-#define HECAIOC_DSM_FINI             _IOW(HECAIOC, 0xA1, struct hecaioc_dsm)
+#define HECAIOC_DSM_ADD              _IOW(HECAIOC, 0xA0, struct hecaioc_dsm)
+#define HECAIOC_DSM_RM               _IOW(HECAIOC, 0xA1, struct hecaioc_dsm)
 
 #define HECAIOC_SVM_ADD              _IOW(HECAIOC, 0xB0, struct hecaioc_svm)
 #define HECAIOC_SVM_RM               _IOW(HECAIOC, 0xB1, struct hecaioc_svm)

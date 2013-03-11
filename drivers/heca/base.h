@@ -20,9 +20,9 @@ void insert_rb_conn(struct conn_element *);
 void erase_rb_conn(struct conn_element *);
 
 /* dsm */
-struct dsm *find_dsm(u32);
-void remove_dsm(struct dsm *);
-int create_dsm(struct private_data *, __u32);
+struct dsm *find_dsm(u32 dsm_id);
+void remove_dsm(struct dsm *dsm);
+int create_dsm(__u32 dsm_id);
 
 /* svm */
 inline struct subvirtual_machine *find_svm(struct dsm *, u32);

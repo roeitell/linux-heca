@@ -17,39 +17,6 @@
 #include "task.h"
 
 /*
- * dsm_module_state funcs
- */
-static struct dsm_module_state *dsm_state;
-
-inline struct dsm_module_state *get_dsm_module_state(void)
-{
-    return dsm_state;
-}
-
-struct dsm_module_state *create_dsm_module_state(void)
-{
-    dsm_state = kzalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
-    BUG_ON(!(dsm_state));
-    INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
-    INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
-    INIT_LIST_HEAD(&dsm_state->dsm_list);
-    mutex_init(&dsm_state->dsm_state_mutex);
-    dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq",
-            WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
-    dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq",
-            WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
-    return dsm_state;
-}
-
-void destroy_dsm_module_state(void)
-{
-    mutex_destroy(&dsm_state->dsm_state_mutex);
-    destroy_workqueue(dsm_state->dsm_tx_wq);
-    destroy_workqueue(dsm_state->dsm_rx_wq);
-    kfree(dsm_state);
-}
-
-/*
  * conn_element funcs
  */
 struct conn_element *search_rb_conn(int node_ip)
@@ -172,7 +139,7 @@ void remove_dsm(struct dsm *dsm)
 /* FIXME: just a dummy lock so that radix_tree functions work */
 DEFINE_SPINLOCK(dsm_lock);
 
-int create_dsm(struct private_data *priv_data, __u32 dsm_id)
+int create_dsm(__u32 dsm_id)
 {
     int r = 0;
     struct dsm *found_dsm, *new_dsm = NULL;
@@ -231,7 +198,6 @@ int create_dsm(struct private_data *priv_data, __u32 dsm_id)
         goto err_delete;
     }
 
-    priv_data->dsm = new_dsm;
     list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
     heca_printk("registered dsm %p, dsm_id : %u, res: %d",
             new_dsm, dsm_id, r);

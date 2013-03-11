@@ -241,10 +241,6 @@ struct memory_region {
     struct kobject mr_kobject;
 };
 
-struct private_data {
-    struct dsm *dsm;
-};
-
 struct subvirtual_machine {
     u32 svm_id;
     int is_local;

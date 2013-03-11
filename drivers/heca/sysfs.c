@@ -8,9 +8,9 @@
 #include "base.h"
 
 #define HECA_SYSFS_MODULE "heca"
-#define HECA_SYSFS_RDMA "conn"
+#define HECA_SYSFS_RDMA "conns"
 #define HECA_SYSFS_CONN_FMT "rdma_cm_id-0x%p"
-#define HECA_SYSFS_CONF "proc"
+#define HECA_SYSFS_CONF "dsms"
 #define HECA_SYSFS_SVM_FMT "svm-%u"
 #define HECA_SYSFS_MR_FMT "mr-%u"
 #define HECA_SYSFS_DSM_FMT "dsm-%u"
@@ -191,9 +191,9 @@ static ssize_t instance_mr_sz_show(struct memory_region *mr, char *data)
     return sprintf(data, "0x%lx\n", mr->sz);
 }
 
-static ssize_t instance_mr_is_local_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_flags_show(struct memory_region *mr, char *data)
 {
-    return sprintf(data, "%u\n", mr->flags & MR_LOCAL);
+    return sprintf(data, "0x%x\n", mr->flags);
 }
 
 INSTANCE_ATTR(struct mr_instance_attribute, mr_id, S_IRUGO,
@@ -202,14 +202,14 @@ INSTANCE_ATTR(struct mr_instance_attribute, mr_addr, S_IRUGO,
         instance_mr_addr_show, NULL);
 INSTANCE_ATTR(struct mr_instance_attribute, mr_sz, S_IRUGO,
         instance_mr_sz_show, NULL);
-INSTANCE_ATTR(struct mr_instance_attribute, mr_is_local, S_IRUGO,
-        instance_mr_is_local_show, NULL);
+INSTANCE_ATTR(struct mr_instance_attribute, mr_flags, S_IRUGO,
+        instance_mr_flags_show, NULL);
 
 static struct mr_instance_attribute *mr_instance_attr[] = {
     &ATTR_NAME(mr_id),
     &ATTR_NAME(mr_addr),
     &ATTR_NAME(mr_sz),
-    &ATTR_NAME(mr_is_local),
+    &ATTR_NAME(mr_flags),
     NULL
 };
 
@@ -229,10 +229,11 @@ void delete_mr_sysfs_entry(struct kobject *obj)
     kobject_del(obj);
 }
 
-int create_mr_sysfs_entry(struct dsm *dsm, struct memory_region *mr)
+int create_mr_sysfs_entry(struct subvirtual_machine *svm,
+        struct memory_region *mr)
 {
     struct kobject *kobj = &mr->mr_kobject;
-    struct kobject *root_kobj = &dsm->dsm_kobject;
+    struct kobject *root_kobj = &svm->svm_kobject;
 
     return kobject_init_and_add(kobj, &ktype_mr_instance, root_kobj,
             HECA_SYSFS_MR_FMT, mr->mr_id);

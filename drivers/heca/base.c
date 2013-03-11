@@ -915,7 +915,7 @@ int create_mr(struct hecaioc_mr *udata)
                 mr->sz);
     }
 
-    create_mr_sysfs_entry(dsm, mr);
+    create_mr_sysfs_entry(local_svm, mr);
     goto out;
 
 out_remove_tree:

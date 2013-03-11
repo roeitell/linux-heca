@@ -3,8 +3,16 @@
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
-#include "core.h"
-#define CREATE_TRACE_POINTS
+
+#include <linux/rmap.h>
+#include <linux/ksm.h>
+#include <linux/writeback.h>
+#include <linux/mmu_notifier.h>
+#include <linux/mmu_context.h>
+#include <asm-generic/cacheflush.h>
+#include "../../../mm/internal.h"
+
+#include "ioctl.h"
 #include "trace.h"
 #include "struct.h"
 #include "pull.h"

@@ -4,7 +4,17 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
-#include "core.h"
+#include <linux/hash.h>
+#include <linux/hugetlb.h>
+#include <linux/rmap.h>
+#include <linux/ksm.h>
+#include <linux/writeback.h>
+#include <linux/mmu_notifier.h>
+#include <linux/mmu_context.h>
+#include <asm-generic/cacheflush.h>
+#include "../../../mm/internal.h"
+
+#include "ioctl.h"
 #include "trace.h"
 #include "struct.h"
 #include "push.h"

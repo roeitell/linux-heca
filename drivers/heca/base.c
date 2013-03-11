@@ -4,7 +4,8 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  * Steve Walsh <steve.walsh@sap.com> 2012 (c)
  */
-#include "core.h"
+#include <linux/pagemap.h>
+#include "ioctl.h"
 #include "trace.h"
 #include "struct.h"
 #include "base.h"

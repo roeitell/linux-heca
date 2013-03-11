@@ -7,6 +7,9 @@
 #ifndef _HECA_CONN_H
 #define _HECA_CONN_H
 
+#include <linux/in.h>
+#include "struct.h"
+
 void init_kmem_request_cache(void);
 void destroy_kmem_request_cache(void);
 inline struct dsm_request *alloc_dsm_request(void);

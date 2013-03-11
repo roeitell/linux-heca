@@ -3,7 +3,7 @@
  * Roei Tell <roei.tell@sap.com> 2012 (c)
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
-#include "core.h"
+#include "ioctl.h"
 #include "conn.h"
 #include "base.h"
 

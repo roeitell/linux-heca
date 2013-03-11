@@ -4,13 +4,17 @@
  * Aidan Shribman <aidan.shribman@sap.com> 2012 (c)
  */
 #include <linux/list.h>
-#include "core.h"
+
+#include "ioctl.h"
 #include "trace.h"
 #include "conn.h"
 #include "base.h"
 #include "struct.h"
 #include "ops.h"
 #include "sysfs.h"
+
+#define ntohll(x) be64_to_cpu(x)
+#define htonll(x) cpu_to_be64(x)
 
 unsigned long inet_addr(const char *cp)
 {

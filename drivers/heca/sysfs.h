@@ -6,6 +6,9 @@
 #ifndef _HECA_SYSFS_H
 #define _HECA_SYSFS_H
 
+#include <linux/kobject.h>
+#include "struct.h"
+
 int create_svm_sysfs_entry(struct subvirtual_machine *);
 void delete_svm_sysfs_entry(struct kobject *);
 int create_mr_sysfs_entry(struct dsm *dsm, struct memory_region *);

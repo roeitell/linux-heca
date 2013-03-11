@@ -7,13 +7,20 @@
 #include <linux/list.h>
 #include <linux/delay.h>
 #include <linux/heca_hook.h>
-#include "core.h"
+
+#include "ioctl.h"
 #include "sysfs.h"
 #include "base.h"
 #include "push.h"
 #include "pull.h"
 #include "ops.h"
 #include "task.h"
+
+/*
+ * create the actual trace functions needed for heca.ko
+ */
+#define CREATE_TRACE_POINTS
+#include "trace.h"
 
 #ifdef CONFIG_HECA_DEBUG
 static int debug = 1;

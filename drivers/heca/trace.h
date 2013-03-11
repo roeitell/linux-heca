@@ -1,5 +1,4 @@
 /*
- * DSM tracing system
  * Author : benoit.hudzia@sap.com
  */
 
@@ -10,7 +9,7 @@
 #define DSM_TRACE_H_
 
 #include <linux/tracepoint.h>
-#include "core.h"
+#include "pull.h"
 
 #define dsm_dpc_tag \
     { PULL_TAG,                 "PULL_TAG" }, \

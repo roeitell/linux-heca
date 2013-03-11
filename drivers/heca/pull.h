@@ -1,6 +1,16 @@
 #ifndef _HECA_PULL_H
 #define _HECA_PULL_H
 
+#include <linux/mm_types.h>
+
+#include "struct.h"
+
+#define PULL_TAG        (1 << 0)  /* pulling the page */
+#define PREFETCH_TAG    (1 << 1)  /* pulling the page for prefetch */
+#define PUSH_TAG        (1 << 2)  /* pushing the page */
+#define PULL_TRY_TAG    (1 << 3)  /* pulling the page by request */
+#define CLAIM_TAG       (1 << 4)  /* reclaiming a page */
+
 int dsm_initiate_fault(struct mm_struct *, unsigned long, int);
 void init_dsm_prefetch_cache_kmem(void);
 void destroy_dsm_prefetch_cache_kmem(void);

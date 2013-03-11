@@ -1,5 +1,5 @@
+#include "ioctl.h"
 #include "task.h"
-#include "core.h"
 #include "base.h"
 
 static int get_task_struct_by_pid(pid_t pid, struct task_struct **tsk)

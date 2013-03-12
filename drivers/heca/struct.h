@@ -54,19 +54,17 @@
 #define RDMA_INFO_NULL      0
 
 /*
- * DSM_MESSAGE
+ * HECA Messages
  */
-#define REQUEST_PAGE                    (1 << 0) // We Request a page
-#define REQUEST_PAGE_PULL               (1 << 1) // We Request a page pull
-#define PAGE_REQUEST_REPLY              (1 << 2) // We Reply to a page request
-#define PAGE_REQUEST_REDIRECT           (1 << 3) // We don't have the page  but we know where it is , we redirect
-#define PAGE_INFO_UPDATE                (1 << 4) // We send an update of the page location
-#define TRY_REQUEST_PAGE                (1 << 5) // We try to pull the page
-#define PAGE_REQUEST_FAIL               (1 << 6) // We Fail to answer a page pull
-#define SVM_STATUS_UPDATE               (1 << 7) // The svm is down
-#define DSM_MSG_ERR                     (1 << 8) // ERROR
-#define ACK                             (1 << 9) // Msg Acknowledgement
-#define CLAIM_PAGE                      (1 << 10) // Re-claim a page
+#define MSG_REQ_PAGE                (1 << 0)
+#define MSG_REQ_PAGE_TRY            (1 << 1)
+#define MSG_REQ_PAGE_PULL           (1 << 2)
+#define MSG_REQ_PAGE_RECLAIM        (1 << 3)
+#define MSG_RES_PAGE                (1 << 6)
+#define MSG_RES_PAGE_REDIRECT       (1 << 7)
+#define MSG_RES_PAGE_FAIL           (1 << 8)
+#define MSG_RES_SVM_FAIL            (1 << 9)
+#define MSG_RES_ACK                 (1 << 11)
 
 /* 
  * MEMORY REGION FLAGS

@@ -67,11 +67,12 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
             create_page_pull_request(svms.pp[i]->ele, tx_elms[i],
                     fault_svm->dsm->dsm_id, fault_mr->mr_id, fault_svm->svm_id,
                     svms.pp[i]->svm_id, (uint64_t) addr);
+            tx_elms[i]->dsm_buf->type = MSG_REQ_PAGE_PULL;
             tx_elms[i]->callback.func = NULL;
             tx_dsm_send(svms.pp[i]->ele, tx_elms[i]);
         } else {
             BUG_ON(!reqs[i]);
-            r |= add_dsm_request(reqs[i], svms.pp[i]->ele, REQUEST_PAGE_PULL,
+            r |= add_dsm_request(reqs[i], svms.pp[i]->ele, MSG_REQ_PAGE_PULL,
                     fault_svm, fault_mr, svms.pp[i], addr, NULL, NULL, NULL,
                     NULL);
         }
@@ -102,13 +103,13 @@ static int send_svm_status_update(struct conn_element *ele,
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
             dsm_msg_cpy(tx_e->dsm_buf, msg);
-            tx_e->dsm_buf->type = SVM_STATUS_UPDATE;
+            tx_e->dsm_buf->type = MSG_RES_SVM_FAIL;
             ret = tx_dsm_send(ele, tx_e);
             goto out;
         }
     }
 
-    ret = add_dsm_request_msg(ele, SVM_STATUS_UPDATE, msg);
+    ret = add_dsm_request_msg(ele, MSG_RES_SVM_FAIL, msg);
 
 out:
     return ret;
@@ -126,7 +127,7 @@ int dsm_claim_page(struct subvirtual_machine *fault_svm,
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (tx_e) {
-            create_page_claim_request(tx_e, fault_svm->dsm->dsm_id,
+            create_page_reclaim_request(tx_e, fault_svm->dsm->dsm_id,
                     fault_mr->mr_id, fault_svm->svm_id, remote_svm->svm_id,
                     shared_addr);
 
@@ -138,8 +139,8 @@ int dsm_claim_page(struct subvirtual_machine *fault_svm,
         }
     }
 
-    ret = add_dsm_request(NULL, ele, CLAIM_PAGE, fault_svm, fault_mr,
-            remote_svm, shared_addr, NULL, NULL, NULL, NULL);
+    ret = add_dsm_request(NULL, ele, MSG_REQ_PAGE_RECLAIM, fault_svm,
+            fault_mr, remote_svm, shared_addr, NULL, NULL, NULL, NULL);
     BUG_ON(ret); /* FIXME: Handle req alloc failure */
 
 out:
@@ -154,7 +155,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
     struct conn_element *ele = remote_svm->ele;
     struct tx_buf_ele *tx_e;
     int ret = -EINVAL;
-    int req_tag = (tag == PULL_TRY_TAG) ? TRY_REQUEST_PAGE : REQUEST_PAGE;
+    int type = (tag == PULL_TRY_TAG) ?  MSG_REQ_PAGE_TRY : MSG_REQ_PAGE;
     unsigned long shared_addr = addr - fault_mr->addr;
 
     if (request_queue_empty(ele)) {
@@ -162,8 +163,9 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         if (tx_e) {
             create_page_request(ele, tx_e, fault_svm->dsm->dsm_id,
                     fault_mr->mr_id, fault_svm->svm_id, remote_svm->svm_id,
-                    shared_addr, page, req_tag, dpc, ppe);
+                    shared_addr, page, dpc, ppe);
 
+            tx_e->dsm_buf->type = type;
             tx_e->callback.func = func;
             ret = tx_dsm_send(ele, tx_e);
             trace_send_request(fault_svm->dsm->dsm_id, fault_svm->svm_id,
@@ -172,7 +174,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         }
     }
 
-    ret = add_dsm_request(NULL, ele, req_tag, fault_svm, fault_mr,
+    ret = add_dsm_request(NULL, ele, type, fault_svm, fault_mr,
             remote_svm, shared_addr, func, dpc, page, ppe);
     BUG_ON(ret); /* FIXME: Handle req alloc failure */
 
@@ -276,16 +278,16 @@ static void handle_page_request_fail(struct conn_element *ele,
     int r = -EINVAL, type;
 
     switch (msg->type) {
-        case REQUEST_PAGE:
+        case MSG_REQ_PAGE:
             if ((!remote_svm) || ( id == remote_svm->svm_id))
-                type = PAGE_REQUEST_FAIL;
+                type = MSG_RES_PAGE_FAIL;
             else{
                 msg->dest_id= id;
-                type = PAGE_REQUEST_REDIRECT;
+                type = MSG_RES_PAGE_REDIRECT;
             }
             break;
-        case TRY_REQUEST_PAGE:
-            type = PAGE_REQUEST_FAIL;
+        case MSG_REQ_PAGE_TRY:
+            type = MSG_RES_PAGE_FAIL;
             break;
         default:
             heca_printk("Unhandled type: %d", msg->type);
@@ -398,7 +400,7 @@ retry:
     BUG_ON(!tx_e);
 
     dsm_msg_cpy(tx_e->dsm_buf, msg);
-    tx_e->dsm_buf->type = PAGE_REQUEST_REPLY;
+    tx_e->dsm_buf->type = MSG_RES_PAGE;
     tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_buf->dst_addr;
     tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_buf->rkey;
     tx_e->reply_work_req->mm = local_svm->mm;
@@ -426,7 +428,7 @@ retry:
 
 fail:
     release_tx_element_reply(ele, tx_e);
-    if (!redirect_id && msg->type == REQUEST_PAGE) {
+    if (!redirect_id && msg->type == MSG_REQ_PAGE) {
         trace_dsm_defer_gup(local_svm->dsm->dsm_id, local_svm->svm_id,
                 remote_svm->svm_id, mr->mr_id, addr, msg->req_addr,
                 msg->type);
@@ -553,13 +555,13 @@ int ack_msg(struct conn_element *ele, struct rx_buf_ele *rx_e)
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
             dsm_msg_cpy(tx_e->dsm_buf, rx_e->dsm_buf);
-            tx_e->dsm_buf->type = ACK;
+            tx_e->dsm_buf->type = MSG_RES_ACK;
             tx_e->wrk_req->dst_addr = NULL;
             tx_e->callback.func = NULL;
             return tx_dsm_send(ele, tx_e);
         }
     }
-    return add_dsm_request_msg(ele, ACK, rx_e->dsm_buf);
+    return add_dsm_request_msg(ele, MSG_RES_ACK, rx_e->dsm_buf);
 }
 
 int unmap_range(struct dsm *dsm, int dsc, pid_t pid, unsigned long addr,

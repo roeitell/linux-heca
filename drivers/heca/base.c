@@ -542,7 +542,7 @@ static void release_svm_tx_elements(struct subvirtual_machine *svm,
         struct tx_buf_ele *tx_e = &tx_buf[i];
         struct dsm_message *msg = tx_e->dsm_buf;
 
-        if (msg->type & (REQUEST_PAGE | TRY_REQUEST_PAGE | PAGE_REQUEST_FAIL)
+        if (msg->type & (MSG_REQ_PAGE | MSG_REQ_PAGE_TRY | MSG_RES_PAGE_FAIL)
                 && msg->dsm_id == svm->dsm->dsm_id
                 && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)
                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {

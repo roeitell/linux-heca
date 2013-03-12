@@ -17,19 +17,16 @@
     { PUSH_TAG,                 "PUSH_TAG" }, \
     { PULL_TRY_TAG,             "PULL_TRY_TAG" }
 
-#define dsm_msg_type \
-    { REQUEST_PAGE,                 "REQUEST_PAGE" }, \
-    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { PAGE_REQUEST_REPLY,           "PAGE_REQUEST_REPLY" }, \
-    { PAGE_REQUEST_REDIRECT,        "PAGE_REQUEST_REDIRECT" },\
-    { PAGE_INFO_UPDATE,             "PAGE_INFO_UPDATE" }, \
-    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { TRY_REQUEST_PAGE,             "TRY_REQUEST_PAGE" }, \
-    { PAGE_REQUEST_FAIL,            "PAGE_REQUEST_FAIL" },\
-    { SVM_STATUS_UPDATE,            "SVM_STATUS_UPDATE" }, \
-    { REQUEST_PAGE_PULL,            "REQUEST_PAGE_PULL" },\
-    { ACK,                          "ACK" },\
-    { DSM_MSG_ERR,                  "DSM_MSG_ERR" }
+#define msg_type_strings \
+    { MSG_REQ_PAGE,                 "MSG_REQ_PAGE" },\
+    { MSG_REQ_PAGE_TRY,             "MSG_REQ_PAGE_TRY" },\
+    { MSG_REQ_PAGE_PULL,            "MSG_REQ_PAGE_PULL" },\
+    { MSG_REQ_PAGE_RECLAIM,         "MSG_REQ_PAGE_RECLAIM" },\
+    { MSG_RES_PAGE,                 "MSG_RES_PAGE" },\
+    { MSG_RES_PAGE_REDIRECT,        "MSG_RES_PAGE_REDIRECT" },\
+    { MSG_RES_PAGE_FAIL,            "MSG_RES_PAGE_FAIL" },\
+    { MSG_RES_SVM_FAIL,             "MSG_RES_SVM_FAIL" },\
+    { MSG_RES_ACK,                  "MSG_RES_ACK" }
 
 DECLARE_EVENT_CLASS(dsm_full_template,
         TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id,
@@ -48,7 +45,7 @@ DECLARE_EVENT_CLASS(dsm_full_template,
             __entry->dsm_id, __entry->svm_id, __entry->remote_svm_id,
             __entry->mr_id, __entry->addr, __entry->shared_addr,
             __print_symbolic(__entry->tag, dsm_dpc_tag),
-            __print_symbolic(__entry->tag, dsm_msg_type)));
+            __print_symbolic(__entry->tag, msg_type_strings)));
 
 #define DSM_DECLARE_EVENT_FULL(name)                                    \
     DEFINE_EVENT(dsm_full_template, name,                               \
@@ -88,7 +85,8 @@ DECLARE_EVENT_CLASS(dsm_message_template,
             "Shared_Addr(%lu) Flags(%s) TX(%d)", __entry->dsm_id,
             __entry->svm_id, __entry->remote_svm_id, __entry->mr_id,
             __entry->addr, __entry->shared_addr,
-            __print_symbolic(__entry->type, dsm_msg_type), __entry->tx_id));
+            __print_symbolic(__entry->type, msg_type_strings),
+            __entry->tx_id));
 
 #define DSM_DECLARE_EVENT_MESSAGE(name)                                     \
     DEFINE_EVENT(dsm_message_template, name,                                \

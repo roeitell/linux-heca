@@ -538,7 +538,7 @@ out:
 }
 
 struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
-        struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
+        struct subvirtual_machine *remote_svm, unsigned long addr, u16 type,
         pte_t *pte, u32 *svm_id, int deferred, struct memory_region *mr)
 {
     struct mm_struct *mm;
@@ -550,7 +550,7 @@ struct page *dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
     BUG_ON(!mm);
 
     down_read(&mm->mmap_sem);
-    page = (tag == TRY_REQUEST_PAGE)?
+    page = (type == MSG_REQ_PAGE_TRY)?
         try_dsm_extract_page(local_svm, remote_svm, mm, addr, pte) : 
         dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,
                 deferred, mr);

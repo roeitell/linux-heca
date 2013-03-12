@@ -1104,6 +1104,11 @@ int destroy_rcm_listener(struct dsm_module_state *dsm_state)
     if (!rcm)
         goto done;
 
+    if (!list_empty(&dsm_state->dsm_list)) {
+        heca_printk(KERN_INFO "can't delete rcm - dsms exist");
+        rc = -EBUSY;
+    }
+
     rcm_disconnect(rcm);
 
     if (!rcm->cm_id)

@@ -9,11 +9,6 @@
 
 #include "struct.h"
 
-/* module */
-inline struct dsm_module_state *get_dsm_module_state(void);
-struct dsm_module_state *create_dsm_module_state(void);
-void destroy_dsm_module_state(void);
-
 /* conn */
 struct conn_element *search_rb_conn(int);
 void insert_rb_conn(struct conn_element *);

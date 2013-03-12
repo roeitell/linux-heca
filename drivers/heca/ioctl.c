@@ -109,11 +109,7 @@ void destroy_dsm_module_state(void)
         remove_dsm(dsm);
     }
 
-    if (dsm_state->rcm) { 
-        destroy_rcm_listener(dsm_state);
-        dsm_state->rcm = NULL;
-    }
-
+    destroy_rcm_listener(dsm_state);
     mutex_destroy(&dsm_state->dsm_state_mutex);
     destroy_workqueue(dsm_state->dsm_tx_wq);
     destroy_workqueue(dsm_state->dsm_rx_wq);
@@ -135,11 +131,7 @@ static int deregister_dsm(__u32 dsm_id)
             remove_dsm(dsm);
     }
 
-    if (dsm_state->rcm) { 
-        destroy_rcm_listener(dsm_state);
-        dsm_state->rcm = NULL;
-    }
-
+    destroy_rcm_listener(dsm_state);
     heca_printk(KERN_DEBUG "<exit> %d", ret);
     return ret;
 }

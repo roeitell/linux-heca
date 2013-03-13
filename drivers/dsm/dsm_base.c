@@ -27,9 +27,9 @@ struct dsm_module_state *create_dsm_module_state(void)
     INIT_LIST_HEAD(&dsm_state->dsm_list);
     mutex_init(&dsm_state->dsm_state_mutex);
     dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq",
-            WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
+            WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 0);
     dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq",
-            WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
+            WQ_HIGHPRI | WQ_MEM_RECLAIM | WQ_UNBOUND, 0);
     return dsm_state;
 }
 

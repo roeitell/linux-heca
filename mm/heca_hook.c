@@ -119,6 +119,7 @@ EXPORT_SYMBOL(ptep_set_access_flags);
 
 #include <linux/sched.h>
 EXPORT_SYMBOL(find_task_by_vpid);
+EXPORT_SYMBOL(find_task_by_pid_ns);
 
 #include "internal.h"
 EXPORT_SYMBOL(munlock_vma_page);

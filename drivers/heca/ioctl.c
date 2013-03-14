@@ -171,7 +171,7 @@ static int ioctl_svm(int ioctl, void __user *argp)
     }
 
     if (!svm_info.pid) {
-        svm_info.pid = task_pid_vnr(current);
+        svm_info.pid = get_current_pid();
         heca_printk(KERN_INFO "no pid defined assuming %d", svm_info.pid);
     }
 
@@ -212,7 +212,7 @@ static int ioctl_ps(int ioctl, void __user *argp)
     }
 
     if (!udata.pid) {
-        udata.pid = task_pid_vnr(current);
+        udata.pid = get_current_pid();
         heca_printk(KERN_INFO "no pid defined assuming %d", udata.pid);
     }
 

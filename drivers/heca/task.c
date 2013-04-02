@@ -1,6 +1,16 @@
+#include <linux/pid_namespace.h>
 #include "ioctl.h"
 #include "task.h"
 #include "base.h"
+
+pid_t get_current_pid(void)
+{
+    pid_t pid;
+    rcu_read_lock();
+    pid = task_pid_nr_ns(current, task_active_pid_ns(current));
+    rcu_read_unlock();
+    return pid;
+}
 
 static int get_task_struct_by_pid(pid_t pid, struct task_struct **tsk)
 {
@@ -10,7 +20,7 @@ static int get_task_struct_by_pid(pid_t pid, struct task_struct **tsk)
     heca_printk(KERN_DEBUG "<enter>");
 
     rcu_read_lock();
-    *tsk = find_task_by_vpid(pid);
+    *tsk = find_task_by_pid_ns(pid, task_active_pid_ns(current));
     if (!*tsk) {
         heca_printk(KERN_ERR "can't find pid %d", pid);
         ret = -ESRCH;
@@ -40,6 +50,7 @@ struct mm_struct *find_mm_by_pid(pid_t pid)
     if (get_task_struct_by_pid(pid, &tsk))
         return NULL;
     mm = tsk->mm;
+    BUG_ON(!mm);
     put_task_struct(tsk);
     return mm;
 }

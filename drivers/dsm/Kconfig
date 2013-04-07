@@ -1,0 +1,23 @@
+config DSM
+	tristate "DSM"
+	depends on NUMA && RDS && INFINIBAND && INFINIBAND_ADDR_TRANS && INET && MMU_NOTIFIER && MMU
+	default m
+	help
+	  Enable DSM - running single VM over several linux hosts with qemu/kvm.
+
+
+		
+config DSM_DEBUG
+	bool "DSM_DEBUG"
+	depends on DSM
+	default n
+	help
+		DSM_DEBUG provides debug functionality for DSM 
+		
+config DSM_VERBOSE_PRINTK
+	bool "DSM_VERBOSE_PRINTK"
+	depends on DSM
+	default n
+	help
+		DSM_VERBOSE_PRINTK provide verbose functionality 	
+

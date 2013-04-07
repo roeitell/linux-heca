@@ -1,0 +1,2 @@
+header-y += dsm_struct.h
+header-y += dsm_core.h

@@ -61,7 +61,7 @@ void show_mem(unsigned int filter)
 	       global_page_state(NR_PAGETABLE),
 	       global_page_state(NR_BOUNCE),
 	       global_page_state(NR_FILE_PAGES),
-	       nr_swap_pages);
+	       get_nr_swap_pages());
 
 	for_each_zone(zone) {
 		unsigned long flags, order, total = 0, largest_order = -1;
@@ -574,13 +574,6 @@ void __iomem *ioremap_prot(resource_size_t phys_addr, unsigned long size,
 	return (__force void __iomem *) (offset + (char *)addr);
 }
 EXPORT_SYMBOL(ioremap_prot);
-
-/* Map a PCI MMIO bus address into VA space. */
-void __iomem *ioremap(resource_size_t phys_addr, unsigned long size)
-{
-	panic("ioremap for PCI MMIO is not supported");
-}
-EXPORT_SYMBOL(ioremap);
 
 /* Unmap an MMIO VA mapping. */
 void iounmap(volatile void __iomem *addr_in)

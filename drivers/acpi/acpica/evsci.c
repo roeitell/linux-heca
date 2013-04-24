@@ -6,7 +6,7 @@
  ******************************************************************************/
 
 /*
- * Copyright (C) 2000 - 2012, Intel Corp.
+ * Copyright (C) 2000 - 2013, Intel Corp.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -56,7 +56,7 @@ static u32 ACPI_SYSTEM_XFACE acpi_ev_sci_xrupt_handler(void *context);
  *
  * FUNCTION:    acpi_ev_sci_xrupt_handler
  *
- * PARAMETERS:  Context   - Calling Context
+ * PARAMETERS:  context   - Calling Context
  *
  * RETURN:      Status code indicates whether interrupt was handled.
  *
@@ -89,14 +89,14 @@ static u32 ACPI_SYSTEM_XFACE acpi_ev_sci_xrupt_handler(void *context)
 	 */
 	interrupt_handled |= acpi_ev_gpe_detect(gpe_xrupt_list);
 
-	return_UINT32(interrupt_handled);
+	return_VALUE(interrupt_handled);
 }
 
 /*******************************************************************************
  *
  * FUNCTION:    acpi_ev_gpe_xrupt_handler
  *
- * PARAMETERS:  Context   - Calling Context
+ * PARAMETERS:  context   - Calling Context
  *
  * RETURN:      Status code indicates whether interrupt was handled.
  *
@@ -120,7 +120,7 @@ u32 ACPI_SYSTEM_XFACE acpi_ev_gpe_xrupt_handler(void *context)
 
 	interrupt_handled |= acpi_ev_gpe_detect(gpe_xrupt_list);
 
-	return_UINT32(interrupt_handled);
+	return_VALUE(interrupt_handled);
 }
 
 /******************************************************************************

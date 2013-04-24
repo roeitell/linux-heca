@@ -80,20 +80,6 @@ static int mc13xxx_regulator_is_enabled(struct regulator_dev *rdev)
 	return (val & mc13xxx_regulators[id].enable_bit) != 0;
 }
 
-int mc13xxx_regulator_list_voltage(struct regulator_dev *rdev,
-						unsigned selector)
-{
-	int id = rdev_get_id(rdev);
-	struct mc13xxx_regulator_priv *priv = rdev_get_drvdata(rdev);
-	struct mc13xxx_regulator *mc13xxx_regulators = priv->mc13xxx_regulators;
-
-	if (selector >= mc13xxx_regulators[id].desc.n_voltages)
-		return -EINVAL;
-
-	return mc13xxx_regulators[id].voltages[selector];
-}
-EXPORT_SYMBOL_GPL(mc13xxx_regulator_list_voltage);
-
 static int mc13xxx_regulator_set_voltage_sel(struct regulator_dev *rdev,
 					     unsigned selector)
 {
@@ -135,14 +121,14 @@ static int mc13xxx_regulator_get_voltage(struct regulator_dev *rdev)
 
 	BUG_ON(val >= mc13xxx_regulators[id].desc.n_voltages);
 
-	return mc13xxx_regulators[id].voltages[val];
+	return rdev->desc->volt_table[val];
 }
 
 struct regulator_ops mc13xxx_regulator_ops = {
 	.enable = mc13xxx_regulator_enable,
 	.disable = mc13xxx_regulator_disable,
 	.is_enabled = mc13xxx_regulator_is_enabled,
-	.list_voltage = mc13xxx_regulator_list_voltage,
+	.list_voltage = regulator_list_voltage_table,
 	.set_voltage_sel = mc13xxx_regulator_set_voltage_sel,
 	.get_voltage = mc13xxx_regulator_get_voltage,
 };
@@ -151,75 +137,57 @@ EXPORT_SYMBOL_GPL(mc13xxx_regulator_ops);
 int mc13xxx_fixed_regulator_set_voltage(struct regulator_dev *rdev, int min_uV,
 	       int max_uV, unsigned *selector)
 {
-	struct mc13xxx_regulator_priv *priv = rdev_get_drvdata(rdev);
-	struct mc13xxx_regulator *mc13xxx_regulators = priv->mc13xxx_regulators;
 	int id = rdev_get_id(rdev);
 
 	dev_dbg(rdev_get_dev(rdev), "%s id: %d min_uV: %d max_uV: %d\n",
 		__func__, id, min_uV, max_uV);
 
-	if (min_uV >= mc13xxx_regulators[id].voltages[0] &&
-	    max_uV <= mc13xxx_regulators[id].voltages[0])
+	if (min_uV <= rdev->desc->volt_table[0] &&
+	    rdev->desc->volt_table[0] <= max_uV) {
+		*selector = 0;
 		return 0;
-	else
+	} else {
 		return -EINVAL;
+	}
 }
 EXPORT_SYMBOL_GPL(mc13xxx_fixed_regulator_set_voltage);
-
-int mc13xxx_fixed_regulator_get_voltage(struct regulator_dev *rdev)
-{
-	struct mc13xxx_regulator_priv *priv = rdev_get_drvdata(rdev);
-	struct mc13xxx_regulator *mc13xxx_regulators = priv->mc13xxx_regulators;
-	int id = rdev_get_id(rdev);
-
-	dev_dbg(rdev_get_dev(rdev), "%s id: %d\n", __func__, id);
-
-	return mc13xxx_regulators[id].voltages[0];
-}
-EXPORT_SYMBOL_GPL(mc13xxx_fixed_regulator_get_voltage);
 
 struct regulator_ops mc13xxx_fixed_regulator_ops = {
 	.enable = mc13xxx_regulator_enable,
 	.disable = mc13xxx_regulator_disable,
 	.is_enabled = mc13xxx_regulator_is_enabled,
-	.list_voltage = mc13xxx_regulator_list_voltage,
+	.list_voltage = regulator_list_voltage_table,
 	.set_voltage = mc13xxx_fixed_regulator_set_voltage,
-	.get_voltage = mc13xxx_fixed_regulator_get_voltage,
 };
 EXPORT_SYMBOL_GPL(mc13xxx_fixed_regulator_ops);
 
-int mc13xxx_sw_regulator_is_enabled(struct regulator_dev *rdev)
-{
-	return 1;
-}
-EXPORT_SYMBOL_GPL(mc13xxx_sw_regulator_is_enabled);
-
 #ifdef CONFIG_OF
-int __devinit mc13xxx_get_num_regulators_dt(struct platform_device *pdev)
+int mc13xxx_get_num_regulators_dt(struct platform_device *pdev)
 {
-	struct device_node *parent, *child;
-	int num = 0;
+	struct device_node *parent;
+	int num;
 
 	of_node_get(pdev->dev.parent->of_node);
 	parent = of_find_node_by_name(pdev->dev.parent->of_node, "regulators");
 	if (!parent)
 		return -ENODEV;
 
-	for_each_child_of_node(parent, child)
-		num++;
-
+	num = of_get_child_count(parent);
+	of_node_put(parent);
 	return num;
 }
 EXPORT_SYMBOL_GPL(mc13xxx_get_num_regulators_dt);
 
-struct mc13xxx_regulator_init_data * __devinit mc13xxx_parse_regulators_dt(
+struct mc13xxx_regulator_init_data *mc13xxx_parse_regulators_dt(
 	struct platform_device *pdev, struct mc13xxx_regulator *regulators,
-	int num_regulators)
+	int num_regulators, int *num_parsed)
 {
 	struct mc13xxx_regulator_priv *priv = platform_get_drvdata(pdev);
 	struct mc13xxx_regulator_init_data *data, *p;
 	struct device_node *parent, *child;
-	int i;
+	int i, parsed = 0;
+
+	*num_parsed = 0;
 
 	of_node_get(pdev->dev.parent->of_node);
 	parent = of_find_node_by_name(pdev->dev.parent->of_node, "regulators");
@@ -228,24 +196,32 @@ struct mc13xxx_regulator_init_data * __devinit mc13xxx_parse_regulators_dt(
 
 	data = devm_kzalloc(&pdev->dev, sizeof(*data) * priv->num_regulators,
 			    GFP_KERNEL);
-	if (!data)
+	if (!data) {
+		of_node_put(parent);
 		return NULL;
+	}
+
 	p = data;
 
 	for_each_child_of_node(parent, child) {
 		for (i = 0; i < num_regulators; i++) {
 			if (!of_node_cmp(child->name,
 					 regulators[i].desc.name)) {
+
 				p->id = i;
 				p->init_data = of_get_regulator_init_data(
 							&pdev->dev, child);
 				p->node = child;
 				p++;
+
+				parsed++;
 				break;
 			}
 		}
 	}
+	of_node_put(parent);
 
+	*num_parsed = parsed;
 	return data;
 }
 EXPORT_SYMBOL_GPL(mc13xxx_parse_regulators_dt);

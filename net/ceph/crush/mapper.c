@@ -287,6 +287,7 @@ static int is_out(const struct crush_map *map, const __u32 *weight, int item, in
  * @outpos: our position in that vector
  * @firstn: true if choosing "first n" items, false if choosing "indep"
  * @recurse_to_leaf: true if we want one device under each item of given type
+ * @descend_once: true if we should only try one descent before giving up
  * @out2: second output vector for leaf items (if @recurse_to_leaf)
  */
 static int crush_choose(const struct crush_map *map,
@@ -295,7 +296,7 @@ static int crush_choose(const struct crush_map *map,
 			int x, int numrep, int type,
 			int *out, int outpos,
 			int firstn, int recurse_to_leaf,
-			int *out2)
+			int descend_once, int *out2)
 {
 	int rep;
 	unsigned int ftotal, flocal;
@@ -306,7 +307,6 @@ static int crush_choose(const struct crush_map *map,
 	int item = 0;
 	int itemtype;
 	int collide, reject;
-	const unsigned int orig_tries = 5; /* attempts before we fall back to search */
 
 	dprintk("CHOOSE%s bucket %d x %d outpos %d numrep %d\n", recurse_to_leaf ? "_LEAF" : "",
 		bucket->id, x, outpos, numrep);
@@ -351,8 +351,9 @@ static int crush_choose(const struct crush_map *map,
 					reject = 1;
 					goto reject;
 				}
-				if (flocal >= (in->size>>1) &&
-				    flocal > orig_tries)
+				if (map->choose_local_fallback_tries > 0 &&
+				    flocal >= (in->size>>1) &&
+				    flocal > map->choose_local_fallback_tries)
 					item = bucket_perm_choose(in, x, r);
 				else
 					item = crush_bucket_choose(in, x, r);
@@ -391,7 +392,7 @@ static int crush_choose(const struct crush_map *map,
 				}
 
 				reject = 0;
-				if (recurse_to_leaf) {
+				if (!collide && recurse_to_leaf) {
 					if (item < 0) {
 						if (crush_choose(map,
 							 map->buckets[-1-item],
@@ -399,6 +400,7 @@ static int crush_choose(const struct crush_map *map,
 							 x, outpos+1, 0,
 							 out2, outpos,
 							 firstn, 0,
+							 map->chooseleaf_descend_once,
 							 NULL) <= outpos)
 							/* didn't get leaf */
 							reject = 1;
@@ -422,13 +424,17 @@ reject:
 					ftotal++;
 					flocal++;
 
-					if (collide && flocal < 3)
+					if (reject && descend_once)
+						/* let outer call try again */
+						skip_rep = 1;
+					else if (collide && flocal <= map->choose_local_tries)
 						/* retry locally a few times */
 						retry_bucket = 1;
-					else if (flocal <= in->size + orig_tries)
+					else if (map->choose_local_fallback_tries > 0 &&
+						 flocal <= in->size + map->choose_local_fallback_tries)
 						/* exhaustive bucket search */
 						retry_bucket = 1;
-					else if (ftotal < 20)
+					else if (ftotal <= map->choose_total_tries)
 						/* then retry descent */
 						retry_descent = 1;
 					else
@@ -484,6 +490,7 @@ int crush_do_rule(const struct crush_map *map,
 	int i, j;
 	int numrep;
 	int firstn;
+	const int descend_once = 0;
 
 	if ((__u32)ruleno >= map->max_rules) {
 		dprintk(" bad ruleno %d\n", ruleno);
@@ -543,7 +550,8 @@ int crush_do_rule(const struct crush_map *map,
 						      curstep->arg2,
 						      o+osize, j,
 						      firstn,
-						      recurse_to_leaf, c+osize);
+						      recurse_to_leaf,
+						      descend_once, c+osize);
 			}
 
 			if (recurse_to_leaf)

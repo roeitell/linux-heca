@@ -16,12 +16,11 @@
 #include <linux/amba/pl08x.h>
 #include <linux/clk.h>
 #include <linux/err.h>
+#include <linux/irqchip.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
-#include <linux/of_irq.h>
 #include <linux/of_platform.h>
-#include <asm/hardware/pl080.h>
-#include <asm/hardware/vic.h>
+#include <linux/amba/pl080.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/time.h>
 #include <asm/mach/map.h>
@@ -36,336 +35,288 @@ static struct pl08x_channel_data spear600_dma_info[] = {
 		.min_signal = 0,
 		.max_signal = 0,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ssp1_tx",
 		.min_signal = 1,
 		.max_signal = 1,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "uart0_rx",
 		.min_signal = 2,
 		.max_signal = 2,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "uart0_tx",
 		.min_signal = 3,
 		.max_signal = 3,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "uart1_rx",
 		.min_signal = 4,
 		.max_signal = 4,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "uart1_tx",
 		.min_signal = 5,
 		.max_signal = 5,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ssp2_rx",
 		.min_signal = 6,
 		.max_signal = 6,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ssp2_tx",
 		.min_signal = 7,
 		.max_signal = 7,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ssp0_rx",
 		.min_signal = 8,
 		.max_signal = 8,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ssp0_tx",
 		.min_signal = 9,
 		.max_signal = 9,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "i2c_rx",
 		.min_signal = 10,
 		.max_signal = 10,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "i2c_tx",
 		.min_signal = 11,
 		.max_signal = 11,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "irda",
 		.min_signal = 12,
 		.max_signal = 12,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "adc",
 		.min_signal = 13,
 		.max_signal = 13,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "to_jpeg",
 		.min_signal = 14,
 		.max_signal = 14,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "from_jpeg",
 		.min_signal = 15,
 		.max_signal = 15,
 		.muxval = 0,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras0_rx",
 		.min_signal = 0,
 		.max_signal = 0,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras0_tx",
 		.min_signal = 1,
 		.max_signal = 1,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras1_rx",
 		.min_signal = 2,
 		.max_signal = 2,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras1_tx",
 		.min_signal = 3,
 		.max_signal = 3,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras2_rx",
 		.min_signal = 4,
 		.max_signal = 4,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras2_tx",
 		.min_signal = 5,
 		.max_signal = 5,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras3_rx",
 		.min_signal = 6,
 		.max_signal = 6,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras3_tx",
 		.min_signal = 7,
 		.max_signal = 7,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras4_rx",
 		.min_signal = 8,
 		.max_signal = 8,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras4_tx",
 		.min_signal = 9,
 		.max_signal = 9,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras5_rx",
 		.min_signal = 10,
 		.max_signal = 10,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras5_tx",
 		.min_signal = 11,
 		.max_signal = 11,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras6_rx",
 		.min_signal = 12,
 		.max_signal = 12,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras6_tx",
 		.min_signal = 13,
 		.max_signal = 13,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras7_rx",
 		.min_signal = 14,
 		.max_signal = 14,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ras7_tx",
 		.min_signal = 15,
 		.max_signal = 15,
 		.muxval = 1,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB1,
 	}, {
 		.bus_id = "ext0_rx",
 		.min_signal = 0,
 		.max_signal = 0,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext0_tx",
 		.min_signal = 1,
 		.max_signal = 1,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext1_rx",
 		.min_signal = 2,
 		.max_signal = 2,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext1_tx",
 		.min_signal = 3,
 		.max_signal = 3,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext2_rx",
 		.min_signal = 4,
 		.max_signal = 4,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext2_tx",
 		.min_signal = 5,
 		.max_signal = 5,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext3_rx",
 		.min_signal = 6,
 		.max_signal = 6,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext3_tx",
 		.min_signal = 7,
 		.max_signal = 7,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext4_rx",
 		.min_signal = 8,
 		.max_signal = 8,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext4_tx",
 		.min_signal = 9,
 		.max_signal = 9,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext5_rx",
 		.min_signal = 10,
 		.max_signal = 10,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext5_tx",
 		.min_signal = 11,
 		.max_signal = 11,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext6_rx",
 		.min_signal = 12,
 		.max_signal = 12,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext6_tx",
 		.min_signal = 13,
 		.max_signal = 13,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext7_rx",
 		.min_signal = 14,
 		.max_signal = 14,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	}, {
 		.bus_id = "ext7_tx",
 		.min_signal = 15,
 		.max_signal = 15,
 		.muxval = 2,
-		.cctl = 0,
 		.periph_buses = PL08X_AHB2,
 	},
 };
@@ -373,7 +324,8 @@ static struct pl08x_channel_data spear600_dma_info[] = {
 struct pl08x_platform_data pl080_plat_data = {
 	.memcpy_channel = {
 		.bus_id = "memcpy",
-		.cctl = (PL080_BSIZE_16 << PL080_CONTROL_SB_SIZE_SHIFT | \
+		.cctl_memcpy =
+			(PL080_BSIZE_16 << PL080_CONTROL_SB_SIZE_SHIFT | \
 			PL080_BSIZE_16 << PL080_CONTROL_DB_SIZE_SHIFT | \
 			PL080_WIDTH_32BIT << PL080_CONTROL_SWIDTH_SHIFT | \
 			PL080_WIDTH_32BIT << PL080_CONTROL_DWIDTH_SHIFT | \
@@ -421,7 +373,7 @@ void __init spear6xx_map_io(void)
 	iotable_init(spear6xx_io_desc, ARRAY_SIZE(spear6xx_io_desc));
 }
 
-static void __init spear6xx_timer_init(void)
+void __init spear6xx_timer_init(void)
 {
 	char pclk_name[] = "pll3_clk";
 	struct clk *gpt_clk, *pclk;
@@ -450,10 +402,6 @@ static void __init spear6xx_timer_init(void)
 	spear_setup_of_timer();
 }
 
-struct sys_timer spear6xx_timer = {
-	.init = spear6xx_timer_init,
-};
-
 /* Add auxdata to pass platform data */
 struct of_dev_auxdata spear6xx_auxdata_lookup[] __initdata = {
 	OF_DEV_AUXDATA("arm,pl080", SPEAR6XX_ICM3_DMA_BASE, NULL,
@@ -472,21 +420,10 @@ static const char *spear600_dt_board_compat[] = {
 	NULL
 };
 
-static const struct of_device_id vic_of_match[] __initconst = {
-	{ .compatible = "arm,pl190-vic", .data = vic_of_init, },
-	{ /* Sentinel */ }
-};
-
-static void __init spear6xx_dt_init_irq(void)
-{
-	of_irq_init(vic_of_match);
-}
-
 DT_MACHINE_START(SPEAR600_DT, "ST SPEAr600 (Flattened Device Tree)")
 	.map_io		=	spear6xx_map_io,
-	.init_irq	=	spear6xx_dt_init_irq,
-	.handle_irq	=	vic_handle_irq,
-	.timer		=	&spear6xx_timer,
+	.init_irq	=	irqchip_init,
+	.init_time	=	spear6xx_timer_init,
 	.init_machine	=	spear600_dt_init,
 	.restart	=	spear_restart,
 	.dt_compat	=	spear600_dt_board_compat,

@@ -329,8 +329,7 @@ static int mcfqspi_transfer_one_message(struct spi_master *master,
 		mcfqspi_cs_select(mcfqspi, spi->chip_select, cs_high);
 
 		mcfqspi_wr_qir(mcfqspi, MCFQSPI_QIR_SPIFE);
-		if ((t->bits_per_word ? t->bits_per_word :
-					spi->bits_per_word) == 8)
+		if (t->bits_per_word == 8)
 			mcfqspi_transfer_msg8(mcfqspi, t->len, t->tx_buf,
 					t->rx_buf);
 		else
@@ -401,7 +400,7 @@ static int mcfqspi_setup(struct spi_device *spi)
 	return 0;
 }
 
-static int __devinit mcfqspi_probe(struct platform_device *pdev)
+static int mcfqspi_probe(struct platform_device *pdev)
 {
 	struct spi_master *master;
 	struct mcfqspi *mcfqspi;
@@ -515,7 +514,7 @@ fail0:
 	return status;
 }
 
-static int __devexit mcfqspi_remove(struct platform_device *pdev)
+static int mcfqspi_remove(struct platform_device *pdev)
 {
 	struct spi_master *master = platform_get_drvdata(pdev);
 	struct mcfqspi *mcfqspi = spi_master_get_devdata(master);
@@ -533,7 +532,6 @@ static int __devexit mcfqspi_remove(struct platform_device *pdev)
 	iounmap(mcfqspi->iobase);
 	release_mem_region(res->start, resource_size(res));
 	spi_unregister_master(master);
-	spi_master_put(master);
 
 	return 0;
 }
@@ -541,7 +539,7 @@ static int __devexit mcfqspi_remove(struct platform_device *pdev)
 #ifdef CONFIG_PM_SLEEP
 static int mcfqspi_suspend(struct device *dev)
 {
-	struct spi_master *master = spi_master_get(dev_get_drvdata(dev));
+	struct spi_master *master = dev_get_drvdata(dev);
 	struct mcfqspi *mcfqspi = spi_master_get_devdata(master);
 
 	spi_master_suspend(master);
@@ -553,7 +551,7 @@ static int mcfqspi_suspend(struct device *dev)
 
 static int mcfqspi_resume(struct device *dev)
 {
-	struct spi_master *master = spi_master_get(dev_get_drvdata(dev));
+	struct spi_master *master = dev_get_drvdata(dev);
 	struct mcfqspi *mcfqspi = spi_master_get_devdata(master);
 
 	spi_master_resume(master);
@@ -595,7 +593,7 @@ static struct platform_driver mcfqspi_driver = {
 	.driver.owner	= THIS_MODULE,
 	.driver.pm	= &mcfqspi_pm,
 	.probe		= mcfqspi_probe,
-	.remove		= __devexit_p(mcfqspi_remove),
+	.remove		= mcfqspi_remove,
 };
 module_platform_driver(mcfqspi_driver);
 

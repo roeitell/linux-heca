@@ -34,17 +34,16 @@
 #include <linux/i2c-gpio.h>
 #include <linux/spi/spi.h>
 #include <linux/export.h>
+#include <linux/irqchip/arm-vic.h>
 
 #include <mach/hardware.h>
-#include <mach/fb.h>
-#include <mach/ep93xx_keypad.h>
-#include <mach/ep93xx_spi.h>
+#include <linux/platform_data/video-ep93xx.h>
+#include <linux/platform_data/keypad-ep93xx.h>
+#include <linux/platform_data/spi-ep93xx.h>
 #include <mach/gpio-ep93xx.h>
 
 #include <asm/mach/map.h>
 #include <asm/mach/time.h>
-
-#include <asm/hardware/vic.h>
 
 #include "soc.h"
 
@@ -140,10 +139,28 @@ static struct irqaction ep93xx_timer_irq = {
 	.handler	= ep93xx_timer_interrupt,
 };
 
-static void __init ep93xx_timer_init(void)
+static u32 ep93xx_gettimeoffset(void)
+{
+	int offset;
+
+	offset = __raw_readl(EP93XX_TIMER4_VALUE_LOW) - last_jiffy_time;
+
+	/*
+	 * Timer 4 is based on a 983.04 kHz reference clock,
+	 * so dividing by 983040 gives the fraction of a second,
+	 * so dividing by 0.983040 converts to uS.
+	 * Refactor the calculation to avoid overflow.
+	 * Finally, multiply by 1000 to give nS.
+	 */
+	return (offset + (53 * offset / 3072)) * 1000;
+}
+
+void __init ep93xx_timer_init(void)
 {
 	u32 tmode = EP93XX_TIMER123_CONTROL_MODE |
 		    EP93XX_TIMER123_CONTROL_CLKSEL;
+
+	arch_gettimeoffset = ep93xx_gettimeoffset;
 
 	/* Enable periodic HZ timer.  */
 	__raw_writel(tmode, EP93XX_TIMER1_CONTROL);
@@ -157,21 +174,6 @@ static void __init ep93xx_timer_init(void)
 
 	setup_irq(IRQ_EP93XX_TIMER1, &ep93xx_timer_irq);
 }
-
-static unsigned long ep93xx_gettimeoffset(void)
-{
-	int offset;
-
-	offset = __raw_readl(EP93XX_TIMER4_VALUE_LOW) - last_jiffy_time;
-
-	/* Calculate (1000000 / 983040) * offset.  */
-	return offset + (53 * offset / 3072);
-}
-
-struct sys_timer ep93xx_timer = {
-	.init		= ep93xx_timer_init,
-	.offset		= ep93xx_gettimeoffset,
-};
 
 
 /*************************************************************************
@@ -796,6 +798,102 @@ static struct platform_device ep93xx_wdt_device = {
 	.num_resources	= ARRAY_SIZE(ep93xx_wdt_resources),
 	.resource	= ep93xx_wdt_resources,
 };
+
+/*************************************************************************
+ * EP93xx IDE
+ *************************************************************************/
+static struct resource ep93xx_ide_resources[] = {
+	DEFINE_RES_MEM(EP93XX_IDE_PHYS_BASE, 0x38),
+	DEFINE_RES_IRQ(IRQ_EP93XX_EXT3),
+};
+
+static struct platform_device ep93xx_ide_device = {
+	.name		= "ep93xx-ide",
+	.id		= -1,
+	.dev		= {
+		.dma_mask		= &ep93xx_ide_device.dev.coherent_dma_mask,
+		.coherent_dma_mask	= DMA_BIT_MASK(32),
+	},
+	.num_resources	= ARRAY_SIZE(ep93xx_ide_resources),
+	.resource	= ep93xx_ide_resources,
+};
+
+void __init ep93xx_register_ide(void)
+{
+	platform_device_register(&ep93xx_ide_device);
+}
+
+int ep93xx_ide_acquire_gpio(struct platform_device *pdev)
+{
+	int err;
+	int i;
+
+	err = gpio_request(EP93XX_GPIO_LINE_EGPIO2, dev_name(&pdev->dev));
+	if (err)
+		return err;
+	err = gpio_request(EP93XX_GPIO_LINE_EGPIO15, dev_name(&pdev->dev));
+	if (err)
+		goto fail_egpio15;
+	for (i = 2; i < 8; i++) {
+		err = gpio_request(EP93XX_GPIO_LINE_E(i), dev_name(&pdev->dev));
+		if (err)
+			goto fail_gpio_e;
+	}
+	for (i = 4; i < 8; i++) {
+		err = gpio_request(EP93XX_GPIO_LINE_G(i), dev_name(&pdev->dev));
+		if (err)
+			goto fail_gpio_g;
+	}
+	for (i = 0; i < 8; i++) {
+		err = gpio_request(EP93XX_GPIO_LINE_H(i), dev_name(&pdev->dev));
+		if (err)
+			goto fail_gpio_h;
+	}
+
+	/* GPIO ports E[7:2], G[7:4] and H used by IDE */
+	ep93xx_devcfg_clear_bits(EP93XX_SYSCON_DEVCFG_EONIDE |
+				 EP93XX_SYSCON_DEVCFG_GONIDE |
+				 EP93XX_SYSCON_DEVCFG_HONIDE);
+	return 0;
+
+fail_gpio_h:
+	for (--i; i >= 0; --i)
+		gpio_free(EP93XX_GPIO_LINE_H(i));
+	i = 8;
+fail_gpio_g:
+	for (--i; i >= 4; --i)
+		gpio_free(EP93XX_GPIO_LINE_G(i));
+	i = 8;
+fail_gpio_e:
+	for (--i; i >= 2; --i)
+		gpio_free(EP93XX_GPIO_LINE_E(i));
+	gpio_free(EP93XX_GPIO_LINE_EGPIO15);
+fail_egpio15:
+	gpio_free(EP93XX_GPIO_LINE_EGPIO2);
+	return err;
+}
+EXPORT_SYMBOL(ep93xx_ide_acquire_gpio);
+
+void ep93xx_ide_release_gpio(struct platform_device *pdev)
+{
+	int i;
+
+	for (i = 2; i < 8; i++)
+		gpio_free(EP93XX_GPIO_LINE_E(i));
+	for (i = 4; i < 8; i++)
+		gpio_free(EP93XX_GPIO_LINE_G(i));
+	for (i = 0; i < 8; i++)
+		gpio_free(EP93XX_GPIO_LINE_H(i));
+	gpio_free(EP93XX_GPIO_LINE_EGPIO15);
+	gpio_free(EP93XX_GPIO_LINE_EGPIO2);
+
+
+	/* GPIO ports E[7:2], G[7:4] and H used by GPIO */
+	ep93xx_devcfg_set_bits(EP93XX_SYSCON_DEVCFG_EONIDE |
+			       EP93XX_SYSCON_DEVCFG_GONIDE |
+			       EP93XX_SYSCON_DEVCFG_HONIDE);
+}
+EXPORT_SYMBOL(ep93xx_ide_release_gpio);
 
 void __init ep93xx_init_devices(void)
 {

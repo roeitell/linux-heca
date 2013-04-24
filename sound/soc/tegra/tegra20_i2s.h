@@ -121,7 +121,7 @@
 
 #define TEGRA20_I2S_TIMING_NON_SYM_ENABLE		(1 << 12)
 #define TEGRA20_I2S_TIMING_CHANNEL_BIT_COUNT_SHIFT	0
-#define TEGRA20_I2S_TIMING_CHANNEL_BIT_COUNT_MASK_US	0x7fff
+#define TEGRA20_I2S_TIMING_CHANNEL_BIT_COUNT_MASK_US	0x7ff
 #define TEGRA20_I2S_TIMING_CHANNEL_BIT_COUNT_MASK	(TEGRA20_I2S_TIMING_CHANNEL_BIT_COUNT_MASK_US << TEGRA20_I2S_TIMING_CHANNEL_BIT_COUNT_SHIFT)
 
 /* Fields in TEGRA20_I2S_FIFO_SCR */
@@ -158,7 +158,6 @@ struct tegra20_i2s {
 	struct tegra_pcm_dma_params capture_dma_data;
 	struct tegra_pcm_dma_params playback_dma_data;
 	struct regmap *regmap;
-	u32 reg_ctrl;
 };
 
 #endif

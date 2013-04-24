@@ -56,13 +56,6 @@ static struct kmem_cache	*kioctx_cachep;
 
 static struct workqueue_struct *aio_wq;
 
-/* Used for rare fput completion. */
-static void aio_fput_routine(struct work_struct *);
-static DECLARE_WORK(fput_work, aio_fput_routine);
-
-static DEFINE_SPINLOCK(fput_lock);
-static LIST_HEAD(fput_head);
-
 static void aio_kick_handler(struct work_struct *);
 static void aio_queue_work(struct kioctx *);
 
@@ -108,7 +101,7 @@ static int aio_setup_ring(struct kioctx *ctx)
 	struct aio_ring *ring;
 	struct aio_ring_info *info = &ctx->ring_info;
 	unsigned nr_events = ctx->max_reqs;
-	unsigned long size;
+	unsigned long size, populate;
 	int nr_pages;
 
 	/* Compensate for the ring buffer's head/tail overlap entry */
@@ -136,7 +129,8 @@ static int aio_setup_ring(struct kioctx *ctx)
 	down_write(&ctx->mm->mmap_sem);
 	info->mmap_base = do_mmap_pgoff(NULL, 0, info->mmap_size, 
 					PROT_READ|PROT_WRITE,
-					MAP_ANONYMOUS|MAP_PRIVATE, 0);
+					MAP_ANONYMOUS|MAP_PRIVATE, 0,
+					&populate);
 	if (IS_ERR((void *)info->mmap_base)) {
 		up_write(&ctx->mm->mmap_sem);
 		info->mmap_size = 0;
@@ -154,6 +148,8 @@ static int aio_setup_ring(struct kioctx *ctx)
 		aio_free_ring(ctx);
 		return -EAGAIN;
 	}
+	if (populate)
+		mm_populate(info->mmap_base, populate);
 
 	ctx->user_id = info->mmap_base;
 
@@ -479,7 +475,6 @@ static int kiocb_batch_refill(struct kioctx *ctx, struct kiocb_batch *batch)
 {
 	unsigned short allocated, to_alloc;
 	long avail;
-	bool called_fput = false;
 	struct kiocb *req, *n;
 	struct aio_ring *ring;
 
@@ -495,28 +490,11 @@ static int kiocb_batch_refill(struct kioctx *ctx, struct kiocb_batch *batch)
 	if (allocated == 0)
 		goto out;
 
-retry:
 	spin_lock_irq(&ctx->ctx_lock);
 	ring = kmap_atomic(ctx->ring_info.ring_pages[0]);
 
 	avail = aio_ring_avail(&ctx->ring_info, ring) - ctx->reqs_active;
 	BUG_ON(avail < 0);
-	if (avail == 0 && !called_fput) {
-		/*
-		 * Handle a potential starvation case.  It is possible that
-		 * we hold the last reference on a struct file, causing us
-		 * to delay the final fput to non-irq context.  In this case,
-		 * ctx->reqs_active is artificially high.  Calling the fput
-		 * routine here may free up a slot in the event completion
-		 * ring, allowing this allocation to succeed.
-		 */
-		kunmap_atomic(ring);
-		spin_unlock_irq(&ctx->ctx_lock);
-		aio_fput_routine(NULL);
-		called_fput = true;
-		goto retry;
-	}
-
 	if (avail < allocated) {
 		/* Trim back the number of requests. */
 		list_for_each_entry_safe(req, n, &batch->head, ki_batch) {
@@ -570,36 +548,6 @@ static inline void really_put_req(struct kioctx *ctx, struct kiocb *req)
 		wake_up_all(&ctx->wait);
 }
 
-static void aio_fput_routine(struct work_struct *data)
-{
-	spin_lock_irq(&fput_lock);
-	while (likely(!list_empty(&fput_head))) {
-		struct kiocb *req = list_kiocb(fput_head.next);
-		struct kioctx *ctx = req->ki_ctx;
-
-		list_del(&req->ki_list);
-		spin_unlock_irq(&fput_lock);
-
-		/* Complete the fput(s) */
-		if (req->ki_filp != NULL)
-			fput(req->ki_filp);
-
-		/* Link the iocb into the context's free list */
-		rcu_read_lock();
-		spin_lock_irq(&ctx->ctx_lock);
-		really_put_req(ctx, req);
-		/*
-		 * at that point ctx might've been killed, but actual
-		 * freeing is RCU'd
-		 */
-		spin_unlock_irq(&ctx->ctx_lock);
-		rcu_read_unlock();
-
-		spin_lock_irq(&fput_lock);
-	}
-	spin_unlock_irq(&fput_lock);
-}
-
 /* __aio_put_req
  *	Returns true if this put was the last user of the request.
  */
@@ -618,21 +566,9 @@ static int __aio_put_req(struct kioctx *ctx, struct kiocb *req)
 	req->ki_cancel = NULL;
 	req->ki_retry = NULL;
 
-	/*
-	 * Try to optimize the aio and eventfd file* puts, by avoiding to
-	 * schedule work in case it is not final fput() time. In normal cases,
-	 * we would not be holding the last reference to the file*, so
-	 * this function will be executed w/out any aio kthread wakeup.
-	 */
-	if (unlikely(!fput_atomic(req->ki_filp))) {
-		spin_lock(&fput_lock);
-		list_add(&req->ki_list, &fput_head);
-		spin_unlock(&fput_lock);
-		schedule_work(&fput_work);
-	} else {
-		req->ki_filp = NULL;
-		really_put_req(ctx, req);
-	}
+	fput(req->ki_filp);
+	req->ki_filp = NULL;
+	really_put_req(ctx, req);
 	return 1;
 }
 
@@ -655,11 +591,10 @@ static struct kioctx *lookup_ioctx(unsigned long ctx_id)
 {
 	struct mm_struct *mm = current->mm;
 	struct kioctx *ctx, *ret = NULL;
-	struct hlist_node *n;
 
 	rcu_read_lock();
 
-	hlist_for_each_entry_rcu(ctx, n, &mm->ioctx_list, list) {
+	hlist_for_each_entry_rcu(ctx, &mm->ioctx_list, list) {
 		/*
 		 * RCU protects us against accessing freed memory but
 		 * we have to be careful not to get a reference when the

@@ -993,7 +993,7 @@ static void ali_ircc_change_speed(struct ali_ircc_cb *self, __u32 baud)
 		/* Enable Interuupt */
 		self->ier = IER_EOM; // benjamin 2000/11/20 07:24PM					
 				
-		/* Be ready for incomming frames */
+		/* Be ready for incoming frames */
 		ali_ircc_dma_receive(self);	// benajmin 2000/11/8 07:46PM not complete
 	}	
 	/* Go to SIR Speed */
@@ -1017,7 +1017,7 @@ static void ali_ircc_fir_change_speed(struct ali_ircc_cb *priv, __u32 baud)
 {
 		
 	int iobase; 
-	struct ali_ircc_cb *self = (struct ali_ircc_cb *) priv;
+	struct ali_ircc_cb *self = priv;
 	struct net_device *dev;
 
 	IRDA_DEBUG(1, "%s(), ---------------- Start ----------------\n", __func__ );
@@ -1052,7 +1052,7 @@ static void ali_ircc_fir_change_speed(struct ali_ircc_cb *priv, __u32 baud)
  */
 static void ali_ircc_sir_change_speed(struct ali_ircc_cb *priv, __u32 speed)
 {
-	struct ali_ircc_cb *self = (struct ali_ircc_cb *) priv;
+	struct ali_ircc_cb *self = priv;
 	unsigned long flags;
 	int iobase; 
 	int fcr;    /* FIFO control reg */
@@ -1121,7 +1121,7 @@ static void ali_ircc_sir_change_speed(struct ali_ircc_cb *priv, __u32 speed)
 static void ali_ircc_change_dongle_speed(struct ali_ircc_cb *priv, int speed)
 {
 	
-	struct ali_ircc_cb *self = (struct ali_ircc_cb *) priv;
+	struct ali_ircc_cb *self = priv;
 	int iobase,dongle_id;
 	int tmp = 0;
 			

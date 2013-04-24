@@ -51,18 +51,6 @@ static DEFINE_IDR(ocrdma_dev_id);
 
 static union ib_gid ocrdma_zero_sgid;
 
-static int ocrdma_get_instance(void)
-{
-	int instance = 0;
-
-	/* Assign an unused number */
-	if (!idr_pre_get(&ocrdma_dev_id, GFP_KERNEL))
-		return -1;
-	if (idr_get_new(&ocrdma_dev_id, NULL, &instance))
-		return -1;
-	return instance;
-}
-
 void ocrdma_get_guid(struct ocrdma_dev *dev, u8 *guid)
 {
 	u8 mac_addr[6];
@@ -161,7 +149,7 @@ static void ocrdma_add_default_sgid(struct ocrdma_dev *dev)
 	ocrdma_get_guid(dev, &sgid->raw[8]);
 }
 
-#if defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+#if IS_ENABLED(CONFIG_VLAN_8021Q)
 static void ocrdma_add_vlan_sgids(struct ocrdma_dev *dev)
 {
 	struct net_device *netdev, *tmp;
@@ -202,15 +190,13 @@ static int ocrdma_build_sgid_tbl(struct ocrdma_dev *dev)
 	return 0;
 }
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE) || \
-defined(CONFIG_VLAN_8021Q) || defined(CONFIG_VLAN_8021Q_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 
 static int ocrdma_inet6addr_event(struct notifier_block *notifier,
 				  unsigned long event, void *ptr)
 {
 	struct inet6_ifaddr *ifa = (struct inet6_ifaddr *)ptr;
-	struct net_device *event_netdev = ifa->idev->dev;
-	struct net_device *netdev = NULL;
+	struct net_device *netdev = ifa->idev->dev;
 	struct ib_event gid_event;
 	struct ocrdma_dev *dev;
 	bool found = false;
@@ -218,11 +204,12 @@ static int ocrdma_inet6addr_event(struct notifier_block *notifier,
 	bool is_vlan = false;
 	u16 vid = 0;
 
-	netdev = vlan_dev_real_dev(event_netdev);
-	if (netdev != event_netdev) {
-		is_vlan = true;
-		vid = vlan_dev_vlan_id(event_netdev);
+	is_vlan = netdev->priv_flags & IFF_802_1Q_VLAN;
+	if (is_vlan) {
+		vid = vlan_dev_vlan_id(netdev);
+		netdev = vlan_dev_real_dev(netdev);
 	}
+
 	rcu_read_lock();
 	list_for_each_entry_rcu(dev, &ocrdma_dev_list, entry) {
 		if (dev->nic_info.netdev == netdev) {
@@ -417,7 +404,7 @@ static struct ocrdma_dev *ocrdma_add(struct be_dev_info *dev_info)
 		goto idr_err;
 
 	memcpy(&dev->nic_info, dev_info, sizeof(*dev_info));
-	dev->id = ocrdma_get_instance();
+	dev->id = idr_alloc(&ocrdma_dev_id, NULL, 0, 0, GFP_KERNEL);
 	if (dev->id < 0)
 		goto idr_err;
 
@@ -549,7 +536,7 @@ static struct ocrdma_driver ocrdma_drv = {
 
 static void ocrdma_unregister_inet6addr_notifier(void)
 {
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	unregister_inet6addr_notifier(&ocrdma_inet6addr_notifier);
 #endif
 }
@@ -558,7 +545,7 @@ static int __init ocrdma_init_module(void)
 {
 	int status;
 
-#if defined(CONFIG_IPV6) || defined(CONFIG_IPV6_MODULE)
+#if IS_ENABLED(CONFIG_IPV6)
 	status = register_inet6addr_notifier(&ocrdma_inet6addr_notifier);
 	if (status)
 		return status;

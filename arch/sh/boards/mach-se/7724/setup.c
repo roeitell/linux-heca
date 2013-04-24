@@ -18,6 +18,8 @@
 #include <linux/mmc/sh_mobile_sdhi.h>
 #include <linux/mtd/physmap.h>
 #include <linux/delay.h>
+#include <linux/regulator/fixed.h>
+#include <linux/regulator/machine.h>
 #include <linux/smc91x.h>
 #include <linux/gpio.h>
 #include <linux/input.h>
@@ -277,12 +279,6 @@ static struct platform_device ceu1_device = {
 
 /* FSI */
 /* change J20, J21, J22 pin to 1-2 connection to use slave mode */
-static struct sh_fsi_platform_info fsi_info = {
-	.port_a = {
-		.flags = SH_FSI_BRS_INV,
-	},
-};
-
 static struct resource fsi_resources[] = {
 	[0] = {
 		.name	= "FSI",
@@ -301,26 +297,23 @@ static struct platform_device fsi_device = {
 	.id		= 0,
 	.num_resources	= ARRAY_SIZE(fsi_resources),
 	.resource	= fsi_resources,
-	.dev	= {
-		.platform_data	= &fsi_info,
-	},
-};
-
-static struct asoc_simple_dai_init_info fsi2_ak4642_init_info = {
-	.fmt		= SND_SOC_DAIFMT_LEFT_J,
-	.codec_daifmt	= SND_SOC_DAIFMT_CBM_CFM,
-	.cpu_daifmt	= SND_SOC_DAIFMT_CBS_CFS,
-	.sysclk		= 11289600,
 };
 
 static struct asoc_simple_card_info fsi_ak4642_info = {
 	.name		= "AK4642",
 	.card		= "FSIA-AK4642",
-	.cpu_dai	= "fsia-dai",
 	.codec		= "ak4642-codec.0-0012",
 	.platform	= "sh_fsi.0",
-	.codec_dai	= "ak4642-hifi",
-	.init		= &fsi2_ak4642_init_info,
+	.daifmt		= SND_SOC_DAIFMT_LEFT_J,
+	.cpu_dai = {
+		.name	= "fsia-dai",
+		.fmt	= SND_SOC_DAIFMT_CBS_CFS | SND_SOC_DAIFMT_IB_NF,
+	},
+	.codec_dai = {
+		.name	= "ak4642-hifi",
+		.fmt	= SND_SOC_DAIFMT_CBM_CFM,
+		.sysclk	= 11289600,
+	},
 };
 
 static struct platform_device fsi_ak4642_device = {
@@ -452,6 +445,15 @@ static struct platform_device sh7724_usb1_gadget_device = {
 	},
 	.num_resources	= ARRAY_SIZE(sh7724_usb1_gadget_resources),
 	.resource	= sh7724_usb1_gadget_resources,
+};
+
+/* Fixed 3.3V regulator to be used by SDHI0, SDHI1 */
+static struct regulator_consumer_supply fixed3v3_power_consumers[] =
+{
+	REGULATOR_SUPPLY("vmmc", "sh_mobile_sdhi.0"),
+	REGULATOR_SUPPLY("vqmmc", "sh_mobile_sdhi.0"),
+	REGULATOR_SUPPLY("vmmc", "sh_mobile_sdhi.1"),
+	REGULATOR_SUPPLY("vqmmc", "sh_mobile_sdhi.1"),
 };
 
 static struct resource sdhi0_cn7_resources[] = {
@@ -684,6 +686,10 @@ static int __init devices_setup(void)
 					&ms7724se_sdram_enter_end,
 					&ms7724se_sdram_leave_start,
 					&ms7724se_sdram_leave_end);
+
+	regulator_register_always_on(0, "fixed-3.3V", fixed3v3_power_consumers,
+				     ARRAY_SIZE(fixed3v3_power_consumers), 3300000);
+
 	/* Reset Release */
 	fpga_out = __raw_readw(FPGA_OUT);
 	/* bit4: NTSC_PDN, bit5: NTSC_RESET */

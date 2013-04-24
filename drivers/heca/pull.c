@@ -96,12 +96,12 @@ static inline void cow_user_page(struct page *dst, struct page *src,
         unsigned long va, struct vm_area_struct *vma)
 {
     if (unlikely(!src)) {
-        void *kaddr = kmap_atomic(dst, KM_USER0);
+        void *kaddr = kmap_atomic(dst);
         void __user *uaddr = (void __user *) (va & PAGE_MASK);
 
         if (__copy_from_user_inatomic(kaddr, uaddr, PAGE_SIZE))
             clear_page(kaddr);
-        kunmap_atomic(kaddr, KM_USER0);
+        kunmap_atomic(kaddr);
         flush_dcache_page(dst);
     } else
         copy_user_highpage(dst, src, va, vma);
@@ -117,6 +117,7 @@ static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
     int ret = 0;
     int page_mkwrite = 0;
     struct page *dirty_page = NULL;
+    unsigned long mmun_start = 0, mmun_end = 0;
 
     old_page = vm_normal_page(vma, address, orig_pte);
     if (!old_page) {
@@ -201,6 +202,8 @@ reuse:
         if (!page_mkwrite) {
             wait_on_page_locked(dirty_page);
             set_page_dirty_balance(dirty_page, page_mkwrite);
+            if (vma->vm_file)
+                file_update_time(vma->vm_file);
         }
         put_page(dirty_page);
         if (page_mkwrite) {
@@ -213,9 +216,6 @@ reuse:
                 balance_dirty_pages_ratelimited(mapping);
             }
         }
-
-        if (vma->vm_file)
-            file_update_time(vma->vm_file);
 
         return ret;
     }
@@ -241,6 +241,10 @@ gotten:
 
     if (mem_cgroup_newpage_charge(new_page, mm, GFP_KERNEL))
         goto oom_free_new;
+
+    mmun_start = address & PAGE_MASK;
+    mmun_end = mmun_start + PAGE_SIZE;
+    mmu_notifier_invalidate_range_start(mm, mmun_start, mmun_end);
 
     page_table = pte_offset_map_lock(mm, pmd, address, &ptl);
     if (likely(pte_same(*page_table, orig_pte))) {
@@ -272,6 +276,8 @@ gotten:
         page_cache_release(new_page);
 unlock:
     pte_unmap_unlock(page_table, ptl);
+    if (mmun_end > mmun_start)
+        mmu_notifier_invalidate_range_end(mm, mmun_start, mmun_end);
     if (old_page) {
         if ((ret & VM_FAULT_WRITE) && (vma->vm_flags & VM_LOCKED)) {
             lock_page(old_page); /* LRU manipulation */
@@ -977,16 +983,15 @@ resolve:
     if (i)
         __set_page_locked(found_page);
     page_cache_get(found_page);
-    if (ksm_might_need_to_copy(found_page, vma, address)) {
-        swapcache = found_page;
-        found_page = ksm_does_need_to_copy(found_page, vma, address);
-        if (unlikely(!found_page)) {
-            ret = VM_FAULT_OOM;
-            found_page = swapcache;
-            swapcache = NULL;
-            goto out_page;
-        }
+
+    swapcache = found_page;
+    found_page = ksm_might_need_to_copy(found_page, vma, address);
+    if (unlikely(!found_page)) {
+        ret = VM_FAULT_OOM;
+        found_page = swapcache;
+        goto out_page;
     }
+
     if (mem_cgroup_try_charge_swapin(mm, found_page, GFP_KERNEL, &ptr)) {
         ret = VM_FAULT_OOM;
         goto out_page;
@@ -1000,6 +1005,7 @@ resolve:
         goto out_nomap;
     }
 
+    inc_mm_counter(mm, MM_ANONPAGES);
     pte = mk_pte(found_page, vma->vm_page_prot);
 
     /*
@@ -1016,15 +1022,17 @@ resolve:
     flush_icache_page(vma, found_page);
     set_pte_at(mm, address, page_table, pte);
 
-    do_page_add_anon_rmap(found_page, vma, address, exclusive);
-    inc_mm_counter(mm, MM_ANONPAGES);
+    if (found_page == swapcache)
+        do_page_add_anon_rmap(found_page, vma, address, exclusive);
+    else
+        page_add_new_anon_rmap(found_page, vma, address);
     mem_cgroup_commit_charge_swapin(found_page, ptr);
 
     unlock_page(found_page);
     if (i)
         unlock_page(dpc->pages[0]);
 
-    if (swapcache) {
+    if (found_page != swapcache) {
         unlock_page(swapcache);
         page_cache_release(swapcache);
     }
@@ -1056,7 +1064,7 @@ out_page:
         unlock_page(dpc->pages[0]);
 
     page_cache_release(found_page);
-    if (swapcache) {
+    if (found_page != swapcache) {
         unlock_page(swapcache);
         page_cache_release(swapcache);
     }

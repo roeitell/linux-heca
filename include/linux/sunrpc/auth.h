@@ -17,14 +17,15 @@
 
 #include <linux/atomic.h>
 #include <linux/rcupdate.h>
+#include <linux/uidgid.h>
 
 /* size of the nodename buffer */
 #define UNX_MAXNODENAME	32
 
 /* Work around the lack of a VFS credential */
 struct auth_cred {
-	uid_t	uid;
-	gid_t	gid;
+	kuid_t	uid;
+	kgid_t	gid;
 	struct group_info *group_info;
 	const char *principal;
 	unsigned char machine_cred : 1;
@@ -48,7 +49,7 @@ struct rpc_cred {
 	unsigned long		cr_flags;	/* various flags */
 	atomic_t		cr_count;	/* ref count */
 
-	uid_t			cr_uid;
+	kuid_t			cr_uid;
 
 	/* per-flavor data */
 };
@@ -101,6 +102,7 @@ struct rpc_authops {
 	struct rpc_cred *	(*crcreate)(struct rpc_auth*, struct auth_cred *, int);
 	int			(*pipes_create)(struct rpc_auth *);
 	void			(*pipes_destroy)(struct rpc_auth *);
+	int			(*list_pseudoflavors)(rpc_authflavor_t *, int);
 };
 
 struct rpc_credops {
@@ -135,6 +137,7 @@ int			rpcauth_register(const struct rpc_authops *);
 int			rpcauth_unregister(const struct rpc_authops *);
 struct rpc_auth *	rpcauth_create(rpc_authflavor_t, struct rpc_clnt *);
 void			rpcauth_release(struct rpc_auth *);
+int			rpcauth_list_flavors(rpc_authflavor_t *, int);
 struct rpc_cred *	rpcauth_lookup_credcache(struct rpc_auth *, struct auth_cred *, int);
 void			rpcauth_init_cred(struct rpc_cred *, const struct auth_cred *, struct rpc_auth *, const struct rpc_credops *);
 struct rpc_cred *	rpcauth_lookupcred(struct rpc_auth *, int);

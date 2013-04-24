@@ -26,7 +26,6 @@
 #include <mach/hardware.h>
 #include <mach/map.h>
 #include <mach/regs-clock.h>
-#include <mach/sysmmu.h>
 
 #include "common.h"
 #include "clock-exynos4.h"
@@ -46,6 +45,32 @@ static struct sleep_save exynos4210_clock_save[] = {
 
 static struct clksrc_clk *sysclks[] = {
 	/* nothing here yet */
+};
+
+static struct clksrc_clk exynos4210_clk_mout_g2d0 = {
+	.clk	= {
+		.name		= "mout_g2d0",
+	},
+	.sources = &exynos4_clkset_mout_g2d0,
+	.reg_src = { .reg = EXYNOS4_CLKSRC_IMAGE, .shift = 0, .size = 1 },
+};
+
+static struct clksrc_clk exynos4210_clk_mout_g2d1 = {
+	.clk	= {
+		.name		= "mout_g2d1",
+	},
+	.sources = &exynos4_clkset_mout_g2d1,
+	.reg_src = { .reg = EXYNOS4_CLKSRC_IMAGE, .shift = 4, .size = 1 },
+};
+
+static struct clk *exynos4210_clkset_mout_g2d_list[] = {
+	[0] = &exynos4210_clk_mout_g2d0.clk,
+	[1] = &exynos4210_clk_mout_g2d1.clk,
+};
+
+static struct clksrc_sources exynos4210_clkset_mout_g2d = {
+	.sources	= exynos4210_clkset_mout_g2d_list,
+	.nr_sources	= ARRAY_SIZE(exynos4210_clkset_mout_g2d_list),
 };
 
 static int exynos4_clksrc_mask_lcd1_ctrl(struct clk *clk, int enable)
@@ -74,6 +99,13 @@ static struct clksrc_clk clksrcs[] = {
 		.sources = &exynos4_clkset_group,
 		.reg_src = { .reg = EXYNOS4210_CLKSRC_LCD1, .shift = 0, .size = 4 },
 		.reg_div = { .reg = EXYNOS4210_CLKDIV_LCD1, .shift = 0, .size = 4 },
+	}, {
+		.clk	= {
+			.name		= "sclk_fimg2d",
+		},
+		.sources = &exynos4210_clkset_mout_g2d,
+		.reg_src = { .reg = EXYNOS4_CLKSRC_IMAGE, .shift = 8, .size = 1 },
+		.reg_div = { .reg = EXYNOS4_CLKDIV_IMAGE, .shift = 0, .size = 4 },
 	},
 };
 
@@ -96,15 +128,19 @@ static struct clk init_clocks_off[] = {
 		.enable		= exynos4_clk_ip_lcd1_ctrl,
 		.ctrlbit	= (1 << 0),
 	}, {
-		.name		= SYSMMU_CLOCK_NAME,
-		.devname	= SYSMMU_CLOCK_DEVNAME(2d, 14),
+		.name		= "sysmmu",
+		.devname	= "exynos-sysmmu.9",
 		.enable		= exynos4_clk_ip_image_ctrl,
 		.ctrlbit	= (1 << 3),
 	}, {
-		.name		= SYSMMU_CLOCK_NAME,
-		.devname	= SYSMMU_CLOCK_DEVNAME(fimd1, 11),
+		.name		= "sysmmu",
+		.devname	= "exynos-sysmmu.11",
 		.enable		= exynos4_clk_ip_lcd1_ctrl,
 		.ctrlbit	= (1 << 4),
+	}, {
+		.name		= "fimg2d",
+		.enable		= exynos4_clk_ip_image_ctrl,
+		.ctrlbit	= (1 << 0),
 	},
 };
 

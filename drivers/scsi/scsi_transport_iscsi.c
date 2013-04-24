@@ -183,10 +183,10 @@ static struct attribute_group iscsi_endpoint_group = {
 
 #define ISCSI_MAX_EPID -1
 
-static int iscsi_match_epid(struct device *dev, void *data)
+static int iscsi_match_epid(struct device *dev, const void *data)
 {
 	struct iscsi_endpoint *ep = iscsi_dev_to_endpoint(dev);
-	uint64_t *epid = (uint64_t *) data;
+	const uint64_t *epid = data;
 
 	return *epid == ep->id;
 }
@@ -575,7 +575,7 @@ static int iscsi_remove_host(struct transport_container *tc,
 	struct iscsi_cls_host *ihost = shost->shost_data;
 
 	if (ihost->bsg_q) {
-		bsg_remove_queue(ihost->bsg_q);
+		bsg_unregister_queue(ihost->bsg_q);
 		blk_cleanup_queue(ihost->bsg_q);
 	}
 	return 0;
@@ -907,7 +907,7 @@ static void session_recovery_timedout(struct work_struct *work)
 		session->transport->session_recovery_timedout(session);
 
 	ISCSI_DBG_TRANS_SESSION(session, "Unblocking SCSI target\n");
-	scsi_target_unblock(&session->dev);
+	scsi_target_unblock(&session->dev, SDEV_TRANSPORT_OFFLINE);
 	ISCSI_DBG_TRANS_SESSION(session, "Completed unblocking SCSI target\n");
 }
 
@@ -930,7 +930,7 @@ static void __iscsi_unblock_session(struct work_struct *work)
 	session->state = ISCSI_SESSION_LOGGED_IN;
 	spin_unlock_irqrestore(&session->lock, flags);
 	/* start IO */
-	scsi_target_unblock(&session->dev);
+	scsi_target_unblock(&session->dev, SDEV_RUNNING);
 	/*
 	 * Only do kernel scanning if the driver is properly hooked into
 	 * the async scanning code (drivers like iscsi_tcp do login and
@@ -1180,7 +1180,7 @@ void iscsi_remove_session(struct iscsi_cls_session *session)
 	session->state = ISCSI_SESSION_FREE;
 	spin_unlock_irqrestore(&session->lock, flags);
 
-	scsi_target_unblock(&session->dev);
+	scsi_target_unblock(&session->dev, SDEV_TRANSPORT_OFFLINE);
 	/* flush running scans then delete devices */
 	scsi_flush_work(shost);
 	__iscsi_unbind_session(&session->unbind_work);
@@ -2119,7 +2119,7 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 	switch (nlh->nlmsg_type) {
 	case ISCSI_UEVENT_CREATE_SESSION:
 		err = iscsi_if_create_session(priv, ep, ev,
-					      NETLINK_CB(skb).pid,
+					      NETLINK_CB(skb).portid,
 					      ev->u.c_session.initial_cmdsn,
 					      ev->u.c_session.cmds_max,
 					      ev->u.c_session.queue_depth);
@@ -2132,7 +2132,7 @@ iscsi_if_recv_msg(struct sk_buff *skb, struct nlmsghdr *nlh, uint32_t *group)
 		}
 
 		err = iscsi_if_create_session(priv, ep, ev,
-					NETLINK_CB(skb).pid,
+					NETLINK_CB(skb).portid,
 					ev->u.c_bound_session.initial_cmdsn,
 					ev->u.c_bound_session.cmds_max,
 					ev->u.c_bound_session.queue_depth);
@@ -2503,6 +2503,15 @@ show_priv_session_creator(struct device *dev, struct device_attribute *attr,
 }
 static ISCSI_CLASS_ATTR(priv_sess, creator, S_IRUGO, show_priv_session_creator,
 			NULL);
+static ssize_t
+show_priv_session_target_id(struct device *dev, struct device_attribute *attr,
+			    char *buf)
+{
+	struct iscsi_cls_session *session = iscsi_dev_to_session(dev->parent);
+	return sprintf(buf, "%d\n", session->target_id);
+}
+static ISCSI_CLASS_ATTR(priv_sess, target_id, S_IRUGO,
+			show_priv_session_target_id, NULL);
 
 #define iscsi_priv_session_attr_show(field, format)			\
 static ssize_t								\
@@ -2575,6 +2584,7 @@ static struct attribute *iscsi_session_attrs[] = {
 	&dev_attr_priv_sess_creator.attr,
 	&dev_attr_sess_chap_out_idx.attr,
 	&dev_attr_sess_chap_in_idx.attr,
+	&dev_attr_priv_sess_target_id.attr,
 	NULL,
 };
 
@@ -2637,6 +2647,8 @@ static umode_t iscsi_session_attr_is_visible(struct kobject *kobj,
 	else if (attr == &dev_attr_priv_sess_state.attr)
 		return S_IRUGO;
 	else if (attr == &dev_attr_priv_sess_creator.attr)
+		return S_IRUGO;
+	else if (attr == &dev_attr_priv_sess_target_id.attr)
 		return S_IRUGO;
 	else {
 		WARN_ONCE(1, "Invalid session attr");
@@ -2936,7 +2948,10 @@ EXPORT_SYMBOL_GPL(iscsi_unregister_transport);
 static __init int iscsi_transport_init(void)
 {
 	int err;
-
+	struct netlink_kernel_cfg cfg = {
+		.groups	= 1,
+		.input	= iscsi_if_rx,
+	};
 	printk(KERN_INFO "Loading iSCSI transport class v%s.\n",
 		ISCSI_TRANSPORT_VERSION);
 
@@ -2966,8 +2981,7 @@ static __init int iscsi_transport_init(void)
 	if (err)
 		goto unregister_conn_class;
 
-	nls = netlink_kernel_create(&init_net, NETLINK_ISCSI, 1, iscsi_if_rx,
-				    NULL, THIS_MODULE);
+	nls = netlink_kernel_create(&init_net, NETLINK_ISCSI, &cfg);
 	if (!nls) {
 		err = -ENOBUFS;
 		goto unregister_session_class;

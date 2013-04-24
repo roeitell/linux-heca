@@ -1,6 +1,4 @@
 /*
- *  include/asm-s390/elf.h
- *
  *  S390 version
  *
  *  Derived from "include/asm-i386/elf.h"
@@ -103,6 +101,7 @@
 #define HWCAP_S390_HPAGE	128
 #define HWCAP_S390_ETF3EH	256
 #define HWCAP_S390_HIGH_GPRS	512
+#define HWCAP_S390_TE		1024
 
 /*
  * These are used to set parameters in the core dumps.
@@ -181,9 +180,7 @@ extern unsigned long elf_hwcap;
 extern char elf_platform[];
 #define ELF_PLATFORM (elf_platform)
 
-#ifndef CONFIG_64BIT
-#define SET_PERSONALITY(ex) set_personality(PER_LINUX)
-#else /* CONFIG_64BIT */
+#ifdef CONFIG_64BIT
 #define SET_PERSONALITY(ex)					\
 do {								\
 	if (personality(current->personality) != PER_LINUX32)	\
@@ -212,5 +209,7 @@ int arch_setup_additional_pages(struct linux_binprm *, int);
 
 extern unsigned long arch_randomize_brk(struct mm_struct *mm);
 #define arch_randomize_brk arch_randomize_brk
+
+void *fill_cpu_elf_notes(void *ptr, struct save_area *sa);
 
 #endif

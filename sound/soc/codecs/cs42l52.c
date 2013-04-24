@@ -14,7 +14,6 @@
 
 #include <linux/module.h>
 #include <linux/moduleparam.h>
-#include <linux/version.h>
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/delay.h>
@@ -25,7 +24,6 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/platform_device.h>
-#include <linux/slab.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 #include <sound/pcm_params.h>
@@ -739,7 +737,7 @@ static const struct cs42l52_clk_para clk_map_table[] = {
 
 static int cs42l52_get_clk(int mclk, int rate)
 {
-	int i, ret = 0;
+	int i, ret = -EINVAL;
 	u_int mclk1, mclk2 = 0;
 
 	for (i = 0; i < ARRAY_SIZE(clk_map_table); i++) {
@@ -751,8 +749,6 @@ static int cs42l52_get_clk(int mclk, int rate)
 			}
 		}
 	}
-	if (ret > ARRAY_SIZE(clk_map_table))
-		return -EINVAL;
 	return ret;
 }
 
@@ -765,7 +761,7 @@ static int cs42l52_set_sysclk(struct snd_soc_dai *codec_dai,
 	if ((freq >= CS42L52_MIN_CLK) && (freq <= CS42L52_MAX_CLK)) {
 		cs42l52->sysclk = freq;
 	} else {
-		dev_err(codec->dev, "Invalid freq paramter\n");
+		dev_err(codec->dev, "Invalid freq parameter\n");
 		return -EINVAL;
 	}
 	return 0;
@@ -775,7 +771,6 @@ static int cs42l52_set_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 {
 	struct snd_soc_codec *codec = codec_dai->codec;
 	struct cs42l52_private *cs42l52 = snd_soc_codec_get_drvdata(codec);
-	int ret = 0;
 	u8 iface = 0;
 
 	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
@@ -824,7 +819,7 @@ static int cs42l52_set_fmt(struct snd_soc_dai *codec_dai, unsigned int fmt)
 	case SND_SOC_DAIFMT_NB_IF:
 		break;
 	default:
-		ret = -EINVAL;
+		return -EINVAL;
 	}
 	cs42l52->config.format = iface;
 	snd_soc_write(codec, CS42L52_IFACE_CTL1, cs42l52->config.format);
@@ -1043,7 +1038,7 @@ static void cs42l52_init_beep(struct snd_soc_codec *codec)
 	struct cs42l52_private *cs42l52 = snd_soc_codec_get_drvdata(codec);
 	int ret;
 
-	cs42l52->beep = input_allocate_device();
+	cs42l52->beep = devm_input_allocate_device(codec->dev);
 	if (!cs42l52->beep) {
 		dev_err(codec->dev, "Failed to allocate beep device\n");
 		return;
@@ -1064,7 +1059,6 @@ static void cs42l52_init_beep(struct snd_soc_codec *codec)
 
 	ret = input_register_device(cs42l52->beep);
 	if (ret != 0) {
-		input_free_device(cs42l52->beep);
 		cs42l52->beep = NULL;
 		dev_err(codec->dev, "Failed to register beep device\n");
 	}
@@ -1081,7 +1075,6 @@ static void cs42l52_free_beep(struct snd_soc_codec *codec)
 	struct cs42l52_private *cs42l52 = snd_soc_codec_get_drvdata(codec);
 
 	device_remove_file(codec->dev, &dev_attr_beep);
-	input_unregister_device(cs42l52->beep);
 	cancel_work_sync(&cs42l52->beep_work);
 	cs42l52->beep = NULL;
 
@@ -1217,11 +1210,11 @@ static int cs42l52_i2c_probe(struct i2c_client *i2c_client,
 		return -ENOMEM;
 	cs42l52->dev = &i2c_client->dev;
 
-	cs42l52->regmap = regmap_init_i2c(i2c_client, &cs42l52_regmap);
+	cs42l52->regmap = devm_regmap_init_i2c(i2c_client, &cs42l52_regmap);
 	if (IS_ERR(cs42l52->regmap)) {
 		ret = PTR_ERR(cs42l52->regmap);
 		dev_err(&i2c_client->dev, "regmap_init() failed: %d\n", ret);
-		goto err;
+		return ret;
 	}
 
 	i2c_set_clientdata(i2c_client, cs42l52);
@@ -1243,7 +1236,7 @@ static int cs42l52_i2c_probe(struct i2c_client *i2c_client,
 		dev_err(&i2c_client->dev,
 			"CS42L52 Device ID (%X). Expected %X\n",
 			devid, CS42L52_CHIP_ID);
-		goto err_regmap;
+		return ret;
 	}
 
 	regcache_cache_only(cs42l52->regmap, true);
@@ -1251,23 +1244,13 @@ static int cs42l52_i2c_probe(struct i2c_client *i2c_client,
 	ret =  snd_soc_register_codec(&i2c_client->dev,
 			&soc_codec_dev_cs42l52, &cs42l52_dai, 1);
 	if (ret < 0)
-		goto err_regmap;
+		return ret;
 	return 0;
-
-err_regmap:
-	regmap_exit(cs42l52->regmap);
-
-err:
-	return ret;
 }
 
 static int cs42l52_i2c_remove(struct i2c_client *client)
 {
-	struct cs42l52_private *cs42l52 = i2c_get_clientdata(client);
-
 	snd_soc_unregister_codec(&client->dev);
-	regmap_exit(cs42l52->regmap);
-
 	return 0;
 }
 
@@ -1284,7 +1267,7 @@ static struct i2c_driver cs42l52_i2c_driver = {
 	},
 	.id_table = cs42l52_id,
 	.probe =    cs42l52_i2c_probe,
-	.remove =   __devexit_p(cs42l52_i2c_remove),
+	.remove =   cs42l52_i2c_remove,
 };
 
 module_i2c_driver(cs42l52_i2c_driver);

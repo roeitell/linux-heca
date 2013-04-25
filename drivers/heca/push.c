@@ -839,7 +839,7 @@ retry:
             }
         } else {
             spin_unlock(&mm->page_table_lock);
-            split_huge_page_pmd(mm, addr, pmd);
+            split_huge_page_pmd(vma, addr, pmd);
         }
     }
 

@@ -183,7 +183,6 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
 int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         unsigned long addr) 
 {
-    int i;
 
     pd->pte = NULL;
     pd->vma = find_vma(mm, addr);
@@ -840,7 +839,7 @@ retry:
             }
         } else {
             spin_unlock(&mm->page_table_lock);
-            split_huge_page_pmd(mm, pmd);
+            split_huge_page_pmd(mm, addr, pmd);
         }
     }
 

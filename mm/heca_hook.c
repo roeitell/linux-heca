@@ -68,23 +68,29 @@ EXPORT_SYMBOL(heca_hook_unregister);
 EXPORT_SYMBOL(set_page_dirty_balance);
 
 #include <linux/rmap.h>
-EXPORT_SYMBOL(page_lock_anon_vma);
+EXPORT_SYMBOL(page_lock_anon_vma_read);
 EXPORT_SYMBOL(page_remove_rmap);
 EXPORT_SYMBOL(page_address_in_vma);
-EXPORT_SYMBOL(page_unlock_anon_vma);
+EXPORT_SYMBOL(page_unlock_anon_vma_read);
 EXPORT_SYMBOL(page_add_new_anon_rmap);
 EXPORT_SYMBOL(anon_vma_prepare);
 EXPORT_SYMBOL(page_move_anon_rmap);
 EXPORT_SYMBOL(do_page_add_anon_rmap);
 
 #include <linux/ksm.h>
-EXPORT_SYMBOL(ksm_does_need_to_copy);
+EXPORT_SYMBOL(ksm_might_need_to_copy);
 EXPORT_SYMBOL(ksm_madvise);
 
 #include <linux/mm.h>
 EXPORT_SYMBOL(__pte_alloc);
 EXPORT_SYMBOL(vm_normal_page);
 EXPORT_SYMBOL(handle_mm_fault);
+EXPORT_SYMBOL(anon_vma_interval_tree_iter_next);
+EXPORT_SYMBOL(anon_vma_interval_tree_iter_first);
+
+#include <linux/huge_mm.h>
+EXPORT_SYMBOL(__split_huge_page_pmd);
+EXPORT_SYMBOL(split_huge_page);
 
 #include <linux/gfp.h>
 EXPORT_SYMBOL(alloc_pages_vma);

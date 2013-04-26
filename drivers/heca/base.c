@@ -845,9 +845,11 @@ int create_mr(struct hecaioc_mr *udata)
     mr->addr = (unsigned long) udata->addr;
     mr->sz = udata->sz;
 
-    if (insert_mr(local_svm, mr))
+    if (insert_mr(local_svm, mr)){
+        heca_printk(KERN_ERR "insert MR failed  addr 0x%lx", udata->addr);
+        ret = -EEXIST;
         goto out_free;
-    
+    }
     mr->descriptor = dsm_get_descriptor(dsm, udata->svm_ids);
     if (!mr->descriptor) {
         heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");

@@ -799,7 +799,7 @@ retry:
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
-        if (!dsm_initiate_fault(mm, addr, 1)) {
+        if (handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE)) {
             heca_printk(KERN_ERR "no pgd");
             r = -EFAULT;
             goto out;
@@ -809,7 +809,7 @@ retry:
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        if (!dsm_initiate_fault(mm, addr, 1)) {
+        if (handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE)) {
             heca_printk(KERN_ERR "no pud");
             r = -EFAULT;
             goto out;
@@ -864,7 +864,7 @@ retry:
                 }
             } else {
                 pte_unmap_unlock(pte, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1)) {
+                if (handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE)) {
                     heca_printk(KERN_ERR "failed at faulting");
                     r = -EFAULT;
                     goto out;
@@ -892,7 +892,7 @@ retry:
     if (PageKsm(page)) {
         heca_printk(KERN_ERR "KSM page");
         pte_unmap_unlock(pte, ptl);
-        if (!dsm_initiate_fault(mm, addr, 1)) {
+        if (handle_mm_fault(mm, vma, addr, FAULT_FLAG_WRITE)) {
             heca_printk(KERN_ERR "ksm_madvise ret : %d", r);
             // DSM1 : better ksm error handling required.
             r = -EFAULT;

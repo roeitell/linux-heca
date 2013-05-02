@@ -349,13 +349,17 @@ out_mm:
 }
 
 /* mmap_sem already held for read */
-static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr)
+static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr, int usemm)
 {
     int r;
 
-    use_mm(mm);
-    r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
-    unuse_mm(mm);
+    if(usemm){
+        use_mm(mm);
+        r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
+        unuse_mm(mm);
+    }
+    else 
+        r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
 
     BUG_ON(r > 1);
     return r == 1;
@@ -380,7 +384,7 @@ retry:
     if (unlikely(r)) {
         trace_extract_pte_data_err(r);
         if (likely(deferred && r != -1)) {
-            if (dsm_initiate_fault_fast(mm, addr))
+            if (dsm_initiate_fault_fast(mm, addr, 1))
                 goto retry;
         }
         goto out;
@@ -389,7 +393,7 @@ retry:
 
     /* first time dealing with this addr? */
     if (pte_none(pte_entry)) {
-        if (!dsm_initiate_fault_fast(mm, addr))
+        if (!dsm_initiate_fault_fast(mm, addr, 1))
             goto out;
         goto retry;
     }
@@ -411,7 +415,7 @@ retry:
             *svm_id = redirect_svm->svm_id;
         } else if (deferred) {
             pte_unmap_unlock(pd.pte, ptl);
-            if (!dsm_initiate_fault_fast(mm, addr))
+            if (!dsm_initiate_fault_fast(mm, addr, 1))
                 goto out;
             goto retry;
         }
@@ -438,7 +442,7 @@ retry:
 
     if (unlikely(PageKsm(page))) {
         pte_unmap_unlock(pd.pte, ptl);
-        if (!dsm_initiate_fault_fast(mm, addr))
+        if (!dsm_initiate_fault_fast(mm, addr, 1))
             goto out;
         goto retry;
     }
@@ -799,7 +803,7 @@ retry:
 
     pgd = pgd_offset(mm, addr);
     if (unlikely(!pgd_present(*pgd))) {
-        if (!dsm_initiate_fault(mm, addr, 1)) {
+        if (!dsm_initiate_fault_fast(mm, addr, 0)){
             heca_printk(KERN_ERR "no pgd");
             r = -EFAULT;
             goto out;
@@ -809,7 +813,7 @@ retry:
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        if (!dsm_initiate_fault(mm, addr, 1)) {
+        if (!dsm_initiate_fault_fast(mm, addr, 0)){    
             heca_printk(KERN_ERR "no pud");
             r = -EFAULT;
             goto out;
@@ -864,7 +868,7 @@ retry:
                 }
             } else {
                 pte_unmap_unlock(pte, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1)) {
+                if (!dsm_initiate_fault_fast(mm, addr, 0)) {
                     heca_printk(KERN_ERR "failed at faulting");
                     r = -EFAULT;
                     goto out;
@@ -892,7 +896,7 @@ retry:
     if (PageKsm(page)) {
         heca_printk(KERN_ERR "KSM page");
         pte_unmap_unlock(pte, ptl);
-        if (!dsm_initiate_fault(mm, addr, 1)) {
+        if (!dsm_initiate_fault_fast(mm, addr, 0)) {
             heca_printk(KERN_ERR "ksm_madvise ret : %d", r);
             // DSM1 : better ksm error handling required.
             r = -EFAULT;

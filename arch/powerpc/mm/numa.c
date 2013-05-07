@@ -22,6 +22,7 @@
 #include <linux/pfn.h>
 #include <linux/cpuset.h>
 #include <linux/node.h>
+#include <linux/slab.h>
 #include <asm/sparsemem.h>
 #include <asm/prom.h>
 #include <asm/smp.h>
@@ -62,14 +63,11 @@ static int distance_lookup_table[MAX_NUMNODES][MAX_DISTANCE_REF_POINTS];
  */
 static void __init setup_node_to_cpumask_map(void)
 {
-	unsigned int node, num = 0;
+	unsigned int node;
 
 	/* setup nr_node_ids if not done yet */
-	if (nr_node_ids == MAX_NUMNODES) {
-		for_each_node_mask(node, node_possible_map)
-			num = node;
-		nr_node_ids = num + 1;
-	}
+	if (nr_node_ids == MAX_NUMNODES)
+		setup_nr_node_ids();
 
 	/* allocate the map */
 	for (node = 0; node < nr_node_ids; node++)
@@ -340,6 +338,8 @@ static int __init find_min_common_depth(void)
 				dbg("Using form 1 affinity\n");
 				form1_affinity = 1;
 			}
+
+			of_node_put(chosen);
 		}
 	}
 
@@ -396,18 +396,6 @@ static unsigned long read_n_cells(int n, const unsigned int **buf)
 	}
 	return result;
 }
-
-struct of_drconf_cell {
-	u64	base_addr;
-	u32	drc_index;
-	u32	reserved;
-	u32	aa_index;
-	u32	flags;
-};
-
-#define DRCONF_MEM_ASSIGNED	0x00000008
-#define DRCONF_MEM_AI_INVALID	0x00000040
-#define DRCONF_MEM_RESERVED	0x00000080
 
 /*
  * Read the next memblock list entry from the ibm,dynamic-memory property
@@ -1434,11 +1422,11 @@ static long vphn_get_associativity(unsigned long cpu,
 
 /*
  * Update the node maps and sysfs entries for each cpu whose home node
- * has changed.
+ * has changed. Returns 1 when the topology has changed, and 0 otherwise.
  */
 int arch_update_cpu_topology(void)
 {
-	int cpu, nid, old_nid;
+	int cpu, nid, old_nid, changed = 0;
 	unsigned int associativity[VPHN_ASSOC_BUFSIZE] = {0};
 	struct device *dev;
 
@@ -1464,9 +1452,10 @@ int arch_update_cpu_topology(void)
 		dev = get_cpu_device(cpu);
 		if (dev)
 			kobject_uevent(&dev->kobj, KOBJ_CHANGE);
+		changed = 1;
 	}
 
-	return 1;
+	return changed;
 }
 
 static void topology_work_fn(struct work_struct *work)

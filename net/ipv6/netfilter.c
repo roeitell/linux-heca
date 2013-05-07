@@ -1,3 +1,9 @@
+/*
+ * IPv6 specific functions of netfilter core
+ *
+ * Rusty Russell (C) 2000 -- This code is GPL.
+ * Patrick McHardy (C) 2006-2012
+ */
 #include <linux/kernel.h>
 #include <linux/init.h>
 #include <linux/ipv6.h>
@@ -15,6 +21,7 @@ int ip6_route_me_harder(struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
 	const struct ipv6hdr *iph = ipv6_hdr(skb);
+	unsigned int hh_len;
 	struct dst_entry *dst;
 	struct flowi6 fl6 = {
 		.flowi6_oif = skb->sk ? skb->sk->sk_bound_dev_if : 0,
@@ -28,7 +35,7 @@ int ip6_route_me_harder(struct sk_buff *skb)
 		IP6_INC_STATS(net, ip6_dst_idev(dst), IPSTATS_MIB_OUTNOROUTES);
 		LIMIT_NETDEBUG(KERN_DEBUG "ip6_route_me_harder: No more route.\n");
 		dst_release(dst);
-		return -EINVAL;
+		return dst->error;
 	}
 
 	/* Drop old route. */
@@ -42,10 +49,17 @@ int ip6_route_me_harder(struct sk_buff *skb)
 		skb_dst_set(skb, NULL);
 		dst = xfrm_lookup(net, dst, flowi6_to_flowi(&fl6), skb->sk, 0);
 		if (IS_ERR(dst))
-			return -1;
+			return PTR_ERR(dst);
 		skb_dst_set(skb, dst);
 	}
 #endif
+
+	/* Change in oif may mean change in hh_len. */
+	hh_len = skb_dst(skb)->dev->hard_header_len;
+	if (skb_headroom(skb) < hh_len &&
+	    pskb_expand_head(skb, HH_DATA_ALIGN(hh_len - skb_headroom(skb)),
+			     0, GFP_ATOMIC))
+		return -ENOMEM;
 
 	return 0;
 }

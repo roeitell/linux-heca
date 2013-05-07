@@ -51,7 +51,7 @@ int mlx4_en_create_cq(struct mlx4_en_priv *priv,
 	int err;
 
 	cq->size = entries;
-	cq->buf_size = cq->size * sizeof(struct mlx4_cqe);
+	cq->buf_size = cq->size * mdev->dev->caps.cqe_size;
 
 	cq->ring = ring;
 	cq->is_tx = mode;
@@ -77,6 +77,13 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 	struct mlx4_en_dev *mdev = priv->mdev;
 	int err = 0;
 	char name[25];
+	int timestamp_en = 0;
+	struct cpu_rmap *rmap =
+#ifdef CONFIG_RFS_ACCEL
+		priv->dev->rx_cpu_rmap;
+#else
+		NULL;
+#endif
 
 	cq->dev = mdev->pndev[priv->port];
 	cq->mcq.set_ci_db  = cq->wqres.db.db;
@@ -91,7 +98,8 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 				sprintf(name, "%s-%d", priv->dev->name,
 					cq->ring);
 				/* Set IRQ for specific name (per ring) */
-				if (mlx4_assign_eq(mdev->dev, name, &cq->vector)) {
+				if (mlx4_assign_eq(mdev->dev, name, rmap,
+						   &cq->vector)) {
 					cq->vector = (cq->ring + 1 + priv->port)
 					    % mdev->dev->caps.num_comp_vectors;
 					mlx4_warn(mdev, "Failed Assigning an EQ to "
@@ -116,8 +124,13 @@ int mlx4_en_activate_cq(struct mlx4_en_priv *priv, struct mlx4_en_cq *cq,
 	if (!cq->is_tx)
 		cq->size = priv->rx_ring[cq->ring].actual_size;
 
-	err = mlx4_cq_alloc(mdev->dev, cq->size, &cq->wqres.mtt, &mdev->priv_uar,
-			    cq->wqres.db.dma, &cq->mcq, cq->vector, 0);
+	if ((cq->is_tx && priv->hwtstamp_config.tx_type) ||
+	    (!cq->is_tx && priv->hwtstamp_config.rx_filter))
+		timestamp_en = 1;
+
+	err = mlx4_cq_alloc(mdev->dev, cq->size, &cq->wqres.mtt,
+			    &mdev->priv_uar, cq->wqres.db.dma, &cq->mcq,
+			    cq->vector, 0, timestamp_en);
 	if (err)
 		return err;
 

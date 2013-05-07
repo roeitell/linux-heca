@@ -210,6 +210,7 @@ struct stripe_head {
 	int			disks;		/* disks in stripe */
 	enum check_states	check_state;
 	enum reconstruct_states reconstruct_state;
+	spinlock_t		stripe_lock;
 	/**
 	 * struct stripe_operations
 	 * @target - STRIPE_OP_COMPUTE_BLK target
@@ -220,10 +221,6 @@ struct stripe_head {
 	struct stripe_operations {
 		int 		     target, target2;
 		enum sum_check_flags zero_sum_result;
-		#ifdef CONFIG_MULTICORE_RAID456
-		unsigned long	     request;
-		wait_queue_head_t    wait_for_ops;
-		#endif
 	} ops;
 	struct r5dev {
 		/* rreq and rvec are used for the replacement device when
@@ -273,6 +270,7 @@ enum r5dev_flags {
 	R5_Wantwrite,
 	R5_Overlap,	/* There is a pending overlapping request
 			 * on this block */
+	R5_ReadNoMerge, /* prevent bio from merging in block-layer */
 	R5_ReadError,	/* seen a read error here recently */
 	R5_ReWrite,	/* have tried to over-write the readerror */
 
@@ -296,6 +294,7 @@ enum r5dev_flags {
 	R5_WantReplace, /* We need to update the replacement, we have read
 			 * data in, and now is a good time to write it out.
 			 */
+	R5_Discard,	/* Discard the stripe */
 };
 
 /*
@@ -319,6 +318,8 @@ enum {
 	STRIPE_BIOFILL_RUN,
 	STRIPE_COMPUTE_RUN,
 	STRIPE_OPS_REQ_PENDING,
+	STRIPE_ON_UNPLUG_LIST,
+	STRIPE_DISCARD,
 };
 
 /*

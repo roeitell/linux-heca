@@ -35,7 +35,7 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/gadget.h>
 
-#include <mach/usb.h>
+#include <linux/platform_data/usb-imx_udc.h>
 #include <mach/hardware.h>
 
 #include "imx_udc.h"
@@ -1334,16 +1334,10 @@ static int imx_udc_start(struct usb_gadget *gadget,
 		struct usb_gadget_driver *driver)
 {
 	struct imx_udc_struct *imx_usb;
-	int retval;
 
 	imx_usb = container_of(gadget, struct imx_udc_struct, gadget);
 	/* first hook up the driver ... */
 	imx_usb->driver = driver;
-	imx_usb->gadget.dev.driver = &driver->driver;
-
-	retval = device_add(&imx_usb->gadget.dev);
-	if (retval)
-		goto fail;
 
 	D_INI(imx_usb->dev, "<%s> registered gadget driver '%s'\n",
 		__func__, driver->driver.name);
@@ -1351,10 +1345,6 @@ static int imx_udc_start(struct usb_gadget *gadget,
 	imx_udc_enable(imx_usb);
 
 	return 0;
-fail:
-	imx_usb->driver = NULL;
-	imx_usb->gadget.dev.driver = NULL;
-	return retval;
 }
 
 static int imx_udc_stop(struct usb_gadget *gadget,
@@ -1367,10 +1357,7 @@ static int imx_udc_stop(struct usb_gadget *gadget,
 	imx_udc_disable(imx_usb);
 	del_timer(&imx_usb->timer);
 
-	imx_usb->gadget.dev.driver = NULL;
 	imx_usb->driver = NULL;
-
-	device_del(&imx_usb->gadget.dev);
 
 	D_INI(imx_usb->dev, "<%s> unregistered gadget driver '%s'\n",
 		__func__, driver->driver.name);
@@ -1432,7 +1419,7 @@ static int __init imx_udc_probe(struct platform_device *pdev)
 		dev_err(&pdev->dev, "can't get USB clock\n");
 		goto fail2;
 	}
-	clk_enable(clk);
+	clk_prepare_enable(clk);
 
 	if (clk_get_rate(clk) != 48000000) {
 		D_INI(&pdev->dev,
@@ -1472,11 +1459,6 @@ static int __init imx_udc_probe(struct platform_device *pdev)
 	imx_usb->clk = clk;
 	imx_usb->dev = &pdev->dev;
 
-	device_initialize(&imx_usb->gadget.dev);
-
-	imx_usb->gadget.dev.parent = &pdev->dev;
-	imx_usb->gadget.dev.dma_mask = pdev->dev.dma_mask;
-
 	platform_set_drvdata(pdev, imx_usb);
 
 	usb_init_data(imx_usb);
@@ -1496,7 +1478,7 @@ fail4:
 		free_irq(imx_usb->usbd_int[i], imx_usb);
 fail3:
 	clk_put(clk);
-	clk_disable(clk);
+	clk_disable_unprepare(clk);
 fail2:
 	iounmap(base);
 fail1:
@@ -1521,7 +1503,7 @@ static int __exit imx_udc_remove(struct platform_device *pdev)
 		free_irq(imx_usb->usbd_int[i], imx_usb);
 
 	clk_put(imx_usb->clk);
-	clk_disable(imx_usb->clk);
+	clk_disable_unprepare(imx_usb->clk);
 	iounmap(imx_usb->base);
 
 	release_mem_region(imx_usb->res->start, resource_size(imx_usb->res));
@@ -1556,17 +1538,7 @@ static struct platform_driver udc_driver = {
 	.resume		= imx_udc_resume,
 };
 
-static int __init udc_init(void)
-{
-	return platform_driver_probe(&udc_driver, imx_udc_probe);
-}
-module_init(udc_init);
-
-static void __exit udc_exit(void)
-{
-	platform_driver_unregister(&udc_driver);
-}
-module_exit(udc_exit);
+module_platform_driver_probe(udc_driver, imx_udc_probe);
 
 MODULE_DESCRIPTION("IMX USB Device Controller driver");
 MODULE_AUTHOR("Darius Augulis <augulis.darius@gmail.com>");

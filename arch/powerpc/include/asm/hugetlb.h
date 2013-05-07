@@ -3,6 +3,7 @@
 
 #ifdef CONFIG_HUGETLB_PAGE
 #include <asm/page.h>
+#include <asm-generic/hugetlb.h>
 
 extern struct kmem_cache *hugepte_cache;
 
@@ -148,6 +149,10 @@ static inline int arch_prepare_hugepage(struct page *page)
 }
 
 static inline void arch_release_hugepage(struct page *page)
+{
+}
+
+static inline void arch_clear_hugepage_flags(struct page *page)
 {
 }
 

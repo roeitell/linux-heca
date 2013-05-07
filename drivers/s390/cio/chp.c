@@ -1,7 +1,5 @@
 /*
- *  drivers/s390/cio/chp.c
- *
- *    Copyright IBM Corp. 1999,2010
+ *    Copyright IBM Corp. 1999, 2010
  *    Author(s): Cornelia Huck (cornelia.huck@de.ibm.com)
  *		 Arnd Bergmann (arndb@de.ibm.com)
  *		 Peter Oberparleiter <peter.oberparleiter@de.ibm.com>
@@ -362,9 +360,12 @@ static struct attribute *chp_attrs[] = {
 	&dev_attr_shared.attr,
 	NULL,
 };
-
 static struct attribute_group chp_attr_group = {
 	.attrs = chp_attrs,
+};
+static const struct attribute_group *chp_attr_groups[] = {
+	&chp_attr_group,
+	NULL,
 };
 
 static void chp_release(struct device *dev)
@@ -373,6 +374,26 @@ static void chp_release(struct device *dev)
 
 	cp = to_channelpath(dev);
 	kfree(cp);
+}
+
+/**
+ * chp_update_desc - update channel-path description
+ * @chp - channel-path
+ *
+ * Update the channel-path description of the specified channel-path.
+ * Return zero on success, non-zero otherwise.
+ */
+int chp_update_desc(struct channel_path *chp)
+{
+	int rc;
+
+	rc = chsc_determine_base_channel_path_desc(chp->chpid, &chp->desc);
+	if (rc)
+		return rc;
+
+	rc = chsc_determine_fmt1_channel_path_desc(chp->chpid, &chp->desc_fmt1);
+
+	return rc;
 }
 
 /**
@@ -397,11 +418,12 @@ int chp_new(struct chp_id chpid)
 	chp->chpid = chpid;
 	chp->state = 1;
 	chp->dev.parent = &channel_subsystems[chpid.cssid]->device;
+	chp->dev.groups = chp_attr_groups;
 	chp->dev.release = chp_release;
 	mutex_init(&chp->lock);
 
 	/* Obtain channel path description and fill it in. */
-	ret = chsc_determine_base_channel_path_desc(chpid, &chp->desc);
+	ret = chp_update_desc(chp);
 	if (ret)
 		goto out_free;
 	if ((chp->desc.flags & 0x80) == 0) {
@@ -426,16 +448,10 @@ int chp_new(struct chp_id chpid)
 		put_device(&chp->dev);
 		goto out;
 	}
-	ret = sysfs_create_group(&chp->dev.kobj, &chp_attr_group);
-	if (ret) {
-		device_unregister(&chp->dev);
-		goto out;
-	}
 	mutex_lock(&channel_subsystems[chpid.cssid]->mutex);
 	if (channel_subsystems[chpid.cssid]->cm_enabled) {
 		ret = chp_add_cmg_attr(chp);
 		if (ret) {
-			sysfs_remove_group(&chp->dev.kobj, &chp_attr_group);
 			device_unregister(&chp->dev);
 			mutex_unlock(&channel_subsystems[chpid.cssid]->mutex);
 			goto out;

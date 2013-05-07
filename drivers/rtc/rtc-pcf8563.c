@@ -19,6 +19,7 @@
 #include <linux/rtc.h>
 #include <linux/slab.h>
 #include <linux/module.h>
+#include <linux/of.h>
 
 #define DRV_VERSION "0.4.3"
 
@@ -77,8 +78,17 @@ static int pcf8563_get_datetime(struct i2c_client *client, struct rtc_time *tm)
 	unsigned char buf[13] = { PCF8563_REG_ST1 };
 
 	struct i2c_msg msgs[] = {
-		{ client->addr, 0, 1, buf },	/* setup read ptr */
-		{ client->addr, I2C_M_RD, 13, buf },	/* read status + date */
+		{/* setup read ptr */
+			.addr = client->addr,
+			.len = 1,
+			.buf = buf
+		},
+		{/* read status + date */
+			.addr = client->addr,
+			.flags = I2C_M_RD,
+			.len = 13,
+			.buf = buf
+		},
 	};
 
 	/* read registers */
@@ -171,7 +181,7 @@ static int pcf8563_set_datetime(struct i2c_client *client, struct rtc_time *tm)
 				__func__, err, data[0], data[1]);
 			return -EIO;
 		}
-	};
+	}
 
 	return 0;
 }
@@ -235,14 +245,13 @@ static int pcf8563_probe(struct i2c_client *client,
 {
 	struct pcf8563 *pcf8563;
 
-	int err = 0;
-
 	dev_dbg(&client->dev, "%s\n", __func__);
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C))
 		return -ENODEV;
 
-	pcf8563 = kzalloc(sizeof(struct pcf8563), GFP_KERNEL);
+	pcf8563 = devm_kzalloc(&client->dev, sizeof(struct pcf8563),
+				GFP_KERNEL);
 	if (!pcf8563)
 		return -ENOMEM;
 
@@ -250,31 +259,18 @@ static int pcf8563_probe(struct i2c_client *client,
 
 	i2c_set_clientdata(client, pcf8563);
 
-	pcf8563->rtc = rtc_device_register(pcf8563_driver.driver.name,
-				&client->dev, &pcf8563_rtc_ops, THIS_MODULE);
+	pcf8563->rtc = devm_rtc_device_register(&client->dev,
+				pcf8563_driver.driver.name,
+				&pcf8563_rtc_ops, THIS_MODULE);
 
-	if (IS_ERR(pcf8563->rtc)) {
-		err = PTR_ERR(pcf8563->rtc);
-		goto exit_kfree;
-	}
+	if (IS_ERR(pcf8563->rtc))
+		return PTR_ERR(pcf8563->rtc);
 
 	return 0;
-
-exit_kfree:
-	kfree(pcf8563);
-
-	return err;
 }
 
 static int pcf8563_remove(struct i2c_client *client)
 {
-	struct pcf8563 *pcf8563 = i2c_get_clientdata(client);
-
-	if (pcf8563->rtc)
-		rtc_device_unregister(pcf8563->rtc);
-
-	kfree(pcf8563);
-
 	return 0;
 }
 
@@ -285,9 +281,19 @@ static const struct i2c_device_id pcf8563_id[] = {
 };
 MODULE_DEVICE_TABLE(i2c, pcf8563_id);
 
+#ifdef CONFIG_OF
+static const struct of_device_id pcf8563_of_match[] = {
+	{ .compatible = "nxp,pcf8563" },
+	{}
+};
+MODULE_DEVICE_TABLE(of, pcf8563_of_match);
+#endif
+
 static struct i2c_driver pcf8563_driver = {
 	.driver		= {
 		.name	= "rtc-pcf8563",
+		.owner	= THIS_MODULE,
+		.of_match_table = of_match_ptr(pcf8563_of_match),
 	},
 	.probe		= pcf8563_probe,
 	.remove		= pcf8563_remove,

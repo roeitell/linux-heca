@@ -22,12 +22,12 @@
 #include <linux/input.h>
 #include <linux/gpio.h>
 
-#include <asm/hardware/vic.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/setup.h>
 #include <asm/mach-types.h>
 
+#include <video/samsung_fimd.h>
 #include <mach/map.h>
 #include <mach/regs-clock.h>
 
@@ -39,7 +39,6 @@
 #include <plat/fimc-core.h>
 #include <plat/sdhci.h>
 #include <plat/s5p-time.h>
-#include <plat/regs-fb-v4.h>
 
 #include "common.h"
 
@@ -600,10 +599,17 @@ static void aquila_setup_sdhci(void)
 	s3c_sdhci2_set_platdata(&aquila_hsmmc2_data);
 };
 
+/* Audio device */
+static struct platform_device aquila_device_audio = {
+	.name = "smdk-audio",
+	.id = -1,
+};
+
 static struct platform_device *aquila_devices[] __initdata = {
 	&aquila_i2c_gpio_pmic,
 	&aquila_i2c_gpio5,
 	&aquila_device_gpiokeys,
+	&aquila_device_audio,
 	&s3c_device_fb,
 	&s5p_device_onenand,
 	&s3c_device_hsmmc0,
@@ -678,9 +684,8 @@ MACHINE_START(AQUILA, "Aquila")
 	   Kyungmin Park <kyungmin.park@samsung.com> */
 	.atag_offset	= 0x100,
 	.init_irq	= s5pv210_init_irq,
-	.handle_irq	= vic_handle_irq,
 	.map_io		= aquila_map_io,
 	.init_machine	= aquila_machine_init,
-	.timer		= &s5p_timer,
+	.init_time	= s5p_timer_init,
 	.restart	= s5pv210_restart,
 MACHINE_END

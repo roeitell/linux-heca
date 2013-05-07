@@ -87,7 +87,7 @@
 
 #define SYSCONFIG2		5	/* System Configuration 2 */
 #define SYSCONFIG2_SEEKTH	0xff00	/* bits 15..08: RSSI Seek Threshold */
-#define SYSCONFIG2_BAND		0x0080	/* bits 07..06: Band Select */
+#define SYSCONFIG2_BAND		0x00c0	/* bits 07..06: Band Select */
 #define SYSCONFIG2_SPACE	0x0030	/* bits 05..04: Channel Spacing */
 #define SYSCONFIG2_VOLUME	0x000f	/* bits 03..00: Volume */
 
@@ -147,6 +147,7 @@ struct si470x_device {
 	struct v4l2_device v4l2_dev;
 	struct video_device videodev;
 	struct v4l2_ctrl_handler hdl;
+	int band;
 
 	/* Silabs internal registers (0..15) */
 	unsigned short registers[RADIO_REGISTER_NUM];
@@ -160,9 +161,9 @@ struct si470x_device {
 	unsigned int wr_index;
 
 	struct completion completion;
-	bool stci_enabled;		/* Seek/Tune Complete Interrupt */
+	bool status_rssi_auto_update;	/* Does RSSI get updated automatic? */
 
-#if defined(CONFIG_USB_SI470X) || defined(CONFIG_USB_SI470X_MODULE)
+#if IS_ENABLED(CONFIG_USB_SI470X)
 	/* reference to USB and video device */
 	struct usb_device *usbdev;
 	struct usb_interface *intf;
@@ -178,7 +179,7 @@ struct si470x_device {
 	unsigned char hardware_version;
 #endif
 
-#if defined(CONFIG_I2C_SI470X) || defined(CONFIG_I2C_SI470X_MODULE)
+#if IS_ENABLED(CONFIG_I2C_SI470X)
 	struct i2c_client *client;
 #endif
 };
@@ -189,7 +190,7 @@ struct si470x_device {
  * Firmware Versions
  **************************************************************************/
 
-#define RADIO_FW_VERSION	15
+#define RADIO_FW_VERSION	12
 
 
 

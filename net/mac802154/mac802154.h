@@ -88,11 +88,10 @@ struct mac802154_sub_if_data {
 
 #define mac802154_to_priv(_hw)	container_of(_hw, struct mac802154_priv, hw)
 
-#define MAC802154_MAX_XMIT_ATTEMPTS	3
-
-#define MAC802154_CHAN_NONE		(~(u8)0) /* No channel is assigned */
+#define MAC802154_CHAN_NONE		0xff /* No channel is assigned */
 
 extern struct ieee802154_reduced_mlme_ops mac802154_mlme_reduced;
+extern struct ieee802154_mlme_ops mac802154_mlme_wpan;
 
 int mac802154_slave_open(struct net_device *dev);
 int mac802154_slave_close(struct net_device *dev);
@@ -100,10 +99,19 @@ int mac802154_slave_close(struct net_device *dev);
 void mac802154_monitors_rx(struct mac802154_priv *priv, struct sk_buff *skb);
 void mac802154_monitor_setup(struct net_device *dev);
 
+void mac802154_wpans_rx(struct mac802154_priv *priv, struct sk_buff *skb);
+void mac802154_wpan_setup(struct net_device *dev);
+
 netdev_tx_t mac802154_tx(struct mac802154_priv *priv, struct sk_buff *skb,
 			 u8 page, u8 chan);
 
 /* MIB callbacks */
+void mac802154_dev_set_short_addr(struct net_device *dev, u16 val);
+u16 mac802154_dev_get_short_addr(const struct net_device *dev);
 void mac802154_dev_set_ieee_addr(struct net_device *dev);
+u16 mac802154_dev_get_pan_id(const struct net_device *dev);
+void mac802154_dev_set_pan_id(struct net_device *dev, u16 val);
+void mac802154_dev_set_page_channel(struct net_device *dev, u8 page, u8 chan);
+u8 mac802154_dev_get_dsn(const struct net_device *dev);
 
 #endif /* MAC802154_H */

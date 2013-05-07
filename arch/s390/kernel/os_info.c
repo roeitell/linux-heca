@@ -10,6 +10,7 @@
 
 #include <linux/crash_dump.h>
 #include <linux/kernel.h>
+#include <linux/slab.h>
 #include <asm/checksum.h>
 #include <asm/lowcore.h>
 #include <asm/os_info.h>
@@ -60,7 +61,7 @@ void __init os_info_init(void)
 	os_info.version_minor = OS_INFO_VERSION_MINOR;
 	os_info.magic = OS_INFO_MAGIC;
 	os_info.csum = os_info_csum(&os_info);
-	memcpy_absolute(&S390_lowcore.os_info, &ptr, sizeof(ptr));
+	mem_assign_absolute(S390_lowcore.os_info, (unsigned long) ptr);
 }
 
 #ifdef CONFIG_CRASH_DUMP

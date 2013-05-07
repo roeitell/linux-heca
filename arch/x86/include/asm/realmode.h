@@ -21,8 +21,9 @@ struct real_mode_header {
 	u32	wakeup_header;
 #endif
 	/* APM/BIOS reboot */
-#ifdef CONFIG_X86_32
 	u32	machine_real_restart_asm;
+#ifdef CONFIG_X86_64
+	u32	machine_real_restart_seg;
 #endif
 };
 
@@ -57,6 +58,7 @@ extern unsigned char boot_gdt[];
 extern unsigned char secondary_startup_64[];
 #endif
 
-extern void __init setup_real_mode(void);
+void reserve_real_mode(void);
+void setup_real_mode(void);
 
 #endif /* _ARCH_X86_REALMODE_H */

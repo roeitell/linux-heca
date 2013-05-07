@@ -18,7 +18,6 @@
  */
 
 #include <linux/module.h>
-#include <linux/dmi.h>
 #include <linux/seq_file.h>
 #include <linux/uaccess.h>
 #include <linux/fs.h>
@@ -26,6 +25,7 @@
 #include <linux/fb.h>
 
 #include <linux/pci.h>
+#include <linux/console.h>
 #include <linux/vga_switcheroo.h>
 
 #include <linux/vgaarb.h>
@@ -70,27 +70,12 @@ static struct vgasr_priv vgasr_priv = {
 	.clients = LIST_HEAD_INIT(vgasr_priv.clients),
 };
 
-int vga_switcheroo_register_handler(struct vga_switcheroo_handler *handler)
+static bool vga_switcheroo_ready(void)
 {
-	mutex_lock(&vgasr_mutex);
-	if (vgasr_priv.handler) {
-		mutex_unlock(&vgasr_mutex);
-		return -EINVAL;
-	}
-
-	vgasr_priv.handler = handler;
-	mutex_unlock(&vgasr_mutex);
-	return 0;
+	/* we're ready if we get two clients + handler */
+	return !vgasr_priv.active &&
+	       vgasr_priv.registered_clients == 2 && vgasr_priv.handler;
 }
-EXPORT_SYMBOL(vga_switcheroo_register_handler);
-
-void vga_switcheroo_unregister_handler(void)
-{
-	mutex_lock(&vgasr_mutex);
-	vgasr_priv.handler = NULL;
-	mutex_unlock(&vgasr_mutex);
-}
-EXPORT_SYMBOL(vga_switcheroo_unregister_handler);
 
 static void vga_switcheroo_enable(void)
 {
@@ -98,7 +83,8 @@ static void vga_switcheroo_enable(void)
 	struct vga_switcheroo_client *client;
 
 	/* call the handler to init */
-	vgasr_priv.handler->init();
+	if (vgasr_priv.handler->init)
+		vgasr_priv.handler->init();
 
 	list_for_each_entry(client, &vgasr_priv.clients, list) {
 		if (client->id != -1)
@@ -112,6 +98,37 @@ static void vga_switcheroo_enable(void)
 	vga_switcheroo_debugfs_init(&vgasr_priv);
 	vgasr_priv.active = true;
 }
+
+int vga_switcheroo_register_handler(struct vga_switcheroo_handler *handler)
+{
+	mutex_lock(&vgasr_mutex);
+	if (vgasr_priv.handler) {
+		mutex_unlock(&vgasr_mutex);
+		return -EINVAL;
+	}
+
+	vgasr_priv.handler = handler;
+	if (vga_switcheroo_ready()) {
+		printk(KERN_INFO "vga_switcheroo: enabled\n");
+		vga_switcheroo_enable();
+	}
+	mutex_unlock(&vgasr_mutex);
+	return 0;
+}
+EXPORT_SYMBOL(vga_switcheroo_register_handler);
+
+void vga_switcheroo_unregister_handler(void)
+{
+	mutex_lock(&vgasr_mutex);
+	vgasr_priv.handler = NULL;
+	if (vgasr_priv.active) {
+		pr_info("vga_switcheroo: disabled\n");
+		vga_switcheroo_debugfs_fini(&vgasr_priv);
+		vgasr_priv.active = false;
+	}
+	mutex_unlock(&vgasr_mutex);
+}
+EXPORT_SYMBOL(vga_switcheroo_unregister_handler);
 
 static int register_client(struct pci_dev *pdev,
 			   const struct vga_switcheroo_client_ops *ops,
@@ -134,9 +151,7 @@ static int register_client(struct pci_dev *pdev,
 	if (client_is_vga(client))
 		vgasr_priv.registered_clients++;
 
-	/* if we get two clients + handler */
-	if (!vgasr_priv.active &&
-	    vgasr_priv.registered_clients == 2 && vgasr_priv.handler) {
+	if (vga_switcheroo_ready()) {
 		printk(KERN_INFO "vga_switcheroo: enabled\n");
 		vga_switcheroo_enable();
 	}
@@ -323,8 +338,10 @@ static int vga_switchto_stage2(struct vga_switcheroo_client *new_client)
 
 	if (new_client->fb_info) {
 		struct fb_event event;
+		console_lock();
 		event.info = new_client->fb_info;
 		fb_notifier_call_chain(FB_EVENT_REMAP_ALL_CONSOLE, &event);
+		console_unlock();
 	}
 
 	ret = vgasr_priv.handler->switchto(new_client->id);
@@ -361,7 +378,6 @@ vga_switcheroo_debugfs_write(struct file *filp, const char __user *ubuf,
 			     size_t cnt, loff_t *ppos)
 {
 	char usercmd[64];
-	const char *pdev_name;
 	int ret;
 	bool delay = false, can_switch;
 	bool just_mux = false;
@@ -453,7 +469,6 @@ vga_switcheroo_debugfs_write(struct file *filp, const char __user *ubuf,
 		goto out;
 
 	if (can_switch) {
-		pdev_name = pci_name(client->pdev);
 		ret = vga_switchto_stage1(client);
 		if (ret)
 			printk(KERN_ERR "vga_switcheroo: switching failed stage 1 %d\n", ret);
@@ -525,7 +540,6 @@ fail:
 int vga_switcheroo_process_delayed_switch(void)
 {
 	struct vga_switcheroo_client *client;
-	const char *pdev_name;
 	int ret;
 	int err = -EINVAL;
 
@@ -540,7 +554,6 @@ int vga_switcheroo_process_delayed_switch(void)
 	if (!client || !check_can_switch())
 		goto err;
 
-	pdev_name = pci_name(client->pdev);
 	ret = vga_switchto_stage2(client);
 	if (ret)
 		printk(KERN_ERR "vga_switcheroo: delayed switching failed stage 2 %d\n", ret);
@@ -552,4 +565,3 @@ err:
 	return err;
 }
 EXPORT_SYMBOL(vga_switcheroo_process_delayed_switch);
-

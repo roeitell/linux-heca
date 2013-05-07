@@ -108,7 +108,7 @@ struct clk *imx_clk_busy_divider(const char *name, const char *parent_name,
 	busy->div.hw.init = &init;
 
 	clk = clk_register(NULL, &busy->div.hw);
-	if (!clk)
+	if (IS_ERR(clk))
 		kfree(busy);
 
 	return clk;
@@ -169,7 +169,7 @@ struct clk *imx_clk_busy_mux(const char *name, void __iomem *reg, u8 shift,
 
 	busy->mux.reg = reg;
 	busy->mux.shift = shift;
-	busy->mux.width = width;
+	busy->mux.mask = BIT(width) - 1;
 	busy->mux.lock = &imx_ccm_lock;
 	busy->mux_ops = &clk_mux_ops;
 

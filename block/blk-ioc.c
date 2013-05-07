@@ -164,7 +164,6 @@ EXPORT_SYMBOL(put_io_context);
  */
 void put_io_context_active(struct io_context *ioc)
 {
-	struct hlist_node *n;
 	unsigned long flags;
 	struct io_cq *icq;
 
@@ -180,7 +179,7 @@ void put_io_context_active(struct io_context *ioc)
 	 */
 retry:
 	spin_lock_irqsave_nested(&ioc->lock, flags, 1);
-	hlist_for_each_entry(icq, n, &ioc->icq_list, ioc_node) {
+	hlist_for_each_entry(icq, &ioc->icq_list, ioc_node) {
 		if (icq->flags & ICQ_EXITED)
 			continue;
 		if (spin_trylock(icq->q->queue_lock)) {
@@ -244,6 +243,7 @@ int create_task_io_context(struct task_struct *task, gfp_t gfp_flags, int node)
 
 	/* initialize */
 	atomic_long_set(&ioc->refcount, 1);
+	atomic_set(&ioc->nr_tasks, 1);
 	atomic_set(&ioc->active_ref, 1);
 	spin_lock_init(&ioc->lock);
 	INIT_RADIX_TREE(&ioc->icq_tree, GFP_ATOMIC | __GFP_HIGH);

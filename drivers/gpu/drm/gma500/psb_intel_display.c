@@ -85,14 +85,14 @@ struct psb_intel_limit_t {
 #define I9XX_DOT_MAX		 400000
 #define I9XX_VCO_MIN		1400000
 #define I9XX_VCO_MAX		2800000
-#define I9XX_N_MIN		      3
-#define I9XX_N_MAX		      8
+#define I9XX_N_MIN		      1
+#define I9XX_N_MAX		      6
 #define I9XX_M_MIN		     70
 #define I9XX_M_MAX		    120
-#define I9XX_M1_MIN		     10
-#define I9XX_M1_MAX		     20
-#define I9XX_M2_MIN		      5
-#define I9XX_M2_MAX		      9
+#define I9XX_M1_MIN		      8
+#define I9XX_M1_MAX		     18
+#define I9XX_M2_MIN		      3
+#define I9XX_M2_MAX		      7
 #define I9XX_P_SDVO_DAC_MIN	      5
 #define I9XX_P_SDVO_DAC_MAX	     80
 #define I9XX_P_LVDS_MIN		      7
@@ -543,7 +543,7 @@ void psb_intel_encoder_destroy(struct drm_encoder *encoder)
 }
 
 static bool psb_intel_crtc_mode_fixup(struct drm_crtc *crtc,
-				  struct drm_display_mode *mode,
+				  const struct drm_display_mode *mode,
 				  struct drm_display_mode *adjusted_mode)
 {
 	return true;
@@ -1362,6 +1362,9 @@ void psb_intel_crtc_init(struct drm_device *dev, int pipe,
 	    (struct drm_connector **) (psb_intel_crtc + 1);
 	psb_intel_crtc->mode_set.num_connectors = 0;
 	psb_intel_cursor_init(dev, psb_intel_crtc);
+
+	/* Set to true so that the pipe is forced off on initial config. */
+	psb_intel_crtc->active = true;
 }
 
 int psb_intel_get_pipe_from_crtc_id(struct drm_device *dev, void *data,

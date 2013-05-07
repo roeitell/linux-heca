@@ -203,9 +203,13 @@ static int amradio_set_mute(struct amradio_device *radio, bool mute)
 /* set a frequency, freq is defined by v4l's TUNER_LOW, i.e. 1/16th kHz */
 static int amradio_set_freq(struct amradio_device *radio, int freq)
 {
-	unsigned short freq_send = 0x10 + (freq >> 3) / 25;
+	unsigned short freq_send;
 	u8 buf[3];
 	int retval;
+
+	/* we need to be sure that frequency isn't out of range */
+	freq = clamp_t(unsigned, freq, FREQ_MIN * FREQ_MUL, FREQ_MAX * FREQ_MUL);
+	freq_send = 0x10 + (freq >> 3) / 25;
 
 	/* frequency is calculated from freq_send and placed in first 2 bytes */
 	buf[0] = (freq_send >> 8) & 0xff;
@@ -295,7 +299,8 @@ static int vidioc_g_tuner(struct file *file, void *priv,
 	v->type = V4L2_TUNER_RADIO;
 	v->rangelow = FREQ_MIN * FREQ_MUL;
 	v->rangehigh = FREQ_MAX * FREQ_MUL;
-	v->capability = V4L2_TUNER_CAP_LOW | V4L2_TUNER_CAP_STEREO;
+	v->capability = V4L2_TUNER_CAP_LOW | V4L2_TUNER_CAP_STEREO |
+		V4L2_TUNER_CAP_HWSEEK_WRAP;
 	v->rxsubchans = is_stereo ? V4L2_TUNER_SUB_STEREO : V4L2_TUNER_SUB_MONO;
 	v->audmode = radio->stereo ?
 		V4L2_TUNER_MODE_STEREO : V4L2_TUNER_MODE_MONO;
@@ -304,7 +309,7 @@ static int vidioc_g_tuner(struct file *file, void *priv,
 
 /* vidioc_s_tuner - set tuner attributes */
 static int vidioc_s_tuner(struct file *file, void *priv,
-				struct v4l2_tuner *v)
+				const struct v4l2_tuner *v)
 {
 	struct amradio_device *radio = video_drvdata(file);
 
@@ -322,14 +327,13 @@ static int vidioc_s_tuner(struct file *file, void *priv,
 
 /* vidioc_s_frequency - set tuner radio frequency */
 static int vidioc_s_frequency(struct file *file, void *priv,
-				struct v4l2_frequency *f)
+				const struct v4l2_frequency *f)
 {
 	struct amradio_device *radio = video_drvdata(file);
 
 	if (f->tuner != 0)
 		return -EINVAL;
-	return amradio_set_freq(radio, clamp_t(unsigned, f->frequency,
-				FREQ_MIN * FREQ_MUL, FREQ_MAX * FREQ_MUL));
+	return amradio_set_freq(radio, f->frequency);
 }
 
 /* vidioc_g_frequency - get tuner radio frequency */
@@ -347,7 +351,7 @@ static int vidioc_g_frequency(struct file *file, void *priv,
 }
 
 static int vidioc_s_hw_freq_seek(struct file *file, void *priv,
-		struct v4l2_hw_freq_seek *seek)
+		const struct v4l2_hw_freq_seek *seek)
 {
 	static u8 buf[8] = {
 		0x3d, 0x32, 0x0f, 0x08, 0x3d, 0x32, 0x0f, 0x08
@@ -358,6 +362,9 @@ static int vidioc_s_hw_freq_seek(struct file *file, void *priv,
 
 	if (seek->tuner != 0 || !seek->wrap_around)
 		return -EINVAL;
+
+	if (file->f_flags & O_NONBLOCK)
+		return -EWOULDBLOCK;
 
 	retval = amradio_send_cmd(radio,
 			AMRADIO_SET_SEARCH_LVL, 0, buf, 8, false);
@@ -372,7 +379,7 @@ static int vidioc_s_hw_freq_seek(struct file *file, void *priv,
 	timeout = jiffies + msecs_to_jiffies(30000);
 	for (;;) {
 		if (time_after(jiffies, timeout)) {
-			retval = -EAGAIN;
+			retval = -ENODATA;
 			break;
 		}
 		if (schedule_timeout_interruptible(msecs_to_jiffies(10))) {
@@ -385,6 +392,7 @@ static int vidioc_s_hw_freq_seek(struct file *file, void *priv,
 			continue;
 		amradio_send_cmd(radio, AMRADIO_GET_FREQ, 0, NULL, 0, true);
 		if (radio->buffer[1] || radio->buffer[2]) {
+			/* To check: sometimes radio->curfreq is set to out of range value */
 			radio->curfreq = (radio->buffer[1] << 8) | radio->buffer[2];
 			radio->curfreq = (radio->curfreq - 0x10) * 200;
 			amradio_send_cmd(radio, AMRADIO_STOP_SEARCH,

@@ -27,7 +27,7 @@
 #include <mach/irqs.h>
 #include <video/pxa168fb.h>
 #include <linux/input.h>
-#include <plat/pxa27x_keypad.h>
+#include <linux/platform_data/keypad-pxa27x.h>
 
 #include "common.h"
 
@@ -223,13 +223,7 @@ static struct pxa27x_keypad_platform_data aspenite_keypad_info __initdata = {
 };
 
 #if defined(CONFIG_USB_EHCI_MV)
-static char *pxa168_sph_clock_name[] = {
-	[0] = "PXA168-USBCLK",
-};
-
 static struct mv_usb_platform_data pxa168_sph_pdata = {
-	.clknum         = 1,
-	.clkname        = pxa168_sph_clock_name,
 	.mode           = MV_USB_MODE_HOST,
 	.phy_init	= pxa_usb_phy_init,
 	.phy_deinit	= pxa_usb_phy_deinit,
@@ -262,7 +256,7 @@ MACHINE_START(ASPENITE, "PXA168-based Aspenite Development Platform")
 	.map_io		= mmp_map_io,
 	.nr_irqs	= MMP_NR_IRQS,
 	.init_irq       = pxa168_init_irq,
-	.timer          = &pxa168_timer,
+	.init_time	= pxa168_timer_init,
 	.init_machine   = common_init,
 	.restart	= pxa168_restart,
 MACHINE_END
@@ -271,7 +265,7 @@ MACHINE_START(ZYLONITE2, "PXA168-based Zylonite2 Development Platform")
 	.map_io		= mmp_map_io,
 	.nr_irqs	= MMP_NR_IRQS,
 	.init_irq       = pxa168_init_irq,
-	.timer          = &pxa168_timer,
+	.init_time	= pxa168_timer_init,
 	.init_machine   = common_init,
 	.restart	= pxa168_restart,
 MACHINE_END

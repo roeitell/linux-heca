@@ -322,7 +322,7 @@ static __le16 *dn_mk_ack_header(struct sock *sk, struct sk_buff *skb, unsigned c
 	/* Set "cross subchannel" bit in ackcrs */
 	ackcrs |= 0x2000;
 
-	ptr = (__le16 *)dn_mk_common_header(scp, skb, msgflag, hlen);
+	ptr = dn_mk_common_header(scp, skb, msgflag, hlen);
 
 	*ptr++ = cpu_to_le16(acknum);
 	*ptr++ = cpu_to_le16(ackcrs);
@@ -598,7 +598,7 @@ void dn_nsp_send_disc(struct sock *sk, unsigned char msgflg,
 	if (reason == 0)
 		reason = le16_to_cpu(scp->discdata_out.opt_status);
 
-	dn_nsp_do_disc(sk, msgflg, reason, gfp, sk->sk_dst_cache, ddl,
+	dn_nsp_do_disc(sk, msgflg, reason, gfp, __sk_dst_get(sk), ddl,
 		scp->discdata_out.opt_data, scp->addrrem, scp->addrloc);
 }
 

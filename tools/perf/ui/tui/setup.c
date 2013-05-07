@@ -1,4 +1,3 @@
-#include <newt.h>
 #include <signal.h>
 #include <stdbool.h>
 
@@ -11,9 +10,11 @@
 #include "../libslang.h"
 #include "../keysyms.h"
 
-pthread_mutex_t ui__lock = PTHREAD_MUTEX_INITIALIZER;
-
 static volatile int ui__need_resize;
+
+extern struct perf_error_ops perf_tui_eops;
+
+extern void hist_browser__init_hpp(void);
 
 void ui__refresh_dimensions(bool force)
 {
@@ -26,7 +27,7 @@ void ui__refresh_dimensions(bool force)
 	}
 }
 
-static void ui__sigwinch(int sig __used)
+static void ui__sigwinch(int sig __maybe_unused)
 {
 	ui__need_resize = 1;
 }
@@ -86,13 +87,6 @@ int ui__getch(int delay_secs)
 	return SLkp_getkey();
 }
 
-static void newt_suspend(void *d __used)
-{
-	newtSuspend();
-	raise(SIGTSTP);
-	newtResume();
-}
-
 static void ui__signal(int sig)
 {
 	ui__exit(false);
@@ -104,7 +98,17 @@ int ui__init(void)
 {
 	int err;
 
-	newtInit();
+	SLutf8_enable(-1);
+	SLtt_get_terminfo();
+	SLtt_get_screen_size();
+
+	err = SLsmg_init_smg();
+	if (err < 0)
+		goto out;
+	err = SLang_init_tty(0, 0, 0);
+	if (err < 0)
+		goto out;
+
 	err = SLkp_init();
 	if (err < 0) {
 		pr_err("TUI initialization failed.\n");
@@ -113,15 +117,19 @@ int ui__init(void)
 
 	SLkp_define_keysym((char *)"^(kB)", SL_KEY_UNTAB);
 
-	newtSetSuspendCallback(newt_suspend, NULL);
 	ui_helpline__init();
 	ui_browser__init();
+	ui_progress__init();
 
 	signal(SIGSEGV, ui__signal);
 	signal(SIGFPE, ui__signal);
 	signal(SIGINT, ui__signal);
 	signal(SIGQUIT, ui__signal);
 	signal(SIGTERM, ui__signal);
+
+	perf_error__register(&perf_tui_eops);
+
+	hist_browser__init_hpp();
 out:
 	return err;
 }
@@ -137,4 +145,6 @@ void ui__exit(bool wait_for_ok)
 	SLsmg_refresh();
 	SLsmg_reset_smg();
 	SLang_reset_tty();
+
+	perf_error__unregister(&perf_tui_eops);
 }

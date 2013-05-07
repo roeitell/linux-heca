@@ -257,7 +257,7 @@ static struct attribute_group lm3533_bl_attribute_group = {
 	.attrs		= lm3533_bl_attributes
 };
 
-static int __devinit lm3533_bl_setup(struct lm3533_bl *bl,
+static int lm3533_bl_setup(struct lm3533_bl *bl,
 					struct lm3533_bl_platform_data *pdata)
 {
 	int ret;
@@ -269,7 +269,7 @@ static int __devinit lm3533_bl_setup(struct lm3533_bl *bl,
 	return lm3533_ctrlbank_set_pwm(&bl->cb, pdata->pwm);
 }
 
-static int __devinit lm3533_bl_probe(struct platform_device *pdev)
+static int lm3533_bl_probe(struct platform_device *pdev)
 {
 	struct lm3533 *lm3533;
 	struct lm3533_bl_platform_data *pdata;
@@ -295,7 +295,7 @@ static int __devinit lm3533_bl_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
-	bl = kzalloc(sizeof(*bl), GFP_KERNEL);
+	bl = devm_kzalloc(&pdev->dev, sizeof(*bl), GFP_KERNEL);
 	if (!bl) {
 		dev_err(&pdev->dev,
 				"failed to allocate memory for backlight\n");
@@ -317,8 +317,7 @@ static int __devinit lm3533_bl_probe(struct platform_device *pdev)
 						&lm3533_bl_ops, &props);
 	if (IS_ERR(bd)) {
 		dev_err(&pdev->dev, "failed to register backlight device\n");
-		ret = PTR_ERR(bd);
-		goto err_free;
+		return PTR_ERR(bd);
 	}
 
 	bl->bd = bd;
@@ -348,13 +347,11 @@ err_sysfs_remove:
 	sysfs_remove_group(&bd->dev.kobj, &lm3533_bl_attribute_group);
 err_unregister:
 	backlight_device_unregister(bd);
-err_free:
-	kfree(bl);
 
 	return ret;
 }
 
-static int __devexit lm3533_bl_remove(struct platform_device *pdev)
+static int lm3533_bl_remove(struct platform_device *pdev)
 {
 	struct lm3533_bl *bl = platform_get_drvdata(pdev);
 	struct backlight_device *bd = bl->bd;
@@ -367,33 +364,31 @@ static int __devexit lm3533_bl_remove(struct platform_device *pdev)
 	lm3533_ctrlbank_disable(&bl->cb);
 	sysfs_remove_group(&bd->dev.kobj, &lm3533_bl_attribute_group);
 	backlight_device_unregister(bd);
-	kfree(bl);
 
 	return 0;
 }
 
-#ifdef CONFIG_PM
-static int lm3533_bl_suspend(struct platform_device *pdev, pm_message_t state)
+#ifdef CONFIG_PM_SLEEP
+static int lm3533_bl_suspend(struct device *dev)
 {
-	struct lm3533_bl *bl = platform_get_drvdata(pdev);
+	struct lm3533_bl *bl = dev_get_drvdata(dev);
 
-	dev_dbg(&pdev->dev, "%s\n", __func__);
+	dev_dbg(dev, "%s\n", __func__);
 
 	return lm3533_ctrlbank_disable(&bl->cb);
 }
 
-static int lm3533_bl_resume(struct platform_device *pdev)
+static int lm3533_bl_resume(struct device *dev)
 {
-	struct lm3533_bl *bl = platform_get_drvdata(pdev);
+	struct lm3533_bl *bl = dev_get_drvdata(dev);
 
-	dev_dbg(&pdev->dev, "%s\n", __func__);
+	dev_dbg(dev, "%s\n", __func__);
 
 	return lm3533_ctrlbank_enable(&bl->cb);
 }
-#else
-#define lm3533_bl_suspend	NULL
-#define lm3533_bl_resume	NULL
 #endif
+
+static SIMPLE_DEV_PM_OPS(lm3533_bl_pm_ops, lm3533_bl_suspend, lm3533_bl_resume);
 
 static void lm3533_bl_shutdown(struct platform_device *pdev)
 {
@@ -408,12 +403,11 @@ static struct platform_driver lm3533_bl_driver = {
 	.driver = {
 		.name	= "lm3533-backlight",
 		.owner	= THIS_MODULE,
+		.pm	= &lm3533_bl_pm_ops,
 	},
 	.probe		= lm3533_bl_probe,
-	.remove		= __devexit_p(lm3533_bl_remove),
+	.remove		= lm3533_bl_remove,
 	.shutdown	= lm3533_bl_shutdown,
-	.suspend	= lm3533_bl_suspend,
-	.resume		= lm3533_bl_resume,
 };
 module_platform_driver(lm3533_bl_driver);
 

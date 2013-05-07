@@ -29,8 +29,6 @@ struct fl512_private {
 	short ao_readback[2];
 };
 
-#define devpriv ((struct fl512_private *) dev->private)
-
 static const struct comedi_lrange range_fl512 = { 4, {
 						      BIP_RANGE(0.5),
 						      BIP_RANGE(1),
@@ -75,6 +73,7 @@ static int fl512_ao_insn(struct comedi_device *dev,
 			 struct comedi_subdevice *s, struct comedi_insn *insn,
 			 unsigned int *data)
 {
+	struct fl512_private *devpriv = dev->private;
 	int n;
 	int chan = CR_CHAN(insn->chanspec);	/* get chan to write */
 	unsigned long iobase = dev->iobase;	/* get base address  */
@@ -99,6 +98,7 @@ static int fl512_ao_insn_readback(struct comedi_device *dev,
 				  struct comedi_subdevice *s,
 				  struct comedi_insn *insn, unsigned int *data)
 {
+	struct fl512_private *devpriv = dev->private;
 	int n;
 	int chan = CR_CHAN(insn->chanspec);
 
@@ -110,35 +110,28 @@ static int fl512_ao_insn_readback(struct comedi_device *dev,
 
 static int fl512_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 {
-	unsigned long iobase;
-
-	/* pointer to the subdevice: Analog in, Analog out,
-	   (not made ->and Digital IO) */
+	struct fl512_private *devpriv;
 	struct comedi_subdevice *s;
+	int ret;
 
-	iobase = it->options[0];
-	printk(KERN_INFO "comedi:%d fl512: 0x%04lx", dev->minor, iobase);
-	if (!request_region(iobase, FL512_SIZE, "fl512")) {
-		printk(KERN_WARNING " I/O port conflict\n");
-		return -EIO;
-	}
-	dev->iobase = iobase;
-	dev->board_name = "fl512";
-	if (alloc_private(dev, sizeof(struct fl512_private)) < 0)
+	ret = comedi_request_region(dev, it->options[0], FL512_SIZE);
+	if (ret)
+		return ret;
+
+	devpriv = kzalloc(sizeof(*devpriv), GFP_KERNEL);
+	if (!devpriv)
 		return -ENOMEM;
+	dev->private = devpriv;
 
-#if DEBUG
-	printk(KERN_DEBUG "malloc ok\n");
-#endif
-
-	if (alloc_subdevices(dev, 2) < 0)
-		return -ENOMEM;
+	ret = comedi_alloc_subdevices(dev, 2);
+	if (ret)
+		return ret;
 
 	/*
 	 * this if the definitions of the supdevices, 2 have been defined
 	 */
 	/* Analog indput */
-	s = dev->subdevices + 0;
+	s = &dev->subdevices[0];
 	/* define subdevice as Analog In */
 	s->type = COMEDI_SUBD_AI;
 	/* you can read it from userspace */
@@ -151,10 +144,9 @@ static int fl512_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	s->range_table = &range_fl512;
 	/* function to call when read AD */
 	s->insn_read = fl512_ai_insn;
-	printk(KERN_INFO "comedi: fl512: subdevice 0 initialized\n");
 
 	/* Analog output */
-	s = dev->subdevices + 1;
+	s = &dev->subdevices[1];
 	/* define subdevice as Analog OUT */
 	s->type = COMEDI_SUBD_AO;
 	/* you can write it from userspace */
@@ -169,22 +161,15 @@ static int fl512_attach(struct comedi_device *dev, struct comedi_devconfig *it)
 	s->insn_write = fl512_ao_insn;
 	/* function to call when reading DA */
 	s->insn_read = fl512_ao_insn_readback;
-	printk(KERN_INFO "comedi: fl512: subdevice 1 initialized\n");
 
 	return 1;
-}
-
-static void fl512_detach(struct comedi_device *dev)
-{
-	if (dev->iobase)
-		release_region(dev->iobase, FL512_SIZE);
 }
 
 static struct comedi_driver fl512_driver = {
 	.driver_name	= "fl512",
 	.module		= THIS_MODULE,
 	.attach		= fl512_attach,
-	.detach		= fl512_detach,
+	.detach		= comedi_legacy_detach,
 };
 module_comedi_driver(fl512_driver);
 

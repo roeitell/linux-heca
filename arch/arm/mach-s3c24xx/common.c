@@ -41,7 +41,6 @@
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 
-#include <mach/regs-clock.h>
 #include <mach/regs-gpio.h>
 #include <plat/regs-serial.h>
 
@@ -198,7 +197,7 @@ static unsigned long s3c24xx_read_idcode_v4(void)
 
 static void s3c24xx_default_idle(void)
 {
-	unsigned long tmp;
+	unsigned long tmp = 0;
 	int i;
 
 	/* idle the system by using the idle mode which will wait for an
@@ -239,6 +238,11 @@ void __init s3c24xx_init_io(struct map_desc *mach_desc, int size)
 }
 
 /* Serial port registrations */
+
+#define S3C2410_PA_UART0      (S3C24XX_PA_UART)
+#define S3C2410_PA_UART1      (S3C24XX_PA_UART + 0x4000 )
+#define S3C2410_PA_UART2      (S3C24XX_PA_UART + 0x8000 )
+#define S3C2443_PA_UART3      (S3C24XX_PA_UART + 0xC000 )
 
 static struct resource s3c2410_uart0_resource[] = {
 	[0] = DEFINE_RES_MEM(S3C2410_PA_UART0, SZ_16K),

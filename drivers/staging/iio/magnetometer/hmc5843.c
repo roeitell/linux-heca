@@ -1,6 +1,6 @@
 /*  Copyright (C) 2010 Texas Instruments
     Author: Shubhrajyoti Datta <shubhrajyoti@ti.com>
-    Acknowledgement: Jonathan Cameron <jic23@cam.ac.uk> for valuable inputs.
+    Acknowledgement: Jonathan Cameron <jic23@kernel.org> for valuable inputs.
 
     Support for HMC5883 and HMC5883L by Peter Meerwald <pmeerw@pmeerw.net>.
 
@@ -555,7 +555,7 @@ static int hmc5843_read_raw(struct iio_dev *indio_dev,
 		*val = 0;
 		*val2 = data->variant->regval_to_nanoscale[data->range];
 		return IIO_VAL_INT_PLUS_NANO;
-	};
+	}
 	return -EINVAL;
 }
 
@@ -564,8 +564,8 @@ static int hmc5843_read_raw(struct iio_dev *indio_dev,
 		.type = IIO_MAGN,					\
 		.modified = 1,						\
 		.channel2 = IIO_MOD_##axis,				\
-		.info_mask = IIO_CHAN_INFO_RAW_SEPARATE_BIT |		\
-			     IIO_CHAN_INFO_SCALE_SHARED_BIT,		\
+		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),		\
+		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),	\
 		.address = add						\
 	}
 

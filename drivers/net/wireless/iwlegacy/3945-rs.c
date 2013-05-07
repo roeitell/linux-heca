@@ -347,7 +347,7 @@ il3945_rs_rate_init(struct il_priv *il, struct ieee80211_sta *sta, u8 sta_id)
 
 	psta = (struct il3945_sta_priv *)sta->drv_priv;
 	rs_sta = &psta->rs_sta;
-	sband = hw->wiphy->bands[conf->channel->band];
+	sband = hw->wiphy->bands[conf->chandef.chan->band];
 
 	rs_sta->il = il;
 
@@ -946,7 +946,7 @@ il3945_rate_scale_init(struct ieee80211_hw *hw, s32 sta_id)
 	case IEEE80211_BAND_5GHZ:
 		rs_sta->expected_tpt = il3945_expected_tpt_a;
 		break;
-	case IEEE80211_NUM_BANDS:
+	default:
 		BUG();
 		break;
 	}

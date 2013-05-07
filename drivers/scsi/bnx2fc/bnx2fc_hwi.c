@@ -77,7 +77,7 @@ int bnx2fc_send_fw_fcoe_init_msg(struct bnx2fc_hba *hba)
 	fcoe_init1.hdr.flags = (FCOE_KWQE_LAYER_CODE <<
 					FCOE_KWQE_HEADER_LAYER_CODE_SHIFT);
 
-	fcoe_init1.num_tasks = BNX2FC_MAX_TASKS;
+	fcoe_init1.num_tasks = hba->max_tasks;
 	fcoe_init1.sq_num_wqes = BNX2FC_SQ_WQES_MAX;
 	fcoe_init1.rq_num_wqes = BNX2FC_RQ_WQES_MAX;
 	fcoe_init1.rq_buffer_log_size = BNX2FC_RQ_BUF_LOG_SZ;
@@ -296,7 +296,7 @@ int bnx2fc_send_session_ofld_req(struct fcoe_port *port,
 	ofld_req3.flags |= (interface->vlan_enabled <<
 			    FCOE_KWQE_CONN_OFFLOAD3_B_VLAN_FLAG_SHIFT);
 
-	/* C2_VALID and ACK flags are not set as they are not suppported */
+	/* C2_VALID and ACK flags are not set as they are not supported */
 
 
 	/* Initialize offload request 4 structure */
@@ -347,7 +347,7 @@ int bnx2fc_send_session_ofld_req(struct fcoe_port *port,
  * @port:		port structure pointer
  * @tgt:		bnx2fc_rport structure pointer
  */
-static int bnx2fc_send_session_enable_req(struct fcoe_port *port,
+int bnx2fc_send_session_enable_req(struct fcoe_port *port,
 					struct bnx2fc_rport *tgt)
 {
 	struct kwqe *kwqe_arr[2];
@@ -697,7 +697,7 @@ static void bnx2fc_process_unsol_compl(struct bnx2fc_rport *tgt, u16 wqe)
 			err_entry->data.tx_buf_off, err_entry->data.rx_buf_off);
 
 
-		if (xid > BNX2FC_MAX_XID) {
+		if (xid > hba->max_xid) {
 			BNX2FC_TGT_DBG(tgt, "xid(0x%x) out of FW range\n",
 				   xid);
 			goto ret_err_rqe;
@@ -759,8 +759,6 @@ static void bnx2fc_process_unsol_compl(struct bnx2fc_rport *tgt, u16 wqe)
 		case FCOE_ERROR_CODE_DATA_SOFN_SEQ_ACTIVE_RESET:
 			BNX2FC_TGT_DBG(tgt, "REC TOV popped for xid - 0x%x\n",
 				   xid);
-			memset(&io_req->err_entry, 0,
-			       sizeof(struct fcoe_err_report_entry));
 			memcpy(&io_req->err_entry, err_entry,
 			       sizeof(struct fcoe_err_report_entry));
 			if (!test_bit(BNX2FC_FLAG_SRR_SENT,
@@ -817,7 +815,7 @@ ret_err_rqe:
 		BNX2FC_TGT_DBG(tgt, "buf_offsets - tx = 0x%x, rx = 0x%x",
 			err_entry->data.tx_buf_off, err_entry->data.rx_buf_off);
 
-		if (xid > BNX2FC_MAX_XID) {
+		if (xid > hba->max_xid) {
 			BNX2FC_TGT_DBG(tgt, "xid(0x%x) out of FW range\n", xid);
 			goto ret_warn_rqe;
 		}
@@ -847,8 +845,6 @@ ret_err_rqe:
 			goto ret_warn_rqe;
 		}
 
-		memset(&io_req->err_entry, 0,
-		       sizeof(struct fcoe_err_report_entry));
 		memcpy(&io_req->err_entry, err_entry,
 		       sizeof(struct fcoe_err_report_entry));
 
@@ -884,7 +880,7 @@ void bnx2fc_process_cq_compl(struct bnx2fc_rport *tgt, u16 wqe)
 
 	spin_lock_bh(&tgt->tgt_lock);
 	xid = wqe & FCOE_PEND_WQ_CQE_TASK_ID;
-	if (xid >= BNX2FC_MAX_TASKS) {
+	if (xid >= hba->max_tasks) {
 		printk(KERN_ERR PFX "ERROR:xid out of range\n");
 		spin_unlock_bh(&tgt->tgt_lock);
 		return;
@@ -1124,7 +1120,6 @@ static void bnx2fc_process_ofld_cmpl(struct bnx2fc_hba *hba,
 	struct bnx2fc_interface		*interface;
 	u32				conn_id;
 	u32				context_id;
-	int				rc;
 
 	conn_id = ofld_kcqe->fcoe_conn_id;
 	context_id = ofld_kcqe->fcoe_conn_context_id;
@@ -1153,17 +1148,10 @@ static void bnx2fc_process_ofld_cmpl(struct bnx2fc_hba *hba,
 				"resources\n");
 			set_bit(BNX2FC_FLAG_CTX_ALLOC_FAILURE, &tgt->flags);
 		}
-		goto ofld_cmpl_err;
 	} else {
-
-		/* now enable the session */
-		rc = bnx2fc_send_session_enable_req(port, tgt);
-		if (rc) {
-			printk(KERN_ERR PFX "enable session failed\n");
-			goto ofld_cmpl_err;
-		}
+		/* FW offload request successfully completed */
+		set_bit(BNX2FC_FLAG_OFFLOADED, &tgt->flags);
 	}
-	return;
 ofld_cmpl_err:
 	set_bit(BNX2FC_FLAG_OFLD_REQ_CMPL, &tgt->flags);
 	wake_up_interruptible(&tgt->ofld_wait);
@@ -1210,15 +1198,9 @@ static void bnx2fc_process_enable_conn_cmpl(struct bnx2fc_hba *hba,
 		printk(KERN_ERR PFX "bnx2fc-enbl_cmpl: HBA mis-match\n");
 		goto enbl_cmpl_err;
 	}
-	if (ofld_kcqe->completion_status)
-		goto enbl_cmpl_err;
-	else {
+	if (!ofld_kcqe->completion_status)
 		/* enable successful - rport ready for issuing IOs */
-		set_bit(BNX2FC_FLAG_OFFLOADED, &tgt->flags);
-		set_bit(BNX2FC_FLAG_OFLD_REQ_CMPL, &tgt->flags);
-		wake_up_interruptible(&tgt->ofld_wait);
-	}
-	return;
+		set_bit(BNX2FC_FLAG_ENABLED, &tgt->flags);
 
 enbl_cmpl_err:
 	set_bit(BNX2FC_FLAG_OFLD_REQ_CMPL, &tgt->flags);
@@ -1244,11 +1226,14 @@ static void bnx2fc_process_conn_disable_cmpl(struct bnx2fc_hba *hba,
 	if (disable_kcqe->completion_status) {
 		printk(KERN_ERR PFX "Disable failed with cmpl status %d\n",
 			disable_kcqe->completion_status);
-		return;
+		set_bit(BNX2FC_FLAG_DISABLE_FAILED, &tgt->flags);
+		set_bit(BNX2FC_FLAG_UPLD_REQ_COMPL, &tgt->flags);
+		wake_up_interruptible(&tgt->upld_wait);
 	} else {
 		/* disable successful */
 		BNX2FC_TGT_DBG(tgt, "disable successful\n");
 		clear_bit(BNX2FC_FLAG_OFFLOADED, &tgt->flags);
+		clear_bit(BNX2FC_FLAG_ENABLED, &tgt->flags);
 		set_bit(BNX2FC_FLAG_DISABLED, &tgt->flags);
 		set_bit(BNX2FC_FLAG_UPLD_REQ_COMPL, &tgt->flags);
 		wake_up_interruptible(&tgt->upld_wait);
@@ -1857,6 +1842,7 @@ int bnx2fc_setup_task_ctx(struct bnx2fc_hba *hba)
 	int rc = 0;
 	struct regpair *task_ctx_bdt;
 	dma_addr_t addr;
+	int task_ctx_arr_sz;
 	int i;
 
 	/*
@@ -1880,7 +1866,8 @@ int bnx2fc_setup_task_ctx(struct bnx2fc_hba *hba)
 	 * Allocate task_ctx which is an array of pointers pointing to
 	 * a page containing 32 task contexts
 	 */
-	hba->task_ctx = kzalloc((BNX2FC_TASK_CTX_ARR_SZ * sizeof(void *)),
+	task_ctx_arr_sz = (hba->max_tasks / BNX2FC_TASKS_PER_PAGE);
+	hba->task_ctx = kzalloc((task_ctx_arr_sz * sizeof(void *)),
 				 GFP_KERNEL);
 	if (!hba->task_ctx) {
 		printk(KERN_ERR PFX "unable to allocate task context array\n");
@@ -1891,7 +1878,7 @@ int bnx2fc_setup_task_ctx(struct bnx2fc_hba *hba)
 	/*
 	 * Allocate task_ctx_dma which is an array of dma addresses
 	 */
-	hba->task_ctx_dma = kmalloc((BNX2FC_TASK_CTX_ARR_SZ *
+	hba->task_ctx_dma = kmalloc((task_ctx_arr_sz *
 					sizeof(dma_addr_t)), GFP_KERNEL);
 	if (!hba->task_ctx_dma) {
 		printk(KERN_ERR PFX "unable to alloc context mapping array\n");
@@ -1900,7 +1887,7 @@ int bnx2fc_setup_task_ctx(struct bnx2fc_hba *hba)
 	}
 
 	task_ctx_bdt = (struct regpair *)hba->task_ctx_bd_tbl;
-	for (i = 0; i < BNX2FC_TASK_CTX_ARR_SZ; i++) {
+	for (i = 0; i < task_ctx_arr_sz; i++) {
 
 		hba->task_ctx[i] = dma_alloc_coherent(&hba->pcidev->dev,
 						      PAGE_SIZE,
@@ -1920,7 +1907,7 @@ int bnx2fc_setup_task_ctx(struct bnx2fc_hba *hba)
 	return 0;
 
 out3:
-	for (i = 0; i < BNX2FC_TASK_CTX_ARR_SZ; i++) {
+	for (i = 0; i < task_ctx_arr_sz; i++) {
 		if (hba->task_ctx[i]) {
 
 			dma_free_coherent(&hba->pcidev->dev, PAGE_SIZE,
@@ -1944,6 +1931,7 @@ out:
 
 void bnx2fc_free_task_ctx(struct bnx2fc_hba *hba)
 {
+	int task_ctx_arr_sz;
 	int i;
 
 	if (hba->task_ctx_bd_tbl) {
@@ -1953,8 +1941,9 @@ void bnx2fc_free_task_ctx(struct bnx2fc_hba *hba)
 		hba->task_ctx_bd_tbl = NULL;
 	}
 
+	task_ctx_arr_sz = (hba->max_tasks / BNX2FC_TASKS_PER_PAGE);
 	if (hba->task_ctx) {
-		for (i = 0; i < BNX2FC_TASK_CTX_ARR_SZ; i++) {
+		for (i = 0; i < task_ctx_arr_sz; i++) {
 			if (hba->task_ctx[i]) {
 				dma_free_coherent(&hba->pcidev->dev, PAGE_SIZE,
 						    hba->task_ctx[i],

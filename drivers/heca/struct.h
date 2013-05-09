@@ -58,13 +58,18 @@
  */
 #define MSG_REQ_PAGE                (1 << 0)
 #define MSG_REQ_PAGE_TRY            (1 << 1)
-#define MSG_REQ_PAGE_PULL           (1 << 2)
-#define MSG_REQ_PAGE_RECLAIM        (1 << 3)
-#define MSG_RES_PAGE                (1 << 6)
-#define MSG_RES_PAGE_REDIRECT       (1 << 7)
-#define MSG_RES_PAGE_FAIL           (1 << 8)
-#define MSG_RES_SVM_FAIL            (1 << 9)
+#define MSG_REQ_READ                (1 << 2)
+#define MSG_REQ_PAGE_PULL           (1 << 3)
+#define MSG_REQ_CLAIM               (1 << 4)
+#define MSG_REQ_CLAIM_TRY           (1 << 5)
+#define MSG_REQ_QUERY               (1 << 6)
+#define MSG_RES_PAGE                (1 << 7)
+#define MSG_RES_PAGE_REDIRECT       (1 << 8)
+#define MSG_RES_PAGE_FAIL           (1 << 9)
+#define MSG_RES_SVM_FAIL            (1 << 10)
 #define MSG_RES_ACK                 (1 << 11)
+#define MSG_RES_ACK_FAIL            (1 << 12)
+#define MSG_RES_QUERY               (1 << 13)
 
 /* 
  * MEMORY REGION FLAGS

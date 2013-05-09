@@ -279,8 +279,12 @@ inline struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *dsm,
 
 inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm)
 {
-    return _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
-            (unsigned long) mm);
+    struct dsm_module_state *mod = get_dsm_module_state();
+
+    return (likely(mod)) ?
+        _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
+            (unsigned long) mm) :
+        NULL;
 }
 
 static int insert_svm_to_radix_trees(struct dsm_module_state *dsm_state,
@@ -408,7 +412,11 @@ int create_svm(struct hecaioc_svm *svm_info)
         INIT_WORK(&new_svm->deferred_gup_work, deferred_gup_work_fn);
 
         spin_lock_init(&new_svm->page_cache_spinlock);
+        spin_lock_init(&new_svm->page_readers_spinlock);
+        spin_lock_init(&new_sv->page_maintainers_spinlock);
         INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
+        INIT_RADIX_TREE(&new_svm->page_readers, GFP_ATOMIC);
+        INIT_RADIX_TREE(&new_svm->page_maintainers, GFP_ATOMIC);
         new_svm->push_cache = RB_ROOT;
         seqlock_init(&new_svm->push_cache_lock);
     }
@@ -434,6 +442,7 @@ out:
     mutex_unlock(&dsm->dsm_mutex);
     if (found_svm)
         release_svm(found_svm);
+
     if (r) {
         kfree(new_svm);
         new_svm = NULL;
@@ -446,7 +455,8 @@ out:
 
         if (r) {
             heca_printk(KERN_ERR "connect_svm failed %d", r);
-            goto out;
+            kfree(new_svm);
+            new_svm = NULL;
         }
     }
 no_dsm:
@@ -482,8 +492,8 @@ static void surrogate_push_remote_svm(struct subvirtual_machine *svm,
 
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
         node = rb_next(node);
-        for_each_valid_svm(dpc->svms, i) {
-            if (dpc->svms.pp[i] == remote_svm)
+        for (i = 0; i < dpc->svms.num; i++) {
+            if (dpc->svms.ids[i] == remote_svm->svm_id)
                 goto surrogate;
         }
         continue;
@@ -512,7 +522,11 @@ static void release_svm_push_elements(struct subvirtual_machine *svm)
 
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
         node = rb_next(node);
-        for_each_valid_svm(dpc->svms, i) {
+        /*
+         * dpc->svms has a pointer to the descriptor ids array, which already
+         * changed. we need to rely on the bitmap right now.
+         */
+        for (i = 0; i < dpc->svms.num; i++) {
             if (test_and_clear_bit(i, &dpc->bitmap))
                 page_cache_release(dpc->pages[0]);
         }
@@ -541,9 +555,10 @@ static void release_svm_tx_elements(struct subvirtual_machine *svm,
     for (i = 0; i < ele->tx_buffer.len; i++) {
         struct tx_buf_ele *tx_e = &tx_buf[i];
         struct dsm_message *msg = tx_e->dsm_buf;
+        int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY | MSG_RES_PAGE_FAIL |
+            MSG_REQ_READ;
 
-        if (msg->type & (MSG_REQ_PAGE | MSG_REQ_PAGE_TRY | MSG_RES_PAGE_FAIL)
-                && msg->dsm_id == svm->dsm->dsm_id
+        if (msg->type & types && msg->dsm_id == svm->dsm->dsm_id
                 && (msg->src_id == svm->svm_id || msg->dest_id == svm->svm_id)
                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
             struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
@@ -619,10 +634,25 @@ void remove_svm(u32 dsm_id, u32 svm_id)
     remove_svm_from_descriptors(svm);
 
     /*
-     * there are three ways of catching and releasing hanged ops:
-     *  - queued requests
-     *  - tx elements (e.g, requests that were sent but not yet freed)
-     *  - push cache
+     * we removed the svm from all descriptors and trees, so we won't make any
+     * new operations concerning it. now we only have to make sure to cancel
+     * all pending operations involving this svm, and it will be safe to remove
+     * it.
+     *
+     * we cannot actually hold until every operation is complete, so we rely on
+     * refcounting. and yet we try to catch every operation, and be a surrogate
+     * for it, if possible; otherwise we just trust it to drop the refcount when
+     * it finishes. the main point is catching all operations, not leaving
+     * anything unattended (thus creating a resource leak).
+     *
+     * we catch all pending operations using (by order) the queued requests
+     * lists, the tx elements buffers, and the push caches of svms.
+     *
+     * FIXME: what about pull operations, in which we remove_svm() after
+     * find_svm(), but before tx_dsm_send()??? We can't disable preemption
+     * there, but we might lookup_svm() after we send, and handle the case in
+     * which it isn't!
+     * FIXME: the same problem is valid for push operations!
      */
     if (is_svm_local(svm)) {
         struct rb_root *root;
@@ -660,6 +690,19 @@ out:
     mutex_unlock(&dsm->dsm_mutex);
 }
 
+struct subvirtual_machine *find_any_svm(struct dsm *dsm, struct svm_list svms)
+{
+    int i;
+    struct subvirtual_machine *svm;
+
+    for_each_valid_svm(svms, i) {
+        svm = find_svm(dsm, svms.ids[i]);
+        if (likely(svm))
+            return svm;
+    }
+
+    return NULL;
+}
 
 
 /*
@@ -945,32 +988,18 @@ int pushback_ps(struct hecaioc_ps *udata)
         goto out;
     }
 
-    local_svm = find_local_svm_from_mm(mm);
-    if (!local_svm)
-        goto out;
-
-    dsm = local_svm->dsm;
-
     addr = start_addr = ((unsigned long) udata->addr) & PAGE_MASK;
-    while (addr < start_addr + udata->sz) {
-
-        mr = search_mr_by_addr(local_svm, addr);
-        if (!mr)
-            goto out;
-
+    for (addr = start_addr; addr < start_addr + udata->sz; addr += PAGE_SIZE) {
         page = dsm_find_normal_page(mm, addr);
-        if (!page)
-            goto out;
+        if (!page || !trylock_page(page))
+            continue;
 
-        r = dsm_request_page_pull(dsm, local_svm, page, addr, mm, mr);
+        r = !push_back_if_remote_dsm_page(page);
         if (r)
-            goto out;
-
-        addr += PAGE_SIZE;
+            unlock_page(page);
     }
+
 out:
-    if (local_svm)
-        release_svm(local_svm);
     return r;
 }
 

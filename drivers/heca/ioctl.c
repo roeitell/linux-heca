@@ -92,6 +92,7 @@ struct dsm_module_state *create_dsm_module_state(void)
     INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
     INIT_LIST_HEAD(&dsm_state->dsm_list);
     mutex_init(&dsm_state->dsm_state_mutex);
+    spin_lock_init(&dsm_state->radix_lock);
     dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq",
             WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
     dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq",

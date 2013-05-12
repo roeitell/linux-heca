@@ -136,8 +136,6 @@ void remove_dsm(struct dsm *dsm)
     heca_printk(KERN_DEBUG "<exit>");
 }
 
-/* FIXME: just a dummy lock so that radix_tree functions work */
-DEFINE_SPINLOCK(dsm_lock);
 
 int create_dsm(__u32 dsm_id)
 {
@@ -180,11 +178,10 @@ int create_dsm(__u32 dsm_id)
         goto failed;
     }
 
-    /* TODO: move this spin lock to be part of dsm_state */
-    spin_lock(&dsm_lock);
+    spin_lock(&dsm_state->radix_lock);
     r = radix_tree_insert(&dsm_state->dsm_tree_root,
             (unsigned long) new_dsm->dsm_id, new_dsm);
-    spin_unlock(&dsm_lock);
+    spin_unlock(&dsm_state->radix_lock);
     radix_tree_preload_end();
 
     if (r) {
@@ -300,8 +297,8 @@ preload:
         goto out;
     }
 
-    /* FIXME: use dsm_state global spinlock here! */
-    spin_lock(&dsm_lock);
+    
+    spin_lock(&dsm_state->radix_lock);
     r = radix_tree_insert(&dsm->svm_tree_root,
             (unsigned long) new_svm->svm_id, new_svm);
     if (r)
@@ -318,7 +315,7 @@ preload:
     }
 
 unlock:
-    spin_unlock(&dsm_lock);
+    spin_unlock(&dsm_state->radix_lock);
 
     radix_tree_preload_end();
     if (r) {
@@ -479,7 +476,6 @@ static void surrogate_push_remote_svm(struct subvirtual_machine *svm,
     for (node = rb_first(&svm->push_cache); node;) {
         struct dsm_page_cache *dpc;
         int i;
-
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
         node = rb_next(node);
         for_each_valid_svm(dpc->svms, i) {

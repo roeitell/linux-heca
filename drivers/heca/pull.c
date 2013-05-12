@@ -335,7 +335,7 @@ void dequeue_and_gup_cleanup(struct subvirtual_machine *svm)
          * do the if check
          */
         dpc = dsm_cache_get_hold(svm, ddf->addr);
-        if (dpc && (dpc->tag == PREFETCH_TAG || dpc->tag == PULL_TRY_TAG)) {
+        if (dpc && (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG))) {
             atomic_dec(&dpc->nproc);
             dsm_release_pull_dpc(&dpc);
         }
@@ -388,23 +388,20 @@ static void dequeue_and_gup(struct subvirtual_machine *svm)
     head = llist_nodes_reverse(head);
     for (node = head; node; node = llist_next(node)) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
-        dpc = dsm_cache_get(svm, ddf->addr);
-        if (unlikely(dpc)) {
-            dpc = dsm_cache_get_hold(svm, ddf->addr);
-            if (likely(dpc)) {
-                /*
-                 * this might be another PULL_TRY or PREFETCH, if page has been
-                 * faulted, pushed and re-brought in the meanwhile. but no harm
-                 * in faulting it in anyway.
-                 */
-                if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                    trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
-                            -1, -1, dpc->addr, 0, dpc->tag);
-                    dsm_initiate_fault(svm->mm, ddf->addr,
-                            dpc->tag == PULL_TRY_TAG);
-                }
-                dsm_release_pull_dpc(&dpc);
+        dpc = dsm_cache_get_hold(svm, ddf->addr);
+        if (dpc) {
+            /*
+             * this might be another PULL_TRY or PREFETCH, if page has been
+             * faulted, pushed and re-brought in the meanwhile. but no harm
+             * in faulting it in anyway.
+             */
+            if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
+                trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                        -1, -1, dpc->addr, 0, dpc->tag);
+                dsm_initiate_fault(svm->mm, ddf->addr,
+                        dpc->tag == PULL_TRY_TAG);
             }
+            dsm_release_pull_dpc(&dpc);
         }
     }
     for (node = head; node; node = llist_next(node)) {
@@ -467,7 +464,7 @@ unlock:
             } else {
                 trace_immediate_initiated_fault(dpc->svm->dsm->dsm_id,
                         dpc->svm->svm_id, -1, -1, dpc->addr, 0, dpc->tag);
-                dsm_initiate_fault(dpc->svm->mm, dpc->addr, 
+                dsm_initiate_fault(dpc->svm->mm, dpc->addr,
                         dpc->tag == PULL_TRY_TAG);
             }
         }
@@ -486,7 +483,7 @@ int dsm_pull_req_failure(struct dsm_page_cache *dpc)
 
 retry:
     /*
-     * a successful rqeuest will set found >= 0. otherwise, the negative value
+     * a successful request will set found >= 0. otherwise, the negative value
      * indicates the count of failed responses + 1. if everyone failed, we need
      * to clean up.
      */
@@ -663,7 +660,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
         radix_tree_preload_end();
 
         if (likely(!r)) {
-            if (unlikely(!pte_same(*page_table, orig_pte))) {
+            if (unlikely(!pte_same(*ptep, orig_pte))) {
                 radix_tree_delete(&fault_svm->page_cache, norm_addr);
                 goto fail;
             }
@@ -679,6 +676,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
                 if (likely(remote_svm)) {
                     dsm_get_remote_page(vma, norm_addr, new_dpc, fault_svm,
                             fault_mr, remote_svm, tag, r, NULL);
+                    release_svm(remote_svm);
                 }
             }
             return new_dpc;
@@ -774,7 +772,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                  *  +1 for the fault that comes after fetching
                  */
                 dsm_cache_add_send(fault_svm, mr, dsd.svms, norm_addr, 2,
-                        tag, vma, mm, pte_entry, pte, tag != PREFETCH_TAG);
+                        tag, vma, pte_entry, pte, tag != PREFETCH_TAG);
                 ret = 1;
             }
         }
@@ -966,7 +964,7 @@ retry:
     if (unlikely(!dsm))
         return VM_FAULT_ERROR;
 
-    fault_svm = find_local_svm_in_dsm(dsd.dsm, mm);
+    fault_svm = find_local_svm_in_dsm(dsm, mm);
     if (unlikely(!fault_svm))
         return VM_FAULT_ERROR;
 
@@ -976,7 +974,7 @@ retry:
         return VM_FAULT_ERROR;
     }
 
-    dsm_id = fault_svm->dsm->dsm_id;
+    dsm_id = dsm->dsm_id;
     svm_id = fault_svm->svm_id;
     mr_id = fault_mr->mr_id;
     shared_addr = norm_addr - fault_mr->addr;
@@ -1035,7 +1033,7 @@ retry:
 
     /*
      * we requested a read copy initially, but now we need to write. as a read
-     * response is already underway, we wil try to fault it in ASAP and then
+     * response is already underway, we will try to fault it in ASAP and then
      * go through dsm_write_fault to claim it. it's better than discarding it
      * and write faulting, as a page is already ready and page contents already
      * being transferred to us (CLAIM req is cheaper).
@@ -1086,7 +1084,7 @@ resolve:
      * first one, it was locked in advance), increment its refcount, the
      * pte_offset_map is locked and dpc refcount is already incremented.
      */
-    found_page = dpc->pages[i];
+    found_page = dpc->pages[found];
     if (found)
         __set_page_locked(found_page);
     page_cache_get(found_page);
@@ -1369,20 +1367,20 @@ retry:
         dsm_invalidate_readers(svm, addr, 0);
 
         /*
-         * TODO: with stricter coherency policy, only the last ACK from readers
+         * TODO: with strict coherency policy, only the last ACK from readers
          * will unlock the page. meanwhile, it costs very little to leave this
          * here (+2 atomic operations)
          */
         unlock_page(page);
     }
 
-    /* by now, all read copies have been invalidated at least once*/
+    /* by now, all read copies have been invalidated at least once */
 wait:
     up_read(&mm->mmap_sem);
     wait_on_page_locked(page);
 
     /*
-     * we must releaes the lock before sleeping, and now re-grab it and
+     * we must release the lock before sleeping, and now re-grab it and
      * re-query the page table. otherwise a nasty edge case might occur when
      * someone tries to grab the lock for write, while a page extraction
      * request is processed (requiring the lock for read) before the ACK.
@@ -1411,7 +1409,7 @@ write:
 
     /* compatible with a pre-existing dpc, and with a newly created dpc */
     dsm_cache_release(svm, addr);
-    dsm_releaes_pull_dpc(&dpc);
+    dsm_release_pull_dpc(&dpc);
 
 out:
     release_svm(svm);

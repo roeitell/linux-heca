@@ -282,8 +282,7 @@ inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm)
     struct dsm_module_state *mod = get_dsm_module_state();
 
     return (likely(mod)) ?
-        _find_svm_in_tree(&get_dsm_module_state()->mm_tree_root,
-            (unsigned long) mm) :
+        _find_svm_in_tree(&mod->mm_tree_root, (unsigned long) mm) :
         NULL;
 }
 
@@ -413,7 +412,7 @@ int create_svm(struct hecaioc_svm *svm_info)
 
         spin_lock_init(&new_svm->page_cache_spinlock);
         spin_lock_init(&new_svm->page_readers_spinlock);
-        spin_lock_init(&new_sv->page_maintainers_spinlock);
+        spin_lock_init(&new_svm->page_maintainers_spinlock);
         INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
         INIT_RADIX_TREE(&new_svm->page_readers, GFP_ATOMIC);
         INIT_RADIX_TREE(&new_svm->page_maintainers, GFP_ATOMIC);
@@ -435,7 +434,7 @@ int create_svm(struct hecaioc_svm *svm_info)
     /* assign descriptor for remote svm */
     if (!is_svm_local(new_svm)) {
         u32 svm_ids[] = {new_svm->svm_id, 0};
-        new_svm->descriptor = dsm_get_descriptor(dsm, svm_ids);
+        new_svm->descriptor = dsm_get_descriptor(dsm->dsm_id, svm_ids);
     }
 
 out:
@@ -893,7 +892,7 @@ int create_mr(struct hecaioc_mr *udata)
         ret = -EFAULT;
         goto out_free;
     }
-    mr->descriptor = dsm_get_descriptor(dsm, udata->svm_ids);
+    mr->descriptor = dsm_get_descriptor(dsm->dsm_id, udata->svm_ids);
     if (!mr->descriptor) {
         heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");
         ret = -EFAULT;

@@ -57,7 +57,7 @@ void dsm_destroy_descriptors(void)
     sdsc_max = 0;
 }
 
-static int dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids)
+static int dsm_add_descriptor(u32 dsm_id, u32 desc, u32 *svm_ids)
 {
     u32 j;
 
@@ -104,7 +104,7 @@ static inline u32 dsm_entry_to_flags(swp_entry_t entry)
  * descriptors, or walk the page table when a descriptor is dead (on remove_svm)
  * or solve otherwise.
  */
-u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
+u32 dsm_get_descriptor(u32 dsm_id, u32 *svm_ids)
 {
     u32 i, j;
 
@@ -121,7 +121,7 @@ retry:
 
         /* found? */
         if (j == sdsc[i].num && !svm_ids[j])
-            break;
+            goto out;
     }
 
     if (i >= sdsc_max)
@@ -184,7 +184,7 @@ void remove_svm_from_descriptors(struct subvirtual_machine *svm)
 int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 {
     u32 desc = dsm_entry_to_desc(entry);
-    int i, ret = 0;
+    int ret = 0;
 
     BUG_ON(!dsd);
     memset(dsd, 0, sizeof (*dsd));

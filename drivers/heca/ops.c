@@ -140,7 +140,7 @@ nomem:
     for (j = 0; j < i; j++) {
         if (tx_elms[j])
             release_tx_element(eles[j], tx_elms[j]);
-        else
+        else if (reqs[j])
             release_dsm_request(reqs[j]);
     }
     return -ENOMEM;
@@ -154,7 +154,7 @@ static int send_svm_status_update(struct conn_element *ele,
 
 static int dsm_request_query(struct subvirtual_machine *svm,
         struct subvirtual_machine *owner, struct memory_region *mr,
-        unsigned long, shared_addr, struct dsm_page_cache *dpc)
+        unsigned long shared_addr, struct dsm_page_cache *dpc)
 {
     return dsm_send_msg(owner->ele, svm->dsm->dsm_id, mr->mr_id, svm->svm_id,
             owner->svm_id, shared_addr + mr->addr, shared_addr, NULL,
@@ -210,7 +210,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
             addr - fault_mr->addr, page, type, func, dpc, ppe, NULL, 1);
 }
 
-int dsm_process_request_query(struct conn_elemtn *ele, struct rx_buf_ele *rx_e)
+int dsm_process_request_query(struct conn_element *ele, struct rx_buf_ele *rx_e)
 {
     struct dsm_message *msg = rx_e->dsm_buf;
     struct dsm *dsm;
@@ -276,10 +276,9 @@ int dsm_process_query_info(struct tx_buf_ele *tx_e)
     r = 0;
 
 out:
-    releaes_svm(svm);
+    release_svm(svm);
 fail:
     return r;
-
 }
 
 int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
@@ -316,7 +315,6 @@ int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
 
 fail:
     return send_svm_status_update(ele, msg);
-
 }
 
 int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
@@ -369,7 +367,7 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
         goto out;
 
     trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
-            remote_svm->svm_id, fault_mr->mr_id, req_addr + fault_mr->addr, 
+            remote_svm->svm_id, fault_mr->mr_id, req_addr + fault_mr->addr,
             req_addr, dpc->tag);
     ret = request_dsm_page(page, remote_svm, dpc->svm, fault_mr, req_addr, func,
             dpc->tag, dpc, NULL);
@@ -451,7 +449,7 @@ int process_page_claim(struct conn_element *ele, struct dsm_message *msg)
             msg->type == MSG_REQ_CLAIM);
 
     /*
-     * no locking rqeuired: if we were maintainers, no one can hand out read
+     * no locking required: if we were maintainers, no one can hand out read
      * copies right now, and we can safely invalidate. otherwise, the
      * maintainer is the one invalidating us - in which case it won't answer a
      * read request until it finishes.
@@ -500,7 +498,7 @@ static int dsm_retry_claim(struct dsm_message *msg, struct page *page)
      * we were trying to invalidate the maintainer's copy, but it took our copy
      * away from us in the meantime... this isn't safe or protected, we rely on
      * the maintainer not to do anything stupid (like invalidating a writeable
-     * copy, or invalidting when it's trying to invalidate reader copies).
+     * copy, or invalidating when it's trying to invalidate reader copies).
      */
     if (!dsm_pte_present(svm->mm, msg->req_addr + mr->addr))
         goto fail;
@@ -531,7 +529,7 @@ static int dsm_retry_claim(struct dsm_message *msg, struct page *page)
      * TODO: block here until the query finishes, otherwise issuing
      * another claim is wasteful/useless.
      */
-    
+
     remote_svm = find_svm(dsm, dpc->redirect_svm_id);
     if (unlikely(!remote_svm))
         goto fail;
@@ -558,14 +556,14 @@ int process_claim_ack(struct conn_element *ele, struct tx_buf_ele *tx_e,
      * this only happens when we request a maintainer of a page to hand us over
      * the maintenance, and the remote node signals it is not the maintainer.
      *
-     * we keep on retrying, whiel constantly querying the mr owner for
+     * we keep on retrying, while constantly querying the mr owner for
      * up-to-date info. while theoretically this may go on forever, querying is
      * far faster in practice, so our achilles should catch the turtle easily.
      */
     if (unlikely(msg->type == MSG_REQ_CLAIM &&
                 response->type == MSG_RES_ACK_FAIL)) {
         if (likely(!dsm_retry_claim(msg, page)))
-           return -EAGAIN;
+            return -EAGAIN;
     }
 
     if (page) {
@@ -589,13 +587,13 @@ static int process_page_request(struct conn_element *origin_ele,
     u32 redirect_id = 0;
     int res = 0;
 
-    if (!local_svm) {
+    if (unlikely(!local_svm)) {
         send_svm_status_update(origin_ele, msg);
-        goto fail_svm;
+        goto fail;
     }
 
-    if (!remote_svm)
-        goto fail_svm;
+    if (unlikely(!remote_svm))
+        goto fail;
 
     ele = remote_svm->ele;
     addr = msg->req_addr + mr->addr;
@@ -775,7 +773,7 @@ out:
     return ret;
 }
 
-int ack_msg(struct conn_element *ele, struct rx_buf_ele *rx_e)
+int ack_msg(struct conn_element *ele, struct dsm_message *msg, u32 type)
 {
     return dsm_send_response(ele, type, msg);
 }

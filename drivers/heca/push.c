@@ -272,7 +272,7 @@ retry:
         goto retry;
     }
 
-    if (pte_none(*pte) || pte_present(*Pte))
+    if (pte_none(*pte) || pte_present(*pte))
         goto out;
 
     swp_e = pte_to_swp_entry(*pte);
@@ -357,7 +357,7 @@ int dsm_try_unmap_page(struct subvirtual_machine *local_svm, unsigned long addr,
     struct page *page;
     spinlock_t *ptl;
     pte_t pte_entry;
-    int r, touch_page = 1, unmapped = 0;
+    int r, touch_page = 1;
     struct mm_struct *mm = local_svm->mm;
 
     down_read(&mm->mmap_sem);
@@ -396,8 +396,8 @@ retry:
         goto out;
     }
 
-    /* page already unmapped somewhere */
-    if (unlikely(!pte_present(pte_entry))) {
+    /* page already unmapped somewhere, update the entry */
+    if (!pte_present(pte_entry)) {
         if (!only_unmap) {
             pte_t new_pte = dsm_descriptor_to_pte(remote_svm->descriptor, 0);
             if (!pte_same(pte_entry, new_pte)) {
@@ -456,13 +456,15 @@ unmap:
     set_pte_at(mm, addr, pd.pte,
             dsm_descriptor_to_pte(remote_svm->descriptor, 0));
 
-    page_remove_rmap(page);
-    release = 1;
-    dec_mm_counter(mm, MM_ANONPAGES);
+    if (touch_page) {
+        page_remove_rmap(page);
+        dec_mm_counter(mm, MM_ANONPAGES);
+        touch_page = 2; /* page touched, released after unlock */
+    }
 
 out:
     pte_unmap_unlock(pd.pte, ptl);
-    if (release) {
+    if (touch_page == 2) {
         mmu_notifier_invalidate_page(mm, addr);
         page_cache_release(page);
     }
@@ -470,7 +472,7 @@ out_mm:
     up_read(&mm->mmap_sem);
 
     if (likely(!r))
-        return unmapped;
+        return touch_page == 2;
     return -EFAULT;
 }
 
@@ -480,13 +482,15 @@ static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
 {
     int r;
 
-    if (usemm){
+    might_sleep();
+
+    if (usemm) {
         use_mm(mm);
         r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
         unuse_mm(mm);
-    }
-    else 
+    } else {
         r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
+    }
 
     BUG_ON(r > 1);
     return r == 1;
@@ -506,7 +510,7 @@ static int dsm_extract_page(struct subvirtual_machine *local_svm,
 
 retry:
     r = 0;
-    page = NULL;
+    *page = NULL;
     r = dsm_extract_pte_data(&pd, mm, addr);
     if (unlikely(r)) {
         trace_extract_pte_data_err(r);
@@ -532,7 +536,7 @@ retry:
     }
 
     if (unlikely(!pte_present(pte_entry))) {
-        /* try adn redirect, according to a dsm pte */
+        /* try and redirect, according to a dsm pte */
         if (!dsm_extract_read_dsm_pte(local_svm, mm, addr, pte_entry, &pd,
                     svm_id)) {
             res = DSM_EXTRACT_REDIRECT;
@@ -557,9 +561,9 @@ retry:
 
     *page = vm_normal_page(pd.vma, addr, *(pd.pte));
     if (!(*page)) {
-        /* DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */
+        /* DSM3 : follow_page uses - goto no_page; when !ZERO_PAGE..? wtf */
         if (pte_pfn(*(pd.pte)) == (unsigned long) (void *) ZERO_PAGE(0))
-            goto bad_page;
+            goto no_page;
 
         *page = pte_page(*(pd.pte));
     }
@@ -568,7 +572,7 @@ retry:
         if (!PageHuge(*page) && PageAnon(*page)) {
             pte_unmap_unlock(pd.pte, ptl);
             if (unlikely(split_huge_page(*page)))
-                goto bad_page;
+                goto no_page;
             goto retry;
         }
     }
@@ -584,7 +588,7 @@ retry:
     page_cache_get(*page);
 
     if (!(mr->flags & MR_COPY_ON_ACCESS)) {
-        flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
+        flush_cache_page(pd.vma, addr, pte_pfn(pte_entry));
         ptep_clear_flush(pd.vma, addr, pd.pte);
         if (read_copy) {
             pte_entry = pte_mkclean(pte_wrprotect(pte_entry));
@@ -605,7 +609,7 @@ retry:
     pte_unmap_unlock(pd.pte, ptl);
     if (!(mr->flags & MR_COPY_ON_ACCESS) && !read_copy) {
         mmu_notifier_invalidate_page(mm, addr);
-        page_cache_release(page);
+        page_cache_release(*page);
     }
     return DSM_EXTRACT_SUCCESS;
 
@@ -628,13 +632,13 @@ static int try_dsm_extract_page(struct subvirtual_machine *local_svm,
 retry:
     *page = NULL;
     if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
-        goto out;
+        goto fail;
 
     pte_entry = *(pd.pte);
     if (likely(!dpc)) {
         dpc = dsm_push_cache_get(local_svm, addr, remote_svm);
         if (unlikely(!dpc))
-            goto out;
+            goto fail;
     }
 
     *page = dpc->pages[0];
@@ -665,7 +669,7 @@ retry:
         pte_unmap_unlock(pd.pte, ptl);
         mmu_notifier_invalidate_page(mm, addr);
         page_cache_release(*page);
-        unlock_page(page);
+        unlock_page(*page);
 
     /* racing with the first response */
     } else if (unlikely(pte_none(pte_entry))) {
@@ -687,7 +691,7 @@ retry:
     *return_pte = *(pd.pte);
     return DSM_EXTRACT_SUCCESS;
 
-out:
+fail:
     return DSM_EXTRACT_FAIL;
 }
 
@@ -884,8 +888,8 @@ static int dsm_try_discard_read_copy(struct subvirtual_machine *svm,
     spinlock_t *ptl;
     int ret = 0;
     struct mm_struct *mm = vma->vm_mm;
-    u32 maintainer_id, descriptors;
-    struct subvirtual_machine *maintainers;
+    u32 maintainer_id, descriptor;
+    struct subvirtual_machine *maintainer;
 
 retry:
     if (!dsm_lookup_page_read(svm, addr))
@@ -976,7 +980,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
     struct anon_vma_chain *avc;
     int ret = 0;
 
-    if (unlikely(!get_dsm_module_state()))
+    if (!get_dsm_module_state())
         goto out;
 
     /* don't push pages that belong to more than one process, avoid pitfalls */
@@ -1172,7 +1176,7 @@ retry:
     }
 
     if (!trylock_page(page)) {
-        heca_printk(KERN_ERR "coudln't lock page");
+        heca_printk(KERN_ERR "couldn't lock page");
         r = -EFAULT;
         goto out_pte_unlock;
     }

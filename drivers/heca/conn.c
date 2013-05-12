@@ -84,8 +84,8 @@ static struct kmem_cache *kmem_request_cache;
 
 static inline void init_kmem_request_cache_elm(void *obj)
 {
-    struct dsm_request *dpc = (struct dsm_request *) obj;
-    memset(dpc, 0, sizeof(struct dsm_request));
+    struct dsm_request *req = (struct dsm_request *) obj;
+    memset(req, 0, sizeof(struct dsm_request));
 }
 
 void init_kmem_request_cache(void)
@@ -133,8 +133,8 @@ static void schedule_delayed_request_flush(struct conn_element *ele)
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
-    trace_queued_request(req->dsm_id, req->local_svm_id, req->remote_svm_id,
-            -1, 0, req->addr, req->type, -1);
+    trace_queued_request(req->dsm_id, req->src_id, req->dest_id,
+            req->mr_id, 0, req->addr, req->type, -1);
     llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     schedule_delayed_request_flush(ele);
 }
@@ -154,8 +154,8 @@ int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
     req->type = type;
     req->dsm_id = dsm_id;
     req->mr_id = mr_id;
-    req->src_id = src_id;
-    req->dest_id = dest_id;
+    req->local_svm_id = src_id;
+    req->remote_svm_id = dest_id;
     req->addr = addr;
     req->func = func;
     req->dpc = dpc;
@@ -217,6 +217,7 @@ static void dsm_tx_prepare(struct conn_element *ele, struct tx_buf_ele *tx_e,
     msg->mr_id = mr_id;
     msg->req_addr = (u64) shared_addr;
     msg->dst_addr = (u64) (need_ppe? ppe->page_buf : 0);
+    msg->rkey = ele->mr->rkey; /* TODO: is this needed? */
 
     tx_e->wrk_req->dst_addr = ppe;
     tx_e->wrk_req->dpc = dpc;
@@ -240,7 +241,7 @@ int dsm_send_tx_e(struct conn_element *ele, struct tx_buf_ele *tx_e, int resp,
     tx_e->dsm_buf->type = type;
     tx_e->callback.func = func;
 
-    tract_send_request(dsm_id, src_id, dest_id, mr_id, local_addr, shared_addr,
+    trace_send_request(dsm_id, src_id, dest_id, mr_id, local_addr, shared_addr,
             type);
 
     return tx_dsm_send(ele, tx_e);
@@ -1652,11 +1653,11 @@ struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele,
         int require_empty_list)
 {
     struct tx_buf_ele *tx_e = NULL;
-    struct llist_node *llnode;
+    struct llist_node *llnode = NULL;
 
     spin_lock(&ele->tx_buffer.tx_free_elements_list_lock);
     if (!require_empty_list || request_queue_empty(ele))
-       llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
+        llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
     if (llnode) {

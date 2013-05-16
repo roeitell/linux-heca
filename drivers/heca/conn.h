@@ -15,10 +15,8 @@ void destroy_kmem_request_cache(void);
 inline struct dsm_request *alloc_dsm_request(void);
 inline void release_dsm_request(struct dsm_request *);
 int add_dsm_request(struct dsm_request *, struct conn_element *, u16,
-        struct subvirtual_machine *, struct memory_region *,
-        struct subvirtual_machine *, uint64_t, int (*)(struct tx_buf_ele *),
-        struct dsm_page_cache *, struct page *, struct page_pool_ele *);
-int add_dsm_request_msg(struct conn_element *, u16,
+        u32, u32, u32, u32, unsigned long, int (*)(struct tx_buf_ele *),
+        struct dsm_page_cache *, struct page *, struct page_pool_ele *, int,
         struct dsm_message *);
 inline int request_queue_empty(struct conn_element *);
 inline int request_queue_full(struct conn_element *);
@@ -40,7 +38,7 @@ void try_release_tx_element(struct conn_element *, struct tx_buf_ele *);
 int connect_svm(__u32, __u32, unsigned long, unsigned short);
 unsigned long inet_addr(const char *cp);
 char *inet_ntoa(unsigned long s_addr, char *buf, int sz);
-struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *);
+struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *, int);
 struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct conn_element *);
 int destroy_connection(struct conn_element *);
 int tx_dsm_send(struct conn_element *, struct tx_buf_ele *);
@@ -48,5 +46,9 @@ char *port_ntoa(unsigned short port, char *buf, int sz);
 char *sockaddr_ntoa(struct sockaddr_in *sa, char *buf, int sz);
 char *conn_ntoa(struct sockaddr_in *src, struct sockaddr_in *dst, char *buf,
         int sz);
+int dsm_send_tx_e(struct conn_element *, struct tx_buf_ele *, int, int, u32,
+        u32, u32, u32, unsigned long, unsigned long, struct dsm_page_cache *,
+        struct page *, struct page_pool_ele *, int,
+        int (*)(struct tx_buf_ele *), struct dsm_message *);
 
 #endif /* _HECA_CONN_H */

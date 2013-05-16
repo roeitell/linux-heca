@@ -4,7 +4,7 @@
 void init_kmem_deferred_gup_cache(void);
 void destroy_kmem_deferred_gup_cache(void);
 int dsm_claim_page(struct subvirtual_machine *, struct subvirtual_machine *,
-        struct memory_region *, unsigned long);
+        struct memory_region *, unsigned long, struct page *, int);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
         struct subvirtual_machine *, struct memory_region *,
         unsigned long, int (*)(struct tx_buf_ele *), int,
@@ -19,8 +19,10 @@ int process_page_request_msg(struct conn_element *, struct dsm_message *);
 int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
         struct page *, unsigned long, struct mm_struct *,
         struct memory_region *);
-int ack_msg(struct conn_element *, struct rx_buf_ele *);
+int ack_msg(struct conn_element *, struct dsm_message *, u32);
 int unmap_range(struct dsm *dsm, int dsc, pid_t pid, unsigned long addr,
         unsigned long sz);
+int dsm_process_request_query(struct conn_element *, struct rx_buf_ele *);
+int dsm_process_query_info(struct tx_buf_ele *);
 
 #endif /* _HECA_OPS_H */

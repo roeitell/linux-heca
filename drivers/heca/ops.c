@@ -121,13 +121,13 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
     for (i = 0; i < svms.num; i++) {
         if (tx_elms[i]) {
             /* note that dest_id == local_svm */
-            r |= dsm_send_tx_e(eles[i], tx_elms[i], 0, REQUEST_PAGE_PULL,
+            r |= dsm_send_tx_e(eles[i], tx_elms[i], 0, MSG_REQ_PAGE_PULL,
                     fault_svm->dsm->dsm_id, fault_mr->mr_id, svms.ids[i],
                     fault_svm->svm_id, addr + fault_mr->addr, addr, NULL, NULL,
                     NULL, 0, NULL, NULL);
         } else if (reqs[i]) {
             /* can't fail, reqs[i] already allocated */
-            j = add_dsm_request(reqs[i], eles[i], REQUEST_PAGE_PULL,
+            j = add_dsm_request(reqs[i], eles[i], MSG_REQ_PAGE_PULL,
                     fault_svm->dsm->dsm_id, svms.ids[i], fault_mr->mr_id,
                     fault_svm->svm_id, addr, NULL, NULL, NULL, NULL, 0, NULL);
             BUG_ON(j);
@@ -391,11 +391,11 @@ int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
 static int try_redirect_page_request(struct conn_element *ele,
         struct dsm_message *msg, struct subvirtual_machine *remote_svm, u32 id)
 {
-    if (msg->type == TRY_REQUEST_PAGE || id == remote_svm->svm_id)
+    if (msg->type == MSG_REQ_PAGE_TRY || id == remote_svm->svm_id)
         return -EFAULT;
 
     msg->dest_id = id;
-    return dsm_send_response(ele, MSG_RES_REDIRECT, msg);
+    return dsm_send_response(ele, MSG_RES_PAGE_REDIRECT, msg);
 }
 
 static inline void defer_gup(struct dsm_message *msg,
@@ -619,7 +619,7 @@ retry:
 
     res = dsm_extract_page_from_remote(local_svm, remote_svm, addr,
             msg->type, &tx_e->reply_work_req->pte, &page, &redirect_id,
-            deferred);
+            deferred, mr);
     if (unlikely(res != DSM_EXTRACT_SUCCESS))
         goto no_page;
 

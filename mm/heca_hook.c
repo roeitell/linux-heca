@@ -89,7 +89,6 @@ EXPORT_SYMBOL(anon_vma_interval_tree_iter_next);
 EXPORT_SYMBOL(anon_vma_interval_tree_iter_first);
 
 #include <linux/huge_mm.h>
-EXPORT_SYMBOL(__split_huge_page_pmd);
 EXPORT_SYMBOL(split_huge_page);
 EXPORT_SYMBOL(split_huge_page_to_list);
 

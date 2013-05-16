@@ -1250,11 +1250,11 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct dsm_page_cache *dpc = NULL;
     u32 maintainer_id = 0;
 
-    svm = find_local_svm(mm);
+    svm = find_local_svm_from_mm(mm);
     if (!svm)
         return 0;
 
-    mr = search_mr(svm, addr);
+    mr = search_mr_by_addr(svm, addr);
     if (!mr) {
         release_svm(svm);
         return 0;

@@ -976,10 +976,7 @@ int pushback_ps(struct hecaioc_ps *udata)
 {
     int r = -EFAULT;
     unsigned long addr, start_addr;
-    struct dsm *dsm;
-    struct memory_region *mr;
     struct page *page;
-    struct subvirtual_machine *local_svm = NULL;
     struct mm_struct *mm = find_mm_by_pid(udata->pid);
 
     if (!mm) {

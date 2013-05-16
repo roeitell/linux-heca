@@ -133,7 +133,7 @@ static void schedule_delayed_request_flush(struct conn_element *ele)
 static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
-    trace_queued_request(req->dsm_id, req->src_id, req->dest_id,
+    trace_queued_request(req->dsm_id, req->local_svm_id, req->remote_svm_id,
             req->mr_id, 0, req->addr, req->type, -1);
     llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     schedule_delayed_request_flush(ele);
@@ -273,7 +273,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele)
     mutex_lock(&tx->flush_mutex);
     dsm_request_queue_merge(tx);
     while (!list_empty(&tx->ordered_request_queue)) {
-        tx_e = try_get_next_empty_tx_ele(ele);
+        tx_e = try_get_next_empty_tx_ele(ele, 0);
         if (!tx_e) {
             ret = 1;
             break;
@@ -283,7 +283,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele)
                 ordered_list);
         trace_flushing_requests(tx->request_queue_sz);
         dsm_send_tx_e(ele, tx_e, req->response, req->type, req->dsm_id,
-                req->mr_id, req->src_id, req->dest_id, 0, req->addr,
+                req->mr_id, req->local_svm_id, req->remote_svm_id, 0, req->addr,
                 req->dpc, req->page, req->ppe, req->need_ppe, req->func,
                 &req->dsm_buf);
         list_del(&req->ordered_list);
@@ -411,7 +411,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             break;
         case MSG_REQ_PAGE_PULL:
             process_pull_request(ele, rx_e);
-            ack_msg(ele, rx_e);
+            ack_msg(ele, rx_e->dsm_buf, MSG_RES_ACK);
             break;
         case MSG_RES_SVM_FAIL:
             process_svm_status(ele, rx_e);
@@ -470,7 +470,7 @@ static int dsm_send_message_handler(struct conn_element *ele,
         case MSG_RES_SVM_FAIL:
         case MSG_RES_QUERY:
         case MSG_RES_PAGE_REDIRECT:
-            release_tx_element(ele, tx_buf_e);
+            release_tx_element(ele, tx_e);
             break;
 
         /* we keep the tx_e alive, to process the response */
@@ -481,12 +481,11 @@ static int dsm_send_message_handler(struct conn_element *ele,
         case MSG_REQ_CLAIM:
         case MSG_REQ_CLAIM_TRY:
         case MSG_REQ_QUERY:
-            try_release_tx_element(ele, tx_buf_e);
+            try_release_tx_element(ele, tx_e);
             break;
         default:
             heca_printk(KERN_ERR "unhandled message stats  addr: %p, "
-                    "status %d , id %d", tx_buf_e, tx_buf_e->dsm_buf->type,
-                    tx_buf_e->id);
+                    "status %d , id %d", tx_e, tx_e->dsm_buf->type, tx_e->id);
             return 1;
     }
     return 0;

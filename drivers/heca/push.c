@@ -180,6 +180,26 @@ struct dsm_page_cache *dsm_push_cache_get_remove(struct subvirtual_machine *svm,
     return dpc;
 }
 
+/* mmap_sem already held for read */
+static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
+        int usemm)
+{
+    int r;
+
+    might_sleep();
+
+    if (usemm) {
+        use_mm(mm);
+        r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
+        unuse_mm(mm);
+    } else {
+        r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
+    }
+
+    BUG_ON(r > 1);
+    return r == 1;
+}
+
 int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         unsigned long addr) 
 {
@@ -403,7 +423,7 @@ retry:
             if (!pte_same(pte_entry, new_pte)) {
                 if (unlikely(!is_dsm_entry(pte_to_swp_entry(pte_entry)))) {
                     pte_unmap_unlock(pd.pte, ptl);
-                    dsm_initiate_fault_fast(mm, addr);
+                    dsm_initiate_fault_fast(mm, addr, 1);
                     goto retry;
                 }
 
@@ -476,31 +496,11 @@ out_mm:
     return -EFAULT;
 }
 
-/* mmap_sem already held for read */
-static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
-        int usemm)
-{
-    int r;
-
-    might_sleep();
-
-    if (usemm) {
-        use_mm(mm);
-        r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
-        unuse_mm(mm);
-    } else {
-        r = get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
-    }
-
-    BUG_ON(r > 1);
-    return r == 1;
-}
-
 /* we arrive with mm semaphore held */
 static int dsm_extract_page(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, struct mm_struct *mm,
         unsigned long addr, pte_t *return_pte, u32 *svm_id, int deferred,
-        struct page **page, int read_copy)
+        struct page **page, struct memory_region *mr, int read_copy)
 {
     spinlock_t *ptl;
     int r, res = DSM_EXTRACT_FAIL;
@@ -713,7 +713,7 @@ void dsm_invalidate_readers(struct subvirtual_machine *svm, unsigned long addr,
         if (dpr->svm_id != exclude_id) {
             remote_svm = find_svm(svm->dsm, dpr->svm_id);
             if (likely(remote_svm)) {
-                mr = search_mr(svm, addr);
+                mr = search_mr_by_addr(svm, addr);
                 if (likely(mr))
                     dsm_claim_page(svm, remote_svm, mr, addr, NULL, 0);
                 release_svm(remote_svm);
@@ -727,7 +727,8 @@ void dsm_invalidate_readers(struct subvirtual_machine *svm, unsigned long addr,
 
 int dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
         struct subvirtual_machine *remote_svm, unsigned long addr, u16 tag,
-        pte_t *pte, struct page **page, u32 *svm_id, int deferred)
+        pte_t *pte, struct page **page, u32 *svm_id, int deferred,
+        struct memory_region *mr)
 {
     struct mm_struct *mm;
     int res = 0;
@@ -744,11 +745,11 @@ int dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
         break;
     case MSG_REQ_PAGE:
         res = dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,
-                deferred, page, 0);
+                deferred, page, mr, 0);
         break;
     case MSG_REQ_READ:
         res = dsm_extract_page(local_svm, remote_svm, mm, addr, pte, svm_id,
-                deferred, page, 1);
+                deferred, page, mr, 1);
         break;
     default:
         BUG();
@@ -886,7 +887,7 @@ static int dsm_try_discard_read_copy(struct subvirtual_machine *svm,
     struct dsm_pte_data pd;
     pte_t *ptep;
     spinlock_t *ptl;
-    int ret = 0;
+    int ret = 0, release = 0;
     struct mm_struct *mm = vma->vm_mm;
     u32 maintainer_id, descriptor;
     struct subvirtual_machine *maintainer;
@@ -934,18 +935,22 @@ retry:
     }
 
     flush_cache_page(pd.vma, addr, pte_pfn(*ptep));
-    ptep_clear_flush_notify(pd.vma, addr, pd.pte);
+    ptep_clear_flush(pd.vma, addr, pd.pte);
+    release = 1;
     set_pte_at(mm, addr, ptep, dsm_descriptor_to_pte(descriptor, 0));
     page_remove_rmap(page);
     dec_mm_counter(mm, MM_ANONPAGES);
     if (unlikely(PageSwapCache(page)))
         try_to_free_swap(page);
     unlock_page(page);
-    page_cache_release(page);
     trace_dsm_discard_read_copy(svm->dsm->dsm_id, svm->svm_id, maintainer_id,
             mr->mr_id, addr, addr-mr->addr, 0);
 unlock:
     pte_unmap_unlock(ptep, ptl);
+    if (release) {
+        mmu_notifier_invalidate_page(mm, addr);
+        page_cache_release(page);
+    }
     return ret;
 }
 

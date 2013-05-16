@@ -27,6 +27,7 @@ inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm);
 int create_svm(struct hecaioc_svm *svm_info);
 inline void release_svm(struct subvirtual_machine *);
 void remove_svm(u32, u32);
+struct subvirtual_machine *find_any_svm(struct dsm *, struct svm_list);
 
 /* mr */
 struct memory_region *find_mr(struct subvirtual_machine *, u32);

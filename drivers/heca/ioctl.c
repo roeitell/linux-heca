@@ -46,7 +46,7 @@ void __heca_printk(unsigned int level, const char *path, int line,
     va_list args;
 #ifdef CONFIG_HECA_VERBOSE_PRINTK
     struct va_format vaf;
-    char verbose_fmt[] = KERN_DEFAULT "DSM %s:%d [%s] %pV";
+    char verbose_fmt[] = KERN_DEFAULT "heca: %s:%d [%s] %pV";
 #endif
 
 #ifdef CONFIG_HECA_DEBUG

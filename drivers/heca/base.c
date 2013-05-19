@@ -1007,6 +1007,7 @@ int init_rcm(void)
     init_kmem_request_cache();
     init_kmem_deferred_gup_cache();
     init_dsm_cache_kmem();
+    init_dsm_reader_kmem();
     init_dsm_prefetch_cache_kmem();
     dsm_init_descriptors();
     return 0;

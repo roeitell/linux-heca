@@ -465,6 +465,7 @@ int dsm_init_page_pool(struct conn_element *);
 struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *);
 struct page_pool_ele *dsm_prepare_ppe(struct conn_element *, struct page *);
 void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);
+void init_dsm_reader_kmem(void);
 u32 dsm_lookup_page_read(struct subvirtual_machine *, unsigned long);
 u32 dsm_extract_page_read(struct subvirtual_machine *, unsigned long);
 int dsm_flag_page_read(struct subvirtual_machine *, unsigned long, u32);

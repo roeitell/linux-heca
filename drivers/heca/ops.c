@@ -194,11 +194,13 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         type = MSG_REQ_PAGE_TRY;
         break;
     case READ_TAG:
-    case PREFETCH_TAG:
         type = MSG_REQ_READ;
         break;
     case PULL_TAG:
         type = MSG_REQ_PAGE;
+        break;
+    case PREFETCH_TAG:
+        type = (fault_mr->flags & MR_SHARED)? MSG_REQ_READ : MSG_REQ_PAGE;
         break;
     default:
         BUG();

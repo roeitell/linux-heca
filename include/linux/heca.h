@@ -32,6 +32,7 @@ struct hecaioc_svm {
 /* unmap_data flags */
 #define UD_AUTO_UNMAP           (1 << 0)
 #define UD_COPY_ON_ACCESS       (1 << 1)
+#define UD_SHARED               (1 << 2)
 
 struct hecaioc_mr {
     __u32 dsm_id;

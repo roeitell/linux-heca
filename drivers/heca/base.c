@@ -896,7 +896,7 @@ int create_mr(struct hecaioc_mr *udata)
     if (!mr->descriptor) {
         heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");
         ret = -EFAULT;
-        goto out_free;
+        goto out_remove_tree;
     }
 
     for (i = 0; udata->svm_ids[i]; i++) {
@@ -917,8 +917,13 @@ int create_mr(struct hecaioc_mr *udata)
         release_svm(owner);
     }
 
-    if (udata->flags & UD_COPY_ON_ACCESS)
+    if (udata->flags & UD_COPY_ON_ACCESS) {
         mr->flags |= MR_COPY_ON_ACCESS;
+        if (udata->flags & UD_SHARED)
+            goto out_remove_tree;
+    } else if (udata->flags & UD_SHARED) {
+        mr->flags |= MR_SHARED;
+    }
 
     if (!(mr->flags & MR_LOCAL) && (udata->flags & UD_AUTO_UNMAP)) {
         ret = unmap_range(dsm, mr->descriptor, local_svm->pid, mr->addr,

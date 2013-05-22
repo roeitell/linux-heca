@@ -76,6 +76,7 @@
  */
 #define MR_LOCAL                (1 << 0)
 #define MR_COPY_ON_ACCESS       (1 << 1)
+#define MR_SHARED               (1 << 2)
 
 /*
  * DSM DATA structure

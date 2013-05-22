@@ -378,6 +378,28 @@ int dsm_initiate_fault(struct mm_struct *mm, unsigned long addr, int write)
     return r == 1;
 }
 
+static void heca_initiate_pull_gup(struct dsm_page_cache *dpc, int delayed)
+{
+    struct subvirtual_machine *svm = dpc->svm;
+    struct memory_region *mr;
+
+    if (delayed) {
+        trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                -1, -1, dpc->addr, 0, dpc->tag);
+    } else {
+        trace_immediate_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                -1, -1, dpc->addr, 0, dpc->tag);
+    }
+
+    /* TODO: we do not allow deleting mrs; handle this case when we do */
+    mr = search_mr_by_addr(svm, dpc->addr);
+    if (unlikely(!mr))
+        return;
+
+    dsm_initiate_fault(svm->mm, dpc->addr, dpc->tag == PULL_TRY_TAG || 
+            (~mr->flags & MR_SHARED));
+}
+
 static void dequeue_and_gup(struct subvirtual_machine *svm)
 {
     struct dsm_delayed_fault *ddf;
@@ -395,12 +417,8 @@ static void dequeue_and_gup(struct subvirtual_machine *svm)
              * faulted, pushed and re-brought in the meanwhile. but no harm
              * in faulting it in anyway.
              */
-            if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
-                        -1, -1, dpc->addr, 0, dpc->tag);
-                dsm_initiate_fault(svm->mm, ddf->addr,
-                        dpc->tag == PULL_TRY_TAG);
-            }
+            if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG))
+                heca_initiate_pull_gup(dpc, 1);
             dsm_release_pull_dpc(&dpc);
         }
     }
@@ -459,14 +477,10 @@ unlock:
             struct dsm_delayed_fault *ddf;
 
             ddf = alloc_dsm_delayed_fault_cache_elm(dpc->addr);
-            if (likely(ddf)) {
+            if (likely(ddf))
                 queue_ddf_for_delayed_gup(ddf, dpc->svm);
-            } else {
-                trace_immediate_initiated_fault(dpc->svm->dsm->dsm_id,
-                        dpc->svm->svm_id, -1, -1, dpc->addr, 0, dpc->tag);
-                dsm_initiate_fault(dpc->svm->mm, dpc->addr,
-                        dpc->tag == PULL_TRY_TAG);
-            }
+            else
+                heca_initiate_pull_gup(dpc, 0);
         }
     }
 
@@ -946,7 +960,8 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
     struct memory_region *fault_mr;
     unsigned long norm_addr = address & PAGE_MASK;
     spinlock_t *ptl;
-    int ret = 0, found = -1, exclusive = 0, write, finalize_write = 0;
+    int ret = 0, found = -1, exclusive = 0, write,
+        finalize_write = 0, read_fault = 0;
     struct dsm_page_cache *dpc = NULL;
     struct page *found_page, *swapcache = NULL;
     struct mem_cgroup *ptr;
@@ -973,6 +988,9 @@ retry:
         release_svm(fault_svm);
         return VM_FAULT_ERROR;
     }
+
+    if ((fault_mr->flags & MR_SHARED) && ~flags & FAULT_FLAG_WRITE)
+        read_fault = 1;
 
     dsm_id = dsm->dsm_id;
     svm_id = fault_svm->svm_id;
@@ -1016,7 +1034,7 @@ retry:
          *  +1 for the final, successful do_dsm_page_fault
          */
         dpc = dsm_cache_add_send(fault_svm, fault_mr, dsd.svms, norm_addr, 3,
-                flags & FAULT_FLAG_WRITE? PULL_TAG : READ_TAG, vma, orig_pte,
+                read_fault? READ_TAG : PULL_TAG, vma, orig_pte,
                 page_table, 1);
 
         if (unlikely(!dpc)) {
@@ -1038,8 +1056,8 @@ retry:
      * and write faulting, as a page is already ready and page contents already
      * being transferred to us (CLAIM req is cheaper).
      */
-    } else if (dpc->tag & (READ_TAG | PREFETCH_TAG) &&
-            flags & FAULT_FLAG_WRITE) {
+    } else if (!read_fault && (dpc->tag & READ_TAG ||
+            (dpc->tag & PREFETCH_TAG && fault_mr->flags & MR_SHARED))) {
         finalize_write = 1;
         goto lock;
     }
@@ -1115,7 +1133,7 @@ resolve:
 
     /* this is delicate - has to handle the convert_push_dpc case too */
     write = !finalize_write &&
-        (flags & FAULT_FLAG_WRITE || dpc->tag & (PULL_TRY_TAG | PULL_TAG));
+        (!read_fault || dpc->tag & (PULL_TRY_TAG | PULL_TAG));
 
     if (likely(reuse_dsm_page(found_page, norm_addr, dpc))) {
         if (write) {
@@ -1145,6 +1163,11 @@ resolve:
         unlock_page(swapcache);
         page_cache_release(swapcache);
     }
+
+    /*
+     * if we're faulting for write in _this_ critical section (!finalize_write),
+     * and the page cannot be reused.
+     */
     if (write && flags & FAULT_FLAG_WRITE) {
         ret |= do_wp_dsm_page(mm, vma, address, page_table, pmd, ptl, pte,
                 norm_addr, dpc);

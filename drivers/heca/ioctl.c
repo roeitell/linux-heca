@@ -44,10 +44,12 @@ void __heca_printk(unsigned int level, const char *path, int line,
 {
 #if defined(CONFIG_HECA_DEBUG) || defined(CONFIG_HECA_VERBOSE_PRINTK)
     va_list args;
-#ifdef CONFIG_HECA_VERBOSE_PRINTK
     struct va_format vaf;
-    char verbose_fmt[] = KERN_DEFAULT "heca: %s:%d [%s] %pV";
+    char heca_fmt[] = KERN_DEFAULT "heca:"
+#ifdef CONFIG_HECA_VERBOSE_PRINTK
+        " %s:%d [%s]"
 #endif
+        " %pV\n";
 
 #ifdef CONFIG_HECA_DEBUG
     if (debug < level)
@@ -56,20 +58,18 @@ void __heca_printk(unsigned int level, const char *path, int line,
 
     va_start(args, format);
 
-#ifdef CONFIG_HECA_VERBOSE_PRINTK
     vaf.fmt = format;
     vaf.va = &args;
     if (format[0] == '<' && format[2] == '>') {
-        memcpy(verbose_fmt, format, 3);
+        memcpy(heca_fmt, format, 3);
         vaf.fmt = format + 3;
     } else if (level)
-        memcpy(verbose_fmt, KERN_DEBUG, 3);
-    printk(verbose_fmt, sanity_file_name(path), line, func, &vaf);
-#else
-    vprintk(format, args);
+        memcpy(heca_fmt, KERN_DEBUG, 3);
+    printk(heca_fmt,
+#ifdef CONFIG_HECA_VERBOSE_PRINTK
+            sanity_file_name(path), line, func,
 #endif
-    printk("\n");
-
+            &vaf);
     va_end(args);
 #endif
 }

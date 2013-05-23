@@ -52,6 +52,9 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
         tx_elms[i] = NULL;
         reqs[i] = NULL;
 
+        if (svms.pp[i]->is_local)
+            continue;
+
         if (request_queue_empty(svms.pp[i]->ele))
             tx_elms[i] = try_get_next_empty_tx_ele(svms.pp[i]->ele);
 
@@ -63,6 +66,9 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
     }
 
     for_each_valid_svm(svms, i) {
+        if (svms.pp[i]->is_local)
+            continue;
+
         if (tx_elms[i]) {
             create_page_pull_request(svms.pp[i]->ele, tx_elms[i],
                     fault_svm->dsm->dsm_id, fault_mr->mr_id, fault_svm->svm_id,
@@ -99,6 +105,8 @@ static int send_svm_status_update(struct conn_element *ele,
     struct tx_buf_ele *tx_e = NULL;
     int ret = 0;
 
+    BUG_ON(!ele);
+
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
         if (likely(tx_e)) {
@@ -123,6 +131,8 @@ int dsm_claim_page(struct subvirtual_machine *fault_svm,
     struct tx_buf_ele *tx_e;
     int ret = -EINVAL;
     unsigned long shared_addr = addr - fault_mr->addr;
+
+    BUG_ON(!ele);
 
     if (request_queue_empty(ele)) {
         tx_e = try_get_next_empty_tx_ele(ele);
@@ -530,8 +540,12 @@ int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
      * use them anyway to free the req_queue.
      */
     for_each_valid_svm(svms, i) {
-        if (request_queue_full(svms.pp[i]->ele))
+        if (svms.pp[i]->is_local)
+            continue;
+        BUG_ON(!svms.pp[i]->ele);
+        if (request_queue_full(svms.pp[i]->ele)) {
             return -ENOMEM;
+        }
     }
 
     ret = dsm_prepare_page_for_push(fault_svm, svms, page, addr, mm,

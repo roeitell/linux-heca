@@ -978,7 +978,7 @@ int dsm_cancel_page_push(struct subvirtual_machine *svm, unsigned long addr,
  * Return 1 => page is dsm => do not swap out (not necessarily scheduled yet to
  *             be pushed back, could also be done in next cycle)
  */
-static int _push_back_if_remote_dsm_page(struct page *page)
+int push_back_if_remote_dsm_page(struct page *page)
 {
     struct anon_vma *anon_vma;
     pgoff_t pgoff;
@@ -1041,11 +1041,6 @@ static int _push_back_if_remote_dsm_page(struct page *page)
     page_unlock_anon_vma_read(anon_vma);
 out:
     return ret;
-}
-
-int push_back_if_remote_dsm_page(struct page *page)
-{
-    return _push_back_if_remote_dsm_page(page);
 }
 
 /* no locks are held when calling this function */

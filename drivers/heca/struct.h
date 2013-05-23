@@ -58,19 +58,25 @@
  */
 #define MSG_REQ_PAGE                (1 << 0)
 #define MSG_REQ_PAGE_TRY            (1 << 1)
-#define MSG_REQ_PAGE_PULL           (1 << 2)
-#define MSG_REQ_PAGE_RECLAIM        (1 << 3)
-#define MSG_RES_PAGE                (1 << 6)
-#define MSG_RES_PAGE_REDIRECT       (1 << 7)
-#define MSG_RES_PAGE_FAIL           (1 << 8)
-#define MSG_RES_SVM_FAIL            (1 << 9)
+#define MSG_REQ_READ                (1 << 2)
+#define MSG_REQ_PAGE_PULL           (1 << 3)
+#define MSG_REQ_CLAIM               (1 << 4)
+#define MSG_REQ_CLAIM_TRY           (1 << 5)
+#define MSG_REQ_QUERY               (1 << 6)
+#define MSG_RES_PAGE                (1 << 7)
+#define MSG_RES_PAGE_REDIRECT       (1 << 8)
+#define MSG_RES_PAGE_FAIL           (1 << 9)
+#define MSG_RES_SVM_FAIL            (1 << 10)
 #define MSG_RES_ACK                 (1 << 11)
+#define MSG_RES_ACK_FAIL            (1 << 12)
+#define MSG_RES_QUERY               (1 << 13)
 
 /* 
  * MEMORY REGION FLAGS
  */
 #define MR_LOCAL                (1 << 0)
 #define MR_COPY_ON_ACCESS       (1 << 1)
+#define MR_SHARED               (1 << 2)
 
 /*
  * DSM DATA structure
@@ -252,6 +258,12 @@ struct subvirtual_machine {
     struct radix_tree_root page_cache;
     spinlock_t page_cache_spinlock;
 
+    struct radix_tree_root page_readers;
+    spinlock_t page_readers_spinlock;
+
+    struct radix_tree_root page_maintainers;
+    spinlock_t page_maintainers_spinlock;
+
     struct radix_tree_root mr_id_tree_root;
     struct rb_root mr_tree_root;
     struct memory_region *mr_cache;
@@ -273,7 +285,7 @@ struct subvirtual_machine {
 
 #define for_each_valid_svm(svms, i)         \
     for (i = 0; i < (svms).num; i++)        \
-        if (likely((svms).pp[i]))
+        if (likely((svms).ids[i]))
 
 struct work_request_ele {
     struct conn_element *ele;
@@ -349,6 +361,8 @@ struct dsm_request {
     int (*func)(struct tx_buf_ele *);
     struct dsm_message dsm_buf;
     struct dsm_page_cache *dpc;
+    int response;
+    int need_ppe;
 
     struct llist_node lnode;
     struct list_head ordered_list;
@@ -377,7 +391,8 @@ struct dsm_module_state {
 };
 
 struct svm_list {
-    struct subvirtual_machine **pp;
+    u32 dsm_id;
+    u32 *ids;
     int num;
 };
 
@@ -393,6 +408,7 @@ struct dsm_page_cache {
     atomic_t nproc;
     int released;
     unsigned long bitmap;
+    u32 redirect_svm_id;
 
     struct rb_node rb_node;
 };
@@ -421,9 +437,14 @@ struct dsm_swp_data {
     u32 flags;
 };
 
+struct dsm_page_reader {
+    u32 svm_id;
+    struct dsm_page_reader *next;
+};
+
 void dsm_init_descriptors(void);
 void dsm_destroy_descriptors(void);
-u32 dsm_get_descriptor(struct dsm *, u32 *);
+u32 dsm_get_descriptor(u32, u32 *);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
 inline struct svm_list dsm_descriptor_to_svms(u32);
 void remove_svm_from_descriptors(struct subvirtual_machine *);
@@ -446,5 +467,17 @@ int dsm_init_page_pool(struct conn_element *);
 struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *);
 struct page_pool_ele *dsm_prepare_ppe(struct conn_element *, struct page *);
 void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);
+void init_dsm_reader_kmem(void);
+u32 dsm_lookup_page_read(struct subvirtual_machine *, unsigned long);
+u32 dsm_extract_page_read(struct subvirtual_machine *, unsigned long);
+int dsm_flag_page_read(struct subvirtual_machine *, unsigned long, u32);
+int dsm_cache_add(struct subvirtual_machine *, unsigned long, int, int,
+        struct dsm_page_cache **);
+struct dsm_page_reader *dsm_delete_readers(struct subvirtual_machine *,
+        unsigned long);
+struct dsm_page_reader *dsm_lookup_readers(struct subvirtual_machine *,
+        unsigned long);
+int dsm_add_reader(struct subvirtual_machine *, unsigned long, u32);
+inline void dsm_free_page_reader(struct dsm_page_reader *);
 
 #endif /* HECA_STRUCT_H_ */

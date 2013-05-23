@@ -51,16 +51,13 @@ void dsm_destroy_descriptors(void)
     int i;
 
     for (i = SDSC_MIN; i < sdsc_max; i++)
-        if (sdsc[i].pp) {
-            kfree(sdsc[i].pp);
-            sdsc[i].pp = NULL;
-        }
+        kfree(sdsc[i].ids);
     kfree(sdsc);
     sdsc = NULL;
     sdsc_max = 0;
 }
 
-static void dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids)
+static int dsm_add_descriptor(u32 dsm_id, u32 desc, u32 *svm_ids)
 {
     u32 j;
 
@@ -68,16 +65,21 @@ static void dsm_add_descriptor(struct dsm *dsm, u32 desc, u32 *svm_ids)
         ;
     sdsc[desc].num = j;
     BUG_ON(!sdsc[desc].num);
-    sdsc[desc].pp = 
-        kzalloc(sizeof(struct subvirtual_machine *) * j, GFP_KERNEL);
-    BUG_ON(!sdsc[desc].pp); /* TODO: handle failure! */
-    for (j = 0; svm_ids[j]; j++) {
-        struct subvirtual_machine *svm = find_svm(dsm, svm_ids[j]);
-        BUG_ON(!svm);
-        BUG_ON(!svm->dsm);
-        sdsc[desc].pp[j] = svm;
-        release_svm(svm);
-    }
+
+    sdsc[desc].dsm_id = dsm_id;
+
+    /* recycle used descriptor? */
+    if (sdsc[desc].ids)
+        kfree(sdsc[desc].ids);
+
+    sdsc[desc].ids = kzalloc(sizeof(u32) * j, GFP_KERNEL);
+    if (unlikely(!sdsc[desc].ids))
+        return -EFAULT;
+
+    for (j = 0; svm_ids[j]; j++)
+        sdsc[desc].ids[j] = svm_ids[j];
+
+    return 0;
 }
 
 static inline u32 dsm_entry_to_desc(swp_entry_t entry)
@@ -95,25 +97,44 @@ static inline u32 dsm_entry_to_flags(swp_entry_t entry)
     return flags;
 }
 
-u32 dsm_get_descriptor(struct dsm *dsm, u32 *svm_ids)
+/*
+ * FIXME: we support descriptor recycling - if we encounter an empty descriptor
+ * we will reuse it. and yet, if a page is unmapped to this descriptor, it might
+ * result in a deadlock when we fault on the page. so we either don't recycle
+ * descriptors, or walk the page table when a descriptor is dead (on remove_svm)
+ * or solve otherwise.
+ */
+u32 dsm_get_descriptor(u32 dsm_id, u32 *svm_ids)
 {
     u32 i, j;
 
+retry:
     mutex_lock(&sdsc_lock);
     for (i = SDSC_MIN; i < sdsc_max && sdsc[i].num; i++) {
-        for (j = 0; j < sdsc[i].num && sdsc[i].pp[j] && svm_ids[j] &&
-                sdsc[i].pp[j]->svm_id == svm_ids[j]; j++)
+        if (sdsc[i].dsm_id != dsm_id)
+            continue;
+
+        /* don't use changed descriptors! */
+        for (j = 0; j < sdsc[i].num && sdsc[i].ids[j] && svm_ids[j] &&
+                sdsc[i].ids[j] == svm_ids[j]; j++)
             ;
+
+        /* found? */
         if (j == sdsc[i].num && !svm_ids[j])
-            break;
+            goto out;
     }
 
     if (i >= sdsc_max)
         (void) dsm_descriptors_realloc();
 
-    if (!sdsc[i].num)
-        dsm_add_descriptor(dsm, i, svm_ids);
+    if (unlikely(dsm_add_descriptor(dsm_id, i, svm_ids))) {
+        mutex_unlock(&sdsc_lock);
+        might_sleep();
+        cond_resched();
+        goto retry;
+    }
 
+out:
     mutex_unlock(&sdsc_lock);
     return i;
 }
@@ -152,8 +173,8 @@ void remove_svm_from_descriptors(struct subvirtual_machine *svm)
          * signal svm down.
          */
         for_each_valid_svm (svms, j) {
-            if (svms.pp[j]->svm_id == svm->svm_id) {
-                svms.pp[j] = NULL;
+            if (svms.ids[j] == svm->svm_id) {
+                svms.ids[j] = 0;
                 break;
             }
         }
@@ -163,7 +184,7 @@ void remove_svm_from_descriptors(struct subvirtual_machine *svm)
 int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 {
     u32 desc = dsm_entry_to_desc(entry);
-    int i, ret = 0;
+    int ret = 0;
 
     BUG_ON(!dsd);
     memset(dsd, 0, sizeof (*dsd));
@@ -171,15 +192,11 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
 
     rcu_read_lock();
     dsd->svms = dsm_descriptor_to_svms(desc);
-    BUG_ON(!dsd->svms.num);
-    for_each_valid_svm(dsd->svms, i) {
-        dsd->dsm = dsd->svms.pp[i]->dsm;
-        goto out;
-    }
-    ret = -ENODATA;
-
-out:
     rcu_read_unlock();
+
+    if (unlikely(!dsd->svms.num || !dsd->svms.dsm_id))
+        ret = -ENODATA;
+
     return ret;
 }
 
@@ -245,6 +262,7 @@ void destroy_dsm_cache_kmem(void)
     kmem_cache_destroy(dsm_cache_kmem);
 }
 
+/* assuming we hold the svm, we inc its refcount again for the dpc */
 struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
         unsigned long addr, struct svm_list svms, int nproc, int tag)
 {
@@ -260,6 +278,7 @@ struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
     dpc->svms = svms;
     dpc->tag = tag;
     dpc->svm = svm;
+    dpc->redirect_svm_id = 0;
 
 out:
     return dpc;
@@ -344,6 +363,44 @@ repeat:
 out:
     rcu_read_unlock();
     return dpc;
+}
+
+int dsm_cache_add(struct subvirtual_machine *svm, unsigned long addr, int nproc,
+        int tag, struct dsm_page_cache **dpc)
+{
+    struct svm_list svms;
+    int r = 0;
+
+    svms.num = 0;
+    svms.ids = NULL;
+
+    do {
+        *dpc = dsm_alloc_dpc(svm, addr, svms, nproc, tag);
+        if (unlikely(!*dpc))
+            return -ENOMEM;
+
+        r = radix_tree_preload(GFP_ATOMIC);
+        if (unlikely(r))
+            break;
+
+        spin_lock_irq(&svm->page_cache_spinlock);
+        r = radix_tree_insert(&svm->page_cache, addr, dpc);
+        spin_unlock_irq(&svm->page_cache_spinlock);
+        radix_tree_preload_end();
+
+        if (likely(!r))
+            return 0;
+
+        dsm_dealloc_dpc(dpc);
+        *dpc = dsm_cache_get(svm, addr);
+        if (unlikely(*dpc)) /* do not dealloc! */
+            return -EEXIST;
+
+    } while (r != -ENOMEM);
+
+    if (*dpc)
+        dsm_dealloc_dpc(dpc);
+    return r;
 }
 
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
@@ -557,5 +614,201 @@ void dsm_ppe_clear_release(struct conn_element *ele, struct page_pool_ele **ppe)
         page_cache_release((*ppe)->mem_page);
     dsm_release_ppe(ele, *ppe);
     *ppe = NULL;
+}
+
+/*
+ * page_readers
+ *
+ * every maintained page has an entry in this tree, specifying which read-copies
+ * were issued, if at all.
+ */
+static struct kmem_cache *dsm_reader_kmem;
+
+static inline void init_dsm_reader_elm(void *obj)
+{
+    ((struct dsm_page_reader *) obj)->next = NULL;
+}
+
+void init_dsm_reader_kmem(void)
+{
+    dsm_reader_kmem = kmem_cache_create("dsm_reader_cache",
+            sizeof(struct dsm_page_reader), 0, SLAB_TEMPORARY,
+            init_dsm_reader_elm);
+}
+
+void destroy_dsm_reader_kmem(void)
+{
+    kmem_cache_destroy(dsm_reader_kmem);
+}
+
+inline void dsm_free_page_reader(struct dsm_page_reader *dpr)
+{
+    kmem_cache_free(dsm_reader_kmem, dpr);
+}
+
+struct dsm_page_reader *dsm_delete_readers(struct subvirtual_machine *svm,
+        unsigned long addr)
+{
+    struct dsm_page_reader *dpr;
+
+    spin_lock_irq(&svm->page_readers_spinlock);
+    dpr = radix_tree_delete(&svm->page_readers, addr);
+    spin_unlock_irq(&svm->page_readers_spinlock);
+
+    return dpr;
+}
+
+struct dsm_page_reader *dsm_lookup_readers(struct subvirtual_machine *svm,
+        unsigned long addr)
+{
+    struct dsm_page_reader *dpr;
+    void **ppc;
+
+    rcu_read_lock();
+
+repeat:
+    dpr = NULL;
+    ppc = radix_tree_lookup_slot(&svm->page_readers, addr);
+    if (ppc) {
+        dpr = radix_tree_deref_slot(ppc);
+        if (unlikely(!dpr))
+            goto out;
+        if (radix_tree_exception(dpr)) {
+            if (radix_tree_deref_retry(dpr))
+                goto repeat;
+            goto out;
+        }
+        if (unlikely(dpr != *ppc))
+            goto repeat;
+    }
+
+out:
+    rcu_read_unlock();
+    return dpr;
+}
+
+int dsm_add_reader(struct subvirtual_machine *svm, unsigned long addr,
+        u32 svm_id)
+{
+    int r;
+    struct dsm_page_reader *dpr, *head;
+
+retry:
+    r = radix_tree_preload(GFP_ATOMIC);
+    if (unlikely(r)) {
+        cond_resched();
+        goto retry;
+    }
+
+    spin_lock_irq(&svm->page_readers_spinlock);
+    head = dsm_lookup_readers(svm, addr);
+
+    /* already exists? */
+    for (dpr = head; dpr; dpr = dpr->next) {
+        if (dpr->svm_id == svm_id)
+            goto unlock;
+    }
+
+    /* try alloc */
+    dpr = kmem_cache_alloc(dsm_reader_kmem, GFP_ATOMIC);
+    if (unlikely(!dpr)) {
+        spin_unlock_irq(&svm->page_readers_spinlock);
+        radix_tree_preload_end();
+        cond_resched();
+        goto retry;
+    }
+    dpr->svm_id = svm_id;
+
+    /* TODO: optimize a bit for big clusters */
+    if (head) {
+        dpr->next = head->next;
+        head->next = dpr;
+    } else {
+        r = radix_tree_insert(&svm->page_readers, addr, dpr);
+    }
+    BUG_ON(r);
+
+unlock:
+    spin_unlock_irq(&svm->page_readers_spinlock);
+    radix_tree_preload_end();
+
+    return r;
+}
+
+/*
+ * page_maintainers
+ *
+ * this tree is for tracking the maintainers of local read-copies; when we
+ * write fault on a read-copy, we remember who gave it to us, and can ask them
+ * to invalidate the page and pass maintenance to us.
+ *
+ * we abuse the radix tree and keep u32 instead of pointers, by shifting the
+ * first bit (which is internally used by the tree).
+ */
+static inline void *maintainer_id_to_node(u32 svm_id)
+{
+    return (void *)(((unsigned long) svm_id) << 1);
+}
+
+static inline u32 node_to_maintainer_id(void *node)
+{
+    return (u32)(((unsigned long) node) >> 1);
+}
+
+int dsm_flag_page_read(struct subvirtual_machine *svm, unsigned long addr,
+        u32 svm_id)
+{
+    int r = radix_tree_preload(GFP_ATOMIC);
+    if (unlikely(r))
+        goto out;
+
+    spin_lock_irq(&svm->page_maintainers_spinlock);
+    r = radix_tree_insert(&svm->page_maintainers, addr, maintainer_id_to_node(svm_id));
+    spin_unlock_irq(&svm->page_maintainers_spinlock);
+    radix_tree_preload_end();
+
+out:
+    return r;
+}
+
+u32 dsm_lookup_page_read(struct subvirtual_machine *svm, unsigned long addr)
+{
+    u32 *node, svm_id = 0;
+    void **pval;
+
+    rcu_read_lock();
+repeat:
+    node = NULL;
+    pval = radix_tree_lookup_slot(&svm->page_maintainers, addr);
+    if (pval) {
+        node = radix_tree_deref_slot(pval);
+        if (unlikely(!node))
+            goto out;
+        if (unlikely(radix_tree_exception(node))) {
+            if (radix_tree_deref_retry(node))
+                goto repeat;
+            goto out;
+        }
+        if (unlikely(node != *pval))
+            goto repeat;
+        svm_id = node_to_maintainer_id(node);
+    }
+out:
+    rcu_read_unlock();
+    return svm_id;
+}
+
+u32 dsm_extract_page_read(struct subvirtual_machine *svm, unsigned long addr)
+{
+    u32 *node, svm_id = 0;
+
+    spin_lock_irq(&svm->page_maintainers_spinlock);
+    node = radix_tree_delete(&svm->page_maintainers, addr);
+    spin_unlock_irq(&svm->page_maintainers_spinlock);
+
+    if (node)
+        svm_id = node_to_maintainer_id(node);
+
+    return svm_id;
 }
 

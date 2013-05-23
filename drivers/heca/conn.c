@@ -84,8 +84,8 @@ static struct kmem_cache *kmem_request_cache;
 
 static inline void init_kmem_request_cache_elm(void *obj)
 {
-    struct dsm_request *dpc = (struct dsm_request *) obj;
-    memset(dpc, 0, sizeof(struct dsm_request));
+    struct dsm_request *req = (struct dsm_request *) obj;
+    memset(req, 0, sizeof(struct dsm_request));
 }
 
 void init_kmem_request_cache(void)
@@ -134,17 +134,16 @@ static inline void queue_dsm_request(struct conn_element *ele,
         struct dsm_request *req)
 {
     trace_queued_request(req->dsm_id, req->local_svm_id, req->remote_svm_id,
-            -1, 0, req->addr, req->type, -1);
+            req->mr_id, 0, req->addr, req->type, -1);
     llist_add(&req->lnode, &ele->tx_buffer.request_queue);
     schedule_delayed_request_flush(ele);
 }
 
 int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
-        u16 type, struct subvirtual_machine *local_svm,
-        struct memory_region *fault_mr, struct subvirtual_machine *remote_svm,
-        uint64_t addr, int (*func)(struct tx_buf_ele *),
+        u16 type, u32 dsm_id, u32 src_id, u32 mr_id, u32 dest_id,
+        unsigned long addr, int (*func)(struct tx_buf_ele *),
         struct dsm_page_cache *dpc, struct page *page,
-        struct page_pool_ele *ppe)
+        struct page_pool_ele *ppe, int need_ppe, struct dsm_message *msg)
 {
     if (!req) {
         req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
@@ -153,29 +152,24 @@ int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
     }
 
     req->type = type;
-    req->dsm_id = local_svm->dsm->dsm_id;
-    req->mr_id = fault_mr->mr_id;
-    req->local_svm_id = local_svm->svm_id;
-    req->remote_svm_id = remote_svm->svm_id;
+    req->dsm_id = dsm_id;
+    req->mr_id = mr_id;
+    req->local_svm_id = src_id;
+    req->remote_svm_id = dest_id;
     req->addr = addr;
     req->func = func;
     req->dpc = dpc;
     req->page = page;
     req->ppe = ppe;
-    queue_dsm_request(ele, req);
+    req->need_ppe = need_ppe;
 
-    return 0;
-}
+    if (msg) {
+        dsm_msg_cpy(&req->dsm_buf, msg);
+        req->response = 1;
+    } else {
+        req->response = 0;
+    }
 
-int add_dsm_request_msg(struct conn_element *ele, u16 type,
-        struct dsm_message *msg)
-{
-    struct dsm_request *req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
-    if (unlikely(!req))
-        return -ENOMEM;
-
-    req->type = type;
-    dsm_msg_cpy(&req->dsm_buf, msg);
     queue_dsm_request(ele, req);
 
     return 0;
@@ -193,37 +187,64 @@ inline int request_queue_full(struct conn_element *ele)
     return ele->tx_buffer.request_queue_sz > get_max_pushed_reqs(ele);
 }
 
-static int process_dsm_request(struct conn_element *ele,
-        struct dsm_request *req,  struct tx_buf_ele *tx_e)
+/* this will copy the offset and rkey of the original and send them back! */
+static inline void dsm_tx_response_prepare(struct tx_buf_ele *tx_e,
+        struct dsm_message *msg)
 {
-    switch (req->type) {
-        case MSG_REQ_PAGE:
-        case MSG_REQ_PAGE_TRY:
-            create_page_request(ele, tx_e, req->dsm_id, req->mr_id,
-                    req->local_svm_id, req->remote_svm_id, req->addr, req->page,
-                    req->dpc, req->ppe);
+    dsm_msg_cpy(tx_e->dsm_buf, msg);
+    tx_e->wrk_req->dst_addr = NULL;
+}
+
+static void dsm_tx_prepare(struct conn_element *ele, struct tx_buf_ele *tx_e,
+        u32 dsm_id, u32 mr_id, u32 src_id, u32 dest_id,
+        unsigned long shared_addr, struct dsm_page_cache *dpc,
+        struct page *page, struct page_pool_ele *ppe, int need_ppe)
+{
+    struct dsm_message *msg = tx_e->dsm_buf;
+
+    while (need_ppe && !ppe) {
+        might_sleep();
+        ppe = dsm_prepare_ppe(ele, page);
+        if (likely(ppe))
             break;
-        case MSG_REQ_PAGE_RECLAIM:
-            create_page_reclaim_request(tx_e, req->dsm_id, req->mr_id,
-                    req->local_svm_id, req->remote_svm_id, req->addr);
-            break;
-        case MSG_REQ_PAGE_PULL:
-            create_page_pull_request(ele, tx_e, req->dsm_id, req->mr_id,
-                    req->local_svm_id, req->remote_svm_id, req->addr);
-            break;
-        case MSG_RES_ACK:
-        case MSG_RES_PAGE_REDIRECT:
-        case MSG_RES_PAGE_FAIL:
-        case MSG_RES_SVM_FAIL:
-            dsm_msg_cpy(tx_e->dsm_buf, &req->dsm_buf);
-            break;
-        default:
-            BUG();
+        cond_resched();
     }
-    tx_e->dsm_buf->type = req->type;
-    tx_e->callback.func = req->func;
-    tx_dsm_send(ele, tx_e);
-    return 0;
+
+    msg->offset = tx_e->id;
+    msg->dsm_id = dsm_id;
+    msg->src_id = src_id;
+    msg->dest_id = dest_id;
+    msg->mr_id = mr_id;
+    msg->req_addr = (u64) shared_addr;
+    msg->dst_addr = (u64) (need_ppe? ppe->page_buf : 0);
+    msg->rkey = ele->mr->rkey; /* TODO: is this needed? */
+
+    tx_e->wrk_req->dst_addr = ppe;
+    tx_e->wrk_req->dpc = dpc;
+    tx_e->reply_work_req->mem_page = page;
+}
+
+int dsm_send_tx_e(struct conn_element *ele, struct tx_buf_ele *tx_e, int resp,
+        int type, u32 dsm_id, u32 mr_id, u32 src_id, u32 dest_id,
+        unsigned long local_addr, unsigned long shared_addr,
+        struct dsm_page_cache *dpc, struct page *page,
+        struct page_pool_ele *ppe, int need_ppe,
+        int (*func)(struct tx_buf_ele *), struct dsm_message *msg)
+{
+    if (resp) {
+        dsm_tx_response_prepare(tx_e, msg);
+    } else {
+        dsm_tx_prepare(ele, tx_e, dsm_id, mr_id, src_id, dest_id, shared_addr,
+                dpc, page, ppe, need_ppe);
+    }
+
+    tx_e->dsm_buf->type = type;
+    tx_e->callback.func = func;
+
+    trace_send_request(dsm_id, src_id, dest_id, mr_id, local_addr, shared_addr,
+            type);
+
+    return tx_dsm_send(ele, tx_e);
 }
 
 void dsm_request_queue_merge(struct tx_buffer *tx)
@@ -252,7 +273,7 @@ static inline int flush_dsm_request_queue(struct conn_element *ele)
     mutex_lock(&tx->flush_mutex);
     dsm_request_queue_merge(tx);
     while (!list_empty(&tx->ordered_request_queue)) {
-        tx_e = try_get_next_empty_tx_ele(ele);
+        tx_e = try_get_next_empty_tx_ele(ele, 0);
         if (!tx_e) {
             ret = 1;
             break;
@@ -261,7 +282,10 @@ static inline int flush_dsm_request_queue(struct conn_element *ele)
         req = list_first_entry(&tx->ordered_request_queue, struct dsm_request,
                 ordered_list);
         trace_flushing_requests(tx->request_queue_sz);
-        process_dsm_request(ele, req, tx_e);
+        dsm_send_tx_e(ele, tx_e, req->response, req->type, req->dsm_id,
+                req->mr_id, req->local_svm_id, req->remote_svm_id, 0, req->addr,
+                req->dpc, req->page, req->ppe, req->need_ppe, req->func,
+                &req->dsm_buf);
         list_del(&req->ordered_list);
         release_dsm_request(req);
     }
@@ -277,63 +301,6 @@ static void delayed_request_flush_work_fn(struct work_struct *w)
     ele = container_of(w, struct conn_element , delayed_request_flush_work);
     if (flush_dsm_request_queue(ele))
         schedule_delayed_request_flush(ele);
-}
-
-void create_page_reclaim_request(struct tx_buf_ele *tx_e, u32 dsm_id, u32 mr_id,
-        u32 local_id, u32 remote_id, uint64_t addr)
-{
-    struct dsm_message *msg = tx_e->dsm_buf;
-
-    msg->dsm_id = dsm_id;
-    msg->src_id = local_id;
-    msg->dest_id = remote_id;
-    msg->mr_id = mr_id;
-    msg->req_addr = addr;
-}
-
-void create_page_request(struct conn_element *ele, struct tx_buf_ele *tx_e,
-        u32 dsm_id, u32 mr_id, u32 local_id, u32 remote_id, uint64_t addr,
-        struct page *page, struct dsm_page_cache *dpc,
-        struct page_pool_ele *ppe)
-{
-    struct dsm_message *msg = tx_e->dsm_buf;
-
-    if (!ppe)
-        ppe = dsm_prepare_ppe(ele, page);
-    BUG_ON(!ppe); /* TODO: Handle gracefully */
-
-    tx_e->wrk_req->dst_addr = ppe;
-    tx_e->wrk_req->dpc = dpc;
-
-    /*
-     * we need to reset the offset just in case if we actually use the element
-     * for reply as an error
-     */
-    msg->offset = tx_e->id;
-    msg->dsm_id = dsm_id;
-    msg->mr_id = mr_id;
-    msg->dest_id = local_id;
-    msg->src_id = remote_id;
-    msg->dst_addr = (u64) ppe->page_buf;
-    msg->req_addr = addr;
-    msg->rkey = ele->mr->rkey;
-}
-
-void create_page_pull_request(struct conn_element *ele,
-        struct tx_buf_ele *tx_e, u32 dsm_id, u32 mr_id, u32 local_id,
-        u32 remote_id, uint64_t addr)
-{
-    struct dsm_message *msg = tx_e->dsm_buf;
-
-    tx_e->wrk_req->dst_addr = NULL;
-    msg->offset = tx_e->id;
-    msg->dsm_id = dsm_id;
-    msg->mr_id = mr_id;
-    msg->dest_id = local_id;
-    msg->src_id = remote_id;
-    msg->dst_addr = 0;
-    msg->req_addr = addr;
-    msg->rkey = ele->mr->rkey;
 }
 
 static void destroy_connection_work(struct work_struct *work)
@@ -411,7 +378,7 @@ static int dsm_recv_message_handler(struct conn_element *ele,
     struct tx_buf_ele *tx_e = NULL;
 
     trace_dsm_rx_msg(rx_e->dsm_buf->dsm_id, rx_e->dsm_buf->src_id,
-                    rx_e->dsm_buf->dest_id, -1, 0, 
+                    rx_e->dsm_buf->dest_id, rx_e->dsm_buf->mr_id, 0, 
                     rx_e->dsm_buf->req_addr, rx_e->dsm_buf->type,
                     rx_e->dsm_buf->offset);
 
@@ -435,25 +402,37 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             break;
         case MSG_REQ_PAGE_TRY:
         case MSG_REQ_PAGE:
+        case MSG_REQ_READ:
             process_page_request_msg(ele, rx_e->dsm_buf);
             break;
-        case MSG_REQ_PAGE_RECLAIM:
+        case MSG_REQ_CLAIM:
+        case MSG_REQ_CLAIM_TRY:
             process_page_claim(ele, rx_e->dsm_buf);
             break;
         case MSG_REQ_PAGE_PULL:
             process_pull_request(ele, rx_e);
-            ack_msg(ele, rx_e);
+            ack_msg(ele, rx_e->dsm_buf, MSG_RES_ACK);
             break;
         case MSG_RES_SVM_FAIL:
             process_svm_status(ele, rx_e);
             break;
         case MSG_RES_ACK:
+        case MSG_RES_ACK_FAIL:
             BUG_ON(rx_e->dsm_buf->offset < 0 ||
                     rx_e->dsm_buf->offset >= ele->tx_buffer.len);
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
             handle_tx_element(ele, tx_e, NULL);
             break;
-
+        case MSG_REQ_QUERY:
+            dsm_process_request_query(ele, rx_e);
+            break;
+        case MSG_RES_QUERY:
+            BUG_ON(rx_e->dsm_buf->offset < 0 ||
+                    rx_e->dsm_buf->offset >= ele->tx_buffer.len);
+            tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
+            dsm_process_query_info(tx_e);
+            handle_tx_element(ele, tx_e, NULL);
+            break;
         default:
             heca_printk(KERN_ERR "unhandled message stats addr: %p, status %d"
                     " id %d", rx_e, rx_e->dsm_buf->type, rx_e->id);
@@ -467,35 +446,46 @@ err:
 }
 
 static int dsm_send_message_handler(struct conn_element *ele,
-        struct tx_buf_ele *tx_buf_e)
+        struct tx_buf_ele *tx_e)
 {
-    trace_dsm_tx_msg(tx_buf_e->dsm_buf->dsm_id, tx_buf_e->dsm_buf->src_id,
-            tx_buf_e->dsm_buf->dest_id, -1, 0, tx_buf_e->dsm_buf->req_addr,
-            tx_buf_e->dsm_buf->type, tx_buf_e->dsm_buf->offset);
+    trace_dsm_tx_msg(tx_e->dsm_buf->dsm_id, tx_e->dsm_buf->src_id,
+            tx_e->dsm_buf->dest_id, -1, 0, tx_e->dsm_buf->req_addr,
+            tx_e->dsm_buf->type, tx_e->dsm_buf->offset);
 
-    switch (tx_buf_e->dsm_buf->type) {
+    switch (tx_e->dsm_buf->type) {
         case MSG_RES_PAGE:
-            dsm_clear_swp_entry_flag(tx_buf_e->reply_work_req->mm,
-                    tx_buf_e->reply_work_req->addr,
-                    tx_buf_e->reply_work_req->pte, DSM_INFLIGHT_BITPOS);
-            dsm_ppe_clear_release(ele, &tx_buf_e->wrk_req->dst_addr);
-            release_tx_element_reply(ele, tx_buf_e);
+            if (!pte_present(tx_e->reply_work_req->pte)) {
+                dsm_clear_swp_entry_flag(tx_e->reply_work_req->mm,
+                        tx_e->reply_work_req->addr, tx_e->reply_work_req->pte,
+                        DSM_INFLIGHT_BITPOS);
+            }
+            dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
+            release_tx_element_reply(ele, tx_e);
             break;
+
+        /* we can immediately discard the tx_e */
         case MSG_RES_ACK:
+        case MSG_RES_ACK_FAIL:
         case MSG_RES_PAGE_FAIL:
         case MSG_RES_SVM_FAIL:
-        case MSG_REQ_PAGE_RECLAIM:
-            release_tx_element(ele, tx_buf_e);
+        case MSG_RES_QUERY:
+        case MSG_RES_PAGE_REDIRECT:
+            release_tx_element(ele, tx_e);
             break;
+
+        /* we keep the tx_e alive, to process the response */
         case MSG_REQ_PAGE:
+        case MSG_REQ_READ:
         case MSG_REQ_PAGE_TRY:
         case MSG_REQ_PAGE_PULL:
-            try_release_tx_element(ele, tx_buf_e);
+        case MSG_REQ_CLAIM:
+        case MSG_REQ_CLAIM_TRY:
+        case MSG_REQ_QUERY:
+            try_release_tx_element(ele, tx_e);
             break;
         default:
             heca_printk(KERN_ERR "unhandled message stats  addr: %p, "
-                    "status %d , id %d", tx_buf_e, tx_buf_e->dsm_buf->type,
-                    tx_buf_e->id);
+                    "status %d , id %d", tx_e, tx_e->dsm_buf->type, tx_e->id);
             return 1;
     }
     return 0;
@@ -1658,13 +1648,15 @@ no_svm:
     return r;
 }
 
-struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele)
+struct tx_buf_ele *try_get_next_empty_tx_ele(struct conn_element *ele,
+        int require_empty_list)
 {
     struct tx_buf_ele *tx_e = NULL;
-    struct llist_node *llnode;
+    struct llist_node *llnode = NULL;
 
     spin_lock(&ele->tx_buffer.tx_free_elements_list_lock);
-    llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
+    if (!require_empty_list || request_queue_empty(ele))
+        llnode = llist_del_first(&ele->tx_buffer.tx_free_elements_list);
     spin_unlock(&ele->tx_buffer.tx_free_elements_list_lock);
 
     if (llnode) {
@@ -1763,13 +1755,18 @@ int tx_dsm_send(struct conn_element *ele, struct tx_buf_ele *tx_e)
 retry:
     switch (type) {
         case MSG_REQ_PAGE:
-        case MSG_REQ_PAGE_PULL:
-        case MSG_REQ_PAGE_RECLAIM:
         case MSG_REQ_PAGE_TRY:
-        case MSG_RES_SVM_FAIL:
+        case MSG_REQ_READ:
+        case MSG_REQ_CLAIM:
+        case MSG_REQ_CLAIM_TRY:
+        case MSG_REQ_QUERY:
+        case MSG_REQ_PAGE_PULL:
         case MSG_RES_PAGE_REDIRECT:
         case MSG_RES_PAGE_FAIL:
+        case MSG_RES_SVM_FAIL:
         case MSG_RES_ACK:
+        case MSG_RES_ACK_FAIL:
+        case MSG_RES_QUERY:
             ret = ib_post_send(ele->cm_id->qp, &tx_e->wrk_req->wr_ele->wr,
                     &tx_e->wrk_req->wr_ele->bad_wr);
             break;

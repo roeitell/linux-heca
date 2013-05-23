@@ -15,18 +15,25 @@
     { PULL_TAG,                 "PULL_TAG" }, \
     { PREFETCH_TAG,             "PREFETCH_TAG" },\
     { PUSH_TAG,                 "PUSH_TAG" }, \
-    { PULL_TRY_TAG,             "PULL_TRY_TAG" }
+    { PULL_TRY_TAG,             "PULL_TRY_TAG" }, \
+    { CLAIM_TAG,                "CLAIM_TAG" }, \
+    { READ_TAG,                 "READ_TAG" }
 
 #define msg_type_strings \
     { MSG_REQ_PAGE,                 "MSG_REQ_PAGE" },\
     { MSG_REQ_PAGE_TRY,             "MSG_REQ_PAGE_TRY" },\
+    { MSG_REQ_READ,                 "MSG_REQ_READ" },\
     { MSG_REQ_PAGE_PULL,            "MSG_REQ_PAGE_PULL" },\
-    { MSG_REQ_PAGE_RECLAIM,         "MSG_REQ_PAGE_RECLAIM" },\
+    { MSG_REQ_CLAIM,                "MSG_REQ_CLAIM" },\
+    { MSG_REQ_CLAIM_TRY,            "MSG_REQ_CLAIM_TRY" },\
+    { MSG_REQ_QUERY,                "MSG_REQ_QUERY" },\
     { MSG_RES_PAGE,                 "MSG_RES_PAGE" },\
     { MSG_RES_PAGE_REDIRECT,        "MSG_RES_PAGE_REDIRECT" },\
     { MSG_RES_PAGE_FAIL,            "MSG_RES_PAGE_FAIL" },\
     { MSG_RES_SVM_FAIL,             "MSG_RES_SVM_FAIL" },\
-    { MSG_RES_ACK,                  "MSG_RES_ACK" }
+    { MSG_RES_ACK,                  "MSG_RES_ACK" },\
+    { MSG_RES_ACK_FAIL,             "MSG_RES_ACK_FAIL" },\
+    { MSG_RES_QUERY,                "MSG_RES_QUERY" }
 
 DECLARE_EVENT_CLASS(dsm_full_template,
         TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id,
@@ -67,6 +74,9 @@ DSM_DECLARE_EVENT_FULL(redirect);
 DSM_DECLARE_EVENT_FULL(dsm_pull_req_success);
 DSM_DECLARE_EVENT_FULL(dsm_defer_gup);
 DSM_DECLARE_EVENT_FULL(dsm_defer_gup_execute);
+DSM_DECLARE_EVENT_FULL(dsm_claim_page);
+DSM_DECLARE_EVENT_FULL(dsm_write_fault);
+DSM_DECLARE_EVENT_FULL(dsm_discard_read_copy);
 
 DECLARE_EVENT_CLASS(dsm_message_template,
         TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id,

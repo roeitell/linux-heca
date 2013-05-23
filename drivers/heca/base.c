@@ -653,15 +653,16 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         struct rb_root *root;
         struct rb_node *node;
 
-        BUG_ON(!dsm_state->rcm);
-        root = &dsm_state->rcm->root_conn;
-        for (node = rb_first(root); node; node = rb_next(node)) {
-            struct conn_element *ele;
+        if (dsm_state->rcm) {
+            root = &dsm_state->rcm->root_conn;
+            for (node = rb_first(root); node; node = rb_next(node)) {
+                struct conn_element *ele;
 
-            ele = rb_entry(node, struct conn_element, rb_node);
-            BUG_ON(!ele);
-            release_svm_queued_requests(svm, &ele->tx_buffer);
-            release_svm_tx_elements(svm, ele);
+                ele = rb_entry(node, struct conn_element, rb_node);
+                BUG_ON(!ele);
+                release_svm_queued_requests(svm, &ele->tx_buffer);
+                release_svm_tx_elements(svm, ele);
+            }
         }
         release_svm_push_elements(svm);
         destroy_svm_mrs(svm);

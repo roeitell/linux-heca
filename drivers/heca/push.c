@@ -37,7 +37,7 @@ static inline void dsm_push_finish_notify(struct page *page)
         &zone->wait_table[hash_ptr(page, zone->wait_table_bits)];
     rotate_reclaimable_page(page);
     ClearPageDirty(page);
-    TestClearPageWriteback(page);
+    //TestClearPageWriteback(page);
     __wake_up_bit(waitqueue, &page->flags, PG_writeback);
 }
 
@@ -862,7 +862,7 @@ retry:
      * __isolate_lru_page a chance to bail.
      */
     SetPageDirty(page);
-    TestSetPageWriteback(page);
+    //TestSetPageWriteback(page);
 
     pte_unmap_unlock(pte, ptl);
     congestion++;
@@ -1016,7 +1016,7 @@ static int _push_back_if_remote_dsm_page(struct page *page)
 
         /* lookup a remote mr owner, to push the page to */
         mr = search_mr_by_addr(svm, address);
-        if (!mr || !(mr->flags & MR_LOCAL) || (mr->flags & MR_COPY_ON_ACCESS)) {
+        if (!mr || mr->flags & (MR_LOCAL | MR_COPY_ON_ACCESS)) {
             release_svm(svm);
             continue;
         }

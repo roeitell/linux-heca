@@ -836,7 +836,7 @@ static struct dsm_page_cache *convert_push_dpc(
         SetPageSwapBacked(page);
         SetPageUptodate(page);
         ClearPageDirty(page);
-        TestClearPageWriteback(page);
+        //TestClearPageWriteback(page);
 
         addr = push_dpc->addr;
         if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)

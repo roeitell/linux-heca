@@ -7,6 +7,7 @@
 #include <linux/list.h>
 #include <linux/delay.h>
 #include <linux/heca_hook.h>
+#include <linux/kern_levels.h>
 
 #include "ioctl.h"
 #include "sysfs.h"
@@ -39,37 +40,36 @@ static const char *sanity_file_name(const char *path)
 }
 #endif
 
-void __heca_printk(unsigned int level, const char *path, int line,
+void __heca_printk(const char *file, int line,
         const char *func, const char *format, ...)
 {
 #if defined(CONFIG_HECA_DEBUG) || defined(CONFIG_HECA_VERBOSE_PRINTK)
+    int kern_level;
     va_list args;
     struct va_format vaf;
-    char heca_fmt[] = KERN_DEFAULT "heca:"
+    char verbose_fmt[] = KERN_DEFAULT "heca:"
 #ifdef CONFIG_HECA_VERBOSE_PRINTK
         " %s:%d [%s]"
 #endif
         " %pV\n";
 
-#ifdef CONFIG_HECA_DEBUG
-    if (debug < level)
-        return;
-#endif
-
     va_start(args, format);
-
     vaf.fmt = format;
     vaf.va = &args;
-    if (format[0] == '<' && format[2] == '>') {
-        memcpy(heca_fmt, format, 3);
-        vaf.fmt = format + 3;
-    } else if (level)
-        memcpy(heca_fmt, KERN_DEBUG, 3);
-    printk(heca_fmt,
+
+    kern_level = printk_get_level(format);
+    if (kern_level) {
+        const char *end_of_header = printk_skip_level(format);
+        memcpy(verbose_fmt, format, end_of_header - format);
+        vaf.fmt = end_of_header;
+    }
+
+    printk(verbose_fmt,
 #ifdef CONFIG_HECA_VERBOSE_PRINTK
-            sanity_file_name(path), line, func,
+            sanity_file_name(file), line, func,
 #endif
             &vaf);
+
     va_end(args);
 #endif
 }

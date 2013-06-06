@@ -476,10 +476,10 @@ unlock:
         if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
             struct dsm_delayed_fault *ddf;
 
-            ddf = alloc_dsm_delayed_fault_cache_elm(dpc->addr);
-            if (likely(ddf))
-                queue_ddf_for_delayed_gup(ddf, dpc->svm);
-            else
+            //ddf = alloc_dsm_delayed_fault_cache_elm(dpc->addr);
+            //if (likely(ddf))
+            //    queue_ddf_for_delayed_gup(ddf, dpc->svm);
+            //else
                 heca_initiate_pull_gup(dpc, 0);
         }
     }
@@ -836,7 +836,7 @@ static struct dsm_page_cache *convert_push_dpc(
         SetPageSwapBacked(page);
         SetPageUptodate(page);
         ClearPageDirty(page);
-        //TestClearPageWriteback(page);
+        TestClearPageWriteback(page);
 
         addr = push_dpc->addr;
         if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)
@@ -1068,8 +1068,8 @@ retry:
      */
     if (dpc->tag != PULL_TRY_TAG && flags & FAULT_FLAG_ALLOW_RETRY &&
             ~flags & FAULT_FLAG_RETRY_NOWAIT) {
-        if (dsm_fault_do_readahead(mm, norm_addr, fault_svm, fault_mr, dpc))
-            goto resolve;
+        //if (dsm_fault_do_readahead(mm, norm_addr, fault_svm, fault_mr, dpc))
+        //    goto resolve;
     }
 
     /*

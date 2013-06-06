@@ -37,7 +37,7 @@ static inline void dsm_push_finish_notify(struct page *page)
         &zone->wait_table[hash_ptr(page, zone->wait_table_bits)];
     rotate_reclaimable_page(page);
     ClearPageDirty(page);
-    //TestClearPageWriteback(page);
+    TestClearPageWriteback(page);
     __wake_up_bit(waitqueue, &page->flags, PG_writeback);
 }
 
@@ -862,7 +862,7 @@ retry:
      * __isolate_lru_page a chance to bail.
      */
     SetPageDirty(page);
-    //TestSetPageWriteback(page);
+    TestSetPageWriteback(page);
 
     pte_unmap_unlock(pte, ptl);
     congestion++;

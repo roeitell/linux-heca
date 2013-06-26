@@ -136,8 +136,6 @@ void remove_dsm(struct dsm *dsm)
     heca_printk(KERN_DEBUG "<exit>");
 }
 
-/* FIXME: just a dummy lock so that radix_tree functions work */
-DEFINE_SPINLOCK(dsm_lock);
 
 int create_dsm(__u32 dsm_id)
 {
@@ -180,11 +178,10 @@ int create_dsm(__u32 dsm_id)
         goto failed;
     }
 
-    /* TODO: move this spin lock to be part of dsm_state */
-    spin_lock(&dsm_lock);
+    spin_lock(&dsm_state->radix_lock);
     r = radix_tree_insert(&dsm_state->dsm_tree_root,
             (unsigned long) new_dsm->dsm_id, new_dsm);
-    spin_unlock(&dsm_lock);
+    spin_unlock(&dsm_state->radix_lock);
     radix_tree_preload_end();
 
     if (r) {
@@ -303,8 +300,8 @@ preload:
         goto out;
     }
 
-    /* FIXME: use dsm_state global spinlock here! */
-    spin_lock(&dsm_lock);
+    
+    spin_lock(&dsm_state->radix_lock);
     r = radix_tree_insert(&dsm->svm_tree_root,
             (unsigned long) new_svm->svm_id, new_svm);
     if (r)
@@ -321,7 +318,7 @@ preload:
     }
 
 unlock:
-    spin_unlock(&dsm_lock);
+    spin_unlock(&dsm_state->radix_lock);
 
     radix_tree_preload_end();
     if (r) {
@@ -488,7 +485,6 @@ static void surrogate_push_remote_svm(struct subvirtual_machine *svm,
     for (node = rb_first(&svm->push_cache); node;) {
         struct dsm_page_cache *dpc;
         int i;
-
         dpc = rb_entry(node, struct dsm_page_cache, rb_node);
         node = rb_next(node);
         for (i = 0; i < dpc->svms.num; i++) {
@@ -657,15 +653,16 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         struct rb_root *root;
         struct rb_node *node;
 
-        BUG_ON(!dsm_state->rcm);
-        root = &dsm_state->rcm->root_conn;
-        for (node = rb_first(root); node; node = rb_next(node)) {
-            struct conn_element *ele;
+        if (dsm_state->rcm) {
+            root = &dsm_state->rcm->root_conn;
+            for (node = rb_first(root); node; node = rb_next(node)) {
+                struct conn_element *ele;
 
-            ele = rb_entry(node, struct conn_element, rb_node);
-            BUG_ON(!ele);
-            release_svm_queued_requests(svm, &ele->tx_buffer);
-            release_svm_tx_elements(svm, ele);
+                ele = rb_entry(node, struct conn_element, rb_node);
+                BUG_ON(!ele);
+                release_svm_queued_requests(svm, &ele->tx_buffer);
+                release_svm_tx_elements(svm, ele);
+            }
         }
         release_svm_push_elements(svm);
         destroy_svm_mrs(svm);

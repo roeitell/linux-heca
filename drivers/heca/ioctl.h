@@ -2,10 +2,10 @@
 #define _HECA_IOCTL_H
 
 /* print */
-void __heca_printk(unsigned int level, const char *path, int line,
+void __heca_printk(const char *path, int line,
         const char *func, const char *format, ...);
-#define heca_printk(fmt, args...) \
-    __heca_printk(0, __FILE__, __LINE__, __func__, fmt, ##args);
+#define heca_printk(fmt, ...) \
+    __heca_printk(__FILE__, __LINE__, __func__, fmt, ##__VA_ARGS__)
 
 /* module */
 inline struct dsm_module_state *get_dsm_module_state(void);

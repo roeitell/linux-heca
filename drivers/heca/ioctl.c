@@ -7,6 +7,7 @@
 #include <linux/list.h>
 #include <linux/delay.h>
 #include <linux/heca_hook.h>
+#include <linux/kern_levels.h>
 
 #include "ioctl.h"
 #include "sysfs.h"
@@ -39,36 +40,35 @@ static const char *sanity_file_name(const char *path)
 }
 #endif
 
-void __heca_printk(unsigned int level, const char *path, int line,
+void __heca_printk(const char *file, int line,
         const char *func, const char *format, ...)
 {
 #if defined(CONFIG_HECA_DEBUG) || defined(CONFIG_HECA_VERBOSE_PRINTK)
+    int kern_level;
     va_list args;
-#ifdef CONFIG_HECA_VERBOSE_PRINTK
     struct va_format vaf;
-    char verbose_fmt[] = KERN_DEFAULT "DSM %s:%d [%s] %pV";
+    char verbose_fmt[] = KERN_DEFAULT "heca:"
+#ifdef CONFIG_HECA_VERBOSE_PRINTK
+        " %s:%d [%s]"
 #endif
-
-#ifdef CONFIG_HECA_DEBUG
-    if (debug < level)
-        return;
-#endif
+        " %pV\n";
 
     va_start(args, format);
-
-#ifdef CONFIG_HECA_VERBOSE_PRINTK
     vaf.fmt = format;
     vaf.va = &args;
-    if (format[0] == '<' && format[2] == '>') {
-        memcpy(verbose_fmt, format, 3);
-        vaf.fmt = format + 3;
-    } else if (level)
-        memcpy(verbose_fmt, KERN_DEBUG, 3);
-    printk(verbose_fmt, sanity_file_name(path), line, func, &vaf);
-#else
-    vprintk(format, args);
+
+    kern_level = printk_get_level(format);
+    if (kern_level) {
+        const char *end_of_header = printk_skip_level(format);
+        memcpy(verbose_fmt, format, end_of_header - format);
+        vaf.fmt = end_of_header;
+    }
+
+    printk(verbose_fmt,
+#ifdef CONFIG_HECA_VERBOSE_PRINTK
+            sanity_file_name(file), line, func,
 #endif
-    printk("\n");
+            &vaf);
 
     va_end(args);
 #endif
@@ -92,6 +92,7 @@ struct dsm_module_state *create_dsm_module_state(void)
     INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
     INIT_LIST_HEAD(&dsm_state->dsm_list);
     mutex_init(&dsm_state->dsm_state_mutex);
+    spin_lock_init(&dsm_state->radix_lock);
     dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq",
             WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
     dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq",

@@ -91,6 +91,9 @@ EXPORT_SYMBOL(anon_vma_interval_tree_iter_first);
 #include <linux/huge_mm.h>
 EXPORT_SYMBOL(split_huge_page);
 EXPORT_SYMBOL(split_huge_page_to_list);
+#ifdef CONFIG_TRANSPARENT_HUGEPAGE
+EXPORT_SYMBOL(__split_huge_page_pmd);
+#endif
 
 #include <linux/gfp.h>
 EXPORT_SYMBOL(alloc_pages_vma);

@@ -422,8 +422,10 @@ static void dequeue_and_gup(struct subvirtual_machine *svm)
             dsm_release_pull_dpc(&dpc);
         }
     }
-    for (node = head; node; node = llist_next(node)) {
+    node = head;
+    while (node) {
         ddf = llist_entry(node, struct dsm_delayed_fault, node);
+        node = llist_next(node);
         free_dsm_delayed_fault_cache_elm(&ddf);
     }
 }
@@ -476,10 +478,15 @@ unlock:
         if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
             struct dsm_delayed_fault *ddf;
 
-            //ddf = alloc_dsm_delayed_fault_cache_elm(dpc->addr);
-            //if (likely(ddf))
-            //    queue_ddf_for_delayed_gup(ddf, dpc->svm);
-            //else
+            /*
+             * FIXME: Immediate gup might cause shrink_page_list to deadlock if
+             * reclaiming in the gup. Happens when working with cgroups, and
+             * doing wait_on_page_writeback in the second claim iteration.
+             */
+            ddf = alloc_dsm_delayed_fault_cache_elm(dpc->addr);
+            if (likely(ddf))
+                queue_ddf_for_delayed_gup(ddf, dpc->svm);
+            else
                 heca_initiate_pull_gup(dpc, 0);
         }
     }
@@ -1068,8 +1075,8 @@ retry:
      */
     if (dpc->tag != PULL_TRY_TAG && flags & FAULT_FLAG_ALLOW_RETRY &&
             ~flags & FAULT_FLAG_RETRY_NOWAIT) {
-        //if (dsm_fault_do_readahead(mm, norm_addr, fault_svm, fault_mr, dpc))
-        //    goto resolve;
+        if (dsm_fault_do_readahead(mm, norm_addr, fault_svm, fault_mr, dpc))
+            goto resolve;
     }
 
     /*

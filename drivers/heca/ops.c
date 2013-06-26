@@ -101,11 +101,9 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
         svm = find_svm(fault_svm->dsm, svms.ids[i]);
         if (unlikely(!svm))
             continue;
+
         eles[i] = svm->ele;
         release_svm(svm);
-        if(svm->is_local)
-            continue;
-
 
         tx_elms[i] = try_get_next_empty_tx_ele(eles[i], 1);
         if (unlikely(!tx_elms[i])) {
@@ -757,11 +755,7 @@ int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
      */
     for_each_valid_svm(svms, i) {
         struct subvirtual_machine *svm = find_svm(dsm, svms.ids[i]);
-        int full =  0;
-        if(svm->is_local)
-            continue;
-        BUG_ON(!svm->ele);
-        full = request_queue_full(svm->ele);
+        int full = request_queue_full(svm->ele);
 
         release_svm(svm);
         if (full)

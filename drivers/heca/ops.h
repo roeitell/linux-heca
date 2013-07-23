@@ -14,6 +14,8 @@ int process_svm_status(struct conn_element *, struct rx_buf_ele *);
 int process_page_redirect(struct conn_element *, struct tx_buf_ele *, u32);
 int process_page_response(struct conn_element *, struct tx_buf_ele *);
 int process_page_claim(struct conn_element *, struct dsm_message *);
+int process_claim_ack(struct conn_element *, struct tx_buf_ele *,
+        struct dsm_message *);
 void deferred_gup_work_fn(struct work_struct *);
 int process_page_request_msg(struct conn_element *, struct dsm_message *);
 int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,

@@ -421,6 +421,8 @@ static int dsm_recv_message_handler(struct conn_element *ele,
             BUG_ON(rx_e->dsm_buf->offset < 0 ||
                     rx_e->dsm_buf->offset >= ele->tx_buffer.len);
             tx_e = &ele->tx_buffer.tx_buf[rx_e->dsm_buf->offset];
+            if (tx_e->dsm_buf->type & (MSG_REQ_CLAIM | MSG_REQ_CLAIM_TRY))
+                process_claim_ack(ele, tx_e, rx_e->dsm_buf);
             handle_tx_element(ele, tx_e, NULL);
             break;
         case MSG_REQ_QUERY:

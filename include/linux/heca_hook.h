@@ -16,6 +16,9 @@ typedef int (*pushback_page_cb)(struct page *);
 
 typedef int (*is_congested_cb)(void);
 
+typedef int (*write_fault_cb)(struct mm_struct *, struct vm_area_struct *,
+        unsigned long, pmd_t *, pte_t *, spinlock_t *, unsigned int);
+
 typedef int (*detach_task_cb)(struct task_struct *tsk);
 
 typedef int (*attach_task_cb)(struct task_struct *tsk);
@@ -25,6 +28,7 @@ struct heca_hook_struct {
     fetch_page_cb fetch_page;
     pushback_page_cb pushback_page;
     is_congested_cb is_congested;
+    write_fault_cb write_fault;
     detach_task_cb detach_task;
     attach_task_cb attach_task;
 };

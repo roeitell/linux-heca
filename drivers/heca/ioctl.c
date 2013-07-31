@@ -300,6 +300,7 @@ const struct heca_hook_struct my_heca_hook = {
     .fetch_page = dsm_swap_wrapper,
     .pushback_page = push_back_if_remote_dsm_page,
     .is_congested = dsm_is_congested,
+    .write_fault = dsm_write_fault,
     .attach_task = heca_attach_task,
     .detach_task = heca_detach_task,
 };

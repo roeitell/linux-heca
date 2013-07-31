@@ -3753,9 +3753,24 @@ int handle_pte_fault(struct mm_struct *mm,
 	if (unlikely(!pte_same(*pte, entry)))
 		goto unlock;
 	if (flags & FAULT_FLAG_WRITE) {
-		if (!pte_write(entry))
+		if (!pte_write(entry)) {
+#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
+			{
+				const struct heca_hook_struct *hook = heca_hook_read();
+
+				if (hook) {
+					int r = hook->write_fault(mm, vma, address, pmd, pte, ptl,
+							flags);
+					if (r > 0)
+						return VM_FAULT_WRITE;
+					else if (r == -ENOMEM)
+						return VM_FAULT_OOM;
+				}
+			}
+#endif
 			return do_wp_page(mm, vma, address,
 					pte, pmd, ptl, entry);
+		}
 		entry = pte_mkdirty(entry);
 	}
 	entry = pte_mkyoung(entry);

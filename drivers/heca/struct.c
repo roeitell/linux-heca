@@ -742,17 +742,20 @@ unlock:
  * write fault on a read-copy, we remember who gave it to us, and can ask them
  * to invalidate the page and pass maintenance to us.
  *
- * we abuse the radix tree and keep u32 instead of pointers, by shifting the
- * first bit (which is internally used by the tree).
+ * we abuse the radix tree and keep u32 instead of pointers, in the same
+ * fashion swap entries are stored there.
  */
 static inline void *maintainer_id_to_node(u32 svm_id)
 {
-    return (void *)(((unsigned long) svm_id) << 1);
+    unsigned long val;
+
+    val = svm_id << RADIX_TREE_EXCEPTIONAL_SHIFT;
+    return (void *)(val | RADIX_TREE_EXCEPTIONAL_ENTRY);
 }
 
 static inline u32 node_to_maintainer_id(void *node)
 {
-    return (u32)(((unsigned long) node) >> 1);
+    return (u32)(((unsigned long) node) >> RADIX_TREE_EXCEPTIONAL_SHIFT);
 }
 
 int dsm_flag_page_read(struct subvirtual_machine *svm, unsigned long addr,
@@ -763,7 +766,8 @@ int dsm_flag_page_read(struct subvirtual_machine *svm, unsigned long addr,
         goto out;
 
     spin_lock_irq(&svm->page_maintainers_spinlock);
-    r = radix_tree_insert(&svm->page_maintainers, addr, maintainer_id_to_node(svm_id));
+    r = radix_tree_insert(&svm->page_maintainers, addr,
+            maintainer_id_to_node(svm_id));
     spin_unlock_irq(&svm->page_maintainers_spinlock);
     radix_tree_preload_end();
 
@@ -784,13 +788,16 @@ repeat:
         node = radix_tree_deref_slot(pval);
         if (unlikely(!node))
             goto out;
-        if (unlikely(radix_tree_exception(node))) {
-            if (radix_tree_deref_retry(node))
+
+        if (unlikely(!radix_tree_exceptional_entry(node))) {
+            if (radix_tree_exception(node)) {
+                if (radix_tree_deref_retry(node))
+                    goto repeat;
+                goto out;
+            }
+            if (node != *pval)
                 goto repeat;
-            goto out;
         }
-        if (unlikely(node != *pval))
-            goto repeat;
         svm_id = node_to_maintainer_id(node);
     }
 out:

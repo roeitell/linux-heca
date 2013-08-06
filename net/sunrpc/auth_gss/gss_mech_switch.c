@@ -139,11 +139,12 @@ void gss_mech_unregister(struct gss_api_mech *gm)
 }
 EXPORT_SYMBOL_GPL(gss_mech_unregister);
 
-static struct gss_api_mech *gss_mech_get(struct gss_api_mech *gm)
+struct gss_api_mech *gss_mech_get(struct gss_api_mech *gm)
 {
 	__module_get(gm->gm_owner);
 	return gm;
 }
+EXPORT_SYMBOL(gss_mech_get);
 
 static struct gss_api_mech *
 _gss_mech_get_by_name(const char *name)
@@ -175,7 +176,7 @@ struct gss_api_mech * gss_mech_get_by_name(const char *name)
 	return gm;
 }
 
-static struct gss_api_mech *gss_mech_get_by_OID(struct rpcsec_gss_oid *obj)
+struct gss_api_mech *gss_mech_get_by_OID(struct rpcsec_gss_oid *obj)
 {
 	struct gss_api_mech	*pos, *gm = NULL;
 	char buf[32];
@@ -360,6 +361,7 @@ gss_pseudoflavor_to_service(struct gss_api_mech *gm, u32 pseudoflavor)
 	}
 	return 0;
 }
+EXPORT_SYMBOL(gss_pseudoflavor_to_service);
 
 char *
 gss_service_to_auth_domain_name(struct gss_api_mech *gm, u32 service)
@@ -379,6 +381,7 @@ gss_mech_put(struct gss_api_mech * gm)
 	if (gm)
 		module_put(gm->gm_owner);
 }
+EXPORT_SYMBOL(gss_mech_put);
 
 /* The mech could probably be determined from the token instead, but it's just
  * as easy for now to pass it in. */
@@ -386,14 +389,15 @@ int
 gss_import_sec_context(const void *input_token, size_t bufsize,
 		       struct gss_api_mech	*mech,
 		       struct gss_ctx		**ctx_id,
+		       time_t			*endtime,
 		       gfp_t gfp_mask)
 {
 	if (!(*ctx_id = kzalloc(sizeof(**ctx_id), gfp_mask)))
 		return -ENOMEM;
 	(*ctx_id)->mech_type = gss_mech_get(mech);
 
-	return mech->gm_ops
-		->gss_import_sec_context(input_token, bufsize, *ctx_id, gfp_mask);
+	return mech->gm_ops->gss_import_sec_context(input_token, bufsize,
+						*ctx_id, endtime, gfp_mask);
 }
 
 /* gss_get_mic: compute a mic over message and return mic_token. */

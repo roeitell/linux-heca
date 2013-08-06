@@ -38,6 +38,8 @@
 #include <linux/dmi.h>
 #include <linux/pci.h>
 
+#include "internal.h"
+
 #define PREFIX "ACPI: "
 
 ACPI_MODULE_NAME("video");
@@ -161,6 +163,14 @@ static struct dmi_system_id video_detect_dmi_table[] = {
 		DMI_MATCH(DMI_PRODUCT_NAME, "UL30VT"),
 		},
 	},
+	{
+	.callback = video_detect_force_vendor,
+	.ident = "Asus UL30A",
+	.matches = {
+		DMI_MATCH(DMI_SYS_VENDOR, "ASUSTeK Computer Inc."),
+		DMI_MATCH(DMI_PRODUCT_NAME, "UL30A"),
+		},
+	},
 	{ },
 };
 
@@ -225,6 +235,12 @@ static void acpi_video_caps_check(void)
 	if (!acpi_video_caps_checked)
 		acpi_video_get_capabilities(NULL);
 }
+
+bool acpi_video_backlight_quirks(void)
+{
+	return acpi_gbl_osi_data >= ACPI_OSI_WIN_8;
+}
+EXPORT_SYMBOL(acpi_video_backlight_quirks);
 
 /* Promote the vendor interface instead of the generic video module.
  * This function allow DMI blacklists to be implemented by externals

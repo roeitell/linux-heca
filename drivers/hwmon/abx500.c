@@ -260,7 +260,7 @@ static ssize_t show_max_alarm(struct device *dev,
 	return sprintf(buf, "%d\n", data->max_alarm[attr->index]);
 }
 
-static mode_t abx500_attrs_visible(struct kobject *kobj,
+static umode_t abx500_attrs_visible(struct kobject *kobj,
 				   struct attribute *attr, int n)
 {
 	struct device *dev = container_of(kobj, struct device, kobj);
@@ -315,7 +315,7 @@ static SENSOR_DEVICE_ATTR(temp4_max_hyst, S_IWUSR | S_IRUGO,
 static SENSOR_DEVICE_ATTR(temp4_min_alarm, S_IRUGO, show_min_alarm, NULL, 3);
 static SENSOR_DEVICE_ATTR(temp4_max_alarm, S_IRUGO, show_max_alarm, NULL, 3);
 
-struct attribute *abx500_temp_attributes[] = {
+static struct attribute *abx500_temp_attributes[] = {
 	&sensor_dev_attr_name.dev_attr.attr,
 
 	&sensor_dev_attr_temp1_label.dev_attr.attr,

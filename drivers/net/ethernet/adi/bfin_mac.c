@@ -1700,7 +1700,8 @@ static int bfin_mac_probe(struct platform_device *pdev)
 	}
 
 	bfin_mac_hwtstamp_init(ndev);
-	if (bfin_phc_init(ndev, &pdev->dev)) {
+	rc = bfin_phc_init(ndev, &pdev->dev);
+	if (rc) {
 		dev_err(&pdev->dev, "Cannot register PHC device!\n");
 		goto out_err_phc;
 	}
@@ -1718,7 +1719,6 @@ out_err_mii_probe:
 	mdiobus_unregister(lp->mii_bus);
 	mdiobus_free(lp->mii_bus);
 out_err_probe_mac:
-	platform_set_drvdata(pdev, NULL);
 	free_netdev(ndev);
 
 	return rc;
@@ -1730,8 +1730,6 @@ static int bfin_mac_remove(struct platform_device *pdev)
 	struct bfin_mac_local *lp = netdev_priv(ndev);
 
 	bfin_phc_release(lp);
-
-	platform_set_drvdata(pdev, NULL);
 
 	lp->mii_bus->priv = NULL;
 
@@ -1867,7 +1865,6 @@ static int bfin_mii_bus_remove(struct platform_device *pdev)
 	struct bfin_mii_bus_platform_data *mii_bus_pd =
 		dev_get_platdata(&pdev->dev);
 
-	platform_set_drvdata(pdev, NULL);
 	mdiobus_unregister(miibus);
 	kfree(miibus->irq);
 	mdiobus_free(miibus);

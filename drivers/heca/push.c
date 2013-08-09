@@ -59,7 +59,7 @@ static int dsm_push_cache_add(struct dsm_page_cache *dpc,
             new = &(*new)->rb_right;
         else {
             r = -EEXIST;
-            goto out;
+	    goto out;
         }
     }
 
@@ -203,6 +203,7 @@ static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
 int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         unsigned long addr) 
 {
+    pmd_t pmdval;
     pd->pte = NULL;
     pd->vma = find_vma(mm, addr);
     if (unlikely(!pd->vma || pd->vma->vm_start > addr))
@@ -217,27 +218,29 @@ int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
         return -3;
 
     pd->pmd = pmd_offset(pd->pud, addr);
-    if (unlikely(pmd_none(*(pd->pmd)))) {
+    pmdval = pmd_read_atomic(pd->pmd);
+    // we do not need the barrier here as we target 32bit arch only
+    if (unlikely(pmd_none(pmdval))) {
         return -4;
     }
-    if (unlikely(pmd_bad(*(pd->pmd)))) {
-        pmd_clear_bad(pd->pmd);
-        return -5;
-    }
-
-    if (unlikely(pmd_trans_huge(*(pd->pmd)))) {
-        spin_lock(&mm->page_table_lock);
-        if (likely(pmd_trans_huge(*(pd->pmd)))) {
-            if (unlikely(pmd_trans_splitting(*(pd->pmd)))) {
-                spin_unlock(&mm->page_table_lock);
-                wait_split_huge_page(pd->vma->anon_vma, pd->pmd);
-            } else {
-                spin_unlock(&mm->page_table_lock);
-                split_huge_page_pmd(pd->vma, addr, pd->pmd);
-            }
-        } else {
-            spin_unlock(&mm->page_table_lock);
-        }
+    if (unlikely(pmd_bad(pmdval))) {
+	if(!pmd_trans_huge(pmdval)){
+	    pmd_clear_bad(pd->pmd);
+	    return -5;
+	}else{
+	    spin_lock(&mm->page_table_lock);
+	        if (likely(pmd_trans_huge(*(pd->pmd)))) {
+			if (unlikely(pmd_trans_splitting(*(pd->pmd)))) {
+				spin_unlock(&mm->page_table_lock);
+				wait_split_huge_page(pd->vma->anon_vma, pd->pmd);
+			} else {
+				spin_unlock(&mm->page_table_lock);
+				split_huge_page_pmd(pd->vma, addr, pd->pmd);
+			}
+	        } else {
+			spin_unlock(&mm->page_table_lock);
+		}
+	}
     }
     pd->pte = pte_offset_map(pd->pmd, addr);
     return !pd->pte;
@@ -871,7 +874,7 @@ retry:
     dsm_invalidate_readers(local_svm, addr, 0);
 
     return 0;
-    
+
 bad_page_unlock:
     pte_unmap_unlock(pte, ptl);
 bad_page:
@@ -1020,7 +1023,9 @@ int push_back_if_remote_dsm_page(struct page *page)
             release_svm(svm);
             continue;
         }
-
+	/* we need to unlock the VMA before doing and Heca operation 
+	 * (split_huge_page and other try to try to grab the vma lock) */
+        page_unlock_anon_vma_read(anon_vma);
         /* if we have a read-copy, try to discard it without any networking */
         discarded = dsm_try_discard_read_copy(svm, address, page, vma, mr);
         if (discarded < 0) {
@@ -1035,7 +1040,7 @@ int push_back_if_remote_dsm_page(struct page *page)
 
         release_svm(svm);
         ret = 1;
-        break;
+	goto out;
     }
 
     page_unlock_anon_vma_read(anon_vma);
@@ -1055,6 +1060,7 @@ int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
     pgd_t *pgd;
     pud_t *pud;
     pmd_t *pmd;
+    pmd_t pmdval;
     pte_t pte_entry;
     swp_entry_t swp_e;
     unsigned long addr = request_addr & PAGE_MASK;
@@ -1083,7 +1089,7 @@ retry:
 
     pud = pud_offset(pgd, addr);
     if (unlikely(!pud_present(*pud))) {
-        if (!dsm_initiate_fault_fast(mm, addr, 0)){    
+        if (!dsm_initiate_fault_fast(mm, addr, 0)) {
             heca_printk(KERN_ERR "no pud");
             r = -EFAULT;
             goto out;
@@ -1092,31 +1098,32 @@ retry:
     }
 
     pmd = pmd_offset(pud, addr);
-    if (unlikely(pmd_none(*pmd))) {
+    pmdval = pmd_read_atomic(pmd);
+    if (unlikely(pmd_none(pmdval))) {
         __pte_alloc(mm, vma, pmd, addr);
         goto retry;
     }
-    if (unlikely(pmd_bad(*pmd))) {
-        pmd_clear_bad(pmd);
-        heca_printk(KERN_ERR "bad pmd");
-        goto out;
-    }
-    if (unlikely(pmd_trans_huge(*pmd))) {
-        spin_lock(&mm->page_table_lock);
-        if (likely(pmd_trans_huge(*pmd))) {
-            if (unlikely(pmd_trans_splitting(*pmd))) {
-                spin_unlock(&mm->page_table_lock);
-                wait_split_huge_page(vma->anon_vma, pmd);
+    if (unlikely(pmd_bad(pmdval))) {
+	if(!pmd_trans_huge(pmdval)){
+            pmd_clear_bad(pmd);
+	    heca_printk(KERN_ERR "bad pmd");
+            goto out;
+	}else{
+            spin_lock(&mm->page_table_lock);
+            if (likely(pmd_trans_huge(*pmd))) {
+                if (unlikely(pmd_trans_splitting(*pmd))) {
+                    spin_unlock(&mm->page_table_lock);
+                    wait_split_huge_page(vma->anon_vma, pmd);
+                } else {
+                    spin_unlock(&mm->page_table_lock);
+                    split_huge_page_pmd(vma, addr, pmd);
+                }
             } else {
                 spin_unlock(&mm->page_table_lock);
                 split_huge_page_pmd(vma, addr, pmd);
             }
-        } else {
-            spin_unlock(&mm->page_table_lock);
-            split_huge_page_pmd(vma, addr, pmd);
         }
     }
-
     // we need to lock the tree before locking the pte because in page insert we do it in the same order => avoid deadlock
     pte = pte_offset_map_lock(mm, pmd, addr, &ptl);
     pte_entry = *pte;

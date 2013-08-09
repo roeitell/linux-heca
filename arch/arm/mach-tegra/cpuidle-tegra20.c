@@ -131,10 +131,6 @@ static bool tegra20_cpu_cluster_power_down(struct cpuidle_device *dev,
 					   struct cpuidle_driver *drv,
 					   int index)
 {
-	struct cpuidle_state *state = &drv->states[index];
-	u32 cpu_on_time = state->exit_latency;
-	u32 cpu_off_time = state->target_residency - state->exit_latency;
-
 	while (tegra20_cpu_is_resettable_soon())
 		cpu_relax();
 
@@ -143,7 +139,7 @@ static bool tegra20_cpu_cluster_power_down(struct cpuidle_device *dev,
 
 	clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_ENTER, &dev->cpu);
 
-	tegra_idle_lp2_last(cpu_on_time, cpu_off_time);
+	tegra_idle_lp2_last();
 
 	clockevents_notify(CLOCK_EVT_NOTIFY_BROADCAST_EXIT, &dev->cpu);
 
@@ -181,7 +177,6 @@ static int tegra20_idle_lp2_coupled(struct cpuidle_device *dev,
 				    struct cpuidle_driver *drv,
 				    int index)
 {
-	u32 cpu = is_smp() ? cpu_logical_map(dev->cpu) : dev->cpu;
 	bool entered_lp2 = false;
 
 	if (tegra_pending_sgi())
@@ -197,16 +192,16 @@ static int tegra20_idle_lp2_coupled(struct cpuidle_device *dev,
 
 	local_fiq_disable();
 
-	tegra_set_cpu_in_lp2(cpu);
+	tegra_set_cpu_in_lp2();
 	cpu_pm_enter();
 
-	if (cpu == 0)
+	if (dev->cpu == 0)
 		entered_lp2 = tegra20_cpu_cluster_power_down(dev, drv, index);
 	else
 		entered_lp2 = tegra20_idle_enter_lp2_cpu_1(dev, drv, index);
 
 	cpu_pm_exit();
-	tegra_clear_cpu_in_lp2(cpu);
+	tegra_clear_cpu_in_lp2();
 
 	local_fiq_enable();
 
@@ -218,8 +213,5 @@ static int tegra20_idle_lp2_coupled(struct cpuidle_device *dev,
 
 int __init tegra20_cpuidle_init(void)
 {
-#ifdef CONFIG_PM_SLEEP
-	tegra_tear_down_cpu = tegra20_tear_down_cpu;
-#endif
 	return cpuidle_register(&tegra_idle_driver, cpu_possible_mask);
 }

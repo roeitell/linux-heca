@@ -120,7 +120,7 @@ static int twd_rate_change(struct notifier_block *nb,
 	 * changing cpu.
 	 */
 	if (flags == POST_RATE_CHANGE)
-		smp_call_function(twd_update_frequency,
+		on_each_cpu(twd_update_frequency,
 				  (void *)&cnd->new_rate, 1);
 
 	return NOTIFY_OK;
@@ -187,7 +187,7 @@ core_initcall(twd_cpufreq_init);
 
 #endif
 
-static void __cpuinit twd_calibrate_rate(void)
+static void twd_calibrate_rate(void)
 {
 	unsigned long count;
 	u64 waitjiffies;
@@ -265,7 +265,7 @@ static void twd_get_clock(struct device_node *np)
 /*
  * Setup the local clock events for a CPU.
  */
-static int __cpuinit twd_timer_setup(struct clock_event_device *clk)
+static int twd_timer_setup(struct clock_event_device *clk)
 {
 	struct clock_event_device **this_cpu_clk;
 	int cpu = smp_processor_id();
@@ -308,7 +308,7 @@ static int __cpuinit twd_timer_setup(struct clock_event_device *clk)
 	return 0;
 }
 
-static struct local_timer_ops twd_lt_ops __cpuinitdata = {
+static struct local_timer_ops twd_lt_ops = {
 	.setup	= twd_timer_setup,
 	.stop	= twd_timer_stop,
 };
@@ -362,23 +362,11 @@ int __init twd_local_timer_register(struct twd_local_timer *tlt)
 }
 
 #ifdef CONFIG_OF
-const static struct of_device_id twd_of_match[] __initconst = {
-	{ .compatible = "arm,cortex-a9-twd-timer",	},
-	{ .compatible = "arm,cortex-a5-twd-timer",	},
-	{ .compatible = "arm,arm11mp-twd-timer",	},
-	{ },
-};
-
-void __init twd_local_timer_of_register(void)
+static void __init twd_local_timer_of_register(struct device_node *np)
 {
-	struct device_node *np;
 	int err;
 
 	if (!is_smp() || !setup_max_cpus)
-		return;
-
-	np = of_find_matching_node(NULL, twd_of_match);
-	if (!np)
 		return;
 
 	twd_ppi = irq_of_parse_and_map(np, 0);
@@ -398,4 +386,7 @@ void __init twd_local_timer_of_register(void)
 out:
 	WARN(err, "twd_local_timer_of_register failed (%d)\n", err);
 }
+CLOCKSOURCE_OF_DECLARE(arm_twd_a9, "arm,cortex-a9-twd-timer", twd_local_timer_of_register);
+CLOCKSOURCE_OF_DECLARE(arm_twd_a5, "arm,cortex-a5-twd-timer", twd_local_timer_of_register);
+CLOCKSOURCE_OF_DECLARE(arm_twd_11mp, "arm,arm11mp-twd-timer", twd_local_timer_of_register);
 #endif

@@ -160,7 +160,7 @@ static const struct file_operations scull_read_procmem_fops = {
 	.open		= scull_read_procmem_open,
 	.read		= seq_read,
 	.llseek		= seq_lseek,
-	.release	= seq_release,
+	.release	= single_release,
 };
 
 #endif /* SCULL_USE_PROC */
@@ -3171,7 +3171,9 @@ void wl_process_mailbox( struct wl_private *lp )
 
 					memset( ssid, 0, sizeof( ssid ));
 					strncpy( ssid, &probe_rsp->rawData[2],
-							 probe_rsp->rawData[1] );
+						 min_t(u8,
+							probe_rsp->rawData[1],
+							HCF_MAX_NAME_LEN - 1));
 
 					DBG_TRACE( DbgInfo, "(%s) SSID        : %s\n",
 							   lp->dev->name, ssid );

@@ -18,7 +18,7 @@
 
 static u32 random_N(unsigned int N)
 {
-	return reciprocal_divide(random32(), N);
+	return reciprocal_divide(prandom_u32(), N);
 }
 
 static bool rnd_transmit(struct team *team, struct sk_buff *skb)
@@ -28,6 +28,8 @@ static bool rnd_transmit(struct team *team, struct sk_buff *skb)
 
 	port_index = random_N(team->en_port_count);
 	port = team_get_port_by_index_rcu(team, port_index);
+	if (unlikely(!port))
+		goto drop;
 	port = team_get_first_port_txable_rcu(team, port);
 	if (unlikely(!port))
 		goto drop;

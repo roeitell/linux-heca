@@ -482,6 +482,7 @@ struct mlx4_vport_state {
 	u8  default_qos;
 	u32 tx_rate;
 	bool spoofchk;
+	u32 link_state;
 };
 
 struct mlx4_vf_admin_state {
@@ -569,6 +570,25 @@ struct mlx4_cmd {
 	u8			toggle;
 	u8			comm_toggle;
 };
+
+enum {
+	MLX4_VF_IMMED_VLAN_FLAG_VLAN = 1 << 0,
+	MLX4_VF_IMMED_VLAN_FLAG_QOS = 1 << 1,
+	MLX4_VF_IMMED_VLAN_FLAG_LINK_DISABLE = 1 << 2,
+};
+struct mlx4_vf_immed_vlan_work {
+	struct work_struct	work;
+	struct mlx4_priv	*priv;
+	int			flags;
+	int			slave;
+	int			vlan_ix;
+	int			orig_vlan_ix;
+	u8			port;
+	u8			qos;
+	u16			vlan_id;
+	u16			orig_vlan_id;
+};
+
 
 struct mlx4_uar_table {
 	struct mlx4_bitmap	bitmap;
@@ -728,85 +748,6 @@ struct mlx4_msix_ctl {
 struct mlx4_steer {
 	struct list_head promisc_qps[MLX4_NUM_STEERS];
 	struct list_head steer_entries[MLX4_NUM_STEERS];
-};
-
-struct mlx4_net_trans_rule_hw_ctrl {
-	__be32 ctrl;
-	u8 rsvd1;
-	u8 funcid;
-	u8 vep;
-	u8 port;
-	__be32 qpn;
-	__be32 rsvd2;
-};
-
-struct mlx4_net_trans_rule_hw_ib {
-	u8 size;
-	u8 rsvd1;
-	__be16 id;
-	u32 rsvd2;
-	__be32 qpn;
-	__be32 qpn_mask;
-	u8 dst_gid[16];
-	u8 dst_gid_msk[16];
-} __packed;
-
-struct mlx4_net_trans_rule_hw_eth {
-	u8	size;
-	u8	rsvd;
-	__be16	id;
-	u8	rsvd1[6];
-	u8	dst_mac[6];
-	u16	rsvd2;
-	u8	dst_mac_msk[6];
-	u16	rsvd3;
-	u8	src_mac[6];
-	u16	rsvd4;
-	u8	src_mac_msk[6];
-	u8      rsvd5;
-	u8      ether_type_enable;
-	__be16  ether_type;
-	__be16  vlan_id_msk;
-	__be16  vlan_id;
-} __packed;
-
-struct mlx4_net_trans_rule_hw_tcp_udp {
-	u8	size;
-	u8	rsvd;
-	__be16	id;
-	__be16	rsvd1[3];
-	__be16	dst_port;
-	__be16	rsvd2;
-	__be16	dst_port_msk;
-	__be16	rsvd3;
-	__be16	src_port;
-	__be16	rsvd4;
-	__be16	src_port_msk;
-} __packed;
-
-struct mlx4_net_trans_rule_hw_ipv4 {
-	u8	size;
-	u8	rsvd;
-	__be16	id;
-	__be32	rsvd1;
-	__be32	dst_ip;
-	__be32	dst_ip_msk;
-	__be32	src_ip;
-	__be32	src_ip_msk;
-} __packed;
-
-struct _rule_hw {
-	union {
-		struct {
-			u8 size;
-			u8 rsvd;
-			__be16 id;
-		};
-		struct mlx4_net_trans_rule_hw_eth eth;
-		struct mlx4_net_trans_rule_hw_ib ib;
-		struct mlx4_net_trans_rule_hw_ipv4 ipv4;
-		struct mlx4_net_trans_rule_hw_tcp_udp tcp_udp;
-	};
 };
 
 enum {
@@ -1295,5 +1236,7 @@ static inline spinlock_t *mlx4_tlock(struct mlx4_dev *dev)
 }
 
 #define NOT_MASKED_PD_BITS 17
+
+void mlx4_vf_immed_vlan_work_handler(struct work_struct *_work);
 
 #endif /* MLX4_H */

@@ -1,13 +1,14 @@
 /*
  * Versatile Express V2M Motherboard Support
  */
+#include <linux/clocksource.h>
 #include <linux/device.h>
 #include <linux/amba/bus.h>
 #include <linux/amba/mmci.h>
 #include <linux/io.h>
+#include <linux/clocksource.h>
 #include <linux/smp.h>
 #include <linux/init.h>
-#include <linux/irqchip.h>
 #include <linux/of_address.h>
 #include <linux/of_fdt.h>
 #include <linux/of_irq.h>
@@ -24,10 +25,8 @@
 #include <linux/clk-provider.h>
 #include <linux/clkdev.h>
 
-#include <asm/arch_timer.h>
 #include <asm/mach-types.h>
 #include <asm/sizes.h>
-#include <asm/smp_twd.h>
 #include <asm/mach/arch.h>
 #include <asm/mach/map.h>
 #include <asm/mach/time.h>
@@ -62,9 +61,6 @@ static void __init v2m_sp804_init(void __iomem *base, unsigned int irq)
 {
 	if (WARN_ON(!base || irq == NO_IRQ))
 		return;
-
-	writel(0, base + TIMER_1_BASE + TIMER_CTRL);
-	writel(0, base + TIMER_2_BASE + TIMER_CTRL);
 
 	sp804_clocksource_init(base + TIMER_2_BASE, "v2m-timer1");
 	sp804_clockevents_init(base + TIMER_1_BASE, irq, "v2m-timer0");
@@ -430,29 +426,11 @@ void __init v2m_dt_init_early(void)
 
 static void __init v2m_dt_timer_init(void)
 {
-	struct device_node *node = NULL;
-
 	of_clk_init(NULL);
 
-	do {
-		node = of_find_compatible_node(node, NULL, "arm,sp804");
-	} while (node && vexpress_get_site_by_node(node) != VEXPRESS_SITE_MB);
-	if (node) {
-		pr_info("Using SP804 '%s' as a clock & events source\n",
-				node->full_name);
-		WARN_ON(clk_register_clkdev(of_clk_get_by_name(node,
-				"timclken1"), "v2m-timer0", "sp804"));
-		WARN_ON(clk_register_clkdev(of_clk_get_by_name(node,
-				"timclken2"), "v2m-timer1", "sp804"));
-		v2m_sp804_init(of_iomap(node, 0),
-				irq_of_parse_and_map(node, 0));
-	}
+	clocksource_of_init();
 
-	if (arch_timer_of_register() != 0)
-		twd_local_timer_of_register();
-
-	if (arch_timer_sched_clock_init() != 0)
-		versatile_sched_clock_init(vexpress_get_24mhz_clock_base(),
+	versatile_sched_clock_init(vexpress_get_24mhz_clock_base(),
 				24000000);
 }
 
@@ -471,16 +449,15 @@ static void __init v2m_dt_init(void)
 
 static const char * const v2m_dt_match[] __initconst = {
 	"arm,vexpress",
-	"xen,xenvm",
 	NULL,
 };
 
 DT_MACHINE_START(VEXPRESS_DT, "ARM-Versatile Express")
 	.dt_compat	= v2m_dt_match,
 	.smp		= smp_ops(vexpress_smp_ops),
+	.smp_init	= smp_init_ops(vexpress_smp_init_ops),
 	.map_io		= v2m_dt_map_io,
 	.init_early	= v2m_dt_init_early,
-	.init_irq	= irqchip_init,
 	.init_time	= v2m_dt_timer_init,
 	.init_machine	= v2m_dt_init,
 MACHINE_END

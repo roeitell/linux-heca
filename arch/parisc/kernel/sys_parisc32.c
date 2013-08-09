@@ -42,8 +42,6 @@
 #include <asm/uaccess.h>
 #include <asm/mmu_context.h>
 
-#include "sys32.h"
-
 #undef DEBUG
 
 #ifdef DEBUG
@@ -58,12 +56,4 @@ asmlinkage long sys32_unimplemented(int r26, int r25, int r24, int r23,
     printk(KERN_ERR "%s(%d): Unimplemented 32 on 64 syscall #%d!\n", 
     	current->comm, current->pid, r20);
     return -ENOSYS;
-}
-
-asmlinkage long compat_sys_fanotify_mark(int fan_fd, int flags, u32 mask_hi,
-					 u32 mask_lo, int fd,
-					 const char __user *pathname)
-{
-	return sys_fanotify_mark(fan_fd, flags, ((u64)mask_hi << 32) | mask_lo,
-				 fd, pathname);
 }

@@ -535,6 +535,8 @@ int drm_display_mode_from_videomode(const struct videomode *vm,
 		dmode->flags |= DRM_MODE_FLAG_INTERLACE;
 	if (vm->flags & DISPLAY_FLAGS_DOUBLESCAN)
 		dmode->flags |= DRM_MODE_FLAG_DBLSCAN;
+	if (vm->flags & DISPLAY_FLAGS_DOUBLECLK)
+		dmode->flags |= DRM_MODE_FLAG_DBLCLK;
 	drm_mode_set_name(dmode);
 
 	return 0;
@@ -787,16 +789,17 @@ EXPORT_SYMBOL(drm_mode_set_crtcinfo);
  * LOCKING:
  * None.
  *
- * Copy an existing mode into another mode, preserving the object id
- * of the destination mode.
+ * Copy an existing mode into another mode, preserving the object id and
+ * list head of the destination mode.
  */
 void drm_mode_copy(struct drm_display_mode *dst, const struct drm_display_mode *src)
 {
 	int id = dst->base.id;
+	struct list_head head = dst->head;
 
 	*dst = *src;
 	dst->base.id = id;
-	INIT_LIST_HEAD(&dst->head);
+	dst->head = head;
 }
 EXPORT_SYMBOL(drm_mode_copy);
 
@@ -848,6 +851,26 @@ bool drm_mode_equal(const struct drm_display_mode *mode1, const struct drm_displ
 	} else if (mode1->clock != mode2->clock)
 		return false;
 
+	return drm_mode_equal_no_clocks(mode1, mode2);
+}
+EXPORT_SYMBOL(drm_mode_equal);
+
+/**
+ * drm_mode_equal_no_clocks - test modes for equality
+ * @mode1: first mode
+ * @mode2: second mode
+ *
+ * LOCKING:
+ * None.
+ *
+ * Check to see if @mode1 and @mode2 are equivalent, but
+ * don't check the pixel clocks.
+ *
+ * RETURNS:
+ * True if the modes are equal, false otherwise.
+ */
+bool drm_mode_equal_no_clocks(const struct drm_display_mode *mode1, const struct drm_display_mode *mode2)
+{
 	if (mode1->hdisplay == mode2->hdisplay &&
 	    mode1->hsync_start == mode2->hsync_start &&
 	    mode1->hsync_end == mode2->hsync_end &&
@@ -863,7 +886,7 @@ bool drm_mode_equal(const struct drm_display_mode *mode1, const struct drm_displ
 
 	return false;
 }
-EXPORT_SYMBOL(drm_mode_equal);
+EXPORT_SYMBOL(drm_mode_equal_no_clocks);
 
 /**
  * drm_mode_validate_size - make sure modes adhere to size constraints
@@ -997,6 +1020,11 @@ static int drm_mode_compare(void *priv, struct list_head *lh_a, struct list_head
 	diff = b->hdisplay * b->vdisplay - a->hdisplay * a->vdisplay;
 	if (diff)
 		return diff;
+
+	diff = b->vrefresh - a->vrefresh;
+	if (diff)
+		return diff;
+
 	diff = b->clock - a->clock;
 	return diff;
 }
@@ -1123,6 +1151,7 @@ bool drm_mode_parse_command_line_for_connector(const char *mode_option,
 				was_digit = false;
 			} else
 				goto done;
+			break;
 		case '0' ... '9':
 			was_digit = true;
 			break;

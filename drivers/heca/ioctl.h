@@ -3,9 +3,9 @@
 
 /* print */
 void __heca_printk(const char *path, int line,
-        const char *func, const char *format, ...);
+                const char *func, const char *format, ...);
 #define heca_printk(fmt, ...) \
-    __heca_printk(__FILE__, __LINE__, __func__, fmt, ##__VA_ARGS__)
+        __heca_printk(__FILE__, __LINE__, __func__, fmt, ##__VA_ARGS__)
 
 /* module */
 inline struct dsm_module_state *get_dsm_module_state(void);

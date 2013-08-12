@@ -735,7 +735,7 @@ static void dsm_recv_poll(struct ib_cq *cq)
                 }
 
                 if (ele->rid.remote_info->flag) {
-                        BUG_ON(wc.byte_len != sizeof(struct rdma_info));
+                        BUG_ON(wc.byte_len != sizeof(struct heca_rdma_info));
                         reg_rem_info(ele);
                         exchange_info(ele, wc.wr_id);
                 } else {
@@ -1205,7 +1205,7 @@ static void format_rdma_info(struct heca_connection_element *ele)
 
 static int create_rdma_info(struct heca_connection_element *ele)
 {
-        int size = sizeof(struct rdma_info);
+        int size = sizeof(struct heca_rdma_info);
         struct rdma_info_data *rid = &ele->rid;
 
         rid->send_buf = kzalloc(size, GFP_KERNEL);

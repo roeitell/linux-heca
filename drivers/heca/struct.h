@@ -133,12 +133,12 @@ struct map_dma {
 };
 
 struct rdma_info_data {
-        struct rdma_info *send_buf;
-        struct rdma_info *recv_buf;
+        struct heca_rdma_info *send_buf;
+        struct heca_rdma_info *recv_buf;
 
         struct map_dma send_dma;
         struct map_dma recv_dma;
-        struct rdma_info *remote_info;
+        struct heca_rdma_info *remote_info;
 
         struct ib_sge recv_sge;
         struct ib_recv_wr recv_wr;
@@ -217,7 +217,7 @@ struct heca_connection_element {
         struct work_struct delayed_request_flush_work;
 };
 
-struct rdma_info {
+struct heca_rdma_info {
 
         u8 flag;
         u32 node_ip;

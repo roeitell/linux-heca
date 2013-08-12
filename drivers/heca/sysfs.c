@@ -315,14 +315,14 @@ int create_dsm_sysfs_entry(struct heca_space *dsm,
 /* conn sysfs functions */
 struct conn_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct conn_element *, char *);
-        ssize_t(*store)(struct conn_element *, char *, size_t);
+        ssize_t(*show)(struct heca_connection_element *, char *);
+        ssize_t(*store)(struct heca_connection_element *, char *, size_t);
 };
 
 static ssize_t conn_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct conn_element *conn = container_of(k, struct conn_element, kobj);
+        struct heca_connection_element *conn = container_of(k, struct heca_connection_element, kobj);
         struct conn_instance_attribute *instance_attr =
                 container_of(a, struct conn_instance_attribute, attr);
 
@@ -331,21 +331,21 @@ static ssize_t conn_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_conn_local_show(struct conn_element *conn, char *data)
+static ssize_t instance_conn_local_show(struct heca_connection_element *conn, char *data)
 {
         char s[20];
         sockaddr_ntoa(&conn->local, s, sizeof s);
         return sprintf(data, "%s\n", s);
 }
 
-static ssize_t instance_conn_remote_show(struct conn_element *conn, char *data)
+static ssize_t instance_conn_remote_show(struct heca_connection_element *conn, char *data)
 {
         char s[20];
         sockaddr_ntoa(&conn->remote, s, sizeof s);
         return sprintf(data, "%s\n", s);
 }
 
-static ssize_t instance_conn_alive_show(struct conn_element *conn,
+static ssize_t instance_conn_alive_show(struct heca_connection_element *conn,
                 char *data)
 {
         return sprintf(data, "%d\n", atomic_read(&conn->alive));
@@ -375,13 +375,13 @@ static struct kobj_type ktype_conn_instance = {
         .default_attrs = (struct attribute **) conn_instance_attr,
 };
 
-void delete_connection_sysfs_entry(struct conn_element *ele)
+void delete_connection_sysfs_entry(struct heca_connection_element *ele)
 {
         kobject_put(&ele->kobj);
         kobject_del(&ele->kobj);
 }
 
-int create_connection_sysfs_entry(struct conn_element *ele)
+int create_connection_sysfs_entry(struct heca_connection_element *ele)
 {
         int rc;
 

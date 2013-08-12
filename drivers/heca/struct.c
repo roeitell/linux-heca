@@ -425,7 +425,7 @@ struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
  *
  */
 static inline int dsm_map_page_in_ppe(struct heca_page_pool_element *ppe,
-                struct page *page, struct conn_element *ele)
+                struct page *page, struct heca_connection_element *ele)
 {
         ppe->mem_page = page;
         ppe->page_buf = (void *) ib_dma_map_page(ele->cm_id->device,
@@ -434,13 +434,13 @@ static inline int dsm_map_page_in_ppe(struct heca_page_pool_element *ppe,
                         (u64) (unsigned long) ppe->page_buf);
 }
 
-static inline void dsm_release_ppe(struct conn_element *ele,
+static inline void dsm_release_ppe(struct heca_connection_element *ele,
                 struct heca_page_pool_element *ppe)
 {
         llist_add(&ppe->llnode, &ele->page_pool_elements);
 }
 
-static inline struct heca_page_pool_element *dsm_try_get_ppe(struct conn_element *ele)
+static inline struct heca_page_pool_element *dsm_try_get_ppe(struct heca_connection_element *ele)
 {
         struct llist_node *llnode;
         struct heca_page_pool_element *ppe = NULL;
@@ -455,7 +455,7 @@ static inline struct heca_page_pool_element *dsm_try_get_ppe(struct conn_element
         return ppe;
 }
 
-static struct heca_page_pool_element *dsm_get_ppe(struct conn_element *ele)
+static struct heca_page_pool_element *dsm_get_ppe(struct heca_connection_element *ele)
 {
         struct heca_page_pool_element *ppe;
 
@@ -474,7 +474,7 @@ retry:
 static void dsm_page_pool_refill(struct work_struct *work)
 {
         struct heca_space_page_pool *pp;
-        struct conn_element *ele;
+        struct heca_connection_element *ele;
 
         get_cpu();
         pp = container_of(work, struct heca_space_page_pool, work);
@@ -507,7 +507,7 @@ static void dsm_page_pool_refill(struct work_struct *work)
 }
 
 /* svms erased, cm_id destroyed, work cancelled => no race conditions */
-void dsm_destroy_page_pool(struct conn_element *ele)
+void dsm_destroy_page_pool(struct heca_connection_element *ele)
 {
         int i;
         struct heca_page_pool_element *ppe;
@@ -532,7 +532,7 @@ void dsm_destroy_page_pool(struct conn_element *ele)
         }
 }
 
-int dsm_init_page_pool(struct conn_element *ele)
+int dsm_init_page_pool(struct heca_connection_element *ele)
 {
         int i;
 
@@ -572,7 +572,7 @@ nomem:
         return -EFAULT;
 }
 
-struct heca_page_pool_element *dsm_fetch_ready_ppe(struct conn_element *ele)
+struct heca_page_pool_element *dsm_fetch_ready_ppe(struct heca_connection_element *ele)
 {
         struct heca_space_page_pool *pp;
         struct heca_page_pool_element *ppe = NULL;
@@ -588,7 +588,7 @@ struct heca_page_pool_element *dsm_fetch_ready_ppe(struct conn_element *ele)
         return ppe;
 }
 
-struct heca_page_pool_element *dsm_prepare_ppe(struct conn_element *ele,
+struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection_element *ele,
                 struct page *page)
 {
         struct heca_page_pool_element *ppe;
@@ -604,7 +604,7 @@ err:
         return NULL;
 }
 
-void dsm_ppe_clear_release(struct conn_element *ele, struct heca_page_pool_element **ppe)
+void dsm_ppe_clear_release(struct heca_connection_element *ele, struct heca_page_pool_element **ppe)
 {
         if ((*ppe)->page_buf) {
                 ib_dma_unmap_page(ele->cm_id->device, (u64) (*ppe)->page_buf,

@@ -19,19 +19,19 @@
 /*
  * conn_element funcs
  */
-struct conn_element *search_rb_conn(int node_ip)
+struct heca_connection_element *search_rb_conn(int node_ip)
 {
         struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
         struct rb_root *root;
         struct rb_node *node;
-        struct conn_element *this = 0;
+        struct heca_connection_element *this = 0;
         unsigned long seq;
 
         do {
                 seq = read_seqbegin(&rcm->connections_lock);
                 root = &rcm->connections_rb_tree_root;
                 for (node = root->rb_node; node; this = 0) {
-                        this = rb_entry(node, struct conn_element, rb_node);
+                        this = rb_entry(node, struct heca_connection_element, rb_node);
 
                         if (node_ip < this->remote_node_ip)
                                 node = node->rb_left;
@@ -45,18 +45,18 @@ struct conn_element *search_rb_conn(int node_ip)
         return this;
 }
 
-void insert_rb_conn(struct conn_element *ele)
+void insert_rb_conn(struct heca_connection_element *ele)
 {
         struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
         struct rb_root *root;
         struct rb_node **new, *parent = NULL;
-        struct conn_element *this;
+        struct heca_connection_element *this;
 
         write_seqlock(&rcm->connections_lock);
         root = &rcm->connections_rb_tree_root;
         new = &root->rb_node;
         while (*new) {
-                this = rb_entry(*new, struct conn_element, rb_node);
+                this = rb_entry(*new, struct heca_connection_element, rb_node);
                 parent = *new;
                 if (ele->remote_node_ip < this->remote_node_ip)
                         new = &((*new)->rb_left);
@@ -68,7 +68,7 @@ void insert_rb_conn(struct conn_element *ele)
         write_sequnlock(&rcm->connections_lock);
 }
 
-void erase_rb_conn(struct conn_element *ele)
+void erase_rb_conn(struct heca_connection_element *ele)
 {
         struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
 
@@ -541,7 +541,7 @@ static void release_svm_push_elements(struct subvirtual_machine *svm)
  * buffer.
  */
 static void release_svm_tx_elements(struct subvirtual_machine *svm,
-                struct conn_element *ele)
+                struct heca_connection_element *ele)
 {
         struct tx_buf_ele *tx_buf;
         int i;
@@ -665,10 +665,10 @@ void remove_svm(u32 dsm_id, u32 svm_id)
                         root = &dsm_state->rcm->connections_rb_tree_root;
                         for (node = rb_first(root);
                                         node; node = rb_next(node)) {
-                                struct conn_element *ele;
+                                struct heca_connection_element *ele;
 
                                 ele = rb_entry(node,
-                                                struct conn_element, rb_node);
+                                                struct heca_connection_element, rb_node);
                                 BUG_ON(!ele);
                                 release_svm_queued_requests(svm,
                                                 &ele->tx_buffer);
@@ -1123,10 +1123,10 @@ static int rcm_disconnect(struct heca_connections_manager *rcm)
 {
         struct rb_root *root = &rcm->connections_rb_tree_root;
         struct rb_node *node = rb_first(root);
-        struct conn_element *ele;
+        struct heca_connection_element *ele;
 
         while (node) {
-                ele = rb_entry(node, struct conn_element, rb_node);
+                ele = rb_entry(node, struct heca_connection_element, rb_node);
                 node = rb_next(node);
                 if (atomic_cmpxchg(&ele->alive, 1, 0)) {
                         rdma_disconnect(ele->cm_id);

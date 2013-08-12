@@ -182,13 +182,13 @@ struct heca_space_page_pool {
         int cpu;
         struct heca_page_pool_element *hspace_page_pool[HSPACE_PAGE_POOL_SZ];
         int head;
-        struct conn_element *connection;
+        struct heca_connection_element *connection;
         struct work_struct work;
 };
 
-struct conn_element {
-        struct heca_connections_manager *rcm;
-        /* not 100% sur of this atomic regarding barrier*/
+struct heca_connection_element {
+        struct heca_connections_manager *hcm;
+        /* not 100% sure of this atomic regarding barrier*/
         atomic_t alive;
 
         struct sockaddr_in local, remote;
@@ -255,7 +255,7 @@ struct subvirtual_machine {
         u32 svm_id;
         int is_local;
         struct heca_space *dsm;
-        struct conn_element *ele;
+        struct heca_connection_element *ele;
         pid_t pid;
         struct mm_struct *mm;
         u32 descriptor;
@@ -294,7 +294,7 @@ struct subvirtual_machine {
 if (likely((svms).ids[i]))
 
 struct work_request_ele {
-        struct conn_element *ele;
+        struct heca_connection_element *ele;
         struct ib_send_wr wr;
         struct ib_sge sg;
         struct ib_send_wr *bad_wr;
@@ -308,7 +308,7 @@ struct msg_work_request {
 };
 
 struct recv_work_req_ele {
-        struct conn_element *ele;
+        struct heca_connection_element *ele;
         struct ib_recv_wr sq_wr;
         struct ib_recv_wr *bad_wr;
         struct ib_sge recv_sgl;
@@ -377,7 +377,7 @@ struct dsm_request {
 struct deferred_gup {
         struct dsm_message dsm_buf;
         struct subvirtual_machine *remote_svm;
-        struct conn_element *origin_ele;
+        struct heca_connection_element *origin_ele;
         struct memory_region *mr;
         struct llist_node lnode;
 };
@@ -468,11 +468,11 @@ struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,
                 unsigned long);
 struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *,
                 unsigned long);
-void dsm_destroy_page_pool(struct conn_element *);
-int dsm_init_page_pool(struct conn_element *);
-struct heca_page_pool_element *dsm_fetch_ready_ppe(struct conn_element *);
-struct heca_page_pool_element *dsm_prepare_ppe(struct conn_element *, struct page *);
-void dsm_ppe_clear_release(struct conn_element *, struct heca_page_pool_element **);
+void dsm_destroy_page_pool(struct heca_connection_element *);
+int dsm_init_page_pool(struct heca_connection_element *);
+struct heca_page_pool_element *dsm_fetch_ready_ppe(struct heca_connection_element *);
+struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection_element *, struct page *);
+void dsm_ppe_clear_release(struct heca_connection_element *, struct heca_page_pool_element **);
 void init_dsm_reader_kmem(void);
 u32 dsm_lookup_page_read(struct subvirtual_machine *, unsigned long);
 u32 dsm_extract_page_read(struct subvirtual_machine *, unsigned long);

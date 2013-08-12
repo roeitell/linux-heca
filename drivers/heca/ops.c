@@ -21,7 +21,7 @@
  * to reschedule, in hope an existing tx_e will push a page and free mem. but in
  * this case, when we wake, we might find an available tx_e.
  */
-static int dsm_send_msg(struct conn_element *ele, u32 dsm_id, u32 mr_id,
+static int dsm_send_msg(struct heca_connection_element *ele, u32 dsm_id, u32 mr_id,
                 u32 src_id, u32 dest_id, unsigned long local_addr,
                 unsigned long shared_addr, struct page *page, int type,
                 int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
@@ -54,7 +54,7 @@ static int dsm_send_msg(struct conn_element *ele, u32 dsm_id, u32 mr_id,
  * same as dsm_send_msg, only with different preparation of the tx_e, and
  * different method of queueing the args. dsm_send_tx_e receives response=1.
  */
-static int dsm_send_response(struct conn_element *ele, int type,
+static int dsm_send_response(struct heca_connection_element *ele, int type,
                 struct dsm_message *msg)
 {
         return dsm_send_msg(ele, msg->dsm_id, msg->mr_id,
@@ -94,7 +94,7 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
 {
         struct tx_buf_ele *tx_elms[svms.num];
         struct dsm_request *reqs[svms.num];
-        struct conn_element *eles[svms.num];
+        struct heca_connection_element *eles[svms.num];
         int i, j, r = 0;
 
         for_each_valid_svm(svms, i) {
@@ -154,7 +154,7 @@ nomem:
         return -ENOMEM;
 }
 
-static int send_svm_status_update(struct conn_element *ele,
+static int send_svm_status_update(struct heca_connection_element *ele,
                 struct dsm_message *msg)
 {
         return dsm_send_response(ele, MSG_RES_SVM_FAIL, msg);
@@ -226,7 +226,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
                         NULL, 1);
 }
 
-int dsm_process_request_query(struct conn_element *ele, struct rx_buf_ele *rx_e)
+int dsm_process_request_query(struct heca_connection_element *ele, struct rx_buf_ele *rx_e)
 {
         struct dsm_message *msg = rx_e->dsm_buf;
         struct heca_space *dsm;
@@ -297,7 +297,7 @@ fail:
         return r;
 }
 
-int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
+int process_pull_request(struct heca_connection_element *ele, struct rx_buf_ele *rx_buf_e)
 {
         struct subvirtual_machine *local_svm;
         struct heca_space *dsm;
@@ -334,14 +334,14 @@ fail:
         return send_svm_status_update(ele, msg);
 }
 
-int process_svm_status(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
+int process_svm_status(struct heca_connection_element *ele, struct rx_buf_ele *rx_buf_e)
 {
         heca_printk(KERN_DEBUG "removing svm %d", rx_buf_e->dsm_buf->src_id);
         remove_svm(rx_buf_e->dsm_buf->dsm_id, rx_buf_e->dsm_buf->src_id);
         return 1;
 }
 
-int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
+int process_page_redirect(struct heca_connection_element *ele, struct tx_buf_ele *tx_e,
                 u32 redirect_svm_id)
 {
         struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
@@ -398,14 +398,14 @@ out:
         return ret;
 }
 
-int process_page_response(struct conn_element *ele, struct tx_buf_ele *tx_e)
+int process_page_response(struct heca_connection_element *ele, struct tx_buf_ele *tx_e)
 {
         if (!tx_e->callback.func || tx_e->callback.func(tx_e))
                 dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
         return 0;
 }
 
-static int try_redirect_page_request(struct conn_element *ele,
+static int try_redirect_page_request(struct heca_connection_element *ele,
                 struct dsm_message *msg, struct subvirtual_machine *remote_svm, u32 id)
 {
         if (msg->type == MSG_REQ_PAGE_TRY || id == remote_svm->svm_id)
@@ -417,7 +417,7 @@ static int try_redirect_page_request(struct conn_element *ele,
 
 static inline void defer_gup(struct dsm_message *msg,
                 struct subvirtual_machine *local_svm, struct memory_region *mr,
-                struct subvirtual_machine *remote_svm, struct conn_element *ele)
+                struct subvirtual_machine *remote_svm, struct heca_connection_element *ele)
 {
         struct deferred_gup *dgup = NULL;
 
@@ -435,7 +435,7 @@ retry:
         schedule_work(&local_svm->deferred_gup_work);
 }
 
-int process_page_claim(struct conn_element *ele, struct dsm_message *msg)
+int process_page_claim(struct heca_connection_element *ele, struct dsm_message *msg)
 {
         struct heca_space *dsm;
         struct subvirtual_machine *local_svm, *remote_svm;
@@ -562,7 +562,7 @@ fail:
         return -EFAULT;
 }
 
-int process_claim_ack(struct conn_element *ele, struct tx_buf_ele *tx_e,
+int process_claim_ack(struct heca_connection_element *ele, struct tx_buf_ele *tx_e,
                 struct dsm_message *response)
 {
         struct dsm_message *msg = tx_e->dsm_buf;
@@ -592,7 +592,7 @@ int process_claim_ack(struct conn_element *ele, struct tx_buf_ele *tx_e,
         return 0;
 }
 
-static int process_page_request(struct conn_element *origin_ele,
+static int process_page_request(struct heca_connection_element *origin_ele,
                 struct subvirtual_machine *local_svm, struct memory_region *mr,
                 struct subvirtual_machine *remote_svm, struct dsm_message *msg,
                 int deferred)
@@ -601,7 +601,7 @@ static int process_page_request(struct conn_element *origin_ele,
         struct tx_buf_ele *tx_e = NULL;
         struct page *page;
         unsigned long addr = 0;
-        struct conn_element *ele = NULL;
+        struct heca_connection_element *ele = NULL;
         u32 redirect_id = 0;
         int res = 0;
 
@@ -727,7 +727,7 @@ void deferred_gup_work_fn(struct work_struct *w)
         process_deferred_gups(svm);
 }
 
-int process_page_request_msg(struct conn_element *ele, struct dsm_message *msg)
+int process_page_request_msg(struct heca_connection_element *ele, struct dsm_message *msg)
 {
         struct subvirtual_machine *local_svm = NULL, *remote_svm = NULL;
         struct heca_space *dsm = NULL;
@@ -795,7 +795,7 @@ out:
         return ret;
 }
 
-int ack_msg(struct conn_element *ele, struct dsm_message *msg, u32 type)
+int ack_msg(struct heca_connection_element *ele, struct dsm_message *msg, u32 type)
 {
         return dsm_send_response(ele, type, msg);
 }

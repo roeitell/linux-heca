@@ -4,26 +4,26 @@
 void init_kmem_deferred_gup_cache(void);
 void destroy_kmem_deferred_gup_cache(void);
 int dsm_claim_page(struct subvirtual_machine *, struct subvirtual_machine *,
-        struct memory_region *, unsigned long, struct page *, int);
+                struct memory_region *, unsigned long, struct page *, int);
 int request_dsm_page(struct page *, struct subvirtual_machine *,
-        struct subvirtual_machine *, struct memory_region *,
-        unsigned long, int (*)(struct tx_buf_ele *), int,
-        struct dsm_page_cache *, struct page_pool_ele *);
+                struct subvirtual_machine *, struct memory_region *,
+                unsigned long, int (*)(struct tx_buf_ele *), int,
+                struct dsm_page_cache *, struct page_pool_ele *);
 int process_pull_request(struct conn_element *, struct rx_buf_ele *);
 int process_svm_status(struct conn_element *, struct rx_buf_ele *);
 int process_page_redirect(struct conn_element *, struct tx_buf_ele *, u32);
 int process_page_response(struct conn_element *, struct tx_buf_ele *);
 int process_page_claim(struct conn_element *, struct dsm_message *);
 int process_claim_ack(struct conn_element *, struct tx_buf_ele *,
-        struct dsm_message *);
+                struct dsm_message *);
 void deferred_gup_work_fn(struct work_struct *);
 int process_page_request_msg(struct conn_element *, struct dsm_message *);
 int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
-        struct page *, unsigned long, struct mm_struct *,
-        struct memory_region *);
+                struct page *, unsigned long, struct mm_struct *,
+                struct memory_region *);
 int ack_msg(struct conn_element *, struct dsm_message *, u32);
 int unmap_range(struct dsm *dsm, int dsc, pid_t pid, unsigned long addr,
-        unsigned long sz);
+                unsigned long sz);
 int dsm_process_request_query(struct conn_element *, struct rx_buf_ele *);
 int dsm_process_query_info(struct tx_buf_ele *);
 

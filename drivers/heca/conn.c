@@ -440,7 +440,8 @@ static int dsm_recv_message_handler(struct conn_element *ele,
                 handle_tx_element(ele, tx_e, NULL);
                 break;
         default:
-                heca_printk(KERN_ERR "unhandled message stats addr: %p, status %d id %d", rx_e, rx_e->dsm_buf->type, rx_e->id);
+                heca_printk(KERN_ERR "unhandled message stats addr: %p, status %d id %d",
+                                rx_e, rx_e->dsm_buf->type, rx_e->id);
                 goto err;
         }
 
@@ -490,8 +491,8 @@ static int dsm_send_message_handler(struct conn_element *ele,
                 try_release_tx_element(ele, tx_e);
                 break;
         default:
-                heca_printk(KERN_ERR "unhandled message stats  addr: %p, status %d , id %d", tx_e,
-                                tx_e->dsm_buf->type, tx_e->id);
+                heca_printk(KERN_ERR "unhandled message stats  addr: %p, status %d , id %d",
+                                tx_e, tx_e->dsm_buf->type, tx_e->id);
                 return 1;
         }
         return 0;
@@ -1463,7 +1464,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
                         goto err;
                 }
 
-                ret = create_conn_sysfs_entry(ele);
+                ret = create_connection_sysfs_entry(ele);
                 if (ret) {
                         heca_printk(KERN_ERR "create_conn_sysfs_entry failed: %d",
                                         ret);
@@ -1601,7 +1602,7 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
         if (IS_ERR(ele->cm_id))
                 goto err1;
 
-        if (create_conn_sysfs_entry(ele)) {
+        if (create_connection_sysfs_entry(ele)) {
                 heca_printk(KERN_ERR "create_conn_sysfs_entry failed");
                 goto err1;
         }
@@ -1766,7 +1767,7 @@ int destroy_connection(struct conn_element *ele)
         dsm_destroy_page_pool(ele);
 
         erase_rb_conn(ele);
-        delete_conn_sysfs_entry(ele);
+        delete_connection_sysfs_entry(ele);
         vfree(ele);
 
         return ret;

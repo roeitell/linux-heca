@@ -440,7 +440,8 @@ static int dsm_recv_message_handler(struct conn_element *ele,
                 handle_tx_element(ele, tx_e, NULL);
                 break;
         default:
-                heca_printk(KERN_ERR "unhandled message stats addr: %p, status %d id %d", rx_e, rx_e->dsm_buf->type, rx_e->id);
+                heca_printk(KERN_ERR "unhandled message stats addr: %p, status %d id %d",
+                                rx_e, rx_e->dsm_buf->type, rx_e->id);
                 goto err;
         }
 
@@ -490,8 +491,8 @@ static int dsm_send_message_handler(struct conn_element *ele,
                 try_release_tx_element(ele, tx_e);
                 break;
         default:
-                heca_printk(KERN_ERR "unhandled message stats  addr: %p, status %d , id %d", tx_e,
-                                tx_e->dsm_buf->type, tx_e->id);
+                heca_printk(KERN_ERR "unhandled message stats  addr: %p, status %d , id %d",
+                                tx_e, tx_e->dsm_buf->type, tx_e->id);
                 return 1;
         }
         return 0;

@@ -402,29 +402,29 @@ done:
 /* toplevel sysfs functions */
 void heca_sysfs_cleanup(struct dsm_module_state *dsm_state)
 {
-        struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
+        struct heca_space_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
         kobject_put(dsm_kobjects->rdma_kobject);
         kobject_del(dsm_kobjects->rdma_kobject);
         kobject_put(dsm_kobjects->domains_kobject);
         kobject_del(dsm_kobjects->domains_kobject);
-        kobject_del(dsm_kobjects->dsm_glob_kobject);
+        kobject_del(dsm_kobjects->hspace_glob_kobject);
 }
 
 int heca_sysfs_setup(struct dsm_module_state *dsm_state)
 {
-        struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
+        struct heca_space_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
 
-        dsm_kobjects->dsm_glob_kobject = kobject_create_and_add(HECA_SYSFS_MODULE,
+        dsm_kobjects->hspace_glob_kobject = kobject_create_and_add(HECA_SYSFS_MODULE,
                         kernel_kobj);
-        if (!dsm_kobjects->dsm_glob_kobject)
+        if (!dsm_kobjects->hspace_glob_kobject)
                 goto err;
         dsm_kobjects->rdma_kobject = kobject_create_and_add(HECA_SYSFS_RDMA,
-                        dsm_kobjects->dsm_glob_kobject);
+                        dsm_kobjects->hspace_glob_kobject);
         if (!dsm_kobjects->rdma_kobject)
                 goto err1;
         dsm_kobjects->domains_kobject = kobject_create_and_add(HECA_SYSFS_CONF,
-                        dsm_kobjects->dsm_glob_kobject);
+                        dsm_kobjects->hspace_glob_kobject);
         if (!dsm_kobjects->domains_kobject)
                 goto err2;
 
@@ -434,7 +434,7 @@ err2:
         kobject_put(dsm_kobjects->rdma_kobject);
         kobject_del(dsm_kobjects->rdma_kobject);
 err1:
-        kobject_del(dsm_kobjects->dsm_glob_kobject);
+        kobject_del(dsm_kobjects->hspace_glob_kobject);
 err:
         return -ENOMEM;
 }

@@ -96,8 +96,8 @@ struct heca_space {
         int nb_local_hprocs;
 };
 
-struct dsm_kobjects {
-        struct kobject *dsm_glob_kobject;
+struct heca_space_kobjects {
+        struct kobject *hspace_glob_kobject;
         struct kobject *rdma_kobject;
         struct kobject *domains_kobject;
 };
@@ -385,7 +385,7 @@ struct dsm_module_state {
         struct radix_tree_root mm_tree_root;
         struct list_head dsm_list;
 
-        struct dsm_kobjects dsm_kobjects;
+        struct heca_space_kobjects dsm_kobjects;
         struct workqueue_struct * dsm_rx_wq;
         struct workqueue_struct * dsm_tx_wq;
 };

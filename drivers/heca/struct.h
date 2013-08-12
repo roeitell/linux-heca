@@ -102,7 +102,7 @@ struct heca_space_kobjects {
         struct kobject *domains_kobject;
 };
 
-struct rcm {
+struct heca_connections_manager {
         int node_ip;
 
         struct rdma_cm_id *cm_id;
@@ -112,10 +112,10 @@ struct rcm {
 
         struct ib_cq *listen_cq;
 
-        struct mutex rcm_mutex;
+        struct mutex hcm_mutex;
 
-        struct rb_root root_conn;
-        seqlock_t conn_lock;
+        struct rb_root connections_rb_tree_root;
+        seqlock_t connections_lock;
 
         struct sockaddr_in sin;
 };
@@ -181,7 +181,7 @@ struct dsm_page_pool {
 };
 
 struct conn_element {
-        struct rcm *rcm;
+        struct heca_connections_manager *rcm;
         /* not 100% sur of this atomic regarding barrier*/
         atomic_t alive;
 
@@ -378,7 +378,7 @@ struct deferred_gup {
 
 
 struct dsm_module_state {
-        struct rcm *rcm;
+        struct heca_connections_manager *rcm;
         struct mutex dsm_state_mutex;
         spinlock_t radix_lock;
         struct radix_tree_root dsm_tree_root;

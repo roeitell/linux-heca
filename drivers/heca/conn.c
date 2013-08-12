@@ -308,22 +308,22 @@ static void delayed_request_flush_work_fn(struct work_struct *w)
 
 static void destroy_connection_work(struct work_struct *work)
 {
-        struct rcm *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
         struct rb_root *root;
         struct rb_node *node, *next;
         struct conn_element *ele;
         unsigned long seq;
 
         do {
-                seq = read_seqbegin(&rcm->conn_lock);
-                root = &rcm->root_conn;
+                seq = read_seqbegin(&rcm->connections_lock);
+                root = &rcm->connections_rb_tree_root;
                 for (node = rb_first(root); node; node = next) {
                         ele = rb_entry(node, struct conn_element, rb_node);
                         next = rb_next(node);
                         if (atomic_cmpxchg(&ele->alive, -1, 0) == -1)
                                 destroy_connection(ele);
                 }
-        } while (read_seqretry(&rcm->conn_lock, seq));
+        } while (read_seqretry(&rcm->connections_lock, seq));
 
         kfree(work);
 }
@@ -1440,7 +1440,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
 {
         int ret = 0;
         struct conn_element *ele = 0;
-        struct rcm *rcm;
+        struct heca_connections_manager *rcm;
 
         switch (ev->event) {
         case RDMA_CM_EVENT_ADDR_RESOLVED:
@@ -1569,7 +1569,7 @@ void try_release_tx_element(struct conn_element *ele, struct tx_buf_ele *tx_e)
                 release_tx_element(ele, tx_e);
 }
 
-static int create_connection(struct rcm *rcm, unsigned long ip,
+static int create_connection(struct heca_connections_manager *rcm, unsigned long ip,
                 unsigned short port)
 {
         struct rdma_conn_param param;

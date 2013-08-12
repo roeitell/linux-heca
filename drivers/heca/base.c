@@ -21,15 +21,15 @@
  */
 struct conn_element *search_rb_conn(int node_ip)
 {
-        struct rcm *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
         struct rb_root *root;
         struct rb_node *node;
         struct conn_element *this = 0;
         unsigned long seq;
 
         do {
-                seq = read_seqbegin(&rcm->conn_lock);
-                root = &rcm->root_conn;
+                seq = read_seqbegin(&rcm->connections_lock);
+                root = &rcm->connections_rb_tree_root;
                 for (node = root->rb_node; node; this = 0) {
                         this = rb_entry(node, struct conn_element, rb_node);
 
@@ -40,20 +40,20 @@ struct conn_element *search_rb_conn(int node_ip)
                         else
                                 break;
                 }
-        } while (read_seqretry(&rcm->conn_lock, seq));
+        } while (read_seqretry(&rcm->connections_lock, seq));
 
         return this;
 }
 
 void insert_rb_conn(struct conn_element *ele)
 {
-        struct rcm *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
         struct rb_root *root;
         struct rb_node **new, *parent = NULL;
         struct conn_element *this;
 
-        write_seqlock(&rcm->conn_lock);
-        root = &rcm->root_conn;
+        write_seqlock(&rcm->connections_lock);
+        root = &rcm->connections_rb_tree_root;
         new = &root->rb_node;
         while (*new) {
                 this = rb_entry(*new, struct conn_element, rb_node);
@@ -65,16 +65,16 @@ void insert_rb_conn(struct conn_element *ele)
         }
         rb_link_node(&ele->rb_node, parent, new);
         rb_insert_color(&ele->rb_node, root);
-        write_sequnlock(&rcm->conn_lock);
+        write_sequnlock(&rcm->connections_lock);
 }
 
 void erase_rb_conn(struct conn_element *ele)
 {
-        struct rcm *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
 
-        write_seqlock(&rcm->conn_lock);
-        rb_erase(&ele->rb_node, &rcm->root_conn);
-        write_sequnlock(&rcm->conn_lock);
+        write_seqlock(&rcm->connections_lock);
+        rb_erase(&ele->rb_node, &rcm->connections_rb_tree_root);
+        write_sequnlock(&rcm->connections_lock);
 }
 
 /*
@@ -662,7 +662,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
                 struct rb_node *node;
 
                 if (dsm_state->rcm) {
-                        root = &dsm_state->rcm->root_conn;
+                        root = &dsm_state->rcm->connections_rb_tree_root;
                         for (node = rb_first(root);
                                         node; node = rb_next(node)) {
                                 struct conn_element *ele;
@@ -1047,15 +1047,15 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
                 unsigned short port)
 {
         int ret = 0;
-        struct rcm *rcm = kzalloc(sizeof(struct rcm), GFP_KERNEL);
+        struct heca_connections_manager *rcm = kzalloc(sizeof(struct heca_connections_manager), GFP_KERNEL);
 
         if (!rcm)
                 return -ENOMEM;
 
-        mutex_init(&rcm->rcm_mutex);
-        seqlock_init(&rcm->conn_lock);
+        mutex_init(&rcm->hcm_mutex);
+        seqlock_init(&rcm->connections_lock);
         rcm->node_ip = ip;
-        rcm->root_conn = RB_ROOT;
+        rcm->connections_rb_tree_root = RB_ROOT;
 
         rcm->cm_id = rdma_create_id(server_event_handler, rcm, RDMA_PS_TCP,
                         IB_QPT_RC);
@@ -1119,9 +1119,9 @@ failed:
         return ret;
 }
 
-static int rcm_disconnect(struct rcm *rcm)
+static int rcm_disconnect(struct heca_connections_manager *rcm)
 {
-        struct rb_root *root = &rcm->root_conn;
+        struct rb_root *root = &rcm->connections_rb_tree_root;
         struct rb_node *node = rb_first(root);
         struct conn_element *ele;
 
@@ -1143,7 +1143,7 @@ static int rcm_disconnect(struct rcm *rcm)
 int destroy_rcm_listener(struct dsm_module_state *dsm_state)
 {
         int rc = 0;
-        struct rcm *rcm = dsm_state->rcm;
+        struct heca_connections_manager *rcm = dsm_state->rcm;
 
         heca_printk(KERN_DEBUG "<enter>");
 
@@ -1184,7 +1184,7 @@ int destroy_rcm_listener(struct dsm_module_state *dsm_state)
         rcm->cm_id = NULL;
 
 destroy:
-        mutex_destroy(&rcm->rcm_mutex);
+        mutex_destroy(&rcm->hcm_mutex);
         kfree(rcm);
         dsm_state->rcm = NULL;
 

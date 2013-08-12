@@ -870,7 +870,7 @@ retry:
          *  1 for every svm sent to (released on dsm_ppe_clear_release)
          */
         page_cache_get(page);
-        for_each_valid_svm(svms, i) {
+        for_each_valid_hproc(svms, i) {
                 page_cache_get(page);
                 dpc->bitmap += (1 << i);
         }

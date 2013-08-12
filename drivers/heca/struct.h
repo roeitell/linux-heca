@@ -85,6 +85,14 @@
 #define HSPACE_PAGE_POOL_SZ 1000
 
 /*
+ * Useful macro for parsing heca processes
+ */
+#define for_each_valid_hproc(hprocs, i) \
+        for (i = 0; i < (hprocs).num; i++) \
+if (likely((hprocs).ids[i]))
+
+
+/*
  * DSM DATA structure
  */
 struct heca_space {
@@ -289,9 +297,7 @@ struct heca_process {
         atomic_t refs;
 };
 
-#define for_each_valid_svm(svms, i)         \
-        for (i = 0; i < (svms).num; i++)        \
-if (likely((svms).ids[i]))
+
 
 struct work_request_ele {
         struct heca_connection_element *ele;

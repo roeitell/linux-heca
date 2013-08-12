@@ -172,7 +172,7 @@ void remove_svm_from_descriptors(struct heca_process *svm)
                  * complex locking everywhere); or hack - leave a "hole" in the arr to
                  * signal svm down.
                  */
-                for_each_valid_svm (svms, j) {
+                for_each_valid_hproc (svms, j) {
                         if (svms.ids[j] == svm->hproc_id) {
                                 svms.ids[j] = 0;
                                 break;

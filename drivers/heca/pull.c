@@ -613,7 +613,7 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
                 spin_unlock_irq(&fault_svm->page_cache_spinlock);
                 radix_tree_preload_end();
                 if (likely(!r)) {
-                        for_each_valid_svm(svms, i) {
+                        for_each_valid_hproc(svms, i) {
                                 struct heca_process *remote_svm;
 
                                 remote_svm = find_svm(fault_svm->hspace,
@@ -966,7 +966,7 @@ static int dsm_maintain_notify(struct heca_process *svm,
         svms = dsm_descriptor_to_svms(mr->descriptor);
         rcu_read_unlock();
 
-        for_each_valid_svm(svms, i) {
+        for_each_valid_hproc(svms, i) {
                 /* the page returned home to us, its owners */
                 if (svms.ids[i] == svm->hproc_id) {
                         r = 0;

@@ -702,7 +702,7 @@ struct heca_process *find_any_svm(struct heca_space *dsm, struct svm_list svms)
         int i;
         struct heca_process *svm;
 
-        for_each_valid_svm(svms, i) {
+        for_each_valid_hproc(svms, i) {
                 svm = find_svm(dsm, svms.ids[i]);
                 if (likely(svm))
                         return svm;

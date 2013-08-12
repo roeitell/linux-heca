@@ -97,7 +97,7 @@ static int send_request_dsm_page_pull(struct heca_process *fault_svm,
         struct heca_connection_element *eles[svms.num];
         int i, j, r = 0;
 
-        for_each_valid_svm(svms, i) {
+        for_each_valid_hproc(svms, i) {
                 struct heca_process *svm;
 
                 reqs[i] = NULL;
@@ -773,7 +773,7 @@ int dsm_request_page_pull(struct heca_space *dsm, struct heca_process *fault_svm
          * the meanwhile, but we don't have to use them now as a work thread will
          * use them anyway to free the req_queue.
          */
-        for_each_valid_svm(svms, i) {
+        for_each_valid_hproc(svms, i) {
                 struct heca_process *svm = find_svm(dsm, svms.ids[i]);
                 int full = request_queue_full(svm->connection);
 

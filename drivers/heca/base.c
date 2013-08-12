@@ -461,8 +461,8 @@ out:
                 }
         }
 no_dsm:
-        heca_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d"
-                        , new_svm, r, svm_info->dsm_id, svm_info->svm_id, r);
+        heca_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d",
+                        new_svm, r, svm_info->dsm_id, svm_info->svm_id, r);
         return r;
 }
 

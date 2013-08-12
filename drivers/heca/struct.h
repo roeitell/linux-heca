@@ -46,7 +46,7 @@
 
 /*
  * RDMA_INFO
- /
+*/
 #define RDMA_INFO_CL        4
 #define RDMA_INFO_SV        3
 #define RDMA_INFO_READY_CL  2

@@ -424,7 +424,7 @@ struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
  * Also, page pool sizes are currently bloated.
  *
  */
-static inline int dsm_map_page_in_ppe(struct page_pool_ele *ppe,
+static inline int dsm_map_page_in_ppe(struct heca_page_pool_element *ppe,
                 struct page *page, struct conn_element *ele)
 {
         ppe->mem_page = page;
@@ -435,29 +435,29 @@ static inline int dsm_map_page_in_ppe(struct page_pool_ele *ppe,
 }
 
 static inline void dsm_release_ppe(struct conn_element *ele,
-                struct page_pool_ele *ppe)
+                struct heca_page_pool_element *ppe)
 {
         llist_add(&ppe->llnode, &ele->page_pool_elements);
 }
 
-static inline struct page_pool_ele *dsm_try_get_ppe(struct conn_element *ele)
+static inline struct heca_page_pool_element *dsm_try_get_ppe(struct conn_element *ele)
 {
         struct llist_node *llnode;
-        struct page_pool_ele *ppe = NULL;
+        struct heca_page_pool_element *ppe = NULL;
 
         spin_lock(&ele->page_pool_elements_lock);
         llnode = llist_del_first(&ele->page_pool_elements);
         spin_unlock(&ele->page_pool_elements_lock);
 
         if (likely(llnode))
-                ppe = container_of(llnode, struct page_pool_ele, llnode);
+                ppe = container_of(llnode, struct heca_page_pool_element, llnode);
 
         return ppe;
 }
 
-static struct page_pool_ele *dsm_get_ppe(struct conn_element *ele)
+static struct heca_page_pool_element *dsm_get_ppe(struct conn_element *ele)
 {
-        struct page_pool_ele *ppe;
+        struct heca_page_pool_element *ppe;
 
 retry:
         /* FIXME: when flushing dsm_requests we might be mutex_locked */
@@ -473,14 +473,14 @@ retry:
 
 static void dsm_page_pool_refill(struct work_struct *work)
 {
-        struct dsm_page_pool *pp;
+        struct heca_space_page_pool *pp;
         struct conn_element *ele;
 
         get_cpu();
-        pp = container_of(work, struct dsm_page_pool, work);
-        ele = pp->ele;
+        pp = container_of(work, struct heca_space_page_pool, work);
+        ele = pp->connection;
         while (pp->head) {
-                struct page_pool_ele *ppe;
+                struct heca_page_pool_element *ppe;
                 struct page *page;
 
                 ppe = dsm_try_get_ppe(ele);
@@ -499,7 +499,7 @@ static void dsm_page_pool_refill(struct work_struct *work)
                         break;
                 }
 
-                pp->buf[--pp->head] = ppe;
+                pp->hspace_page_pool[--pp->head] = ppe;
         }
         if (pp->head)
                 schedule_work_on(pp->cpu, &pp->work);
@@ -510,14 +510,14 @@ static void dsm_page_pool_refill(struct work_struct *work)
 void dsm_destroy_page_pool(struct conn_element *ele)
 {
         int i;
-        struct page_pool_ele *ppe;
+        struct heca_page_pool_element *ppe;
 
         /* destroy page pool */
         for_each_online_cpu(i) {
-                struct dsm_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
+                struct heca_space_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
                 cancel_work_sync(&pp->work); /* work offline, or spin_lock inside */
                 while (pp->head != DSM_PAGE_POOL_SZ) {
-                        ppe = pp->buf[pp->head++];
+                        ppe = pp->hspace_page_pool[pp->head++];
                         if (ppe->mem_page)
                                 page_cache_release(ppe->mem_page);
                         kfree(ppe);
@@ -527,7 +527,7 @@ void dsm_destroy_page_pool(struct conn_element *ele)
         /* destroy elements list */
         while (!llist_empty(&ele->page_pool_elements)) {
                 struct llist_node *llnode = llist_del_first(&ele->page_pool_elements);
-                ppe = container_of(llnode, struct page_pool_ele, llnode);
+                ppe = container_of(llnode, struct heca_page_pool_element, llnode);
                 kfree(ppe);
         }
 }
@@ -540,7 +540,7 @@ int dsm_init_page_pool(struct conn_element *ele)
         spin_lock_init(&ele->page_pool_elements_lock);
         init_llist_head(&ele->page_pool_elements);
         for (i = 0; i < DSM_PAGE_POOL_SZ * (NR_CPUS + 1); i++) {
-                struct page_pool_ele *ppe = kzalloc(sizeof(struct page_pool_ele),
+                struct heca_page_pool_element *ppe = kzalloc(sizeof(struct heca_page_pool_element),
                                 GFP_ATOMIC);
                 if (!ppe)
                         goto nomem;
@@ -548,14 +548,14 @@ int dsm_init_page_pool(struct conn_element *ele)
         }
 
         /* init page pool */
-        ele->page_pool = alloc_percpu(struct dsm_page_pool);
+        ele->page_pool = alloc_percpu(struct heca_space_page_pool);
         if (!ele->page_pool)
                 goto nomem;
 
         for_each_online_cpu(i) {
-                struct dsm_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
+                struct heca_space_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
                 pp->head = DSM_PAGE_POOL_SZ;
-                pp->ele = ele; /* for container_of(work_struct) */
+                pp->connection = ele; /* for container_of(work_struct) */
                 pp->cpu = i;
                 INIT_WORK(&pp->work, dsm_page_pool_refill);
                 schedule_work_on(i, &pp->work);
@@ -565,33 +565,33 @@ int dsm_init_page_pool(struct conn_element *ele)
 nomem:
         while (!llist_empty(&ele->page_pool_elements)) {
                 struct llist_node *llnode = llist_del_first(&ele->page_pool_elements);
-                struct page_pool_ele *ppe = container_of(llnode, struct page_pool_ele,
+                struct heca_page_pool_element *ppe = container_of(llnode, struct heca_page_pool_element,
                                 llnode);
                 kfree(ppe);
         }
         return -EFAULT;
 }
 
-struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *ele)
+struct heca_page_pool_element *dsm_fetch_ready_ppe(struct conn_element *ele)
 {
-        struct dsm_page_pool *pp;
-        struct page_pool_ele *ppe = NULL;
+        struct heca_space_page_pool *pp;
+        struct heca_page_pool_element *ppe = NULL;
         int i;
 
         i = get_cpu();
         pp = per_cpu_ptr(ele->page_pool, i);
         if (pp->head < DSM_PAGE_POOL_SZ)
-                ppe = pp->buf[pp->head++];
+                ppe = pp->hspace_page_pool[pp->head++];
         schedule_work_on(i, &pp->work);
         put_cpu();
 
         return ppe;
 }
 
-struct page_pool_ele *dsm_prepare_ppe(struct conn_element *ele,
+struct heca_page_pool_element *dsm_prepare_ppe(struct conn_element *ele,
                 struct page *page)
 {
-        struct page_pool_ele *ppe;
+        struct heca_page_pool_element *ppe;
 
         ppe = dsm_get_ppe(ele);
         if (dsm_map_page_in_ppe(ppe, page, ele))
@@ -604,7 +604,7 @@ err:
         return NULL;
 }
 
-void dsm_ppe_clear_release(struct conn_element *ele, struct page_pool_ele **ppe)
+void dsm_ppe_clear_release(struct conn_element *ele, struct heca_page_pool_element **ppe)
 {
         if ((*ppe)->page_buf) {
                 ib_dma_unmap_page(ele->cm_id->device, (u64) (*ppe)->page_buf,

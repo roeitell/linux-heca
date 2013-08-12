@@ -144,7 +144,7 @@ int add_dsm_request(struct dsm_request *req, struct conn_element *ele,
                 u16 type, u32 dsm_id, u32 src_id, u32 mr_id, u32 dest_id,
                 unsigned long addr, int (*func)(struct tx_buf_ele *),
                 struct dsm_page_cache *dpc, struct page *page,
-                struct page_pool_ele *ppe, int need_ppe,
+                struct heca_page_pool_element *ppe, int need_ppe,
                 struct dsm_message *msg)
 {
         if (!req) {
@@ -200,7 +200,7 @@ static inline void dsm_tx_response_prepare(struct tx_buf_ele *tx_e,
 static void dsm_tx_prepare(struct conn_element *ele, struct tx_buf_ele *tx_e,
                 u32 dsm_id, u32 mr_id, u32 src_id, u32 dest_id,
                 unsigned long shared_addr, struct dsm_page_cache *dpc,
-                struct page *page, struct page_pool_ele *ppe, int need_ppe)
+                struct page *page, struct heca_page_pool_element *ppe, int need_ppe)
 {
         struct dsm_message *msg = tx_e->dsm_buf;
 
@@ -230,7 +230,7 @@ int dsm_send_tx_e(struct conn_element *ele, struct tx_buf_ele *tx_e, int resp,
                 int type, u32 dsm_id, u32 mr_id, u32 src_id, u32 dest_id,
                 unsigned long local_addr, unsigned long shared_addr,
                 struct dsm_page_cache *dpc, struct page *page,
-                struct page_pool_ele *ppe, int need_ppe,
+                struct heca_page_pool_element *ppe, int need_ppe,
                 int (*func)(struct tx_buf_ele *), struct dsm_message *msg)
 {
         if (resp) {

@@ -79,6 +79,12 @@
 #define MR_SHARED               (1 << 2)
 
 /*
+ * Heca Space Page Pool Size
+ * 1000 * 4 KB ~= 4 MB
+ */
+#define HSPACE_PAGE_POOL_SZ 1000
+
+/*
  * DSM DATA structure
  */
 struct heca_space {
@@ -165,18 +171,18 @@ struct tx_buffer {
         struct work_struct delayed_request_flush_work;
 };
 
-#define DSM_PAGE_POOL_SZ 1000
-struct page_pool_ele {
+
+struct heca_page_pool_element {
         void *page_buf;
         struct page *mem_page;
         struct llist_node llnode;
 };
 
-struct dsm_page_pool {
+struct heca_space_page_pool {
         int cpu;
-        struct page_pool_ele *buf[DSM_PAGE_POOL_SZ];
+        struct heca_page_pool_element *hspace_page_pool[HSPACE_PAGE_POOL_SZ];
         int head;
-        struct conn_element *ele;
+        struct conn_element *connection;
         struct work_struct work;
 };
 
@@ -297,7 +303,7 @@ struct work_request_ele {
 
 struct msg_work_request {
         struct work_request_ele *wr_ele;
-        struct page_pool_ele *dst_addr;
+        struct heca_page_pool_element *dst_addr;
         struct dsm_page_cache *dpc;
 };
 
@@ -356,7 +362,7 @@ struct dsm_request {
         u32 remote_svm_id;
         u32 mr_id;
         struct page *page;
-        struct page_pool_ele *ppe;
+        struct heca_page_pool_element *ppe;
         uint64_t addr;
         int (*func)(struct tx_buf_ele *);
         struct dsm_message dsm_buf;
@@ -464,9 +470,9 @@ struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *,
                 unsigned long);
 void dsm_destroy_page_pool(struct conn_element *);
 int dsm_init_page_pool(struct conn_element *);
-struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *);
-struct page_pool_ele *dsm_prepare_ppe(struct conn_element *, struct page *);
-void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);
+struct heca_page_pool_element *dsm_fetch_ready_ppe(struct conn_element *);
+struct heca_page_pool_element *dsm_prepare_ppe(struct conn_element *, struct page *);
+void dsm_ppe_clear_release(struct conn_element *, struct heca_page_pool_element **);
 void init_dsm_reader_kmem(void);
 u32 dsm_lookup_page_read(struct subvirtual_machine *, unsigned long);
 u32 dsm_extract_page_read(struct subvirtual_machine *, unsigned long);

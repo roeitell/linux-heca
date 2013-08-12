@@ -553,7 +553,7 @@ static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
                 struct subvirtual_machine *fault_svm,
                 struct memory_region *fault_mr,
                 struct subvirtual_machine *remote_svm, int tag, int i,
-                struct page_pool_ele *ppe)
+                struct heca_page_pool_element *ppe)
 {
         struct page *page = NULL;
 
@@ -643,7 +643,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
 {
         struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
         struct page *page = NULL;
-        struct page_pool_ele *ppe = NULL;
+        struct heca_page_pool_element *ppe = NULL;
         int r;
         struct subvirtual_machine *first_svm = NULL;
 

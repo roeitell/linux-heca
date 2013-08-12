@@ -25,7 +25,7 @@ static int dsm_send_msg(struct conn_element *ele, u32 dsm_id, u32 mr_id,
                 u32 src_id, u32 dest_id, unsigned long local_addr,
                 unsigned long shared_addr, struct page *page, int type,
                 int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
-                struct page_pool_ele *ppe, struct dsm_message *msg,
+                struct heca_page_pool_element *ppe, struct dsm_message *msg,
                 int need_ppe)
 {
         struct tx_buf_ele *tx_e = NULL;
@@ -197,7 +197,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
                 struct subvirtual_machine *fault_svm,
                 struct memory_region *fault_mr, unsigned long addr,
                 int (*func)(struct tx_buf_ele *), int tag,
-                struct dsm_page_cache *dpc, struct page_pool_ele *ppe)
+                struct dsm_page_cache *dpc, struct heca_page_pool_element *ppe)
 {
         int type;
 
@@ -597,7 +597,7 @@ static int process_page_request(struct conn_element *origin_ele,
                 struct subvirtual_machine *remote_svm, struct dsm_message *msg,
                 int deferred)
 {
-        struct page_pool_ele *ppe;
+        struct heca_page_pool_element *ppe;
         struct tx_buf_ele *tx_e = NULL;
         struct page *page;
         unsigned long addr = 0;

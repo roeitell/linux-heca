@@ -8,7 +8,7 @@ int dsm_claim_page(struct subvirtual_machine *, struct subvirtual_machine *,
 int request_dsm_page(struct page *, struct subvirtual_machine *,
                 struct subvirtual_machine *, struct memory_region *,
                 unsigned long, int (*)(struct tx_buf_ele *), int,
-                struct dsm_page_cache *, struct page_pool_ele *);
+                struct dsm_page_cache *, struct heca_page_pool_element *);
 int process_pull_request(struct conn_element *, struct rx_buf_ele *);
 int process_svm_status(struct conn_element *, struct rx_buf_ele *);
 int process_page_redirect(struct conn_element *, struct tx_buf_ele *, u32);

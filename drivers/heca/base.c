@@ -80,18 +80,18 @@ void erase_rb_conn(struct conn_element *ele)
 /*
  * dsm funcs
  */
-struct dsm *find_dsm(u32 id)
+struct heca_space *find_dsm(u32 id)
 {
         struct dsm_module_state *dsm_state = get_dsm_module_state();
-        struct dsm *dsm;
-        struct dsm **dsmp;
+        struct heca_space *dsm;
+        struct heca_space **dsmp;
         struct radix_tree_root *root;
 
         rcu_read_lock();
         root = &dsm_state->dsm_tree_root;
 repeat:
         dsm = NULL;
-        dsmp = (struct dsm **) radix_tree_lookup_slot(root, (unsigned long) id);
+        dsmp = (struct heca_space **) radix_tree_lookup_slot(root, (unsigned long) id);
         if (dsmp) {
                 dsm = radix_tree_deref_slot((void **) dsmp);
                 if (unlikely(!dsm))
@@ -106,7 +106,7 @@ out:
         return dsm;
 }
 
-void remove_dsm(struct dsm *dsm)
+void remove_dsm(struct heca_space *dsm)
 {
         struct subvirtual_machine *svm;
         struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -114,21 +114,21 @@ void remove_dsm(struct dsm *dsm)
 
         BUG_ON(!dsm);
 
-        heca_printk(KERN_DEBUG "<enter> dsm=%d", dsm->dsm_id);
+        heca_printk(KERN_DEBUG "<enter> dsm=%d", dsm->hspace_id);
 
-        list_for_each_safe (pos, n, &dsm->svm_list) {
+        list_for_each_safe (pos, n, &dsm->hprocs_list) {
                 svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-                remove_svm(dsm->dsm_id, svm->svm_id);
+                remove_svm(dsm->hspace_id, svm->svm_id);
         }
 
         mutex_lock(&dsm_state->dsm_state_mutex);
-        list_del(&dsm->dsm_ptr);
+        list_del(&dsm->hspace_ptr);
         radix_tree_delete(&dsm_state->dsm_tree_root,
-                        (unsigned long) dsm->dsm_id);
+                        (unsigned long) dsm->hspace_id);
         mutex_unlock(&dsm_state->dsm_state_mutex);
         synchronize_rcu();
 
-        delete_dsm_sysfs_entry(&dsm->dsm_kobject);
+        delete_dsm_sysfs_entry(&dsm->hspace_kobject);
 
         mutex_lock(&dsm_state->dsm_state_mutex);
         kfree(dsm);
@@ -141,7 +141,7 @@ void remove_dsm(struct dsm *dsm)
 int create_dsm(__u32 dsm_id)
 {
         int r = 0;
-        struct dsm *found_dsm, *new_dsm = NULL;
+        struct heca_space *found_dsm, *new_dsm = NULL;
         struct dsm_module_state *dsm_state = get_dsm_module_state();
 
         /* already exists? (first check; the next one is under lock */
@@ -157,12 +157,12 @@ int create_dsm(__u32 dsm_id)
                 heca_printk("can't allocate");
                 return -ENOMEM;
         }
-        new_dsm->dsm_id = dsm_id;
-        mutex_init(&new_dsm->dsm_mutex);
-        INIT_RADIX_TREE(&new_dsm->svm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
-        INIT_RADIX_TREE(&new_dsm->svm_mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
-        INIT_LIST_HEAD(&new_dsm->svm_list);
-        new_dsm->nb_local_svm = 0;
+        new_dsm->hspace_id = dsm_id;
+        mutex_init(&new_dsm->hspace_mutex);
+        INIT_RADIX_TREE(&new_dsm->hprocs_tree_root, GFP_KERNEL & ~__GFP_WAIT);
+        INIT_RADIX_TREE(&new_dsm->hprocs_mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
+        INIT_LIST_HEAD(&new_dsm->hprocs_list);
+        new_dsm->nb_local_hprocs = 0;
 
         while (1) {
                 r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
@@ -181,7 +181,7 @@ int create_dsm(__u32 dsm_id)
 
         spin_lock(&dsm_state->radix_lock);
         r = radix_tree_insert(&dsm_state->dsm_tree_root,
-                        (unsigned long) new_dsm->dsm_id, new_dsm);
+                        (unsigned long) new_dsm->hspace_id, new_dsm);
         spin_unlock(&dsm_state->radix_lock);
         radix_tree_preload_end();
 
@@ -196,7 +196,7 @@ int create_dsm(__u32 dsm_id)
                 goto err_delete;
         }
 
-        list_add(&new_dsm->dsm_ptr, &dsm_state->dsm_list);
+        list_add(&new_dsm->hspace_ptr, &dsm_state->dsm_list);
         heca_printk("registered dsm %p, dsm_id : %u, res: %d",
                         new_dsm, dsm_id, r);
         return r;
@@ -264,15 +264,15 @@ out:
         return svm;
 }
 
-inline struct subvirtual_machine *find_svm(struct dsm *dsm, u32 svm_id)
+inline struct subvirtual_machine *find_svm(struct heca_space *dsm, u32 svm_id)
 {
-        return _find_svm_in_tree(&dsm->svm_tree_root, (unsigned long) svm_id);
+        return _find_svm_in_tree(&dsm->hprocs_tree_root, (unsigned long) svm_id);
 }
 
-inline struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *dsm,
+inline struct subvirtual_machine *find_local_svm_in_dsm(struct heca_space *dsm,
                 struct mm_struct *mm)
 {
-        return _find_svm_in_tree(&dsm->svm_mm_tree_root, (unsigned long) mm);
+        return _find_svm_in_tree(&dsm->hprocs_mm_tree_root, (unsigned long) mm);
 }
 
 inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm)
@@ -285,7 +285,7 @@ inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm)
 }
 
 static int insert_svm_to_radix_trees(struct dsm_module_state *dsm_state,
-                struct dsm *dsm, struct subvirtual_machine *new_svm)
+                struct heca_space *dsm, struct subvirtual_machine *new_svm)
 {
         int r;
 
@@ -303,13 +303,13 @@ preload:
 
 
         spin_lock(&dsm_state->radix_lock);
-        r = radix_tree_insert(&dsm->svm_tree_root,
+        r = radix_tree_insert(&dsm->hprocs_tree_root,
                         (unsigned long) new_svm->svm_id, new_svm);
         if (r)
                 goto unlock;
 
         if (is_svm_local(new_svm)) {
-                r = radix_tree_insert(&dsm->svm_mm_tree_root,
+                r = radix_tree_insert(&dsm->hprocs_mm_tree_root,
                                 (unsigned long) new_svm->mm, new_svm);
                 if (r)
                         goto unlock;
@@ -324,10 +324,10 @@ unlock:
         radix_tree_preload_end();
         if (r) {
                 heca_printk(KERN_ERR "failed radix_tree_insert %d", r);
-                radix_tree_delete(&dsm->svm_tree_root,
+                radix_tree_delete(&dsm->hprocs_tree_root,
                                 (unsigned long) new_svm->svm_id);
                 if (is_svm_local(new_svm)) {
-                        radix_tree_delete(&dsm->svm_mm_tree_root,
+                        radix_tree_delete(&dsm->hprocs_mm_tree_root,
                                         (unsigned long) new_svm->mm);
                         radix_tree_delete(&dsm_state->mm_tree_root,
                                         (unsigned long) new_svm->mm);
@@ -342,7 +342,7 @@ int create_svm(struct hecaioc_svm *svm_info)
 {
         struct dsm_module_state *dsm_state = get_dsm_module_state();
         int r = 0;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *found_svm, *new_svm = NULL;
 
         /* allocate a new svm */
@@ -356,7 +356,7 @@ int create_svm(struct hecaioc_svm *svm_info)
         mutex_lock(&dsm_state->dsm_state_mutex);
         dsm = find_dsm(svm_info->dsm_id);
         if (dsm)
-                mutex_lock(&dsm->dsm_mutex);
+                mutex_lock(&dsm->hspace_mutex);
         mutex_unlock(&dsm_state->dsm_state_mutex);
         if (!dsm) {
                 heca_printk(KERN_ERR "could not find dsm: %d",
@@ -400,7 +400,7 @@ int create_svm(struct hecaioc_svm *svm_info)
                 }
 
                 new_svm->mm = mm;
-                new_svm->dsm->nb_local_svm++;
+                new_svm->dsm->nb_local_hprocs++;
                 new_svm->mr_tree_root = RB_ROOT;
                 seqlock_init(&new_svm->mr_seq_lock);
                 new_svm->mr_cache = NULL;
@@ -430,16 +430,16 @@ int create_svm(struct hecaioc_svm *svm_info)
         /* register svm by id and mm_struct (must come before dsm_get_descriptor) */
         if (insert_svm_to_radix_trees(dsm_state, dsm, new_svm))
                 goto out;
-        list_add(&new_svm->svm_ptr, &dsm->svm_list);
+        list_add(&new_svm->svm_ptr, &dsm->hprocs_list);
 
         /* assign descriptor for remote svm */
         if (!is_svm_local(new_svm)) {
                 u32 svm_ids[] = {new_svm->svm_id, 0};
-                new_svm->descriptor = dsm_get_descriptor(dsm->dsm_id, svm_ids);
+                new_svm->descriptor = dsm_get_descriptor(dsm->hspace_id, svm_ids);
         }
 
 out:
-        mutex_unlock(&dsm->dsm_mutex);
+        mutex_unlock(&dsm->hspace_mutex);
         if (found_svm)
                 release_svm(found_svm);
 
@@ -558,7 +558,7 @@ static void release_svm_tx_elements(struct subvirtual_machine *svm,
                 int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY |
                         MSG_RES_PAGE_FAIL | MSG_REQ_READ;
 
-                if (msg->type & types && msg->dsm_id == svm->dsm->dsm_id
+                if (msg->type & types && msg->dsm_id == svm->dsm->hspace_id
                                 && (msg->src_id == svm->svm_id
                                 || msg->dest_id == svm->svm_id)
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
@@ -601,7 +601,7 @@ static void release_svm_queued_requests(struct subvirtual_machine *svm,
 void remove_svm(u32 dsm_id, u32 svm_id)
 {
         struct dsm_module_state *dsm_state = get_dsm_module_state();
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *svm = NULL;
 
         mutex_lock(&dsm_state->dsm_state_mutex);
@@ -611,7 +611,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
                 return;
         }
 
-        mutex_lock(&dsm->dsm_mutex);
+        mutex_lock(&dsm->hspace_mutex);
         svm = find_svm(dsm, svm_id);
         if (!svm) {
                 mutex_unlock(&dsm_state->dsm_state_mutex);
@@ -624,13 +624,13 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         mutex_unlock(&dsm_state->dsm_state_mutex);
 
         list_del(&svm->svm_ptr);
-        radix_tree_delete(&dsm->svm_tree_root, (unsigned long) svm->svm_id);
+        radix_tree_delete(&dsm->hprocs_tree_root, (unsigned long) svm->svm_id);
         if (is_svm_local(svm)) {
                 cancel_delayed_work_sync(&svm->delayed_gup_work);
                 // to make sure everything is clean
                 dequeue_and_gup_cleanup(svm);
-                dsm->nb_local_svm--;
-                radix_tree_delete(&dsm->svm_mm_tree_root,
+                dsm->nb_local_hprocs--;
+                radix_tree_delete(&dsm->hprocs_mm_tree_root,
                                 (unsigned long) svm->mm);
         }
 
@@ -684,7 +684,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
                 release_svm_tx_elements(svm, svm->ele);
 
                 /* potentially very expensive way to do this */
-                list_for_each_entry (local_svm, &svm->dsm->svm_list, svm_ptr) {
+                list_for_each_entry (local_svm, &svm->dsm->hprocs_list, svm_ptr) {
                         if (is_svm_local(local_svm))
                                 surrogate_push_remote_svm(local_svm, svm);
                 }
@@ -694,10 +694,10 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         release_svm(svm);
 
 out:
-        mutex_unlock(&dsm->dsm_mutex);
+        mutex_unlock(&dsm->hspace_mutex);
 }
 
-struct subvirtual_machine *find_any_svm(struct dsm *dsm, struct svm_list svms)
+struct subvirtual_machine *find_any_svm(struct heca_space *dsm, struct svm_list svms)
 {
         int i;
         struct subvirtual_machine *svm;
@@ -835,20 +835,20 @@ static void destroy_svm_mrs(struct subvirtual_machine *svm)
                 rb_erase(&mr->rb_node, root);
                 write_sequnlock(&svm->mr_seq_lock);
                 heca_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
-                                svm->dsm->dsm_id, svm->svm_id, mr->mr_id);
+                                svm->dsm->hspace_id, svm->svm_id, mr->mr_id);
                 synchronize_rcu();
                 kfree(mr);
         } while(1);
 }
 
-static struct subvirtual_machine *find_local_svm_from_list(struct dsm *dsm)
+static struct subvirtual_machine *find_local_svm_from_list(struct heca_space *dsm)
 {
         struct subvirtual_machine *tmp_svm;
 
-        list_for_each_entry (tmp_svm, &dsm->svm_list, svm_ptr) {
+        list_for_each_entry (tmp_svm, &dsm->hprocs_list, svm_ptr) {
                 if (!is_svm_local(tmp_svm))
                         continue;
-                heca_printk(KERN_DEBUG "dsm %d local svm is %d", dsm->dsm_id,
+                heca_printk(KERN_DEBUG "dsm %d local svm is %d", dsm->hspace_id,
                                 tmp_svm->svm_id);
                 grab_svm(tmp_svm);
                 return tmp_svm;
@@ -859,7 +859,7 @@ static struct subvirtual_machine *find_local_svm_from_list(struct dsm *dsm)
 int create_mr(struct hecaioc_mr *udata)
 {
         int ret = 0, i;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct memory_region *mr = NULL;
         struct subvirtual_machine *local_svm = NULL;
 
@@ -903,7 +903,7 @@ int create_mr(struct hecaioc_mr *udata)
                 ret = -EFAULT;
                 goto out_free;
         }
-        mr->descriptor = dsm_get_descriptor(dsm->dsm_id, udata->svm_ids);
+        mr->descriptor = dsm_get_descriptor(dsm->hspace_id, udata->svm_ids);
         if (!mr->descriptor) {
                 heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");
                 ret = -EFAULT;
@@ -960,7 +960,7 @@ out:
 int unmap_ps(struct hecaioc_ps *udata)
 {
         int r = -EFAULT;
-        struct dsm *dsm = NULL;
+        struct heca_space *dsm = NULL;
         struct subvirtual_machine *local_svm = NULL;
         struct memory_region *mr = NULL;
         struct mm_struct *mm = find_mm_by_pid(udata->pid);

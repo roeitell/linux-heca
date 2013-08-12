@@ -964,7 +964,7 @@ retry:
         if (unlikely(PageSwapCache(page)))
                 try_to_free_swap(page);
         unlock_page(page);
-        trace_dsm_discard_read_copy(svm->dsm->dsm_id, svm->svm_id,
+        trace_dsm_discard_read_copy(svm->dsm->hspace_id, svm->svm_id,
                         maintainer_id, mr->mr_id, addr, addr-mr->addr, 0);
 unlock:
         pte_unmap_unlock(ptep, ptl);
@@ -1068,7 +1068,7 @@ out:
 }
 
 /* no locks are held when calling this function */
-int dsm_flag_page_remote(struct mm_struct *mm, struct dsm *dsm, u32 descriptor,
+int dsm_flag_page_remote(struct mm_struct *mm, struct heca_space *dsm, u32 descriptor,
                 unsigned long request_addr)
 {
         spinlock_t *ptl;

@@ -24,7 +24,7 @@ int dsm_prepare_page_for_push(struct subvirtual_machine *,
 int dsm_cancel_page_push(struct subvirtual_machine *, unsigned long,
                 struct page *);
 int push_back_if_remote_dsm_page(struct page *);
-int dsm_flag_page_remote(struct mm_struct *, struct dsm *, u32, unsigned long);
+int dsm_flag_page_remote(struct mm_struct *, struct heca_space *, u32, unsigned long);
 u32 dsm_query_pte_info(struct subvirtual_machine *, unsigned long);
 void dsm_invalidate_readers(struct subvirtual_machine *, unsigned long, u32);
 int dsm_pte_present(struct mm_struct *, unsigned long);

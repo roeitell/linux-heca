@@ -81,19 +81,19 @@
 /*
  * DSM DATA structure
  */
-struct dsm {
-        u32 dsm_id;
+struct heca_space {
+        u32 hspace_id;
 
-        struct radix_tree_root svm_tree_root;
-        struct radix_tree_root svm_mm_tree_root;
+        struct radix_tree_root hprocs_tree_root;
+        struct radix_tree_root hprocs_mm_tree_root;
 
-        struct mutex dsm_mutex;
-        struct list_head svm_list;
+        struct mutex hspace_mutex;
+        struct list_head hprocs_list;
 
-        struct list_head dsm_ptr;
+        struct list_head hspace_ptr;
 
-        struct kobject dsm_kobject;
-        int nb_local_svm;
+        struct kobject hspace_kobject;
+        int nb_local_hprocs;
 };
 
 struct dsm_kobjects {
@@ -248,7 +248,7 @@ struct memory_region {
 struct subvirtual_machine {
         u32 svm_id;
         int is_local;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct conn_element *ele;
         pid_t pid;
         struct mm_struct *mm;
@@ -432,7 +432,7 @@ struct dsm_pte_data {
 #define DSM_PUSHING_BITPOS      0x03
 
 struct dsm_swp_data {
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct svm_list svms;
         u32 flags;
 };

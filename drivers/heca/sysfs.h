@@ -14,7 +14,7 @@ void delete_svm_sysfs_entry(struct kobject *);
 int create_mr_sysfs_entry(struct subvirtual_machine *,
                 struct memory_region *);
 void delete_mr_sysfs_entry(struct kobject *);
-int create_dsm_sysfs_entry(struct dsm *, struct dsm_module_state *);
+int create_dsm_sysfs_entry(struct heca_space *, struct dsm_module_state *);
 void delete_dsm_sysfs_entry(struct kobject *);
 int create_connection_sysfs_entry(struct conn_element *);
 void delete_connection_sysfs_entry(struct conn_element *);

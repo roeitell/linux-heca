@@ -103,10 +103,10 @@ struct dsm_module_state *create_dsm_module_state(void)
 void destroy_dsm_module_state(void)
 {
         struct list_head *curr, *next;
-        struct dsm *dsm;
+        struct heca_space *dsm;
 
         list_for_each_safe (curr, next, &dsm_state->dsm_list) {
-                dsm = list_entry(curr, struct dsm, dsm_ptr);
+                dsm = list_entry(curr, struct heca_space, hspace_ptr);
                 remove_dsm(dsm);
         }
 
@@ -122,13 +122,13 @@ static int deregister_dsm(__u32 dsm_id)
 {
         struct dsm_module_state *dsm_state = get_dsm_module_state();
         int ret = 0;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct list_head *curr, *next;
 
         heca_printk(KERN_DEBUG "<enter> dsm_id=%d", dsm_id);
         list_for_each_safe (curr, next, &dsm_state->dsm_list) {
-                dsm = list_entry(curr, struct dsm, dsm_ptr);
-                if (dsm->dsm_id == dsm_id)
+                dsm = list_entry(curr, struct heca_space, hspace_ptr);
+                if (dsm->hspace_id == dsm_id)
                         remove_dsm(dsm);
         }
 

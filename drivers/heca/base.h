@@ -15,19 +15,19 @@ void insert_rb_conn(struct conn_element *);
 void erase_rb_conn(struct conn_element *);
 
 /* dsm */
-struct dsm *find_dsm(u32 dsm_id);
-void remove_dsm(struct dsm *);
+struct heca_space *find_dsm(u32 dsm_id);
+void remove_dsm(struct heca_space *);
 int create_dsm(__u32 dsm_id);
 
 /* svm */
-inline struct subvirtual_machine *find_svm(struct dsm *, u32);
-inline struct subvirtual_machine *find_local_svm_in_dsm(struct dsm *,
+inline struct subvirtual_machine *find_svm(struct heca_space *, u32);
+inline struct subvirtual_machine *find_local_svm_in_dsm(struct heca_space *,
                 struct mm_struct *);
 inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *);
 int create_svm(struct hecaioc_svm *);
 inline void release_svm(struct subvirtual_machine *);
 void remove_svm(u32, u32);
-struct subvirtual_machine *find_any_svm(struct dsm *, struct svm_list);
+struct subvirtual_machine *find_any_svm(struct heca_space *, struct svm_list);
 
 /* mr */
 struct memory_region *find_mr(struct subvirtual_machine *, u32);

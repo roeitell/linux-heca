@@ -18,11 +18,11 @@ int process_claim_ack(struct conn_element *, struct tx_buf_ele *,
                 struct dsm_message *);
 void deferred_gup_work_fn(struct work_struct *);
 int process_page_request_msg(struct conn_element *, struct dsm_message *);
-int dsm_request_page_pull(struct dsm *, struct subvirtual_machine *,
+int dsm_request_page_pull(struct heca_space *, struct subvirtual_machine *,
                 struct page *, unsigned long, struct mm_struct *,
                 struct memory_region *);
 int ack_msg(struct conn_element *, struct dsm_message *, u32);
-int unmap_range(struct dsm *, int, pid_t, unsigned long, unsigned long);
+int unmap_range(struct heca_space *, int, pid_t, unsigned long, unsigned long);
 int dsm_process_request_query(struct conn_element *, struct rx_buf_ele *);
 int dsm_process_query_info(struct tx_buf_ele *);
 

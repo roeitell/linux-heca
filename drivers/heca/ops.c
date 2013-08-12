@@ -128,14 +128,14 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
                         /* note that dest_id == local_svm */
                         r |= dsm_send_tx_e(eles[i], tx_elms[i], 0,
                                         MSG_REQ_PAGE_PULL,
-                                        fault_svm->dsm->dsm_id, fault_mr->mr_id,
+                                        fault_svm->dsm->hspace_id, fault_mr->mr_id,
                                         svms.ids[i], fault_svm->svm_id,
                                         addr + fault_mr->addr, addr, NULL, NULL,
                                         NULL, 0, NULL, NULL);
                 } else if (reqs[i]) {
                         /* can't fail, reqs[i] already allocated */
                         j = add_dsm_request(reqs[i], eles[i], MSG_REQ_PAGE_PULL,
-                                        fault_svm->dsm->dsm_id, svms.ids[i],
+                                        fault_svm->dsm->hspace_id, svms.ids[i],
                                         fault_mr->mr_id, fault_svm->svm_id,
                                         addr, NULL, NULL, NULL, NULL, 0, NULL);
                         BUG_ON(j);
@@ -164,7 +164,7 @@ static int dsm_request_query(struct subvirtual_machine *svm,
                 struct subvirtual_machine *owner, struct memory_region *mr,
                 unsigned long shared_addr, struct dsm_page_cache *dpc)
 {
-        return dsm_send_msg(owner->ele, svm->dsm->dsm_id, mr->mr_id,
+        return dsm_send_msg(owner->ele, svm->dsm->hspace_id, mr->mr_id,
                         svm->svm_id, owner->svm_id, shared_addr + mr->addr,
                         shared_addr, NULL, MSG_REQ_QUERY,
                         dsm_process_query_info, dpc, NULL, NULL, 0);
@@ -183,11 +183,11 @@ int dsm_claim_page(struct subvirtual_machine *fault_svm,
 {
         u32 type = only_unmap? MSG_REQ_CLAIM : MSG_REQ_CLAIM_TRY;
 
-        trace_dsm_claim_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
+        trace_dsm_claim_page(fault_svm->dsm->hspace_id, fault_svm->svm_id,
                         remote_svm->svm_id, fault_mr->mr_id, addr,
                         addr - fault_mr->addr, type);
 
-        return dsm_send_msg(remote_svm->ele, fault_svm->dsm->dsm_id,
+        return dsm_send_msg(remote_svm->ele, fault_svm->dsm->hspace_id,
                         fault_mr->mr_id, fault_svm->svm_id, remote_svm->svm_id,
                         addr, addr - fault_mr->addr, page, type,
                         NULL, NULL, NULL, NULL, 0);
@@ -220,7 +220,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         }
 
         /* note that src_id == remote_id, and dest_id == local_id */
-        return dsm_send_msg(remote_svm->ele, fault_svm->dsm->dsm_id,
+        return dsm_send_msg(remote_svm->ele, fault_svm->dsm->hspace_id,
                         fault_mr->mr_id, remote_svm->svm_id, fault_svm->svm_id,
                         addr, addr - fault_mr->addr, page, type, func, dpc, ppe,
                         NULL, 1);
@@ -229,7 +229,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 int dsm_process_request_query(struct conn_element *ele, struct rx_buf_ele *rx_e)
 {
         struct dsm_message *msg = rx_e->dsm_buf;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *svm;
         struct memory_region *mr;
         int r = -EFAULT;
@@ -263,7 +263,7 @@ fail:
 int dsm_process_query_info(struct tx_buf_ele *tx_e)
 {
         struct dsm_message *msg = tx_e->dsm_buf;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *svm;
         struct dsm_page_cache *dpc;
         struct memory_region *mr;
@@ -300,7 +300,7 @@ fail:
 int process_pull_request(struct conn_element *ele, struct rx_buf_ele *rx_buf_e)
 {
         struct subvirtual_machine *local_svm;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct dsm_message *msg;
         struct memory_region *mr;
         int r = 0;
@@ -383,7 +383,7 @@ int process_page_redirect(struct conn_element *ele, struct tx_buf_ele *tx_e,
         if (unlikely(!remote_svm))
                 goto out;
 
-        trace_redirect(dpc->svm->dsm->dsm_id, dpc->svm->svm_id,
+        trace_redirect(dpc->svm->dsm->hspace_id, dpc->svm->svm_id,
                         remote_svm->svm_id, fault_mr->mr_id,
                         req_addr + fault_mr->addr, req_addr, dpc->tag);
         ret = request_dsm_page(page, remote_svm, dpc->svm, fault_mr, req_addr,
@@ -437,7 +437,7 @@ retry:
 
 int process_page_claim(struct conn_element *ele, struct dsm_message *msg)
 {
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *local_svm, *remote_svm;
         struct memory_region *mr;
         unsigned long addr;
@@ -494,7 +494,7 @@ out:
 
 static int dsm_retry_claim(struct dsm_message *msg, struct page *page)
 {
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *svm = NULL, *remote_svm, *owner;
         struct memory_region *mr;
         struct svm_list svms;
@@ -617,7 +617,7 @@ static int process_page_request(struct conn_element *origin_ele,
         addr = msg->req_addr + mr->addr;
         BUG_ON(addr < mr->addr || addr > mr->addr + mr->sz);
 
-        trace_process_page_request(local_svm->dsm->dsm_id, local_svm->svm_id,
+        trace_process_page_request(local_svm->dsm->hspace_id, local_svm->svm_id,
                         remote_svm->svm_id, mr->mr_id, addr, msg->req_addr,
                         msg->type);
 
@@ -650,7 +650,7 @@ retry:
         tx_e->wrk_req->dst_addr = ppe;
         tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 
-        trace_process_page_request_complete(local_svm->dsm->dsm_id,
+        trace_process_page_request_complete(local_svm->dsm->hspace_id,
                         local_svm->svm_id, remote_svm->svm_id, mr->mr_id,
                         addr, msg->req_addr, msg->type);
         tx_dsm_send(ele, tx_e);
@@ -670,7 +670,7 @@ no_page:
 
                 /* defer and try to get the page again out of sequence */
         } else if (msg->type & (MSG_REQ_PAGE | MSG_REQ_READ)) {
-                trace_dsm_defer_gup(local_svm->dsm->dsm_id, local_svm->svm_id,
+                trace_dsm_defer_gup(local_svm->dsm->hspace_id, local_svm->svm_id,
                                 remote_svm->svm_id, mr->mr_id, addr,
                                 msg->req_addr, msg->type);
                 defer_gup(msg, local_svm, mr, remote_svm, origin_ele);
@@ -704,7 +704,7 @@ static inline void process_deferred_gups(struct subvirtual_machine *svm)
                         dgup = container_of(llnode, struct deferred_gup, lnode);
                         llnode = llnode->next;
                         /* the deferred is set to one i.e if we need to gup we will block */
-                        trace_dsm_defer_gup_execute(svm->dsm->dsm_id,
+                        trace_dsm_defer_gup_execute(svm->dsm->hspace_id,
                                         svm->svm_id, dgup->remote_svm->svm_id,
                                         dgup->mr->mr_id,
                                         dgup->dsm_buf.req_addr + dgup->mr->addr,
@@ -730,7 +730,7 @@ void deferred_gup_work_fn(struct work_struct *w)
 int process_page_request_msg(struct conn_element *ele, struct dsm_message *msg)
 {
         struct subvirtual_machine *local_svm = NULL, *remote_svm = NULL;
-        struct dsm *dsm = NULL;
+        struct heca_space *dsm = NULL;
         struct memory_region *mr = NULL;
 
         dsm = find_dsm(msg->dsm_id);
@@ -757,7 +757,7 @@ fail:
         return -EFAULT;
 }
 
-int dsm_request_page_pull(struct dsm *dsm, struct subvirtual_machine *fault_svm,
+int dsm_request_page_pull(struct heca_space *dsm, struct subvirtual_machine *fault_svm,
                 struct page *page, unsigned long addr, struct mm_struct *mm,
                 struct memory_region *mr)
 {
@@ -800,7 +800,7 @@ int ack_msg(struct conn_element *ele, struct dsm_message *msg, u32 type)
         return dsm_send_response(ele, type, msg);
 }
 
-int unmap_range(struct dsm *dsm, int dsc, pid_t pid, unsigned long addr,
+int unmap_range(struct heca_space *dsm, int dsc, pid_t pid, unsigned long addr,
                 unsigned long sz)
 {
         int r = 0;

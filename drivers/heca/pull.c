@@ -388,10 +388,10 @@ static void heca_initiate_pull_gup(struct dsm_page_cache *dpc, int delayed)
         struct memory_region *mr;
 
         if (delayed) {
-                trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                trace_delayed_initiated_fault(svm->dsm->hspace_id, svm->svm_id,
                                 -1, -1, dpc->addr, 0, dpc->tag);
         } else {
-                trace_immediate_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                trace_immediate_initiated_fault(svm->dsm->hspace_id, svm->svm_id,
                                 -1, -1, dpc->addr, 0, dpc->tag);
         }
 
@@ -453,7 +453,7 @@ static int dsm_pull_req_success(struct page *page,
                 struct dsm_page_cache *dpc)
 {
         int i, found;
-        trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, -1,
+        trace_dsm_pull_req_complete(dpc->svm->dsm->hspace_id, dpc->svm->svm_id, -1,
                         -1, dpc->addr, 0, dpc->tag);
 
         for (i = 0; i < dpc->svms.num; i++) {
@@ -473,7 +473,7 @@ unlock:
                         if (likely(dpc->pages[i]))
                                 SetPageUptodate(dpc->pages[i]);
                 }
-                trace_dsm_pull_req_success(dpc->svm->dsm->dsm_id,
+                trace_dsm_pull_req_success(dpc->svm->dsm->hspace_id,
                                 dpc->svm->svm_id, -1, -1,
                                 dpc->addr, 0, dpc->tag);
                 unlock_page(dpc->pages[0]);
@@ -504,7 +504,7 @@ int dsm_pull_req_failure(struct dsm_page_cache *dpc)
 {
         int found, i;
 
-        trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
+        trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->hspace_id,
                         dpc->svm->svm_id, -1, -1, dpc->addr, 0, dpc->tag);
 
 retry:
@@ -567,7 +567,7 @@ static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
                 goto out;
         SetPageSwapBacked(page);
 
-        trace_dsm_get_remote_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
+        trace_dsm_get_remote_page(fault_svm->dsm->hspace_id, fault_svm->svm_id,
                         remote_svm->svm_id, fault_mr->mr_id, addr,
                         addr - fault_mr->addr, tag);
 
@@ -647,7 +647,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
         int r;
         struct subvirtual_machine *first_svm = NULL;
 
-        trace_dsm_cache_add_send(fault_svm->dsm->dsm_id, fault_svm->svm_id, -1,
+        trace_dsm_cache_add_send(fault_svm->dsm->hspace_id, fault_svm->svm_id, -1,
                         fault_mr->mr_id, norm_addr, norm_addr - fault_mr->addr,
                         tag);
 
@@ -1004,7 +1004,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         pte_t pte;
         u32 dsm_id, svm_id, mr_id; /* used only for trace record later */
         unsigned long shared_addr; /* used only for trace record later */
-        struct dsm *dsm;
+        struct heca_space *dsm;
 
 retry:
         /* if the data in the swp_entry is invalid, we have nothing to do */
@@ -1028,7 +1028,7 @@ retry:
         if ((fault_mr->flags & MR_SHARED) && ~flags & FAULT_FLAG_WRITE)
                 read_fault = 1;
 
-        dsm_id = dsm->dsm_id;
+        dsm_id = dsm->hspace_id;
         svm_id = fault_svm->svm_id;
         mr_id = fault_mr->mr_id;
         shared_addr = norm_addr - fault_mr->addr;
@@ -1287,7 +1287,7 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
 
 }
 
-int dsm_trigger_page_pull(struct dsm *dsm, struct subvirtual_machine *local_svm,
+int dsm_trigger_page_pull(struct heca_space *dsm, struct subvirtual_machine *local_svm,
                 struct memory_region *mr, unsigned long norm_addr)
 {
         int r = 0;
@@ -1327,7 +1327,7 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 return 0;
         }
 
-        trace_dsm_write_fault(svm->dsm->dsm_id, svm->svm_id, -1, mr->mr_id,
+        trace_dsm_write_fault(svm->dsm->hspace_id, svm->svm_id, -1, mr->mr_id,
                         addr, addr - mr->addr, 0);
 
 retry:

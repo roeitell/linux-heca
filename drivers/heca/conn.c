@@ -1619,7 +1619,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
                 unsigned short port)
 {
         int r = 0;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *svm;
         struct conn_element *cele;
         struct dsm_module_state *dsm_state = get_dsm_module_state();
@@ -1633,7 +1633,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
         heca_printk(KERN_ERR "connecting to dsm_id: %u [0x%p], svm_id: %u",
                         dsm_id, dsm, svm_id);
 
-        mutex_lock(&dsm->dsm_mutex);
+        mutex_lock(&dsm->hspace_mutex);
         svm = find_svm(dsm, svm_id);
         if (!svm) {
                 heca_printk(KERN_ERR "can't find svm %d", svm_id);
@@ -1675,7 +1675,7 @@ done:
 failed:
         release_svm(svm);
 no_svm:
-        mutex_unlock(&dsm->dsm_mutex);
+        mutex_unlock(&dsm->hspace_mutex);
         heca_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
                         dsm_id, svm_id, &ip_addr, r);
         return r;
@@ -1717,17 +1717,17 @@ struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct conn_element *ele)
 
 static void remove_svms_for_conn(struct conn_element *ele)
 {
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct subvirtual_machine *svm;
         struct list_head *pos, *n, *it;
 
         list_for_each (pos, &get_dsm_module_state()->dsm_list) {
-                dsm = list_entry(pos, struct dsm, dsm_ptr);
-                list_for_each_safe (it, n, &dsm->svm_list) {
+                dsm = list_entry(pos, struct heca_space, hspace_ptr);
+                list_for_each_safe (it, n, &dsm->hprocs_list) {
                         svm = list_entry(it, struct subvirtual_machine,
                                         svm_ptr);
                         if (svm->ele == ele)
-                                remove_svm(dsm->dsm_id, svm->svm_id);
+                                remove_svm(dsm->hspace_id, svm->svm_id);
                 }
         }
 }

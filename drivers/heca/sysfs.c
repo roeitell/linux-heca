@@ -152,7 +152,7 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm)
         int r;
 
         r = kobject_init_and_add(kobj, &ktype_svm_instance,
-                        &svm->dsm->dsm_kobject, HECA_SYSFS_SVM_FMT,
+                        &svm->dsm->hspace_kobject, HECA_SYSFS_SVM_FMT,
                         svm->svm_id);
         return r;
 }
@@ -243,14 +243,14 @@ int create_mr_sysfs_entry(struct subvirtual_machine *svm,
 /* dsm sysfs functions */
 struct dsm_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct dsm *, char *);
-        ssize_t(*store)(struct dsm *, char *, size_t);
+        ssize_t(*show)(struct heca_space *, char *);
+        ssize_t(*store)(struct heca_space *, char *, size_t);
 };
 
 static ssize_t dsm_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct dsm *dsm = container_of(k, struct dsm, dsm_kobject);
+        struct heca_space *dsm = container_of(k, struct heca_space, hspace_kobject);
         struct dsm_instance_attribute *instance_attr =
                 container_of(a, struct dsm_instance_attribute, attr);
 
@@ -259,13 +259,13 @@ static ssize_t dsm_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_dsm_id_show(struct dsm *dsm,
+static ssize_t instance_dsm_id_show(struct heca_space *dsm,
                 char *data)
 {
-        return sprintf(data, "%u\n", dsm->dsm_id);
+        return sprintf(data, "%u\n", dsm->hspace_id);
 }
 
-static ssize_t instance_dsm_server_show(struct dsm *dsm,
+static ssize_t instance_dsm_server_show(struct heca_space *dsm,
                 char *data)
 {
         char s[20];
@@ -278,13 +278,13 @@ static ssize_t instance_dsm_server_show(struct dsm *dsm,
         return sprintf(data, "%s\n", s);
 }
 
-INSTANCE_ATTR(struct dsm_instance_attribute, dsm_id, S_IRUGO,
+INSTANCE_ATTR(struct dsm_instance_attribute, hspace_id, S_IRUGO,
                 instance_dsm_id_show, NULL);
 INSTANCE_ATTR(struct dsm_instance_attribute, dsm_server, S_IRUGO,
                 instance_dsm_server_show, NULL);
 
 static struct dsm_instance_attribute *dsm_instance_attr[] = {
-        &ATTR_NAME(dsm_id),
+        &ATTR_NAME(hspace_id),
         &ATTR_NAME(dsm_server),
         NULL
 };
@@ -305,11 +305,11 @@ void delete_dsm_sysfs_entry(struct kobject *obj)
         kobject_del(obj);
 }
 
-int create_dsm_sysfs_entry(struct dsm *dsm,
+int create_dsm_sysfs_entry(struct heca_space *dsm,
                 struct dsm_module_state *dsm_state) {
-        return kobject_init_and_add(&dsm->dsm_kobject, &ktype_dsm_instance,
+        return kobject_init_and_add(&dsm->hspace_kobject, &ktype_dsm_instance,
                         dsm_state->dsm_kobjects.domains_kobject,
-                        HECA_SYSFS_DSM_FMT, dsm->dsm_id);
+                        HECA_SYSFS_DSM_FMT, dsm->hspace_id);
 }
 
 /* conn sysfs functions */

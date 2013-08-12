@@ -219,7 +219,11 @@ int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
 
         pd->pmd = pmd_offset(pd->pud, addr);
         pmdval = pmd_read_atomic(pd->pmd);
-        // we do not need the barrier here as we target 32bit arch only
+        /*
+         *  we do not need the barrier here as we target 64bit arch only
+         *  barrier is only necessary on 32 bit arch as the pmd require 2 read
+         *  access
+         */
         if (unlikely(pmd_none(pmdval))) {
                 return -4;
         }

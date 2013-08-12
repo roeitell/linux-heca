@@ -2,8 +2,7 @@
 #define _HECA_IOCTL_H
 
 /* print */
-void __heca_printk(const char *path, int line,
-                const char *func, const char *format, ...);
+void __heca_printk(const char *, int, const char *, const char *, ...);
 #define heca_printk(fmt, ...) \
         __heca_printk(__FILE__, __LINE__, __func__, fmt, ##__VA_ARGS__)
 

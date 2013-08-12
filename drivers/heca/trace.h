@@ -13,26 +13,26 @@
 
 #define dsm_dpc_tag \
 { PULL_TAG,                 "PULL_TAG" }, \
-{ PREFETCH_TAG,             "PREFETCH_TAG" },\
+{ PREFETCH_TAG,             "PREFETCH_TAG" }, \
 { PUSH_TAG,                 "PUSH_TAG" }, \
 { PULL_TRY_TAG,             "PULL_TRY_TAG" }, \
 { CLAIM_TAG,                "CLAIM_TAG" }, \
 { READ_TAG,                 "READ_TAG" }
 
 #define msg_type_strings \
-{ MSG_REQ_PAGE,                 "MSG_REQ_PAGE" },\
-{ MSG_REQ_PAGE_TRY,             "MSG_REQ_PAGE_TRY" },\
-{ MSG_REQ_READ,                 "MSG_REQ_READ" },\
-{ MSG_REQ_PAGE_PULL,            "MSG_REQ_PAGE_PULL" },\
-{ MSG_REQ_CLAIM,                "MSG_REQ_CLAIM" },\
-{ MSG_REQ_CLAIM_TRY,            "MSG_REQ_CLAIM_TRY" },\
-{ MSG_REQ_QUERY,                "MSG_REQ_QUERY" },\
-{ MSG_RES_PAGE,                 "MSG_RES_PAGE" },\
-{ MSG_RES_PAGE_REDIRECT,        "MSG_RES_PAGE_REDIRECT" },\
-{ MSG_RES_PAGE_FAIL,            "MSG_RES_PAGE_FAIL" },\
-{ MSG_RES_SVM_FAIL,             "MSG_RES_SVM_FAIL" },\
-{ MSG_RES_ACK,                  "MSG_RES_ACK" },\
-{ MSG_RES_ACK_FAIL,             "MSG_RES_ACK_FAIL" },\
+{ MSG_REQ_PAGE,                 "MSG_REQ_PAGE" }, \
+{ MSG_REQ_PAGE_TRY,             "MSG_REQ_PAGE_TRY" }, \
+{ MSG_REQ_READ,                 "MSG_REQ_READ" }, \
+{ MSG_REQ_PAGE_PULL,            "MSG_REQ_PAGE_PULL" }, \
+{ MSG_REQ_CLAIM,                "MSG_REQ_CLAIM" }, \
+{ MSG_REQ_CLAIM_TRY,            "MSG_REQ_CLAIM_TRY" }, \
+{ MSG_REQ_QUERY,                "MSG_REQ_QUERY" }, \
+{ MSG_RES_PAGE,                 "MSG_RES_PAGE" }, \
+{ MSG_RES_PAGE_REDIRECT,        "MSG_RES_PAGE_REDIRECT" }, \
+{ MSG_RES_PAGE_FAIL,            "MSG_RES_PAGE_FAIL" }, \
+{ MSG_RES_SVM_FAIL,             "MSG_RES_SVM_FAIL" }, \
+{ MSG_RES_ACK,                  "MSG_RES_ACK" }, \
+{ MSG_RES_ACK_FAIL,             "MSG_RES_ACK_FAIL" }, \
 { MSG_RES_QUERY,                "MSG_RES_QUERY" }
 
 DECLARE_EVENT_CLASS(dsm_full_template,
@@ -56,10 +56,10 @@ DECLARE_EVENT_CLASS(dsm_full_template,
                         __print_symbolic(__entry->tag, dsm_dpc_tag),
                         __print_symbolic(__entry->tag, msg_type_strings)));
 
-#define DSM_DECLARE_EVENT_FULL(name)                                    \
-                DEFINE_EVENT(dsm_full_template, name,                               \
-                                TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id,  \
-                                        unsigned long addr, unsigned long shared_addr, int tag),    \
+#define DSM_DECLARE_EVENT_FULL(name) \
+                DEFINE_EVENT(dsm_full_template, name, \
+                                TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id, \
+                                        unsigned long addr, unsigned long shared_addr, int tag), \
                                 TP_ARGS(dsm_id, svm_id, remote_svm_id, mr_id, addr, shared_addr, tag));
         DSM_DECLARE_EVENT_FULL(do_dsm_page_fault_svm);
         DSM_DECLARE_EVENT_FULL(dsm_cache_add_send);
@@ -102,12 +102,12 @@ DECLARE_EVENT_CLASS(dsm_message_template,
                         __print_symbolic(__entry->type, msg_type_strings),
                         __entry->tx_id));
 
-#define DSM_DECLARE_EVENT_MESSAGE(name)                                     \
-                DEFINE_EVENT(dsm_message_template, name,                                \
-                                TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id,      \
-                                        unsigned long addr, unsigned long shared_addr, int type,        \
-                                        int tx_id),                                                     \
-                                TP_ARGS(dsm_id, svm_id, remote_svm_id, mr_id, addr, shared_addr,    \
+#define DSM_DECLARE_EVENT_MESSAGE(name) \
+                DEFINE_EVENT(dsm_message_template, name, \
+                                TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id, \
+                                        unsigned long addr, unsigned long shared_addr, int type, \
+                                        int tx_id), \
+                                TP_ARGS(dsm_id, svm_id, remote_svm_id, mr_id, addr, shared_addr, \
                                         type, tx_id));
         DSM_DECLARE_EVENT_MESSAGE(dsm_rx_msg);
         DSM_DECLARE_EVENT_MESSAGE(dsm_tx_msg);
@@ -120,7 +120,7 @@ DECLARE_EVENT_CLASS(dsm_message_template,
                         TP_fast_assign(__entry->id = id;),
                         TP_printk(" %d", __entry->id));
 
-#define DSM_DECLARE_EVENT_BASIC(name)                                       \
+#define DSM_DECLARE_EVENT_BASIC(name) \
         DEFINE_EVENT(dsm_basic_template, name, TP_PROTO(int id), TP_ARGS(id));
         DSM_DECLARE_EVENT_BASIC(is_congested);
         DSM_DECLARE_EVENT_BASIC(free_svm);

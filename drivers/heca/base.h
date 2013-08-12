@@ -30,8 +30,8 @@ void remove_svm(u32, u32);
 struct subvirtual_machine *find_any_svm(struct heca_space *, struct svm_list);
 
 /* mr */
-struct memory_region *find_mr(struct subvirtual_machine *, u32);
-struct memory_region *search_mr_by_addr(struct subvirtual_machine *,
+struct heca_memory_region *find_mr(struct subvirtual_machine *, u32);
+struct heca_memory_region *search_mr_by_addr(struct subvirtual_machine *,
                 unsigned long);
 int create_mr(struct hecaioc_mr *udata);
 

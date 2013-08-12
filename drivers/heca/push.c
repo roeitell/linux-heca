@@ -512,7 +512,7 @@ static int dsm_extract_page(struct subvirtual_machine *local_svm,
                 struct subvirtual_machine *remote_svm,
                 struct mm_struct *mm, unsigned long addr,
                 pte_t *return_pte, u32 *svm_id, int deferred,
-                struct page **page, struct memory_region *mr, int read_copy)
+                struct page **page, struct heca_memory_region *mr, int read_copy)
 {
         spinlock_t *ptl;
         int r, res = DSM_EXTRACT_FAIL;
@@ -723,7 +723,7 @@ void dsm_invalidate_readers(struct subvirtual_machine *svm, unsigned long addr,
         while (dpr) {
                 struct dsm_page_reader *tmp = dpr;
                 struct subvirtual_machine *remote_svm;
-                struct memory_region *mr;
+                struct heca_memory_region *mr;
 
                 if (dpr->svm_id != exclude_id) {
                         remote_svm = find_svm(svm->dsm, dpr->svm_id);
@@ -745,7 +745,7 @@ int dsm_extract_page_from_remote(struct subvirtual_machine *local_svm,
                 struct subvirtual_machine *remote_svm,
                 unsigned long addr, u16 tag,
                 pte_t *pte, struct page **page, u32 *svm_id, int deferred,
-                struct memory_region *mr)
+                struct heca_memory_region *mr)
 {
         struct mm_struct *mm;
         int res = 0;
@@ -902,7 +902,7 @@ bad_page:
 static int dsm_try_discard_read_copy(struct subvirtual_machine *svm,
                 unsigned long addr, struct page *page,
                 struct vm_area_struct *vma,
-                struct memory_region *mr)
+                struct heca_memory_region *mr)
 {
         struct dsm_pte_data pd;
         pte_t *ptep;
@@ -965,7 +965,7 @@ retry:
                 try_to_free_swap(page);
         unlock_page(page);
         trace_dsm_discard_read_copy(svm->dsm->hspace_id, svm->svm_id,
-                        maintainer_id, mr->mr_id, addr, addr-mr->addr, 0);
+                        maintainer_id, mr->hmr_id, addr, addr-mr->addr, 0);
 unlock:
         pte_unmap_unlock(ptep, ptl);
         if (release) {
@@ -1024,7 +1024,7 @@ int push_back_if_remote_dsm_page(struct page *page)
                 struct vm_area_struct *vma = avc->vma;
                 unsigned long address;
                 struct subvirtual_machine *svm;
-                struct memory_region *mr;
+                struct heca_memory_region *mr;
                 int discarded = 0;
 
                 address = page_address_in_vma(page, vma);

@@ -385,7 +385,7 @@ int dsm_initiate_fault(struct mm_struct *mm, unsigned long addr, int write)
 static void heca_initiate_pull_gup(struct dsm_page_cache *dpc, int delayed)
 {
         struct subvirtual_machine *svm = dpc->svm;
-        struct memory_region *mr;
+        struct heca_memory_region *mr;
 
         if (delayed) {
                 trace_delayed_initiated_fault(svm->dsm->hspace_id, svm->svm_id,
@@ -551,7 +551,7 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
 static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
                 unsigned long addr, struct dsm_page_cache *dpc,
                 struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr,
+                struct heca_memory_region *fault_mr,
                 struct subvirtual_machine *remote_svm, int tag, int i,
                 struct heca_page_pool_element *ppe)
 {
@@ -568,7 +568,7 @@ static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
         SetPageSwapBacked(page);
 
         trace_dsm_get_remote_page(fault_svm->dsm->hspace_id, fault_svm->svm_id,
-                        remote_svm->svm_id, fault_mr->mr_id, addr,
+                        remote_svm->svm_id, fault_mr->hmr_id, addr,
                         addr - fault_mr->addr, tag);
 
         request_dsm_page(page, remote_svm, fault_svm, fault_mr, addr,
@@ -580,7 +580,7 @@ out:
 
 static struct dsm_page_cache *dsm_cache_add_pushed(
                 struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr, struct svm_list svms,
+                struct heca_memory_region *fault_mr, struct svm_list svms,
                 unsigned long addr, struct page *page)
 {
         struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
@@ -636,7 +636,7 @@ fail:
 
 static struct dsm_page_cache *dsm_cache_add_send(
                 struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr, struct svm_list svms,
+                struct heca_memory_region *fault_mr, struct svm_list svms,
                 unsigned long norm_addr, int nproc, int tag,
                 struct vm_area_struct *vma, pte_t orig_pte,
                 pte_t *ptep, int alloc)
@@ -648,7 +648,7 @@ static struct dsm_page_cache *dsm_cache_add_send(
         struct subvirtual_machine *first_svm = NULL;
 
         trace_dsm_cache_add_send(fault_svm->dsm->hspace_id, fault_svm->svm_id, -1,
-                        fault_mr->mr_id, norm_addr, norm_addr - fault_mr->addr,
+                        fault_mr->hmr_id, norm_addr, norm_addr - fault_mr->addr,
                         tag);
 
         do {
@@ -750,7 +750,7 @@ fail:
  * a normalized one
  */
 static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
-                struct subvirtual_machine *fault_svm, struct memory_region *mr,
+                struct subvirtual_machine *fault_svm, struct heca_memory_region *mr,
                 int tag)
 {
         pte_t *pte;
@@ -834,7 +834,7 @@ out:
  */
 static struct dsm_page_cache *convert_push_dpc(
                 struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr, unsigned long norm_addr,
+                struct heca_memory_region *fault_mr, unsigned long norm_addr,
                 struct dsm_swp_data dsd)
 {
         struct dsm_page_cache *push_dpc, *dpc;
@@ -928,7 +928,7 @@ out:
 }
 
 static int dsm_fault_do_readahead(struct mm_struct *mm, unsigned long addr,
-                struct subvirtual_machine *svm, struct memory_region *mr,
+                struct subvirtual_machine *svm, struct heca_memory_region *mr,
                 struct dsm_page_cache *dpc)
 {
         int max_retry = 20, cont_back = 1, cont_forward = 1, j = 1;
@@ -956,7 +956,7 @@ static int dsm_fault_do_readahead(struct mm_struct *mm, unsigned long addr,
 }
 
 static int dsm_maintain_notify(struct subvirtual_machine *svm,
-                struct memory_region *mr, unsigned long addr, u32 exclude_id)
+                struct heca_memory_region *mr, unsigned long addr, u32 exclude_id)
 {
         struct subvirtual_machine *owner;
         struct svm_list svms;
@@ -993,7 +993,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 {
         struct dsm_swp_data dsd;
         struct subvirtual_machine *fault_svm;
-        struct memory_region *fault_mr;
+        struct heca_memory_region *fault_mr;
         unsigned long norm_addr = address & PAGE_MASK;
         spinlock_t *ptl;
         int ret = 0, found = -1, exclusive = 0, write,
@@ -1030,7 +1030,7 @@ retry:
 
         dsm_id = dsm->hspace_id;
         svm_id = fault_svm->svm_id;
-        mr_id = fault_mr->mr_id;
+        mr_id = fault_mr->hmr_id;
         shared_addr = norm_addr - fault_mr->addr;
         trace_do_dsm_page_fault_svm(dsm_id, svm_id, -1, mr_id, norm_addr,
                         shared_addr, dsd.flags);
@@ -1288,7 +1288,7 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
 }
 
 int dsm_trigger_page_pull(struct heca_space *dsm, struct subvirtual_machine *local_svm,
-                struct memory_region *mr, unsigned long norm_addr)
+                struct heca_memory_region *mr, unsigned long norm_addr)
 {
         int r = 0;
         struct mm_struct *mm = local_svm->mm;
@@ -1310,7 +1310,7 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 {
         unsigned long addr = address & PAGE_MASK;
         struct subvirtual_machine *svm = NULL;
-        struct memory_region *mr;
+        struct heca_memory_region *mr;
         struct page *page;
         struct dsm_pte_data pd;
         pte_t pte;
@@ -1327,7 +1327,7 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 return 0;
         }
 
-        trace_dsm_write_fault(svm->dsm->hspace_id, svm->svm_id, -1, mr->mr_id,
+        trace_dsm_write_fault(svm->dsm->hspace_id, svm->svm_id, -1, mr->hmr_id,
                         addr, addr - mr->addr, 0);
 
 retry:

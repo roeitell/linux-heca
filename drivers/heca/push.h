@@ -16,7 +16,7 @@ int dsm_try_unmap_page(struct subvirtual_machine *, unsigned long,
                 struct subvirtual_machine *, int);
 int dsm_extract_page_from_remote(struct subvirtual_machine *,
                 struct subvirtual_machine *, unsigned long, u16, pte_t *,
-                struct page **, u32 *, int, struct memory_region *);
+                struct page **, u32 *, int, struct heca_memory_region *);
 struct page *dsm_find_normal_page(struct mm_struct *, unsigned long);
 int dsm_prepare_page_for_push(struct subvirtual_machine *,
                 struct svm_list, struct page *, unsigned long,

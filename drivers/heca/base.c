@@ -715,17 +715,17 @@ struct subvirtual_machine *find_any_svm(struct heca_space *dsm, struct svm_list 
 /*
  * memory_region funcs
  */
-struct memory_region *find_mr(struct subvirtual_machine *svm,
+struct heca_memory_region *find_mr(struct subvirtual_machine *svm,
                 u32 id)
 {
-        struct memory_region *mr, **mrp;
+        struct heca_memory_region *mr, **mrp;
         struct radix_tree_root *root;
 
         rcu_read_lock();
         root = &svm->mr_id_tree_root;
 repeat:
         mr = NULL;
-        mrp = (struct memory_region **) radix_tree_lookup_slot(root,
+        mrp = (struct heca_memory_region **) radix_tree_lookup_slot(root,
                         (unsigned long) id);
         if (mrp) {
                 mr = radix_tree_deref_slot((void **) mrp);
@@ -741,12 +741,12 @@ out:
         return mr;
 }
 
-struct memory_region *search_mr_by_addr(struct subvirtual_machine *svm,
+struct heca_memory_region *search_mr_by_addr(struct subvirtual_machine *svm,
                 unsigned long addr)
 {
         struct rb_root *root = &svm->mr_tree_root;
         struct rb_node *node;
-        struct memory_region *this = svm->mr_cache;
+        struct heca_memory_region *this = svm->mr_cache;
         unsigned long seq;
 
         /* try to follow cache hint */
@@ -758,7 +758,7 @@ struct memory_region *search_mr_by_addr(struct subvirtual_machine *svm,
         do {
                 seq = read_seqbegin(&svm->mr_seq_lock);
                 for (node = root->rb_node; node; this = 0) {
-                        this = rb_entry(node, struct memory_region, rb_node);
+                        this = rb_entry(node, struct heca_memory_region, rb_node);
 
                         if (addr < this->addr)
                                 node = node->rb_left;
@@ -779,11 +779,11 @@ out:
         return this;
 }
 
-static int insert_mr(struct subvirtual_machine *svm, struct memory_region *mr)
+static int insert_mr(struct subvirtual_machine *svm, struct heca_memory_region *mr)
 {
         struct rb_root *root = &svm->mr_tree_root;
         struct rb_node **new = &root->rb_node, *parent = NULL;
-        struct memory_region *this;
+        struct heca_memory_region *this;
         int r;
 
         r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
@@ -793,14 +793,14 @@ static int insert_mr(struct subvirtual_machine *svm, struct memory_region *mr)
         write_seqlock(&svm->mr_seq_lock);
 
         /* insert to radix tree */
-        r = radix_tree_insert(&svm->mr_id_tree_root, (unsigned long) mr->mr_id,
+        r = radix_tree_insert(&svm->mr_id_tree_root, (unsigned long) mr->hmr_id,
                         mr);
         if (r)
                 goto out;
 
         /* insert to rb tree */
         while (*new) {
-                this = rb_entry(*new, struct memory_region, rb_node);
+                this = rb_entry(*new, struct heca_memory_region, rb_node);
                 parent = *new;
                 if (mr->addr < this->addr)
                         new = &((*new)->rb_left);
@@ -822,7 +822,7 @@ static void destroy_svm_mrs(struct subvirtual_machine *svm)
         struct rb_root *root = &svm->mr_tree_root;
 
         do {
-                struct memory_region *mr;
+                struct heca_memory_region *mr;
                 struct rb_node *node;
 
                 write_seqlock(&svm->mr_seq_lock);
@@ -831,11 +831,11 @@ static void destroy_svm_mrs(struct subvirtual_machine *svm)
                         write_sequnlock(&svm->mr_seq_lock);
                         break;
                 }
-                mr = rb_entry(node, struct memory_region, rb_node);
+                mr = rb_entry(node, struct heca_memory_region, rb_node);
                 rb_erase(&mr->rb_node, root);
                 write_sequnlock(&svm->mr_seq_lock);
                 heca_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
-                                svm->dsm->hspace_id, svm->svm_id, mr->mr_id);
+                                svm->dsm->hspace_id, svm->svm_id, mr->hmr_id);
                 synchronize_rcu();
                 kfree(mr);
         } while(1);
@@ -860,7 +860,7 @@ int create_mr(struct hecaioc_mr *udata)
 {
         int ret = 0, i;
         struct heca_space *dsm;
-        struct memory_region *mr = NULL;
+        struct heca_memory_region *mr = NULL;
         struct subvirtual_machine *local_svm = NULL;
 
         dsm = find_dsm(udata->dsm_id);
@@ -886,14 +886,14 @@ int create_mr(struct hecaioc_mr *udata)
                 goto out;
         }
 
-        mr = kzalloc(sizeof(struct memory_region), GFP_KERNEL);
+        mr = kzalloc(sizeof(struct heca_memory_region), GFP_KERNEL);
         if (!mr) {
                 heca_printk(KERN_ERR "can't allocate memory for MR");
                 ret = -ENOMEM;
                 goto out_free;
         }
 
-        mr->mr_id = udata->mr_id;
+        mr->hmr_id = udata->mr_id;
         mr->addr = (unsigned long) udata->addr;
         mr->sz = udata->sz;
 
@@ -962,7 +962,7 @@ int unmap_ps(struct hecaioc_ps *udata)
         int r = -EFAULT;
         struct heca_space *dsm = NULL;
         struct subvirtual_machine *local_svm = NULL;
-        struct memory_region *mr = NULL;
+        struct heca_memory_region *mr = NULL;
         struct mm_struct *mm = find_mm_by_pid(udata->pid);
 
         if (!mm) {

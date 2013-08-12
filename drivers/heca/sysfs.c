@@ -160,15 +160,15 @@ int create_svm_sysfs_entry(struct subvirtual_machine *svm)
 /* mr sysfs functions */
 struct mr_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct memory_region *, char *);
-        ssize_t(*store)(struct memory_region *, char *, size_t);
+        ssize_t(*show)(struct heca_memory_region *, char *);
+        ssize_t(*store)(struct heca_memory_region *, char *, size_t);
 };
 
 static ssize_t mr_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct memory_region *mr = container_of(k,
-                        struct memory_region, mr_kobject);
+        struct heca_memory_region *mr = container_of(k,
+                        struct heca_memory_region, hmr_kobject);
         struct mr_instance_attribute *instance_attr =
                 container_of(a, struct mr_instance_attribute, attr);
 
@@ -177,27 +177,27 @@ static ssize_t mr_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_mr_id_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_id_show(struct heca_memory_region *mr, char *data)
 {
-        return sprintf(data, "%u\n", mr->mr_id);
+        return sprintf(data, "%u\n", mr->hmr_id);
 }
 
-static ssize_t instance_mr_addr_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_addr_show(struct heca_memory_region *mr, char *data)
 {
         return sprintf(data, "0x%lx\n", mr->addr);
 }
 
-static ssize_t instance_mr_sz_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_sz_show(struct heca_memory_region *mr, char *data)
 {
         return sprintf(data, "0x%lx\n", mr->sz);
 }
 
-static ssize_t instance_mr_flags_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_flags_show(struct heca_memory_region *mr, char *data)
 {
         return sprintf(data, "0x%x\n", mr->flags);
 }
 
-INSTANCE_ATTR(struct mr_instance_attribute, mr_id, S_IRUGO,
+INSTANCE_ATTR(struct mr_instance_attribute, hmr_id, S_IRUGO,
                 instance_mr_id_show, NULL);
 INSTANCE_ATTR(struct mr_instance_attribute, mr_addr, S_IRUGO,
                 instance_mr_addr_show, NULL);
@@ -207,7 +207,7 @@ INSTANCE_ATTR(struct mr_instance_attribute, mr_flags, S_IRUGO,
                 instance_mr_flags_show, NULL);
 
 static struct mr_instance_attribute *mr_instance_attr[] = {
-        &ATTR_NAME(mr_id),
+        &ATTR_NAME(hmr_id),
         &ATTR_NAME(mr_addr),
         &ATTR_NAME(mr_sz),
         &ATTR_NAME(mr_flags),
@@ -231,13 +231,13 @@ void delete_mr_sysfs_entry(struct kobject *obj)
 }
 
 int create_mr_sysfs_entry(struct subvirtual_machine *svm,
-                struct memory_region *mr)
+                struct heca_memory_region *mr)
 {
-        struct kobject *kobj = &mr->mr_kobject;
+        struct kobject *kobj = &mr->hmr_kobject;
         struct kobject *root_kobj = &svm->svm_kobject;
 
         return kobject_init_and_add(kobj, &ktype_mr_instance, root_kobj,
-                        HECA_SYSFS_MR_FMT, mr->mr_id);
+                        HECA_SYSFS_MR_FMT, mr->hmr_id);
 }
 
 /* dsm sysfs functions */

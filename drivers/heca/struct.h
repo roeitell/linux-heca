@@ -241,14 +241,14 @@ struct heca_message {
         u32 rkey;
 };
 
-struct memory_region {
+struct heca_memory_region {
         unsigned long addr;
         unsigned long sz;
         u32 descriptor;
-        u32 mr_id;
+        u32 hmr_id;
         u32 flags;
         struct rb_node rb_node;
-        struct kobject mr_kobject;
+        struct kobject hmr_kobject;
 };
 
 struct subvirtual_machine {
@@ -272,7 +272,7 @@ struct subvirtual_machine {
 
         struct radix_tree_root mr_id_tree_root;
         struct rb_root mr_tree_root;
-        struct memory_region *mr_cache;
+        struct heca_memory_region *mr_cache;
         seqlock_t mr_seq_lock;
 
         struct rb_root push_cache;
@@ -378,7 +378,7 @@ struct deferred_gup {
         struct heca_message dsm_buf;
         struct subvirtual_machine *remote_svm;
         struct heca_connection_element *origin_ele;
-        struct memory_region *mr;
+        struct heca_memory_region *mr;
         struct llist_node lnode;
 };
 

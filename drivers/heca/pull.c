@@ -535,7 +535,7 @@ retry:
 
 static int dsm_pull_req_complete(struct tx_buffer_element *tx_e)
 {
-        struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+        struct dsm_page_cache *dpc = tx_e->wrk_req->hpc;
         struct page *page = tx_e->wrk_req->dst_addr->mem_page;
         int r;
 

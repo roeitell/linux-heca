@@ -516,7 +516,7 @@ void dsm_destroy_page_pool(struct heca_connection_element *ele)
         for_each_online_cpu(i) {
                 struct heca_space_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
                 cancel_work_sync(&pp->work); /* work offline, or spin_lock inside */
-                while (pp->head != DSM_PAGE_POOL_SZ) {
+                while (pp->head != HSPACE_PAGE_POOL_SZ) {
                         ppe = pp->hspace_page_pool[pp->head++];
                         if (ppe->mem_page)
                                 page_cache_release(ppe->mem_page);
@@ -539,7 +539,7 @@ int dsm_init_page_pool(struct heca_connection_element *ele)
         /* init elements list */
         spin_lock_init(&ele->page_pool_elements_lock);
         init_llist_head(&ele->page_pool_elements);
-        for (i = 0; i < DSM_PAGE_POOL_SZ * (NR_CPUS + 1); i++) {
+        for (i = 0; i < HSPACE_PAGE_POOL_SZ * (NR_CPUS + 1); i++) {
                 struct heca_page_pool_element *ppe = kzalloc(sizeof(struct heca_page_pool_element),
                                 GFP_ATOMIC);
                 if (!ppe)
@@ -554,7 +554,7 @@ int dsm_init_page_pool(struct heca_connection_element *ele)
 
         for_each_online_cpu(i) {
                 struct heca_space_page_pool *pp = per_cpu_ptr(ele->page_pool, i);
-                pp->head = DSM_PAGE_POOL_SZ;
+                pp->head = HSPACE_PAGE_POOL_SZ;
                 pp->connection = ele; /* for container_of(work_struct) */
                 pp->cpu = i;
                 INIT_WORK(&pp->work, dsm_page_pool_refill);
@@ -580,7 +580,7 @@ struct heca_page_pool_element *dsm_fetch_ready_ppe(struct heca_connection_elemen
 
         i = get_cpu();
         pp = per_cpu_ptr(ele->page_pool, i);
-        if (pp->head < DSM_PAGE_POOL_SZ)
+        if (pp->head < HSPACE_PAGE_POOL_SZ)
                 ppe = pp->hspace_page_pool[pp->head++];
         schedule_work_on(i, &pp->work);
         put_cpu();

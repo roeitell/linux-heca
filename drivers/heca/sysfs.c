@@ -375,13 +375,13 @@ static struct kobj_type ktype_conn_instance = {
         .default_attrs = (struct attribute **) conn_instance_attr,
 };
 
-void delete_conn_sysfs_entry(struct conn_element *ele)
+void delete_connection_sysfs_entry(struct conn_element *ele)
 {
         kobject_put(&ele->kobj);
         kobject_del(&ele->kobj);
 }
 
-int create_conn_sysfs_entry(struct conn_element *ele)
+int create_connection_sysfs_entry(struct conn_element *ele)
 {
         int rc;
 

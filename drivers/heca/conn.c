@@ -1465,7 +1465,7 @@ int server_event_handler(struct rdma_cm_id *id, struct rdma_cm_event *ev)
                         goto err;
                 }
 
-                ret = create_conn_sysfs_entry(ele);
+                ret = create_connection_sysfs_entry(ele);
                 if (ret) {
                         heca_printk(KERN_ERR "create_conn_sysfs_entry failed: %d",
                                         ret);
@@ -1603,7 +1603,7 @@ static int create_connection(struct rcm *rcm, unsigned long ip,
         if (IS_ERR(ele->cm_id))
                 goto err1;
 
-        if (create_conn_sysfs_entry(ele)) {
+        if (create_connection_sysfs_entry(ele)) {
                 heca_printk(KERN_ERR "create_conn_sysfs_entry failed");
                 goto err1;
         }
@@ -1768,7 +1768,7 @@ int destroy_connection(struct conn_element *ele)
         dsm_destroy_page_pool(ele);
 
         erase_rb_conn(ele);
-        delete_conn_sysfs_entry(ele);
+        delete_connection_sysfs_entry(ele);
         vfree(ele);
 
         return ret;

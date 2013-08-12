@@ -108,7 +108,7 @@ out:
 
 void remove_dsm(struct heca_space *dsm)
 {
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
         struct dsm_module_state *dsm_state = get_dsm_module_state();
         struct list_head *pos, *n;
 
@@ -117,8 +117,8 @@ void remove_dsm(struct heca_space *dsm)
         heca_printk(KERN_DEBUG "<enter> dsm=%d", dsm->hspace_id);
 
         list_for_each_safe (pos, n, &dsm->hprocs_list) {
-                svm = list_entry(pos, struct subvirtual_machine, svm_ptr);
-                remove_svm(dsm->hspace_id, svm->svm_id);
+                svm = list_entry(pos, struct heca_process, hproc_ptr);
+                remove_svm(dsm->hspace_id, svm->hproc_id);
         }
 
         mutex_lock(&dsm_state->dsm_state_mutex);
@@ -212,14 +212,14 @@ failed:
 /*
  * svm funcs
  */
-static void destroy_svm_mrs(struct subvirtual_machine *svm);
+static void destroy_svm_mrs(struct heca_process *svm);
 
-static inline int is_svm_local(struct subvirtual_machine *svm)
+static inline int is_svm_local(struct heca_process *svm)
 {
         return !!svm->mm;
 }
 
-static inline int grab_svm(struct subvirtual_machine *svm)
+static inline int grab_svm(struct heca_process *svm)
 {
 #if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
 # ifdef CONFIG_PREEMPT_COUNT
@@ -234,16 +234,16 @@ static inline int grab_svm(struct subvirtual_machine *svm)
         return 0;
 }
 
-static struct subvirtual_machine *_find_svm_in_tree(
+static struct heca_process *_find_svm_in_tree(
                 struct radix_tree_root *root, unsigned long svm_id)
 {
-        struct subvirtual_machine *svm;
-        struct subvirtual_machine **svmp;
+        struct heca_process *svm;
+        struct heca_process **svmp;
 
         rcu_read_lock();
 repeat:
         svm = NULL;
-        svmp = (struct subvirtual_machine **) radix_tree_lookup_slot(root,
+        svmp = (struct heca_process **) radix_tree_lookup_slot(root,
                         (unsigned long) svm_id);
         if (svmp) {
                 svm = radix_tree_deref_slot((void**) svmp);
@@ -264,18 +264,18 @@ out:
         return svm;
 }
 
-inline struct subvirtual_machine *find_svm(struct heca_space *dsm, u32 svm_id)
+inline struct heca_process *find_svm(struct heca_space *dsm, u32 svm_id)
 {
         return _find_svm_in_tree(&dsm->hprocs_tree_root, (unsigned long) svm_id);
 }
 
-inline struct subvirtual_machine *find_local_svm_in_dsm(struct heca_space *dsm,
+inline struct heca_process *find_local_svm_in_dsm(struct heca_space *dsm,
                 struct mm_struct *mm)
 {
         return _find_svm_in_tree(&dsm->hprocs_mm_tree_root, (unsigned long) mm);
 }
 
-inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm)
+inline struct heca_process *find_local_svm_from_mm(struct mm_struct *mm)
 {
         struct dsm_module_state *mod = get_dsm_module_state();
 
@@ -285,7 +285,7 @@ inline struct subvirtual_machine *find_local_svm_from_mm(struct mm_struct *mm)
 }
 
 static int insert_svm_to_radix_trees(struct dsm_module_state *dsm_state,
-                struct heca_space *dsm, struct subvirtual_machine *new_svm)
+                struct heca_space *dsm, struct heca_process *new_svm)
 {
         int r;
 
@@ -304,7 +304,7 @@ preload:
 
         spin_lock(&dsm_state->radix_lock);
         r = radix_tree_insert(&dsm->hprocs_tree_root,
-                        (unsigned long) new_svm->svm_id, new_svm);
+                        (unsigned long) new_svm->hproc_id, new_svm);
         if (r)
                 goto unlock;
 
@@ -325,7 +325,7 @@ unlock:
         if (r) {
                 heca_printk(KERN_ERR "failed radix_tree_insert %d", r);
                 radix_tree_delete(&dsm->hprocs_tree_root,
-                                (unsigned long) new_svm->svm_id);
+                                (unsigned long) new_svm->hproc_id);
                 if (is_svm_local(new_svm)) {
                         radix_tree_delete(&dsm->hprocs_mm_tree_root,
                                         (unsigned long) new_svm->mm);
@@ -343,7 +343,7 @@ int create_svm(struct hecaioc_svm *svm_info)
         struct dsm_module_state *dsm_state = get_dsm_module_state();
         int r = 0;
         struct heca_space *dsm;
-        struct subvirtual_machine *found_svm, *new_svm = NULL;
+        struct heca_process *found_svm, *new_svm = NULL;
 
         /* allocate a new svm */
         new_svm = kzalloc(sizeof(*new_svm), GFP_KERNEL);
@@ -375,10 +375,10 @@ int create_svm(struct hecaioc_svm *svm_info)
         }
 
         /* initial svm data */
-        new_svm->svm_id = svm_info->svm_id;
+        new_svm->hproc_id = svm_info->svm_id;
         new_svm->is_local = svm_info->is_local;
         new_svm->pid = svm_info->pid;
-        new_svm->dsm = dsm;
+        new_svm->hspace = dsm;
         atomic_set(&new_svm->refs, 2);
 
         /* register local svm */
@@ -400,16 +400,16 @@ int create_svm(struct hecaioc_svm *svm_info)
                 }
 
                 new_svm->mm = mm;
-                new_svm->dsm->nb_local_hprocs++;
-                new_svm->mr_tree_root = RB_ROOT;
-                seqlock_init(&new_svm->mr_seq_lock);
-                new_svm->mr_cache = NULL;
+                new_svm->hspace->nb_local_hprocs++;
+                new_svm->hmr_tree_root = RB_ROOT;
+                seqlock_init(&new_svm->hmr_seq_lock);
+                new_svm->hmr_cache = NULL;
 
-                init_llist_head(&new_svm->delayed_faults);
-                INIT_DELAYED_WORK(&new_svm->delayed_gup_work,
+                init_llist_head(&new_svm->heca_delayed_faults);
+                INIT_DELAYED_WORK(&new_svm->heca_delayed_gup_work,
                                 delayed_gup_work_fn);
-                init_llist_head(&new_svm->deferred_gups);
-                INIT_WORK(&new_svm->deferred_gup_work, deferred_gup_work_fn);
+                init_llist_head(&new_svm->heca_deferred_gups);
+                INIT_WORK(&new_svm->heca_deferred_gup_work, deferred_gup_work_fn);
 
                 spin_lock_init(&new_svm->page_cache_spinlock);
                 spin_lock_init(&new_svm->page_readers_spinlock);
@@ -430,11 +430,11 @@ int create_svm(struct hecaioc_svm *svm_info)
         /* register svm by id and mm_struct (must come before dsm_get_descriptor) */
         if (insert_svm_to_radix_trees(dsm_state, dsm, new_svm))
                 goto out;
-        list_add(&new_svm->svm_ptr, &dsm->hprocs_list);
+        list_add(&new_svm->hproc_ptr, &dsm->hprocs_list);
 
         /* assign descriptor for remote svm */
         if (!is_svm_local(new_svm)) {
-                u32 svm_ids[] = {new_svm->svm_id, 0};
+                u32 svm_ids[] = {new_svm->hproc_id, 0};
                 new_svm->descriptor = dsm_get_descriptor(dsm->hspace_id, svm_ids);
         }
 
@@ -466,12 +466,12 @@ no_dsm:
         return r;
 }
 
-inline void release_svm(struct subvirtual_machine *svm)
+inline void release_svm(struct heca_process *svm)
 {
         atomic_dec(&svm->refs);
         if (atomic_cmpxchg(&svm->refs, 1, 0) == 1) {
-                trace_free_svm(svm->svm_id);
-                delete_svm_sysfs_entry(&svm->svm_kobject);
+                trace_free_svm(svm->hproc_id);
+                delete_svm_sysfs_entry(&svm->hproc_kobject);
                 synchronize_rcu();
                 kfree(svm);
         }
@@ -481,8 +481,8 @@ inline void release_svm(struct subvirtual_machine *svm)
  * We dec page's refcount for every missing remote response (it would have
  * happened in dsm_ppe_clear_release after sending an answer to remote svm)
  */
-static void surrogate_push_remote_svm(struct subvirtual_machine *svm,
-                struct subvirtual_machine *remote_svm)
+static void surrogate_push_remote_svm(struct heca_process *svm,
+                struct heca_process *remote_svm)
 {
         struct rb_node *node;
 
@@ -493,7 +493,7 @@ static void surrogate_push_remote_svm(struct subvirtual_machine *svm,
                 dpc = rb_entry(node, struct dsm_page_cache, rb_node);
                 node = rb_next(node);
                 for (i = 0; i < dpc->svms.num; i++) {
-                        if (dpc->svms.ids[i] == remote_svm->svm_id)
+                        if (dpc->svms.ids[i] == remote_svm->hproc_id)
                                 goto surrogate;
                 }
                 continue;
@@ -511,7 +511,7 @@ surrogate:
         write_sequnlock(&svm->push_cache_lock);
 }
 
-static void release_svm_push_elements(struct subvirtual_machine *svm)
+static void release_svm_push_elements(struct heca_process *svm)
 {
         struct rb_node *node;
 
@@ -540,7 +540,7 @@ static void release_svm_push_elements(struct subvirtual_machine *svm)
  * therefore we can catch them and surrogate for them by iterating the tx
  * buffer.
  */
-static void release_svm_tx_elements(struct subvirtual_machine *svm,
+static void release_svm_tx_elements(struct heca_process *svm,
                 struct heca_connection_element *ele)
 {
         struct tx_buf_ele *tx_buf;
@@ -558,9 +558,9 @@ static void release_svm_tx_elements(struct subvirtual_machine *svm,
                 int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY |
                         MSG_RES_PAGE_FAIL | MSG_REQ_READ;
 
-                if (msg->type & types && msg->dsm_id == svm->dsm->hspace_id
-                                && (msg->src_id == svm->svm_id
-                                || msg->dest_id == svm->svm_id)
+                if (msg->type & types && msg->dsm_id == svm->hspace->hspace_id
+                                && (msg->src_id == svm->hproc_id
+                                || msg->dest_id == svm->hproc_id)
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                         struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
 
@@ -577,11 +577,11 @@ static void release_svm_tx_elements(struct subvirtual_machine *svm,
         }
 }
 
-static void release_svm_queued_requests(struct subvirtual_machine *svm,
+static void release_svm_queued_requests(struct heca_process *svm,
                 struct tx_buffer *tx)
 {
         struct dsm_request *req, *n;
-        u32 svm_id = svm->svm_id;
+        u32 svm_id = svm->hproc_id;
 
         mutex_lock(&tx->flush_mutex);
         dsm_request_queue_merge(tx);
@@ -602,7 +602,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
 {
         struct dsm_module_state *dsm_state = get_dsm_module_state();
         struct heca_space *dsm;
-        struct subvirtual_machine *svm = NULL;
+        struct heca_process *svm = NULL;
 
         mutex_lock(&dsm_state->dsm_state_mutex);
         dsm = find_dsm(dsm_id);
@@ -623,10 +623,10 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         }
         mutex_unlock(&dsm_state->dsm_state_mutex);
 
-        list_del(&svm->svm_ptr);
-        radix_tree_delete(&dsm->hprocs_tree_root, (unsigned long) svm->svm_id);
+        list_del(&svm->hproc_ptr);
+        radix_tree_delete(&dsm->hprocs_tree_root, (unsigned long) svm->hproc_id);
         if (is_svm_local(svm)) {
-                cancel_delayed_work_sync(&svm->delayed_gup_work);
+                cancel_delayed_work_sync(&svm->heca_delayed_gup_work);
                 // to make sure everything is clean
                 dequeue_and_gup_cleanup(svm);
                 dsm->nb_local_hprocs--;
@@ -677,14 +677,14 @@ void remove_svm(u32 dsm_id, u32 svm_id)
                 }
                 release_svm_push_elements(svm);
                 destroy_svm_mrs(svm);
-        } else if (svm->ele) {
-                struct subvirtual_machine *local_svm;
+        } else if (svm->connection) {
+                struct heca_process *local_svm;
 
-                release_svm_queued_requests(svm, &svm->ele->tx_buffer);
-                release_svm_tx_elements(svm, svm->ele);
+                release_svm_queued_requests(svm, &svm->connection->tx_buffer);
+                release_svm_tx_elements(svm, svm->connection);
 
                 /* potentially very expensive way to do this */
-                list_for_each_entry (local_svm, &svm->dsm->hprocs_list, svm_ptr) {
+                list_for_each_entry (local_svm, &svm->hspace->hprocs_list, hproc_ptr) {
                         if (is_svm_local(local_svm))
                                 surrogate_push_remote_svm(local_svm, svm);
                 }
@@ -697,10 +697,10 @@ out:
         mutex_unlock(&dsm->hspace_mutex);
 }
 
-struct subvirtual_machine *find_any_svm(struct heca_space *dsm, struct svm_list svms)
+struct heca_process *find_any_svm(struct heca_space *dsm, struct svm_list svms)
 {
         int i;
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
 
         for_each_valid_svm(svms, i) {
                 svm = find_svm(dsm, svms.ids[i]);
@@ -715,14 +715,14 @@ struct subvirtual_machine *find_any_svm(struct heca_space *dsm, struct svm_list 
 /*
  * memory_region funcs
  */
-struct heca_memory_region *find_mr(struct subvirtual_machine *svm,
+struct heca_memory_region *find_mr(struct heca_process *svm,
                 u32 id)
 {
         struct heca_memory_region *mr, **mrp;
         struct radix_tree_root *root;
 
         rcu_read_lock();
-        root = &svm->mr_id_tree_root;
+        root = &svm->hmr_id_tree_root;
 repeat:
         mr = NULL;
         mrp = (struct heca_memory_region **) radix_tree_lookup_slot(root,
@@ -741,12 +741,12 @@ out:
         return mr;
 }
 
-struct heca_memory_region *search_mr_by_addr(struct subvirtual_machine *svm,
+struct heca_memory_region *search_mr_by_addr(struct heca_process *svm,
                 unsigned long addr)
 {
-        struct rb_root *root = &svm->mr_tree_root;
+        struct rb_root *root = &svm->hmr_tree_root;
         struct rb_node *node;
-        struct heca_memory_region *this = svm->mr_cache;
+        struct heca_memory_region *this = svm->hmr_cache;
         unsigned long seq;
 
         /* try to follow cache hint */
@@ -756,7 +756,7 @@ struct heca_memory_region *search_mr_by_addr(struct subvirtual_machine *svm,
         }
 
         do {
-                seq = read_seqbegin(&svm->mr_seq_lock);
+                seq = read_seqbegin(&svm->hmr_seq_lock);
                 for (node = root->rb_node; node; this = 0) {
                         this = rb_entry(node, struct heca_memory_region, rb_node);
 
@@ -770,18 +770,18 @@ struct heca_memory_region *search_mr_by_addr(struct subvirtual_machine *svm,
                         else
                                 break;
                 }
-        } while (read_seqretry(&svm->mr_seq_lock, seq));
+        } while (read_seqretry(&svm->hmr_seq_lock, seq));
 
         if (likely(this))
-                svm->mr_cache = this;
+                svm->hmr_cache = this;
 
 out:
         return this;
 }
 
-static int insert_mr(struct subvirtual_machine *svm, struct heca_memory_region *mr)
+static int insert_mr(struct heca_process *svm, struct heca_memory_region *mr)
 {
-        struct rb_root *root = &svm->mr_tree_root;
+        struct rb_root *root = &svm->hmr_tree_root;
         struct rb_node **new = &root->rb_node, *parent = NULL;
         struct heca_memory_region *this;
         int r;
@@ -790,10 +790,10 @@ static int insert_mr(struct subvirtual_machine *svm, struct heca_memory_region *
         if (r)
                 goto fail;
 
-        write_seqlock(&svm->mr_seq_lock);
+        write_seqlock(&svm->hmr_seq_lock);
 
         /* insert to radix tree */
-        r = radix_tree_insert(&svm->mr_id_tree_root, (unsigned long) mr->hmr_id,
+        r = radix_tree_insert(&svm->hmr_id_tree_root, (unsigned long) mr->hmr_id,
                         mr);
         if (r)
                 goto out;
@@ -812,44 +812,44 @@ static int insert_mr(struct subvirtual_machine *svm, struct heca_memory_region *
         rb_insert_color(&mr->rb_node, root);
 out:
         radix_tree_preload_end();
-        write_sequnlock(&svm->mr_seq_lock);
+        write_sequnlock(&svm->hmr_seq_lock);
 fail:
         return r;
 }
 
-static void destroy_svm_mrs(struct subvirtual_machine *svm)
+static void destroy_svm_mrs(struct heca_process *svm)
 {
-        struct rb_root *root = &svm->mr_tree_root;
+        struct rb_root *root = &svm->hmr_tree_root;
 
         do {
                 struct heca_memory_region *mr;
                 struct rb_node *node;
 
-                write_seqlock(&svm->mr_seq_lock);
+                write_seqlock(&svm->hmr_seq_lock);
                 node = rb_first(root);
                 if (!node) {
-                        write_sequnlock(&svm->mr_seq_lock);
+                        write_sequnlock(&svm->hmr_seq_lock);
                         break;
                 }
                 mr = rb_entry(node, struct heca_memory_region, rb_node);
                 rb_erase(&mr->rb_node, root);
-                write_sequnlock(&svm->mr_seq_lock);
+                write_sequnlock(&svm->hmr_seq_lock);
                 heca_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
-                                svm->dsm->hspace_id, svm->svm_id, mr->hmr_id);
+                                svm->hspace->hspace_id, svm->hproc_id, mr->hmr_id);
                 synchronize_rcu();
                 kfree(mr);
         } while(1);
 }
 
-static struct subvirtual_machine *find_local_svm_from_list(struct heca_space *dsm)
+static struct heca_process *find_local_svm_from_list(struct heca_space *dsm)
 {
-        struct subvirtual_machine *tmp_svm;
+        struct heca_process *tmp_svm;
 
-        list_for_each_entry (tmp_svm, &dsm->hprocs_list, svm_ptr) {
+        list_for_each_entry (tmp_svm, &dsm->hprocs_list, hproc_ptr) {
                 if (!is_svm_local(tmp_svm))
                         continue;
                 heca_printk(KERN_DEBUG "dsm %d local svm is %d", dsm->hspace_id,
-                                tmp_svm->svm_id);
+                                tmp_svm->hproc_id);
                 grab_svm(tmp_svm);
                 return tmp_svm;
         }
@@ -861,7 +861,7 @@ int create_mr(struct hecaioc_mr *udata)
         int ret = 0, i;
         struct heca_space *dsm;
         struct heca_memory_region *mr = NULL;
-        struct subvirtual_machine *local_svm = NULL;
+        struct heca_process *local_svm = NULL;
 
         dsm = find_dsm(udata->dsm_id);
         if (!dsm) {
@@ -911,7 +911,7 @@ int create_mr(struct hecaioc_mr *udata)
         }
 
         for (i = 0; udata->svm_ids[i]; i++) {
-                struct subvirtual_machine *owner;
+                struct heca_process *owner;
                 u32 svm_id = udata->svm_ids[i];
 
                 owner = find_svm(dsm, svm_id);
@@ -946,7 +946,7 @@ int create_mr(struct hecaioc_mr *udata)
         goto out;
 
 out_remove_tree:
-        rb_erase(&mr->rb_node, &local_svm->mr_tree_root);
+        rb_erase(&mr->rb_node, &local_svm->hmr_tree_root);
 out_free:
         kfree(mr);
 out:
@@ -961,7 +961,7 @@ int unmap_ps(struct hecaioc_ps *udata)
 {
         int r = -EFAULT;
         struct heca_space *dsm = NULL;
-        struct subvirtual_machine *local_svm = NULL;
+        struct heca_process *local_svm = NULL;
         struct heca_memory_region *mr = NULL;
         struct mm_struct *mm = find_mm_by_pid(udata->pid);
 
@@ -974,7 +974,7 @@ int unmap_ps(struct hecaioc_ps *udata)
         if (!local_svm)
                 goto out;
 
-        dsm = local_svm->dsm;
+        dsm = local_svm->hspace;
 
         mr = search_mr_by_addr(local_svm, (unsigned long) udata->addr);
         if (!mr)

@@ -69,15 +69,15 @@ static struct kobj_type kobj_default_type = {
 /* svm sysfs functions */
 struct svm_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct subvirtual_machine *, char *);
-        ssize_t(*store)(struct subvirtual_machine *, char *, size_t);
+        ssize_t(*show)(struct heca_process *, char *);
+        ssize_t(*store)(struct heca_process *, char *, size_t);
 };
 
 static ssize_t svm_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct subvirtual_machine *svm = container_of(k,
-                        struct subvirtual_machine, svm_kobject);
+        struct heca_process *svm = container_of(k,
+                        struct heca_process, hproc_kobject);
         struct svm_instance_attribute *instance_attr =
                 container_of(a, struct svm_instance_attribute, attr);
 
@@ -86,34 +86,34 @@ static ssize_t svm_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_svm_id_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_id_show(struct heca_process *svm,
                 char *data)
 {
-        return sprintf(data, "%u\n", svm->svm_id);
+        return sprintf(data, "%u\n", svm->hproc_id);
 }
 
-static ssize_t instance_svm_pid_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_pid_show(struct heca_process *svm,
                 char *data)
 {
         return sprintf(data, "%u\n", svm->pid);
 }
 
-static ssize_t instance_svm_conn_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_conn_show(struct heca_process *svm,
                 char *data)
 {
-        if (!svm->ele || (!svm->ele->cm_id))
+        if (!svm->connection || (!svm->connection->cm_id))
                 return sprintf(data, "\n");
 
-        return sprintf(data, HECA_SYSFS_CONN_FMT "\n", svm->ele->cm_id);
+        return sprintf(data, HECA_SYSFS_CONN_FMT "\n", svm->connection->cm_id);
 }
 
-static ssize_t instance_svm_is_local_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_is_local_show(struct heca_process *svm,
                 char *data)
 {
         return sprintf(data, "%u\n", svm->is_local);
 }
 
-INSTANCE_ATTR(struct svm_instance_attribute, svm_id, S_IRUGO,
+INSTANCE_ATTR(struct svm_instance_attribute, hproc_id, S_IRUGO,
                 instance_svm_id_show, NULL);
 INSTANCE_ATTR(struct svm_instance_attribute, svm_pid, S_IRUGO,
                 instance_svm_pid_show, NULL);
@@ -123,7 +123,7 @@ INSTANCE_ATTR(struct svm_instance_attribute, svm_is_local, S_IRUGO,
                 instance_svm_is_local_show, NULL);
 
 static struct svm_instance_attribute *svm_instance_attr[] = {
-        &ATTR_NAME(svm_id),
+        &ATTR_NAME(hproc_id),
         &ATTR_NAME(svm_pid),
         &ATTR_NAME(svm_conn),
         &ATTR_NAME(svm_is_local),
@@ -146,14 +146,14 @@ void delete_svm_sysfs_entry(struct kobject *obj)
         kobject_del(obj);
 }
 
-int create_svm_sysfs_entry(struct subvirtual_machine *svm)
+int create_svm_sysfs_entry(struct heca_process *svm)
 {
-        struct kobject *kobj = &svm->svm_kobject;
+        struct kobject *kobj = &svm->hproc_kobject;
         int r;
 
         r = kobject_init_and_add(kobj, &ktype_svm_instance,
-                        &svm->dsm->hspace_kobject, HECA_SYSFS_SVM_FMT,
-                        svm->svm_id);
+                        &svm->hspace->hspace_kobject, HECA_SYSFS_SVM_FMT,
+                        svm->hproc_id);
         return r;
 }
 
@@ -230,11 +230,11 @@ void delete_mr_sysfs_entry(struct kobject *obj)
         kobject_del(obj);
 }
 
-int create_mr_sysfs_entry(struct subvirtual_machine *svm,
+int create_mr_sysfs_entry(struct heca_process *svm,
                 struct heca_memory_region *mr)
 {
         struct kobject *kobj = &mr->hmr_kobject;
-        struct kobject *root_kobj = &svm->svm_kobject;
+        struct kobject *root_kobj = &svm->hproc_kobject;
 
         return kobject_init_and_add(kobj, &ktype_mr_instance, root_kobj,
                         HECA_SYSFS_MR_FMT, mr->hmr_id);

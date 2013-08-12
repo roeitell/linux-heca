@@ -154,7 +154,7 @@ inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
 }
 
 /* arrive with dsm mutex held! */
-void remove_svm_from_descriptors(struct subvirtual_machine *svm)
+void remove_svm_from_descriptors(struct heca_process *svm)
 {
         int i;
 
@@ -173,7 +173,7 @@ void remove_svm_from_descriptors(struct subvirtual_machine *svm)
                  * signal svm down.
                  */
                 for_each_valid_svm (svms, j) {
-                        if (svms.ids[j] == svm->svm_id) {
+                        if (svms.ids[j] == svm->hproc_id) {
                                 svms.ids[j] = 0;
                                 break;
                         }
@@ -264,7 +264,7 @@ void destroy_dsm_cache_kmem(void)
 }
 
 /* assuming we hold the svm, we inc its refcount again for the dpc */
-struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *svm,
+struct dsm_page_cache *dsm_alloc_dpc(struct heca_process *svm,
                 unsigned long addr, struct svm_list svms, int nproc, int tag)
 {
         struct dsm_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_ATOMIC);
@@ -296,7 +296,7 @@ void dsm_dealloc_dpc(struct dsm_page_cache **dpc)
         *dpc = NULL;
 }
 
-struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *svm,
+struct dsm_page_cache *dsm_cache_get(struct heca_process *svm,
                 unsigned long addr)
 {
         void **ppc;
@@ -326,7 +326,7 @@ out:
 }
 
 
-struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *svm,
+struct dsm_page_cache *dsm_cache_get_hold(struct heca_process *svm,
                 unsigned long addr)
 {
         void **ppc;
@@ -366,7 +366,7 @@ out:
         return dpc;
 }
 
-int dsm_cache_add(struct subvirtual_machine *svm, unsigned long addr, int nproc,
+int dsm_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
                 int tag, struct dsm_page_cache **dpc)
 {
         struct svm_list svms;
@@ -404,7 +404,7 @@ int dsm_cache_add(struct subvirtual_machine *svm, unsigned long addr, int nproc,
         return r;
 }
 
-struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *svm,
+struct dsm_page_cache *dsm_cache_release(struct heca_process *svm,
                 unsigned long addr)
 {
         struct dsm_page_cache *dpc;
@@ -647,7 +647,7 @@ inline void dsm_free_page_reader(struct dsm_page_reader *dpr)
         kmem_cache_free(dsm_reader_kmem, dpr);
 }
 
-struct dsm_page_reader *dsm_delete_readers(struct subvirtual_machine *svm,
+struct dsm_page_reader *dsm_delete_readers(struct heca_process *svm,
                 unsigned long addr)
 {
         struct dsm_page_reader *dpr;
@@ -659,7 +659,7 @@ struct dsm_page_reader *dsm_delete_readers(struct subvirtual_machine *svm,
         return dpr;
 }
 
-struct dsm_page_reader *dsm_lookup_readers(struct subvirtual_machine *svm,
+struct dsm_page_reader *dsm_lookup_readers(struct heca_process *svm,
                 unsigned long addr)
 {
         struct dsm_page_reader *dpr;
@@ -688,7 +688,7 @@ out:
         return dpr;
 }
 
-int dsm_add_reader(struct subvirtual_machine *svm, unsigned long addr,
+int dsm_add_reader(struct heca_process *svm, unsigned long addr,
                 u32 svm_id)
 {
         int r;
@@ -759,7 +759,7 @@ static inline u32 node_to_maintainer_id(void *node)
         return (u32)(((unsigned long) node) >> RADIX_TREE_EXCEPTIONAL_SHIFT);
 }
 
-int dsm_flag_page_read(struct subvirtual_machine *svm, unsigned long addr,
+int dsm_flag_page_read(struct heca_process *svm, unsigned long addr,
                 u32 svm_id)
 {
         int r = radix_tree_preload(GFP_ATOMIC);
@@ -776,7 +776,7 @@ out:
         return r;
 }
 
-u32 dsm_lookup_page_read(struct subvirtual_machine *svm, unsigned long addr)
+u32 dsm_lookup_page_read(struct heca_process *svm, unsigned long addr)
 {
         u32 *node, svm_id = 0;
         void **pval;
@@ -806,7 +806,7 @@ out:
         return svm_id;
 }
 
-u32 dsm_extract_page_read(struct subvirtual_machine *svm, unsigned long addr)
+u32 dsm_extract_page_read(struct heca_process *svm, unsigned long addr)
 {
         u32 *node, svm_id = 0;
 

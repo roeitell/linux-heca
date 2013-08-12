@@ -64,17 +64,17 @@ int heca_detach_task(struct task_struct *tsk)
 {
         int ret = 0;
         struct heca_space *dsm;
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
         struct list_head *pos, *n, *it;
 
         list_for_each (pos, &get_dsm_module_state()->dsm_list) {
                 dsm = list_entry(pos, struct heca_space, hspace_ptr);
                 list_for_each_safe (it, n, &dsm->hprocs_list) {
-                        svm = list_entry(it, struct subvirtual_machine, svm_ptr);
+                        svm = list_entry(it, struct heca_process, hproc_ptr);
                         if (tsk == find_task_by_vpid(svm->pid)) {
                                 heca_printk(KERN_DEBUG "removing SVM associated with pid %d",
                                                 svm->pid);
-                                remove_svm(dsm->hspace_id, svm->svm_id);
+                                remove_svm(dsm->hspace_id, svm->hproc_id);
                         }
                 }
         }

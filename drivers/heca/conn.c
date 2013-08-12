@@ -1620,7 +1620,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
 {
         int r = 0;
         struct heca_space *dsm;
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
         struct heca_connection_element *cele;
         struct dsm_module_state *dsm_state = get_dsm_module_state();
 
@@ -1670,7 +1670,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
         }
 
 done:
-        svm->ele = cele;
+        svm->connection = cele;
 
 failed:
         release_svm(svm);
@@ -1718,16 +1718,16 @@ struct tx_buf_ele *try_get_next_empty_tx_reply_ele(struct heca_connection_elemen
 static void remove_svms_for_conn(struct heca_connection_element *ele)
 {
         struct heca_space *dsm;
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
         struct list_head *pos, *n, *it;
 
         list_for_each (pos, &get_dsm_module_state()->dsm_list) {
                 dsm = list_entry(pos, struct heca_space, hspace_ptr);
                 list_for_each_safe (it, n, &dsm->hprocs_list) {
-                        svm = list_entry(it, struct subvirtual_machine,
-                                        svm_ptr);
-                        if (svm->ele == ele)
-                                remove_svm(dsm->hspace_id, svm->svm_id);
+                        svm = list_entry(it, struct heca_process,
+                                        hproc_ptr);
+                        if (svm->connection == ele)
+                                remove_svm(dsm->hspace_id, svm->hproc_id);
                 }
         }
 }

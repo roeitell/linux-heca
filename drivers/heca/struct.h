@@ -251,15 +251,15 @@ struct heca_memory_region {
         struct kobject hmr_kobject;
 };
 
-struct subvirtual_machine {
-        u32 svm_id;
+struct heca_process {
+        u32 hproc_id;
         int is_local;
-        struct heca_space *dsm;
-        struct heca_connection_element *ele;
+        struct heca_space *hspace;
+        struct heca_connection_element *connection;
         pid_t pid;
         struct mm_struct *mm;
         u32 descriptor;
-        struct list_head svm_ptr;
+        struct list_head hproc_ptr;
 
         struct radix_tree_root page_cache;
         spinlock_t page_cache_spinlock;
@@ -270,21 +270,21 @@ struct subvirtual_machine {
         struct radix_tree_root page_maintainers;
         spinlock_t page_maintainers_spinlock;
 
-        struct radix_tree_root mr_id_tree_root;
-        struct rb_root mr_tree_root;
-        struct heca_memory_region *mr_cache;
-        seqlock_t mr_seq_lock;
+        struct radix_tree_root hmr_id_tree_root;
+        struct rb_root hmr_tree_root;
+        struct heca_memory_region *hmr_cache;
+        seqlock_t hmr_seq_lock;
 
         struct rb_root push_cache;
         seqlock_t push_cache_lock;
 
-        struct kobject svm_kobject;
+        struct kobject hproc_kobject;
 
-        struct llist_head delayed_faults;
-        struct delayed_work delayed_gup_work;
+        struct llist_head heca_delayed_faults;
+        struct delayed_work heca_delayed_gup_work;
 
-        struct llist_head deferred_gups;
-        struct work_struct deferred_gup_work;
+        struct llist_head heca_deferred_gups;
+        struct work_struct heca_deferred_gup_work;
 
         atomic_t refs;
 };
@@ -376,7 +376,7 @@ struct dsm_request {
 
 struct deferred_gup {
         struct heca_message dsm_buf;
-        struct subvirtual_machine *remote_svm;
+        struct heca_process *remote_svm;
         struct heca_connection_element *origin_ele;
         struct heca_memory_region *mr;
         struct llist_node lnode;
@@ -403,7 +403,7 @@ struct svm_list {
 };
 
 struct dsm_page_cache {
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
         unsigned long addr;
         u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
@@ -453,20 +453,20 @@ void dsm_destroy_descriptors(void);
 u32 dsm_get_descriptor(u32, u32 *);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
 inline struct svm_list dsm_descriptor_to_svms(u32);
-void remove_svm_from_descriptors(struct subvirtual_machine *);
+void remove_svm_from_descriptors(struct heca_process *);
 int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
 int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
 void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
 void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);
-struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *,
+struct dsm_page_cache *dsm_alloc_dpc(struct heca_process *,
                 unsigned long, struct svm_list, int, int);
 void dsm_dealloc_dpc(struct dsm_page_cache **);
-struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *,
+struct dsm_page_cache *dsm_cache_get(struct heca_process *,
                 unsigned long);
-struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,
+struct dsm_page_cache *dsm_cache_get_hold(struct heca_process *,
                 unsigned long);
-struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *,
+struct dsm_page_cache *dsm_cache_release(struct heca_process *,
                 unsigned long);
 void dsm_destroy_page_pool(struct heca_connection_element *);
 int dsm_init_page_pool(struct heca_connection_element *);
@@ -474,16 +474,16 @@ struct heca_page_pool_element *dsm_fetch_ready_ppe(struct heca_connection_elemen
 struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection_element *, struct page *);
 void dsm_ppe_clear_release(struct heca_connection_element *, struct heca_page_pool_element **);
 void init_dsm_reader_kmem(void);
-u32 dsm_lookup_page_read(struct subvirtual_machine *, unsigned long);
-u32 dsm_extract_page_read(struct subvirtual_machine *, unsigned long);
-int dsm_flag_page_read(struct subvirtual_machine *, unsigned long, u32);
-int dsm_cache_add(struct subvirtual_machine *, unsigned long, int, int,
+u32 dsm_lookup_page_read(struct heca_process *, unsigned long);
+u32 dsm_extract_page_read(struct heca_process *, unsigned long);
+int dsm_flag_page_read(struct heca_process *, unsigned long, u32);
+int dsm_cache_add(struct heca_process *, unsigned long, int, int,
                 struct dsm_page_cache **);
-struct dsm_page_reader *dsm_delete_readers(struct subvirtual_machine *,
+struct dsm_page_reader *dsm_delete_readers(struct heca_process *,
                 unsigned long);
-struct dsm_page_reader *dsm_lookup_readers(struct subvirtual_machine *,
+struct dsm_page_reader *dsm_lookup_readers(struct heca_process *,
                 unsigned long);
-int dsm_add_reader(struct subvirtual_machine *, unsigned long, u32);
+int dsm_add_reader(struct heca_process *, unsigned long, u32);
 inline void dsm_free_page_reader(struct dsm_page_reader *);
 
 #endif /* HECA_STRUCT_H_ */

@@ -9,9 +9,9 @@
 #include <linux/kobject.h>
 #include "struct.h"
 
-int create_svm_sysfs_entry(struct subvirtual_machine *);
+int create_svm_sysfs_entry(struct heca_process *);
 void delete_svm_sysfs_entry(struct kobject *);
-int create_mr_sysfs_entry(struct subvirtual_machine *,
+int create_mr_sysfs_entry(struct heca_process *,
                 struct heca_memory_region *);
 void delete_mr_sysfs_entry(struct kobject *);
 int create_dsm_sysfs_entry(struct heca_space *, struct dsm_module_state *);

@@ -88,7 +88,7 @@ static void release_kmem_deferred_gup_cache_elm(struct deferred_gup *req)
         kmem_cache_free(kmem_deferred_gup_cache, req);
 }
 
-static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
+static int send_request_dsm_page_pull(struct heca_process *fault_svm,
                 struct heca_memory_region *fault_mr, struct svm_list svms,
                 unsigned long addr)
 {
@@ -98,16 +98,16 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
         int i, j, r = 0;
 
         for_each_valid_svm(svms, i) {
-                struct subvirtual_machine *svm;
+                struct heca_process *svm;
 
                 reqs[i] = NULL;
                 tx_elms[i] = NULL;
 
-                svm = find_svm(fault_svm->dsm, svms.ids[i]);
+                svm = find_svm(fault_svm->hspace, svms.ids[i]);
                 if (unlikely(!svm))
                         continue;
 
-                eles[i] = svm->ele;
+                eles[i] = svm->connection;
                 release_svm(svm);
 
                 tx_elms[i] = try_get_next_empty_tx_ele(eles[i], 1);
@@ -128,15 +128,15 @@ static int send_request_dsm_page_pull(struct subvirtual_machine *fault_svm,
                         /* note that dest_id == local_svm */
                         r |= dsm_send_tx_e(eles[i], tx_elms[i], 0,
                                         MSG_REQ_PAGE_PULL,
-                                        fault_svm->dsm->hspace_id, fault_mr->hmr_id,
-                                        svms.ids[i], fault_svm->svm_id,
+                                        fault_svm->hspace->hspace_id, fault_mr->hmr_id,
+                                        svms.ids[i], fault_svm->hproc_id,
                                         addr + fault_mr->addr, addr, NULL, NULL,
                                         NULL, 0, NULL, NULL);
                 } else if (reqs[i]) {
                         /* can't fail, reqs[i] already allocated */
                         j = add_dsm_request(reqs[i], eles[i], MSG_REQ_PAGE_PULL,
-                                        fault_svm->dsm->hspace_id, svms.ids[i],
-                                        fault_mr->hmr_id, fault_svm->svm_id,
+                                        fault_svm->hspace->hspace_id, svms.ids[i],
+                                        fault_mr->hmr_id, fault_svm->hproc_id,
                                         addr, NULL, NULL, NULL, NULL, 0, NULL);
                         BUG_ON(j);
                 }
@@ -160,12 +160,12 @@ static int send_svm_status_update(struct heca_connection_element *ele,
         return dsm_send_response(ele, MSG_RES_SVM_FAIL, msg);
 }
 
-static int dsm_request_query(struct subvirtual_machine *svm,
-                struct subvirtual_machine *owner, struct heca_memory_region *mr,
+static int dsm_request_query(struct heca_process *svm,
+                struct heca_process *owner, struct heca_memory_region *mr,
                 unsigned long shared_addr, struct dsm_page_cache *dpc)
 {
-        return dsm_send_msg(owner->ele, svm->dsm->hspace_id, mr->hmr_id,
-                        svm->svm_id, owner->svm_id, shared_addr + mr->addr,
+        return dsm_send_msg(owner->connection, svm->hspace->hspace_id, mr->hmr_id,
+                        svm->hproc_id, owner->hproc_id, shared_addr + mr->addr,
                         shared_addr, NULL, MSG_REQ_QUERY,
                         dsm_process_query_info, dpc, NULL, NULL, 0);
 }
@@ -176,25 +176,25 @@ static int dsm_request_query(struct subvirtual_machine *svm,
  * a page will actually be unmapped. without the flag, we will be content with
  * only changing the pte on the other side to point to us.
  */
-int dsm_claim_page(struct subvirtual_machine *fault_svm,
-                struct subvirtual_machine *remote_svm,
+int dsm_claim_page(struct heca_process *fault_svm,
+                struct heca_process *remote_svm,
                 struct heca_memory_region *fault_mr, unsigned long addr,
                 struct page *page, int only_unmap)
 {
         u32 type = only_unmap? MSG_REQ_CLAIM : MSG_REQ_CLAIM_TRY;
 
-        trace_dsm_claim_page(fault_svm->dsm->hspace_id, fault_svm->svm_id,
-                        remote_svm->svm_id, fault_mr->hmr_id, addr,
+        trace_dsm_claim_page(fault_svm->hspace->hspace_id, fault_svm->hproc_id,
+                        remote_svm->hproc_id, fault_mr->hmr_id, addr,
                         addr - fault_mr->addr, type);
 
-        return dsm_send_msg(remote_svm->ele, fault_svm->dsm->hspace_id,
-                        fault_mr->hmr_id, fault_svm->svm_id, remote_svm->svm_id,
+        return dsm_send_msg(remote_svm->connection, fault_svm->hspace->hspace_id,
+                        fault_mr->hmr_id, fault_svm->hproc_id, remote_svm->hproc_id,
                         addr, addr - fault_mr->addr, page, type,
                         NULL, NULL, NULL, NULL, 0);
 }
 
-int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
-                struct subvirtual_machine *fault_svm,
+int request_dsm_page(struct page *page, struct heca_process *remote_svm,
+                struct heca_process *fault_svm,
                 struct heca_memory_region *fault_mr, unsigned long addr,
                 int (*func)(struct tx_buf_ele *), int tag,
                 struct dsm_page_cache *dpc, struct heca_page_pool_element *ppe)
@@ -220,8 +220,8 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
         }
 
         /* note that src_id == remote_id, and dest_id == local_id */
-        return dsm_send_msg(remote_svm->ele, fault_svm->dsm->hspace_id,
-                        fault_mr->hmr_id, remote_svm->svm_id, fault_svm->svm_id,
+        return dsm_send_msg(remote_svm->connection, fault_svm->hspace->hspace_id,
+                        fault_mr->hmr_id, remote_svm->hproc_id, fault_svm->hproc_id,
                         addr, addr - fault_mr->addr, page, type, func, dpc, ppe,
                         NULL, 1);
 }
@@ -230,7 +230,7 @@ int dsm_process_request_query(struct heca_connection_element *ele, struct rx_buf
 {
         struct heca_message *msg = rx_e->dsm_buf;
         struct heca_space *dsm;
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
         struct heca_memory_region *mr;
         int r = -EFAULT;
         unsigned long addr;
@@ -264,7 +264,7 @@ int dsm_process_query_info(struct tx_buf_ele *tx_e)
 {
         struct heca_message *msg = tx_e->dsm_buf;
         struct heca_space *dsm;
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
         struct dsm_page_cache *dpc;
         struct heca_memory_region *mr;
         unsigned long addr;
@@ -299,7 +299,7 @@ fail:
 
 int process_pull_request(struct heca_connection_element *ele, struct rx_buf_ele *rx_buf_e)
 {
-        struct subvirtual_machine *local_svm;
+        struct heca_process *local_svm;
         struct heca_space *dsm;
         struct heca_message *msg;
         struct heca_memory_region *mr;
@@ -348,7 +348,7 @@ int process_page_redirect(struct heca_connection_element *ele, struct tx_buf_ele
         struct page *page = tx_e->wrk_req->dst_addr->mem_page;
         u64 req_addr = tx_e->dsm_buf->req_addr;
         int (*func)(struct tx_buf_ele *) = tx_e->callback.func;
-        struct subvirtual_machine *mr_owner = NULL, *remote_svm;
+        struct heca_process *mr_owner = NULL, *remote_svm;
         struct heca_memory_region *fault_mr;
         int ret = -1;
         struct svm_list svms;
@@ -365,7 +365,7 @@ int process_page_redirect(struct heca_connection_element *ele, struct tx_buf_ele
         svms = dsm_descriptor_to_svms(fault_mr->descriptor);
         rcu_read_unlock();
 
-        mr_owner = find_any_svm(dpc->svm->dsm, svms);
+        mr_owner = find_any_svm(dpc->svm->hspace, svms);
         if (unlikely(!mr_owner))
                 goto out;
 
@@ -379,12 +379,12 @@ int process_page_redirect(struct heca_connection_element *ele, struct tx_buf_ele
         if (dpc->redirect_svm_id)
                 redirect_svm_id = dpc->redirect_svm_id;
 
-        remote_svm = find_svm(dpc->svm->dsm, redirect_svm_id);
+        remote_svm = find_svm(dpc->svm->hspace, redirect_svm_id);
         if (unlikely(!remote_svm))
                 goto out;
 
-        trace_redirect(dpc->svm->dsm->hspace_id, dpc->svm->svm_id,
-                        remote_svm->svm_id, fault_mr->hmr_id,
+        trace_redirect(dpc->svm->hspace->hspace_id, dpc->svm->hproc_id,
+                        remote_svm->hproc_id, fault_mr->hmr_id,
                         req_addr + fault_mr->addr, req_addr, dpc->tag);
         ret = request_dsm_page(page, remote_svm, dpc->svm, fault_mr, req_addr,
                         func, dpc->tag, dpc, NULL);
@@ -406,9 +406,9 @@ int process_page_response(struct heca_connection_element *ele, struct tx_buf_ele
 }
 
 static int try_redirect_page_request(struct heca_connection_element *ele,
-                struct heca_message *msg, struct subvirtual_machine *remote_svm, u32 id)
+                struct heca_message *msg, struct heca_process *remote_svm, u32 id)
 {
-        if (msg->type == MSG_REQ_PAGE_TRY || id == remote_svm->svm_id)
+        if (msg->type == MSG_REQ_PAGE_TRY || id == remote_svm->hproc_id)
                 return -EFAULT;
 
         msg->dest_id = id;
@@ -416,8 +416,8 @@ static int try_redirect_page_request(struct heca_connection_element *ele,
 }
 
 static inline void defer_gup(struct heca_message *msg,
-                struct subvirtual_machine *local_svm, struct heca_memory_region *mr,
-                struct subvirtual_machine *remote_svm, struct heca_connection_element *ele)
+                struct heca_process *local_svm, struct heca_memory_region *mr,
+                struct heca_process *remote_svm, struct heca_connection_element *ele)
 {
         struct deferred_gup *dgup = NULL;
 
@@ -431,14 +431,14 @@ retry:
         dgup->remote_svm = remote_svm;
         dgup->mr = mr;
         dsm_msg_cpy(&dgup->dsm_buf, msg);
-        llist_add(&dgup->lnode, &local_svm->deferred_gups);
-        schedule_work(&local_svm->deferred_gup_work);
+        llist_add(&dgup->lnode, &local_svm->heca_deferred_gups);
+        schedule_work(&local_svm->heca_deferred_gup_work);
 }
 
 int process_page_claim(struct heca_connection_element *ele, struct heca_message *msg)
 {
         struct heca_space *dsm;
-        struct subvirtual_machine *local_svm, *remote_svm;
+        struct heca_process *local_svm, *remote_svm;
         struct heca_memory_region *mr;
         unsigned long addr;
         int r = -EFAULT;
@@ -476,7 +476,7 @@ int process_page_claim(struct heca_connection_element *ele, struct heca_message 
                         BUG_ON(!dsm_extract_page_read(local_svm, addr));
                 else
                         dsm_invalidate_readers(local_svm, addr,
-                                        remote_svm->svm_id);
+                                        remote_svm->hproc_id);
         }
 
         release_svm(remote_svm);
@@ -495,7 +495,7 @@ out:
 static int dsm_retry_claim(struct heca_message *msg, struct page *page)
 {
         struct heca_space *dsm;
-        struct subvirtual_machine *svm = NULL, *remote_svm, *owner;
+        struct heca_process *svm = NULL, *remote_svm, *owner;
         struct heca_memory_region *mr;
         struct svm_list svms;
         struct dsm_page_cache *dpc;
@@ -593,8 +593,8 @@ int process_claim_ack(struct heca_connection_element *ele, struct tx_buf_ele *tx
 }
 
 static int process_page_request(struct heca_connection_element *origin_ele,
-                struct subvirtual_machine *local_svm, struct heca_memory_region *mr,
-                struct subvirtual_machine *remote_svm, struct heca_message *msg,
+                struct heca_process *local_svm, struct heca_memory_region *mr,
+                struct heca_process *remote_svm, struct heca_message *msg,
                 int deferred)
 {
         struct heca_page_pool_element *ppe;
@@ -613,12 +613,12 @@ static int process_page_request(struct heca_connection_element *origin_ele,
         if (unlikely(!remote_svm))
                 goto fail;
 
-        ele = remote_svm->ele;
+        ele = remote_svm->connection;
         addr = msg->req_addr + mr->addr;
         BUG_ON(addr < mr->addr || addr > mr->addr + mr->sz);
 
-        trace_process_page_request(local_svm->dsm->hspace_id, local_svm->svm_id,
-                        remote_svm->svm_id, mr->hmr_id, addr, msg->req_addr,
+        trace_process_page_request(local_svm->hspace->hspace_id, local_svm->hproc_id,
+                        remote_svm->hproc_id, mr->hmr_id, addr, msg->req_addr,
                         msg->type);
 
 retry:
@@ -650,8 +650,8 @@ retry:
         tx_e->wrk_req->dst_addr = ppe;
         tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 
-        trace_process_page_request_complete(local_svm->dsm->hspace_id,
-                        local_svm->svm_id, remote_svm->svm_id, mr->hmr_id,
+        trace_process_page_request_complete(local_svm->hspace->hspace_id,
+                        local_svm->hproc_id, remote_svm->hproc_id, mr->hmr_id,
                         addr, msg->req_addr, msg->type);
         tx_dsm_send(ele, tx_e);
         release_svm(local_svm);
@@ -670,8 +670,8 @@ no_page:
 
                 /* defer and try to get the page again out of sequence */
         } else if (msg->type & (MSG_REQ_PAGE | MSG_REQ_READ)) {
-                trace_dsm_defer_gup(local_svm->dsm->hspace_id, local_svm->svm_id,
-                                remote_svm->svm_id, mr->hmr_id, addr,
+                trace_dsm_defer_gup(local_svm->hspace->hspace_id, local_svm->hproc_id,
+                                remote_svm->hproc_id, mr->hmr_id, addr,
                                 msg->req_addr, msg->type);
                 defer_gup(msg, local_svm, mr, remote_svm, origin_ele);
                 /* we release the svms when we actually solve the gup */
@@ -694,18 +694,18 @@ out_keep:
  * TODO: we really would like to do NOIO GUP with fast iteration over list in
  * order to process the GUP in the fastest order
  */
-static inline void process_deferred_gups(struct subvirtual_machine *svm)
+static inline void process_deferred_gups(struct heca_process *svm)
 {
         struct deferred_gup *dgup = NULL;
-        struct llist_node *llnode = llist_del_all(&svm->deferred_gups);
+        struct llist_node *llnode = llist_del_all(&svm->heca_deferred_gups);
 
         do {
                 while (llnode) {
                         dgup = container_of(llnode, struct deferred_gup, lnode);
                         llnode = llnode->next;
                         /* the deferred is set to one i.e if we need to gup we will block */
-                        trace_dsm_defer_gup_execute(svm->dsm->hspace_id,
-                                        svm->svm_id, dgup->remote_svm->svm_id,
+                        trace_dsm_defer_gup_execute(svm->hspace->hspace_id,
+                                        svm->hproc_id, dgup->remote_svm->hproc_id,
                                         dgup->mr->hmr_id,
                                         dgup->dsm_buf.req_addr + dgup->mr->addr,
                                         dgup->dsm_buf.req_addr,
@@ -715,21 +715,21 @@ static inline void process_deferred_gups(struct subvirtual_machine *svm)
                         /* release the element */
                         release_kmem_deferred_gup_cache_elm(dgup);
                 }
-                llnode = llist_del_all(&svm->deferred_gups);
+                llnode = llist_del_all(&svm->heca_deferred_gups);
         } while (llnode);
 }
 
 void deferred_gup_work_fn(struct work_struct *w)
 {
-        struct subvirtual_machine *svm;
+        struct heca_process *svm;
 
-        svm = container_of(w, struct subvirtual_machine, deferred_gup_work);
+        svm = container_of(w, struct heca_process, heca_deferred_gup_work);
         process_deferred_gups(svm);
 }
 
 int process_page_request_msg(struct heca_connection_element *ele, struct heca_message *msg)
 {
-        struct subvirtual_machine *local_svm = NULL, *remote_svm = NULL;
+        struct heca_process *local_svm = NULL, *remote_svm = NULL;
         struct heca_space *dsm = NULL;
         struct heca_memory_region *mr = NULL;
 
@@ -757,7 +757,7 @@ fail:
         return -EFAULT;
 }
 
-int dsm_request_page_pull(struct heca_space *dsm, struct subvirtual_machine *fault_svm,
+int dsm_request_page_pull(struct heca_space *dsm, struct heca_process *fault_svm,
                 struct page *page, unsigned long addr, struct mm_struct *mm,
                 struct heca_memory_region *mr)
 {
@@ -774,8 +774,8 @@ int dsm_request_page_pull(struct heca_space *dsm, struct subvirtual_machine *fau
          * use them anyway to free the req_queue.
          */
         for_each_valid_svm(svms, i) {
-                struct subvirtual_machine *svm = find_svm(dsm, svms.ids[i]);
-                int full = request_queue_full(svm->ele);
+                struct heca_process *svm = find_svm(dsm, svms.ids[i]);
+                int full = request_queue_full(svm->connection);
 
                 release_svm(svm);
                 if (full)

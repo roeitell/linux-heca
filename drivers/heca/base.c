@@ -554,7 +554,7 @@ static void release_svm_tx_elements(struct subvirtual_machine *svm,
 
         for (i = 0; i < ele->tx_buffer.len; i++) {
                 struct tx_buf_ele *tx_e = &tx_buf[i];
-                struct dsm_message *msg = tx_e->dsm_buf;
+                struct heca_message *msg = tx_e->dsm_buf;
                 int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY |
                         MSG_RES_PAGE_FAIL | MSG_REQ_READ;
 

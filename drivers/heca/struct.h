@@ -228,7 +228,7 @@ struct heca_rdma_info {
         u32 rx_buf_size;
 };
 
-struct dsm_message {
+struct heca_message {
         /* hdr */
         u16 type;
         u64 req_addr;
@@ -336,7 +336,7 @@ struct tx_callback {
 
 struct tx_buf_ele {
         int id;
-        struct dsm_message *dsm_buf;
+        struct heca_message *dsm_buf;
         struct map_dma dsm_dma;
         struct msg_work_request *wrk_req;
         struct reply_work_request *reply_work_req;
@@ -349,7 +349,7 @@ struct tx_buf_ele {
 
 struct rx_buf_ele {
         int id;
-        struct dsm_message *dsm_buf;
+        struct heca_message *dsm_buf;
         struct map_dma dsm_dma;
         //The one for catching the request in the first place
         struct recv_work_req_ele *recv_wrk_rq_ele;
@@ -365,7 +365,7 @@ struct dsm_request {
         struct heca_page_pool_element *ppe;
         uint64_t addr;
         int (*func)(struct tx_buf_ele *);
-        struct dsm_message dsm_buf;
+        struct heca_message dsm_buf;
         struct dsm_page_cache *dpc;
         int response;
         int need_ppe;
@@ -375,7 +375,7 @@ struct dsm_request {
 };
 
 struct deferred_gup {
-        struct dsm_message dsm_buf;
+        struct heca_message dsm_buf;
         struct subvirtual_machine *remote_svm;
         struct heca_connection_element *origin_ele;
         struct memory_region *mr;

@@ -25,7 +25,7 @@ static int dsm_send_msg(struct heca_connection_element *ele, u32 dsm_id, u32 mr_
                 u32 src_id, u32 dest_id, unsigned long local_addr,
                 unsigned long shared_addr, struct page *page, int type,
                 int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
-                struct heca_page_pool_element *ppe, struct dsm_message *msg,
+                struct heca_page_pool_element *ppe, struct heca_message *msg,
                 int need_ppe)
 {
         struct tx_buf_ele *tx_e = NULL;
@@ -55,7 +55,7 @@ static int dsm_send_msg(struct heca_connection_element *ele, u32 dsm_id, u32 mr_
  * different method of queueing the args. dsm_send_tx_e receives response=1.
  */
 static int dsm_send_response(struct heca_connection_element *ele, int type,
-                struct dsm_message *msg)
+                struct heca_message *msg)
 {
         return dsm_send_msg(ele, msg->dsm_id, msg->mr_id,
                         msg->src_id, msg->dest_id, 0,
@@ -155,7 +155,7 @@ nomem:
 }
 
 static int send_svm_status_update(struct heca_connection_element *ele,
-                struct dsm_message *msg)
+                struct heca_message *msg)
 {
         return dsm_send_response(ele, MSG_RES_SVM_FAIL, msg);
 }
@@ -228,7 +228,7 @@ int request_dsm_page(struct page *page, struct subvirtual_machine *remote_svm,
 
 int dsm_process_request_query(struct heca_connection_element *ele, struct rx_buf_ele *rx_e)
 {
-        struct dsm_message *msg = rx_e->dsm_buf;
+        struct heca_message *msg = rx_e->dsm_buf;
         struct heca_space *dsm;
         struct subvirtual_machine *svm;
         struct memory_region *mr;
@@ -262,7 +262,7 @@ fail:
 
 int dsm_process_query_info(struct tx_buf_ele *tx_e)
 {
-        struct dsm_message *msg = tx_e->dsm_buf;
+        struct heca_message *msg = tx_e->dsm_buf;
         struct heca_space *dsm;
         struct subvirtual_machine *svm;
         struct dsm_page_cache *dpc;
@@ -301,7 +301,7 @@ int process_pull_request(struct heca_connection_element *ele, struct rx_buf_ele 
 {
         struct subvirtual_machine *local_svm;
         struct heca_space *dsm;
-        struct dsm_message *msg;
+        struct heca_message *msg;
         struct memory_region *mr;
         int r = 0;
 
@@ -406,7 +406,7 @@ int process_page_response(struct heca_connection_element *ele, struct tx_buf_ele
 }
 
 static int try_redirect_page_request(struct heca_connection_element *ele,
-                struct dsm_message *msg, struct subvirtual_machine *remote_svm, u32 id)
+                struct heca_message *msg, struct subvirtual_machine *remote_svm, u32 id)
 {
         if (msg->type == MSG_REQ_PAGE_TRY || id == remote_svm->svm_id)
                 return -EFAULT;
@@ -415,7 +415,7 @@ static int try_redirect_page_request(struct heca_connection_element *ele,
         return dsm_send_response(ele, MSG_RES_PAGE_REDIRECT, msg);
 }
 
-static inline void defer_gup(struct dsm_message *msg,
+static inline void defer_gup(struct heca_message *msg,
                 struct subvirtual_machine *local_svm, struct memory_region *mr,
                 struct subvirtual_machine *remote_svm, struct heca_connection_element *ele)
 {
@@ -435,7 +435,7 @@ retry:
         schedule_work(&local_svm->deferred_gup_work);
 }
 
-int process_page_claim(struct heca_connection_element *ele, struct dsm_message *msg)
+int process_page_claim(struct heca_connection_element *ele, struct heca_message *msg)
 {
         struct heca_space *dsm;
         struct subvirtual_machine *local_svm, *remote_svm;
@@ -492,7 +492,7 @@ out:
         return r;
 }
 
-static int dsm_retry_claim(struct dsm_message *msg, struct page *page)
+static int dsm_retry_claim(struct heca_message *msg, struct page *page)
 {
         struct heca_space *dsm;
         struct subvirtual_machine *svm = NULL, *remote_svm, *owner;
@@ -563,9 +563,9 @@ fail:
 }
 
 int process_claim_ack(struct heca_connection_element *ele, struct tx_buf_ele *tx_e,
-                struct dsm_message *response)
+                struct heca_message *response)
 {
-        struct dsm_message *msg = tx_e->dsm_buf;
+        struct heca_message *msg = tx_e->dsm_buf;
         struct page *page = tx_e->reply_work_req->mem_page;
 
         tx_e->reply_work_req->mem_page = NULL;
@@ -594,7 +594,7 @@ int process_claim_ack(struct heca_connection_element *ele, struct tx_buf_ele *tx
 
 static int process_page_request(struct heca_connection_element *origin_ele,
                 struct subvirtual_machine *local_svm, struct memory_region *mr,
-                struct subvirtual_machine *remote_svm, struct dsm_message *msg,
+                struct subvirtual_machine *remote_svm, struct heca_message *msg,
                 int deferred)
 {
         struct heca_page_pool_element *ppe;
@@ -727,7 +727,7 @@ void deferred_gup_work_fn(struct work_struct *w)
         process_deferred_gups(svm);
 }
 
-int process_page_request_msg(struct heca_connection_element *ele, struct dsm_message *msg)
+int process_page_request_msg(struct heca_connection_element *ele, struct heca_message *msg)
 {
         struct subvirtual_machine *local_svm = NULL, *remote_svm = NULL;
         struct heca_space *dsm = NULL;
@@ -795,7 +795,7 @@ out:
         return ret;
 }
 
-int ack_msg(struct heca_connection_element *ele, struct dsm_message *msg, u32 type)
+int ack_msg(struct heca_connection_element *ele, struct heca_message *msg, u32 type)
 {
         return dsm_send_response(ele, type, msg);
 }

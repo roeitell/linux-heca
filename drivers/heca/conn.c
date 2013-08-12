@@ -145,7 +145,7 @@ int add_dsm_request(struct dsm_request *req, struct heca_connection_element *ele
                 unsigned long addr, int (*func)(struct tx_buf_ele *),
                 struct dsm_page_cache *dpc, struct page *page,
                 struct heca_page_pool_element *ppe, int need_ppe,
-                struct dsm_message *msg)
+                struct heca_message *msg)
 {
         if (!req) {
                 req = kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
@@ -191,7 +191,7 @@ inline int request_queue_full(struct heca_connection_element *ele)
 
 /* this will copy the offset and rkey of the original and send them back! */
 static inline void dsm_tx_response_prepare(struct tx_buf_ele *tx_e,
-                struct dsm_message *msg)
+                struct heca_message *msg)
 {
         dsm_msg_cpy(tx_e->dsm_buf, msg);
         tx_e->wrk_req->dst_addr = NULL;
@@ -202,7 +202,7 @@ static void dsm_tx_prepare(struct heca_connection_element *ele, struct tx_buf_el
                 unsigned long shared_addr, struct dsm_page_cache *dpc,
                 struct page *page, struct heca_page_pool_element *ppe, int need_ppe)
 {
-        struct dsm_message *msg = tx_e->dsm_buf;
+        struct heca_message *msg = tx_e->dsm_buf;
 
         while (need_ppe && !ppe) {
                 might_sleep();
@@ -231,7 +231,7 @@ int dsm_send_tx_e(struct heca_connection_element *ele, struct tx_buf_ele *tx_e, 
                 unsigned long local_addr, unsigned long shared_addr,
                 struct dsm_page_cache *dpc, struct page *page,
                 struct heca_page_pool_element *ppe, int need_ppe,
-                int (*func)(struct tx_buf_ele *), struct dsm_message *msg)
+                int (*func)(struct tx_buf_ele *), struct heca_message *msg)
 {
         if (resp) {
                 dsm_tx_response_prepare(tx_e, msg);
@@ -739,7 +739,7 @@ static void dsm_recv_poll(struct ib_cq *cq)
                         reg_rem_info(ele);
                         exchange_info(ele, wc.wr_id);
                 } else {
-                        BUG_ON(wc.byte_len != sizeof(struct dsm_message));
+                        BUG_ON(wc.byte_len != sizeof(struct heca_message));
                         BUG_ON(wc.wr_id < 0 || wc.wr_id >= ele->rx_buffer.len);
                         dsm_recv_message_handler(ele, &ele->rx_buffer.rx_buf[wc.wr_id]);
                 }
@@ -951,7 +951,7 @@ static void init_reply_wr(struct reply_work_request *rwr, u64 msg_addr,
         reply_sge = &rwr->wr_ele->sg;
         BUG_ON(!reply_sge);
         reply_sge->addr = msg_addr;
-        reply_sge->length = sizeof(struct dsm_message);
+        reply_sge->length = sizeof(struct heca_message);
         reply_sge->lkey = lkey;
 
         rwr->wr_ele->dsm_dma.addr = msg_addr;
@@ -1058,7 +1058,7 @@ static int create_tx_buffer(struct heca_connection_element *ele)
         ele->tx_buffer.tx_buf = tx_buff_e;
 
         for (i = 0; i < ele->tx_buffer.len; ++i) {
-                tx_buff_e[i].dsm_buf = kzalloc(sizeof(struct dsm_message),
+                tx_buff_e[i].dsm_buf = kzalloc(sizeof(struct heca_message),
                                 GFP_KERNEL);
                 if (!tx_buff_e[i].dsm_buf) {
                         heca_printk(KERN_ERR "Failed to allocate .dsm_buf");
@@ -1067,7 +1067,7 @@ static int create_tx_buffer(struct heca_connection_element *ele)
                 }
 
                 tx_buff_e[i].dsm_dma.dir = DMA_TO_DEVICE;
-                tx_buff_e[i].dsm_dma.size = sizeof(struct dsm_message);
+                tx_buff_e[i].dsm_dma.size = sizeof(struct heca_message);
                 tx_buff_e[i].dsm_dma.addr = ib_dma_map_single(ele->cm_id->device,
                                 tx_buff_e[i].dsm_buf, tx_buff_e[i].dsm_dma.size,
                                 tx_buff_e[i].dsm_dma.dir);
@@ -1149,11 +1149,11 @@ static int create_rx_buffer(struct heca_connection_element *ele)
         ele->rx_buffer.rx_buf = rx;
 
         for (i = 0; i < ele->rx_buffer.len; ++i) {
-                rx[i].dsm_buf = kzalloc(sizeof(struct dsm_message), GFP_KERNEL);
+                rx[i].dsm_buf = kzalloc(sizeof(struct heca_message), GFP_KERNEL);
                 if (!rx[i].dsm_buf)
                         goto err1;
 
-                rx[i].dsm_dma.size = sizeof(struct dsm_message);
+                rx[i].dsm_dma.size = sizeof(struct heca_message);
                 rx[i].dsm_dma.dir = DMA_BIDIRECTIONAL;
                 rx[i].dsm_dma.addr = ib_dma_map_single(ele->cm_id->device,
                                 rx[i].dsm_buf,
@@ -1514,7 +1514,7 @@ err:
         return ret;
 }
 
-inline void dsm_msg_cpy(struct dsm_message *dst, struct dsm_message *orig)
+inline void dsm_msg_cpy(struct heca_message *dst, struct heca_message *orig)
 {
         dst->dsm_id = orig->dsm_id;
         dst->src_id = orig->src_id;

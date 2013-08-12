@@ -562,7 +562,7 @@ static void release_svm_tx_elements(struct heca_process *svm,
                                 && (msg->src_id == svm->hproc_id
                                 || msg->dest_id == svm->hproc_id)
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                        struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+                        struct dsm_page_cache *dpc = tx_e->wrk_req->hpc;
 
                         dsm_pull_req_failure(dpc);
                         tx_e->wrk_req->dst_addr->mem_page = NULL;

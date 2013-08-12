@@ -299,30 +299,30 @@ struct heca_process {
 
 
 
-struct work_request_ele {
-        struct heca_connection_element *ele;
+struct heca_work_request_element {
+        struct heca_connection_element *connection;
         struct ib_send_wr wr;
         struct ib_sge sg;
         struct ib_send_wr *bad_wr;
-        struct map_dma dsm_dma;
+        struct map_dma heca_dma;
 };
 
-struct msg_work_request {
-        struct work_request_ele *wr_ele;
+struct heca_msg_work_request {
+        struct heca_work_request_element *wr_ele;
         struct heca_page_pool_element *dst_addr;
-        struct dsm_page_cache *dpc;
+        struct dsm_page_cache *hpc;
 };
 
-struct recv_work_req_ele {
-        struct heca_connection_element *ele;
+struct heca_recv_work_req_element {
+        struct heca_connection_element *connection;
         struct ib_recv_wr sq_wr;
         struct ib_recv_wr *bad_wr;
         struct ib_sge recv_sgl;
 };
 
-struct reply_work_request {
+struct heca_reply_work_request {
         //The one for sending back a message
-        struct work_request_ele *wr_ele;
+        struct heca_work_request_element *hwr_ele;
 
         //The one for sending the page
         struct ib_send_wr wr;
@@ -344,8 +344,8 @@ struct tx_buf_ele {
         int id;
         struct heca_message *dsm_buf;
         struct map_dma dsm_dma;
-        struct msg_work_request *wrk_req;
-        struct reply_work_request *reply_work_req;
+        struct heca_msg_work_request *wrk_req;
+        struct heca_reply_work_request *reply_work_req;
         struct llist_node tx_buf_ele_ptr;
 
         struct tx_callback callback;
@@ -358,7 +358,7 @@ struct rx_buf_ele {
         struct heca_message *dsm_buf;
         struct map_dma dsm_dma;
         //The one for catching the request in the first place
-        struct recv_work_req_ele *recv_wrk_rq_ele;
+        struct heca_recv_work_req_element *recv_wrk_rq_ele;
 };
 
 struct dsm_request {

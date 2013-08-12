@@ -222,7 +222,7 @@ static void dsm_tx_prepare(struct heca_connection_element *ele, struct tx_buf_el
         msg->rkey = ele->mr->rkey; /* TODO: is this needed? */
 
         tx_e->wrk_req->dst_addr = ppe;
-        tx_e->wrk_req->dpc = dpc;
+        tx_e->wrk_req->hpc = dpc;
         tx_e->reply_work_req->mem_page = page;
 }
 
@@ -940,36 +940,36 @@ static void init_tx_wr(struct tx_buf_ele *tx_ele, u32 lkey, int id)
         tx_ele->wrk_req->wr_ele->wr.next = NULL;
 }
 
-static void init_reply_wr(struct reply_work_request *rwr, u64 msg_addr,
+static void init_reply_wr(struct heca_reply_work_request *rwr, u64 msg_addr,
                 u32 lkey, int id)
 {
         struct ib_sge *reply_sge;
 
         BUG_ON(!rwr);
-        BUG_ON(!rwr->wr_ele);
+        BUG_ON(!rwr->hwr_ele);
 
-        reply_sge = &rwr->wr_ele->sg;
+        reply_sge = &rwr->hwr_ele->sg;
         BUG_ON(!reply_sge);
         reply_sge->addr = msg_addr;
         reply_sge->length = sizeof(struct heca_message);
         reply_sge->lkey = lkey;
 
-        rwr->wr_ele->dsm_dma.addr = msg_addr;
-        rwr->wr_ele->wr.next = NULL;
-        rwr->wr_ele->wr.num_sge = 1;
-        rwr->wr_ele->wr.send_flags = IB_SEND_SIGNALED;
-        rwr->wr_ele->wr.opcode = IB_WR_SEND;
-        rwr->wr_ele->wr.sg_list = (struct ib_sge *) &rwr->wr_ele->sg;
-        rwr->wr_ele->wr.wr_id = id;
+        rwr->hwr_ele->heca_dma.addr = msg_addr;
+        rwr->hwr_ele->wr.next = NULL;
+        rwr->hwr_ele->wr.num_sge = 1;
+        rwr->hwr_ele->wr.send_flags = IB_SEND_SIGNALED;
+        rwr->hwr_ele->wr.opcode = IB_WR_SEND;
+        rwr->hwr_ele->wr.sg_list = (struct ib_sge *) &rwr->hwr_ele->sg;
+        rwr->hwr_ele->wr.wr_id = id;
 }
 
-static void init_page_wr(struct reply_work_request *rwr, u32 lkey, int id)
+static void init_page_wr(struct heca_reply_work_request *rwr, u32 lkey, int id)
 {
         rwr->page_sgl.addr = 0;
         rwr->page_sgl.length = PAGE_SIZE;
         rwr->page_sgl.lkey = lkey;
 
-        rwr->wr.next = &rwr->wr_ele->wr;
+        rwr->wr.next = &rwr->hwr_ele->wr;
         rwr->wr.sg_list = (struct ib_sge *) &rwr->page_sgl;
         rwr->wr.send_flags = IB_SEND_SIGNALED;
         rwr->wr.opcode = IB_WR_RDMA_WRITE;
@@ -1077,7 +1077,7 @@ static int create_tx_buffer(struct heca_connection_element *ele)
                         goto err;
                 }
 
-                tx_buff_e[i].wrk_req = kzalloc(sizeof(struct msg_work_request),
+                tx_buff_e[i].wrk_req = kzalloc(sizeof(struct heca_msg_work_request),
                                 GFP_KERNEL);
                 if (!tx_buff_e[i].wrk_req) {
                         heca_printk(KERN_ERR "Failed to allocate wrk_req");
@@ -1085,16 +1085,16 @@ static int create_tx_buffer(struct heca_connection_element *ele)
                         goto err;
                 }
 
-                tx_buff_e[i].wrk_req->wr_ele = kzalloc(sizeof(struct work_request_ele),
+                tx_buff_e[i].wrk_req->wr_ele = kzalloc(sizeof(struct heca_work_request_element),
                                 GFP_KERNEL);
                 if (!tx_buff_e[i].wrk_req->wr_ele) {
                         heca_printk(KERN_ERR "Failed to allocate wrk_req->wr_ele");
                         ret = -ENOMEM;
                         goto err;
                 }
-                tx_buff_e[i].wrk_req->wr_ele->dsm_dma = tx_buff_e[i].dsm_dma;
+                tx_buff_e[i].wrk_req->wr_ele->heca_dma = tx_buff_e[i].dsm_dma;
 
-                tx_buff_e[i].reply_work_req = kzalloc(sizeof(struct reply_work_request),
+                tx_buff_e[i].reply_work_req = kzalloc(sizeof(struct heca_reply_work_request),
                                 GFP_KERNEL);
                 if (!tx_buff_e[i].reply_work_req) {
                         heca_printk(KERN_ERR "Failed to allocate reply_work_req");
@@ -1102,9 +1102,9 @@ static int create_tx_buffer(struct heca_connection_element *ele)
                         goto err;
                 }
 
-                tx_buff_e[i].reply_work_req->wr_ele = kzalloc(
-                                sizeof(struct work_request_ele), GFP_KERNEL);
-                if (!tx_buff_e[i].reply_work_req->wr_ele) {
+                tx_buff_e[i].reply_work_req->hwr_ele = kzalloc(
+                                sizeof(struct heca_work_request_element), GFP_KERNEL);
+                if (!tx_buff_e[i].reply_work_req->hwr_ele) {
                         heca_printk(KERN_ERR "Failed to allocate reply_work_req->wr_ele");
                         ret = -ENOMEM;
                         goto err;
@@ -1122,7 +1122,7 @@ done: return ret;
 
 static void init_rx_ele(struct rx_buf_ele *rx_ele, struct heca_connection_element *ele)
 {
-        struct recv_work_req_ele *rwr = rx_ele->recv_wrk_rq_ele;
+        struct heca_recv_work_req_element *rwr = rx_ele->recv_wrk_rq_ele;
         struct ib_sge *recv_sge = &rwr->recv_sgl;
 
         recv_sge->addr = rx_ele->dsm_dma.addr;
@@ -1162,7 +1162,7 @@ static int create_rx_buffer(struct heca_connection_element *ele)
                 if (!rx[i].dsm_dma.addr)
                         goto err2;
 
-                rx[i].recv_wrk_rq_ele = kzalloc(sizeof(struct recv_work_req_ele),
+                rx[i].recv_wrk_rq_ele = kzalloc(sizeof(struct heca_recv_work_req_element),
                                 GFP_KERNEL);
                 if (!rx[i].recv_wrk_rq_ele)
                         goto err3;
@@ -1806,7 +1806,7 @@ retry:
                 break;
         case MSG_RES_PAGE:
                 ret = ib_post_send(ele->cm_id->qp, &tx_e->reply_work_req->wr,
-                                &tx_e->reply_work_req->wr_ele->bad_wr);
+                                &tx_e->reply_work_req->hwr_ele->bad_wr);
                 break;
         default:
                 BUG();

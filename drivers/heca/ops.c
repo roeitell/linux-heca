@@ -285,7 +285,7 @@ int dsm_process_query_info(struct tx_buf_ele *tx_e)
         addr = msg->req_addr + mr->addr;
         dpc = dsm_cache_get_hold(svm, addr);
         if (likely(dpc)) {
-                if (likely(dpc == tx_e->wrk_req->dpc))
+                if (likely(dpc == tx_e->wrk_req->hpc))
                         dpc->redirect_svm_id = msg->dest_id;
                 dsm_release_pull_dpc(&dpc);
         }
@@ -344,7 +344,7 @@ int process_svm_status(struct heca_connection_element *ele, struct rx_buf_ele *r
 int process_page_redirect(struct heca_connection_element *ele, struct tx_buf_ele *tx_e,
                 u32 redirect_svm_id)
 {
-        struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+        struct dsm_page_cache *dpc = tx_e->wrk_req->hpc;
         struct page *page = tx_e->wrk_req->dst_addr->mem_page;
         u64 req_addr = tx_e->dsm_buf->req_addr;
         int (*func)(struct tx_buf_ele *) = tx_e->callback.func;

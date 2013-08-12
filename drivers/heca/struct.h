@@ -361,18 +361,18 @@ struct rx_buffer_element {
         struct heca_recv_work_req_element *recv_wrk_rq_ele;
 };
 
-struct dsm_request {
+struct heca_request {
         u16 type;
-        u32 dsm_id;
-        u32 local_svm_id;
-        u32 remote_svm_id;
-        u32 mr_id;
+        u32 hspace_id;
+        u32 local_hproc_id;
+        u32 remote_hproc_id;
+        u32 hmr_id;
         struct page *page;
         struct heca_page_pool_element *ppe;
         uint64_t addr;
         int (*func)(struct tx_buffer_element *);
-        struct heca_message dsm_buf;
-        struct dsm_page_cache *dpc;
+        struct heca_message hmsg;
+        struct dsm_page_cache *hpc;
         int response;
         int need_ppe;
 

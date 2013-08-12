@@ -93,7 +93,7 @@ static int send_request_dsm_page_pull(struct heca_process *fault_svm,
                 unsigned long addr)
 {
         struct tx_buffer_element *tx_elms[svms.num];
-        struct dsm_request *reqs[svms.num];
+        struct heca_request *reqs[svms.num];
         struct heca_connection_element *eles[svms.num];
         int i, j, r = 0;
 

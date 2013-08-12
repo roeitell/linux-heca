@@ -580,18 +580,18 @@ static void release_svm_tx_elements(struct heca_process *svm,
 static void release_svm_queued_requests(struct heca_process *svm,
                 struct tx_buffer *tx)
 {
-        struct dsm_request *req, *n;
+        struct heca_request *req, *n;
         u32 svm_id = svm->hproc_id;
 
         mutex_lock(&tx->flush_mutex);
         dsm_request_queue_merge(tx);
         list_for_each_entry_safe (req, n,
                         &tx->ordered_request_queue, ordered_list){
-                if (req->remote_svm_id == svm_id ||
-                                req->local_svm_id == svm_id) {
+                if (req->remote_hproc_id == svm_id ||
+                                req->local_hproc_id == svm_id) {
                         list_del(&req->ordered_list);
-                        if (req->dpc && req->dpc->tag == PULL_TAG)
-                                dsm_release_pull_dpc(&req->dpc);
+                        if (req->hpc && req->hpc->tag == PULL_TAG)
+                                dsm_release_pull_dpc(&req->hpc);
                         release_dsm_request(req);
                 }
         }

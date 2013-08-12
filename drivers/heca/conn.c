@@ -84,14 +84,14 @@ static struct kmem_cache *kmem_request_cache;
 
 static inline void init_kmem_request_cache_elm(void *obj)
 {
-        struct dsm_request *req = (struct dsm_request *) obj;
-        memset(req, 0, sizeof(struct dsm_request));
+        struct heca_request *req = (struct heca_request *) obj;
+        memset(req, 0, sizeof(struct heca_request));
 }
 
 void init_kmem_request_cache(void)
 {
         kmem_request_cache = kmem_cache_create("dsm_request",
-                        sizeof(struct dsm_request), 0,
+                        sizeof(struct heca_request), 0,
                         SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
                         init_kmem_request_cache_elm);
 }
@@ -101,12 +101,12 @@ void destroy_kmem_request_cache(void)
         kmem_cache_destroy(kmem_request_cache);
 }
 
-inline struct dsm_request *alloc_dsm_request(void)
+inline struct heca_request *alloc_dsm_request(void)
 {
         return kmem_cache_alloc(kmem_request_cache, GFP_KERNEL);
 }
 
-inline void release_dsm_request(struct dsm_request *req)
+inline void release_dsm_request(struct heca_request *req)
 {
         kmem_cache_free(kmem_request_cache, req);
 }
@@ -132,15 +132,15 @@ static void schedule_delayed_request_flush(struct heca_connection_element *ele)
 }
 
 static inline void queue_dsm_request(struct heca_connection_element *ele,
-                struct dsm_request *req)
+                struct heca_request *req)
 {
-        trace_queued_request(req->dsm_id, req->local_svm_id, req->remote_svm_id,
-                        req->mr_id, 0, req->addr, req->type, -1);
+        trace_queued_request(req->hspace_id, req->local_hproc_id, req->remote_hproc_id,
+                        req->hmr_id, 0, req->addr, req->type, -1);
         llist_add(&req->lnode, &ele->tx_buffer.request_queue);
         schedule_delayed_request_flush(ele);
 }
 
-int add_dsm_request(struct dsm_request *req, struct heca_connection_element *ele,
+int add_dsm_request(struct heca_request *req, struct heca_connection_element *ele,
                 u16 type, u32 dsm_id, u32 src_id, u32 mr_id, u32 dest_id,
                 unsigned long addr, int (*func)(struct tx_buffer_element *),
                 struct dsm_page_cache *dpc, struct page *page,
@@ -154,19 +154,19 @@ int add_dsm_request(struct dsm_request *req, struct heca_connection_element *ele
         }
 
         req->type = type;
-        req->dsm_id = dsm_id;
-        req->mr_id = mr_id;
-        req->local_svm_id = src_id;
-        req->remote_svm_id = dest_id;
+        req->hspace_id = dsm_id;
+        req->hmr_id = mr_id;
+        req->local_hproc_id = src_id;
+        req->remote_hproc_id = dest_id;
         req->addr = addr;
         req->func = func;
-        req->dpc = dpc;
+        req->hpc = dpc;
         req->page = page;
         req->ppe = ppe;
         req->need_ppe = need_ppe;
 
         if (msg) {
-                dsm_msg_cpy(&req->dsm_buf, msg);
+                dsm_msg_cpy(&req->hmsg, msg);
                 req->response = 1;
         } else {
                 req->response = 0;
@@ -255,9 +255,9 @@ void dsm_request_queue_merge(struct tx_buffer *tx)
         struct llist_node *llnode = llist_del_all(&tx->request_queue);
 
         while (llnode) {
-                struct dsm_request *req;
+                struct heca_request *req;
 
-                req = container_of(llnode, struct dsm_request, lnode);
+                req = container_of(llnode, struct heca_request, lnode);
                 list_add_tail(&req->ordered_list, head);
                 head = &req->ordered_list;
                 llnode = llnode->next;
@@ -268,7 +268,7 @@ void dsm_request_queue_merge(struct tx_buffer *tx)
 static inline int flush_dsm_request_queue(struct heca_connection_element *ele)
 {
         struct tx_buffer *tx = &ele->tx_buffer;
-        struct dsm_request *req;
+        struct heca_request *req;
         struct tx_buffer_element *tx_e = NULL;
         int ret = 0;
 
@@ -282,13 +282,13 @@ static inline int flush_dsm_request_queue(struct heca_connection_element *ele)
                 }
                 tx->request_queue_sz--;
                 req = list_first_entry(&tx->ordered_request_queue,
-                                struct dsm_request, ordered_list);
+                                struct heca_request, ordered_list);
                 trace_flushing_requests(tx->request_queue_sz);
-                dsm_send_tx_e(ele, tx_e, req->response, req->type, req->dsm_id,
-                                req->mr_id, req->local_svm_id,
-                                req->remote_svm_id, 0, req->addr,
-                                req->dpc, req->page, req->ppe,
-                                req->need_ppe, req->func, &req->dsm_buf);
+                dsm_send_tx_e(ele, tx_e, req->response, req->type, req->hspace_id,
+                                req->hmr_id, req->local_hproc_id,
+                                req->remote_hproc_id, 0, req->addr,
+                                req->hpc, req->page, req->ppe,
+                                req->need_ppe, req->func, &req->hmsg);
                 list_del(&req->ordered_list);
                 release_dsm_request(req);
         }

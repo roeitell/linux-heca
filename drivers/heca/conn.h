@@ -12,9 +12,9 @@
 
 void init_kmem_request_cache(void);
 void destroy_kmem_request_cache(void);
-inline struct dsm_request *alloc_dsm_request(void);
-inline void release_dsm_request(struct dsm_request *);
-int add_dsm_request(struct dsm_request *, struct heca_connection_element *, u16, u32, u32,
+inline struct heca_request *alloc_dsm_request(void);
+inline void release_dsm_request(struct heca_request *);
+int add_dsm_request(struct heca_request *, struct heca_connection_element *, u16, u32, u32,
                 u32, u32, unsigned long, int (*)(struct tx_buffer_element *),
                 struct dsm_page_cache *, struct page *, struct heca_page_pool_element *,
                 int, struct heca_message *);

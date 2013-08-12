@@ -122,8 +122,8 @@ static struct dsm_page_cache *dsm_push_cache_get(struct subvirtual_machine *svm,
         if (likely(dpc) && remote_svm) {
                 for (i = 0; i < dpc->svms.num; i++) {
                         if (dpc->svms.ids[i] == remote_svm->svm_id) {
-                                if (likely(test_and_clear_bit(i, &dpc->bitmap) &&
-                                                        atomic_add_unless(&dpc->nproc, 1, 0))) {
+                                if (likely(test_and_clear_bit(i, &dpc->bitmap)
+                                                        && atomic_add_unless(&dpc->nproc, 1, 0))) {
                                         goto out;
                                 }
                                 break;
@@ -417,14 +417,16 @@ retry:
         /* first access to page */
         if (pte_none(pte_entry)) {
                 set_pte_at(mm, addr, pd.pte,
-                                dsm_descriptor_to_pte(remote_svm->descriptor, 0));
+                                dsm_descriptor_to_pte(
+                                        remote_svm->descriptor, 0));
                 goto out;
         }
 
         /* page already unmapped somewhere, update the entry */
         if (!pte_present(pte_entry)) {
                 if (!only_unmap) {
-                        pte_t new_pte = dsm_descriptor_to_pte(remote_svm->descriptor, 0);
+                        pte_t new_pte = dsm_descriptor_to_pte(
+                                        remote_svm->descriptor, 0);
                         if (!pte_same(pte_entry, new_pte)) {
                                 if (unlikely(!is_dsm_entry(pte_to_swp_entry(pte_entry)))) {
                                         pte_unmap_unlock(pd.pte, ptl);
@@ -958,8 +960,8 @@ retry:
         if (unlikely(PageSwapCache(page)))
                 try_to_free_swap(page);
         unlock_page(page);
-        trace_dsm_discard_read_copy(svm->dsm->dsm_id, svm->svm_id, maintainer_id,
-                        mr->mr_id, addr, addr-mr->addr, 0);
+        trace_dsm_discard_read_copy(svm->dsm->dsm_id, svm->svm_id,
+                        maintainer_id, mr->mr_id, addr, addr-mr->addr, 0);
 unlock:
         pte_unmap_unlock(ptep, ptl);
         if (release) {

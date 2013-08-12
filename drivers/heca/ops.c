@@ -24,11 +24,11 @@
 static int dsm_send_msg(struct heca_connection_element *ele, u32 dsm_id, u32 mr_id,
                 u32 src_id, u32 dest_id, unsigned long local_addr,
                 unsigned long shared_addr, struct page *page, int type,
-                int (*func)(struct tx_buf_ele *), struct dsm_page_cache *dpc,
+                int (*func)(struct tx_buffer_element *), struct dsm_page_cache *dpc,
                 struct heca_page_pool_element *ppe, struct heca_message *msg,
                 int need_ppe)
 {
-        struct tx_buf_ele *tx_e = NULL;
+        struct tx_buffer_element *tx_e = NULL;
 
         might_sleep();
         while (1) {
@@ -92,7 +92,7 @@ static int send_request_dsm_page_pull(struct heca_process *fault_svm,
                 struct heca_memory_region *fault_mr, struct svm_list svms,
                 unsigned long addr)
 {
-        struct tx_buf_ele *tx_elms[svms.num];
+        struct tx_buffer_element *tx_elms[svms.num];
         struct dsm_request *reqs[svms.num];
         struct heca_connection_element *eles[svms.num];
         int i, j, r = 0;
@@ -196,7 +196,7 @@ int dsm_claim_page(struct heca_process *fault_svm,
 int request_dsm_page(struct page *page, struct heca_process *remote_svm,
                 struct heca_process *fault_svm,
                 struct heca_memory_region *fault_mr, unsigned long addr,
-                int (*func)(struct tx_buf_ele *), int tag,
+                int (*func)(struct tx_buffer_element *), int tag,
                 struct dsm_page_cache *dpc, struct heca_page_pool_element *ppe)
 {
         int type;
@@ -226,9 +226,9 @@ int request_dsm_page(struct page *page, struct heca_process *remote_svm,
                         NULL, 1);
 }
 
-int dsm_process_request_query(struct heca_connection_element *ele, struct rx_buf_ele *rx_e)
+int dsm_process_request_query(struct heca_connection_element *ele, struct rx_buffer_element *rx_e)
 {
-        struct heca_message *msg = rx_e->dsm_buf;
+        struct heca_message *msg = rx_e->hmsg_buffer;
         struct heca_space *dsm;
         struct heca_process *svm;
         struct heca_memory_region *mr;
@@ -260,9 +260,9 @@ fail:
         return r;
 }
 
-int dsm_process_query_info(struct tx_buf_ele *tx_e)
+int dsm_process_query_info(struct tx_buffer_element *tx_e)
 {
-        struct heca_message *msg = tx_e->dsm_buf;
+        struct heca_message *msg = tx_e->hmsg_buffer;
         struct heca_space *dsm;
         struct heca_process *svm;
         struct dsm_page_cache *dpc;
@@ -297,7 +297,7 @@ fail:
         return r;
 }
 
-int process_pull_request(struct heca_connection_element *ele, struct rx_buf_ele *rx_buf_e)
+int process_pull_request(struct heca_connection_element *ele, struct rx_buffer_element *rx_buf_e)
 {
         struct heca_process *local_svm;
         struct heca_space *dsm;
@@ -306,8 +306,8 @@ int process_pull_request(struct heca_connection_element *ele, struct rx_buf_ele 
         int r = 0;
 
         BUG_ON(!rx_buf_e);
-        BUG_ON(!rx_buf_e->dsm_buf);
-        msg = rx_buf_e->dsm_buf;
+        BUG_ON(!rx_buf_e->hmsg_buffer);
+        msg = rx_buf_e->hmsg_buffer;
 
         dsm = find_dsm(msg->dsm_id);
         if (unlikely(!dsm))
@@ -334,20 +334,20 @@ fail:
         return send_svm_status_update(ele, msg);
 }
 
-int process_svm_status(struct heca_connection_element *ele, struct rx_buf_ele *rx_buf_e)
+int process_svm_status(struct heca_connection_element *ele, struct rx_buffer_element *rx_buf_e)
 {
-        heca_printk(KERN_DEBUG "removing svm %d", rx_buf_e->dsm_buf->src_id);
-        remove_svm(rx_buf_e->dsm_buf->dsm_id, rx_buf_e->dsm_buf->src_id);
+        heca_printk(KERN_DEBUG "removing svm %d", rx_buf_e->hmsg_buffer->src_id);
+        remove_svm(rx_buf_e->hmsg_buffer->dsm_id, rx_buf_e->hmsg_buffer->src_id);
         return 1;
 }
 
-int process_page_redirect(struct heca_connection_element *ele, struct tx_buf_ele *tx_e,
+int process_page_redirect(struct heca_connection_element *ele, struct tx_buffer_element *tx_e,
                 u32 redirect_svm_id)
 {
         struct dsm_page_cache *dpc = tx_e->wrk_req->hpc;
         struct page *page = tx_e->wrk_req->dst_addr->mem_page;
-        u64 req_addr = tx_e->dsm_buf->req_addr;
-        int (*func)(struct tx_buf_ele *) = tx_e->callback.func;
+        u64 req_addr = tx_e->hmsg_buffer->req_addr;
+        int (*func)(struct tx_buffer_element *) = tx_e->callback.func;
         struct heca_process *mr_owner = NULL, *remote_svm;
         struct heca_memory_region *fault_mr;
         int ret = -1;
@@ -357,7 +357,7 @@ int process_page_redirect(struct heca_connection_element *ele, struct tx_buf_ele
         dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
         release_tx_element(ele, tx_e);
 
-        fault_mr = find_mr(dpc->svm, tx_e->dsm_buf->mr_id);
+        fault_mr = find_mr(dpc->svm, tx_e->hmsg_buffer->mr_id);
         if (!fault_mr)
                 goto out;
 
@@ -398,7 +398,7 @@ out:
         return ret;
 }
 
-int process_page_response(struct heca_connection_element *ele, struct tx_buf_ele *tx_e)
+int process_page_response(struct heca_connection_element *ele, struct tx_buffer_element *tx_e)
 {
         if (!tx_e->callback.func || tx_e->callback.func(tx_e))
                 dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
@@ -562,10 +562,10 @@ fail:
         return -EFAULT;
 }
 
-int process_claim_ack(struct heca_connection_element *ele, struct tx_buf_ele *tx_e,
+int process_claim_ack(struct heca_connection_element *ele, struct tx_buffer_element *tx_e,
                 struct heca_message *response)
 {
-        struct heca_message *msg = tx_e->dsm_buf;
+        struct heca_message *msg = tx_e->hmsg_buffer;
         struct page *page = tx_e->reply_work_req->mem_page;
 
         tx_e->reply_work_req->mem_page = NULL;
@@ -598,7 +598,7 @@ static int process_page_request(struct heca_connection_element *origin_ele,
                 int deferred)
 {
         struct heca_page_pool_element *ppe;
-        struct tx_buf_ele *tx_e = NULL;
+        struct tx_buffer_element *tx_e = NULL;
         struct page *page;
         unsigned long addr = 0;
         struct heca_connection_element *ele = NULL;
@@ -629,10 +629,10 @@ retry:
         }
         BUG_ON(!tx_e);
 
-        dsm_msg_cpy(tx_e->dsm_buf, msg);
-        tx_e->dsm_buf->type = MSG_RES_PAGE;
-        tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->dsm_buf->dst_addr;
-        tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->dsm_buf->rkey;
+        dsm_msg_cpy(tx_e->hmsg_buffer, msg);
+        tx_e->hmsg_buffer->type = MSG_RES_PAGE;
+        tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->hmsg_buffer->dst_addr;
+        tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->hmsg_buffer->rkey;
         tx_e->reply_work_req->mm = local_svm->mm;
         tx_e->reply_work_req->addr = addr;
 

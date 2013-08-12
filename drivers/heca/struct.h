@@ -159,12 +159,12 @@ struct rdma_info_data {
 };
 
 struct rx_buffer {
-        struct rx_buf_ele *rx_buf;
+        struct rx_buffer_element *rx_buf;
         int len;
 };
 
 struct tx_buffer {
-        struct tx_buf_ele *tx_buf;
+        struct tx_buffer_element *tx_buf;
         int len;
 
         struct llist_head tx_free_elements_list;
@@ -337,13 +337,13 @@ struct heca_reply_work_request {
 };
 
 struct tx_callback {
-        int (*func)(struct tx_buf_ele *);
+        int (*func)(struct tx_buffer_element *);
 };
 
-struct tx_buf_ele {
+struct tx_buffer_element {
         int id;
-        struct heca_message *dsm_buf;
-        struct map_dma dsm_dma;
+        struct heca_message *hmsg_buffer;
+        struct map_dma heca_dma;
         struct heca_msg_work_request *wrk_req;
         struct heca_reply_work_request *reply_work_req;
         struct llist_node tx_buf_ele_ptr;
@@ -353,10 +353,10 @@ struct tx_buf_ele {
         atomic_t released;
 };
 
-struct rx_buf_ele {
+struct rx_buffer_element {
         int id;
-        struct heca_message *dsm_buf;
-        struct map_dma dsm_dma;
+        struct heca_message *hmsg_buffer;
+        struct map_dma heca_dma;
         //The one for catching the request in the first place
         struct heca_recv_work_req_element *recv_wrk_rq_ele;
 };
@@ -370,7 +370,7 @@ struct dsm_request {
         struct page *page;
         struct heca_page_pool_element *ppe;
         uint64_t addr;
-        int (*func)(struct tx_buf_ele *);
+        int (*func)(struct tx_buffer_element *);
         struct heca_message dsm_buf;
         struct dsm_page_cache *dpc;
         int response;

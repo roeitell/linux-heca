@@ -543,7 +543,7 @@ static void release_svm_push_elements(struct heca_process *svm)
 static void release_svm_tx_elements(struct heca_process *svm,
                 struct heca_connection_element *ele)
 {
-        struct tx_buf_ele *tx_buf;
+        struct tx_buffer_element *tx_buf;
         int i;
 
         /* killed before it was first connected */
@@ -553,8 +553,8 @@ static void release_svm_tx_elements(struct heca_process *svm,
         tx_buf = ele->tx_buffer.tx_buf;
 
         for (i = 0; i < ele->tx_buffer.len; i++) {
-                struct tx_buf_ele *tx_e = &tx_buf[i];
-                struct heca_message *msg = tx_e->dsm_buf;
+                struct tx_buffer_element *tx_e = &tx_buf[i];
+                struct heca_message *msg = tx_e->hmsg_buffer;
                 int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY |
                         MSG_RES_PAGE_FAIL | MSG_REQ_READ;
 

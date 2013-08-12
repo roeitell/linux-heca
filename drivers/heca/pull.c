@@ -533,13 +533,13 @@ retry:
         return -EFAULT;
 }
 
-static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
+static int dsm_pull_req_complete(struct tx_buffer_element *tx_e)
 {
         struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
         struct page *page = tx_e->wrk_req->dst_addr->mem_page;
         int r;
 
-        r = unlikely(tx_e->dsm_buf->type == MSG_RES_PAGE_FAIL) ?
+        r = unlikely(tx_e->hmsg_buffer->type == MSG_RES_PAGE_FAIL) ?
                 dsm_pull_req_failure(dpc) :
                 dsm_pull_req_success(page, dpc);
 

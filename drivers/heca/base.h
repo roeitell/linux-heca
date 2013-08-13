@@ -24,7 +24,7 @@ inline struct heca_process *find_svm(struct heca_space *, u32);
 inline struct heca_process *find_local_svm_in_dsm(struct heca_space *,
                 struct mm_struct *);
 inline struct heca_process *find_local_svm_from_mm(struct mm_struct *);
-int create_svm(struct hecaioc_svm *);
+int create_svm(struct hecaioc_hproc *);
 inline void release_svm(struct heca_process *);
 void remove_svm(u32, u32);
 struct heca_process *find_any_svm(struct heca_space *, struct heca_process_list);
@@ -33,7 +33,7 @@ struct heca_process *find_any_svm(struct heca_space *, struct heca_process_list)
 struct heca_memory_region *find_mr(struct heca_process *, u32);
 struct heca_memory_region *search_mr_by_addr(struct heca_process *,
                 unsigned long);
-int create_mr(struct hecaioc_mr *udata);
+int create_mr(struct hecaioc_hmr *udata);
 
 /* ps */
 int pushback_ps(struct hecaioc_ps *udata);

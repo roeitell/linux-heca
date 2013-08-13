@@ -338,7 +338,7 @@ out:
         return r;
 }
 
-int create_svm(struct hecaioc_svm *svm_info)
+int create_svm(struct hecaioc_hproc *svm_info)
 {
         struct heca_module_state *dsm_state = get_dsm_module_state();
         int r = 0;
@@ -354,28 +354,28 @@ int create_svm(struct hecaioc_svm *svm_info)
 
         /* grab dsm lock */
         mutex_lock(&dsm_state->heca_state_mutex);
-        dsm = find_dsm(svm_info->dsm_id);
+        dsm = find_dsm(svm_info->hspace_id);
         if (dsm)
                 mutex_lock(&dsm->hspace_mutex);
         mutex_unlock(&dsm_state->heca_state_mutex);
         if (!dsm) {
                 heca_printk(KERN_ERR "could not find dsm: %d",
-                                svm_info->dsm_id);
+                                svm_info->hspace_id);
                 r = -EFAULT;
                 goto no_dsm;
         }
 
         /* already exists? */
-        found_svm = find_svm(dsm, svm_info->svm_id);
+        found_svm = find_svm(dsm, svm_info->hproc_id);
         if (found_svm) {
                 heca_printk(KERN_ERR "svm %d (dsm %d) already exists",
-                                svm_info->svm_id, svm_info->dsm_id);
+                                svm_info->hproc_id, svm_info->hspace_id);
                 r = -EEXIST;
                 goto out;
         }
 
         /* initial svm data */
-        new_svm->hproc_id = svm_info->svm_id;
+        new_svm->hproc_id = svm_info->hproc_id;
         new_svm->is_local = svm_info->is_local;
         new_svm->pid = svm_info->pid;
         new_svm->hspace = dsm;
@@ -450,7 +450,7 @@ out:
         }
 
         if (!svm_info->is_local) {
-                r = connect_svm(svm_info->dsm_id, svm_info->svm_id,
+                r = connect_svm(svm_info->hspace_id, svm_info->hproc_id,
                                 svm_info->remote.sin_addr.s_addr,
                                 svm_info->remote.sin_port);
 
@@ -462,7 +462,7 @@ out:
         }
 no_dsm:
         heca_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d",
-                        new_svm, r, svm_info->dsm_id, svm_info->svm_id, r);
+                        new_svm, r, svm_info->hspace_id, svm_info->hproc_id, r);
         return r;
 }
 
@@ -856,16 +856,16 @@ static struct heca_process *find_local_svm_from_list(struct heca_space *dsm)
         return NULL;
 }
 
-int create_mr(struct hecaioc_mr *udata)
+int create_mr(struct hecaioc_hmr *udata)
 {
         int ret = 0, i;
         struct heca_space *dsm;
         struct heca_memory_region *mr = NULL;
         struct heca_process *local_svm = NULL;
 
-        dsm = find_dsm(udata->dsm_id);
+        dsm = find_dsm(udata->hspace_id);
         if (!dsm) {
-                heca_printk(KERN_ERR "can't find dsm %d", udata->dsm_id);
+                heca_printk(KERN_ERR "can't find dsm %d", udata->hspace_id);
                 ret = -EFAULT;
                 goto out;
         }
@@ -873,7 +873,7 @@ int create_mr(struct hecaioc_mr *udata)
         local_svm = find_local_svm_from_list(dsm);
         if (!local_svm) {
                 heca_printk(KERN_ERR "can't find local svm for dsm %d",
-                                udata->dsm_id);
+                                udata->hspace_id);
                 ret = -EFAULT;
                 goto out;
         }
@@ -893,7 +893,7 @@ int create_mr(struct hecaioc_mr *udata)
                 goto out_free;
         }
 
-        mr->hmr_id = udata->mr_id;
+        mr->hmr_id = udata->hmr_id;
         mr->addr = (unsigned long) udata->addr;
         mr->sz = udata->sz;
 
@@ -903,16 +903,16 @@ int create_mr(struct hecaioc_mr *udata)
                 ret = -EFAULT;
                 goto out_free;
         }
-        mr->descriptor = dsm_get_descriptor(dsm->hspace_id, udata->svm_ids);
+        mr->descriptor = dsm_get_descriptor(dsm->hspace_id, udata->hproc_ids);
         if (!mr->descriptor) {
                 heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");
                 ret = -EFAULT;
                 goto out_remove_tree;
         }
 
-        for (i = 0; udata->svm_ids[i]; i++) {
+        for (i = 0; udata->hproc_ids[i]; i++) {
                 struct heca_process *owner;
-                u32 svm_id = udata->svm_ids[i];
+                u32 svm_id = udata->hproc_ids[i];
 
                 owner = find_svm(dsm, svm_id);
                 if (!owner) {
@@ -953,7 +953,7 @@ out:
         if (local_svm)
                 release_svm(local_svm);
         heca_printk(KERN_INFO "id [%d] addr [0x%lx] sz [0x%lx] --> ret %d",
-                        udata->mr_id, udata->addr, udata->sz, ret);
+                        udata->hmr_id, udata->addr, udata->sz, ret);
         return ret;
 }
 

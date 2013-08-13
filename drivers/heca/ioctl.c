@@ -137,7 +137,7 @@ static int deregister_dsm(__u32 dsm_id)
         return ret;
 }
 
-static int register_dsm(struct hecaioc_dsm *dsm_info)
+static int register_dsm(struct hecaioc_hspace *dsm_info)
 {
         struct heca_module_state *dsm_state = get_dsm_module_state();
         int rc;
@@ -151,21 +151,21 @@ static int register_dsm(struct hecaioc_dsm *dsm_info)
                 goto done;
         }
 
-        if ((rc = create_dsm(dsm_info->dsm_id))) {
+        if ((rc = create_dsm(dsm_info->hspace_id))) {
                 heca_printk(KERN_ERR "create_dsm %d", rc);
                 goto done;
         }
 
 done:
         if (rc)
-                deregister_dsm(dsm_info->dsm_id);
+                deregister_dsm(dsm_info->hspace_id);
         heca_printk(KERN_DEBUG "<exit> %d", rc);
         return rc;
 }
 
 static int ioctl_svm(int ioctl, void __user *argp)
 {
-        struct hecaioc_svm svm_info;
+        struct hecaioc_hproc svm_info;
 
         if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
                 heca_printk(KERN_ERR "copy_from_user failed");
@@ -179,10 +179,10 @@ static int ioctl_svm(int ioctl, void __user *argp)
         }
 
         switch (ioctl) {
-        case HECAIOC_SVM_ADD:
+        case HECAIOC_HPROC_ADD:
                 return create_svm(&svm_info);
-        case HECAIOC_SVM_RM:
-                remove_svm(svm_info.dsm_id, svm_info.svm_id);
+        case HECAIOC_HPROC_RM:
+                remove_svm(svm_info.hspace_id, svm_info.hproc_id);
                 return 0;
         }
         return -EINVAL;
@@ -190,7 +190,7 @@ static int ioctl_svm(int ioctl, void __user *argp)
 
 static int ioctl_mr(int ioctl, void __user *argp)
 {
-        struct hecaioc_mr udata;
+        struct hecaioc_hmr udata;
 
         if (copy_from_user((void *) &udata, argp, sizeof udata)) {
                 heca_printk(KERN_ERR "copy_from_user failed");
@@ -198,7 +198,7 @@ static int ioctl_mr(int ioctl, void __user *argp)
         }
 
         switch (ioctl) {
-        case HECAIOC_MR_ADD:
+        case HECAIOC_HMR_ADD:
                 return create_mr(&udata);
         }
 
@@ -231,7 +231,7 @@ static int ioctl_ps(int ioctl, void __user *argp)
 
 static long ioctl_dsm(unsigned int ioctl, void __user *argp)
 {
-        struct hecaioc_dsm dsm_info;
+        struct hecaioc_hspace dsm_info;
         int rc = -EFAULT;
 
         if ((rc = copy_from_user((void *) &dsm_info, argp, sizeof dsm_info))) {
@@ -240,10 +240,10 @@ static long ioctl_dsm(unsigned int ioctl, void __user *argp)
         }
 
         switch (ioctl) {
-        case HECAIOC_DSM_ADD:
+        case HECAIOC_HSPACE_ADD:
                 return register_dsm(&dsm_info);
-        case HECAIOC_DSM_RM:
-                return deregister_dsm(dsm_info.dsm_id);
+        case HECAIOC_HSPACE_RM:
+                return deregister_dsm(dsm_info.hspace_id);
         default:
                 goto failed;
         }
@@ -261,15 +261,15 @@ static long heca_ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
         /* special case: no need for prior dsm in process */
         switch (ioctl) {
-        case HECAIOC_DSM_ADD:
-        case HECAIOC_DSM_RM:
+        case HECAIOC_HSPACE_ADD:
+        case HECAIOC_HSPACE_RM:
                 r = ioctl_dsm(ioctl, argp);
                 goto out;
-        case HECAIOC_SVM_ADD:
-        case HECAIOC_SVM_RM:
+        case HECAIOC_HPROC_ADD:
+        case HECAIOC_HPROC_RM:
                 r = ioctl_svm(ioctl, argp);
                 goto out;
-        case HECAIOC_MR_ADD:
+        case HECAIOC_HMR_ADD:
                 r = ioctl_mr(ioctl, argp);
                 goto out;
         case HECAIOC_PS_PUSHBACK:

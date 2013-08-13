@@ -243,7 +243,7 @@ static struct kmem_cache *dsm_cache_kmem;
 
 static inline void init_dsm_cache_elm(void *obj)
 {
-        struct dsm_page_cache *dpc = (struct dsm_page_cache *) obj;
+        struct heca_page_cache *dpc = (struct heca_page_cache *) obj;
         int i;
 
         for (i = 0; i < MAX_SVMS_PER_PAGE; i++)
@@ -253,7 +253,7 @@ static inline void init_dsm_cache_elm(void *obj)
 void init_dsm_cache_kmem(void)
 {
         dsm_cache_kmem = kmem_cache_create("dsm_page_cache",
-                        sizeof(struct dsm_page_cache), 0,
+                        sizeof(struct heca_page_cache), 0,
                         SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
                         init_dsm_cache_elm);
 }
@@ -264,10 +264,10 @@ void destroy_dsm_cache_kmem(void)
 }
 
 /* assuming we hold the svm, we inc its refcount again for the dpc */
-struct dsm_page_cache *dsm_alloc_dpc(struct heca_process *svm,
+struct heca_page_cache *dsm_alloc_dpc(struct heca_process *svm,
                 unsigned long addr, struct heca_process_list svms, int nproc, int tag)
 {
-        struct dsm_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_ATOMIC);
+        struct heca_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_ATOMIC);
         if (unlikely(!dpc))
                 goto out;
 
@@ -276,31 +276,31 @@ struct dsm_page_cache *dsm_alloc_dpc(struct heca_process *svm,
         atomic_set(&dpc->nproc, nproc);
         dpc->released = 0;
         dpc->addr = addr;
-        dpc->svms = svms;
+        dpc->hprocs = svms;
         dpc->tag = tag;
-        dpc->svm = svm;
-        dpc->redirect_svm_id = 0;
+        dpc->hproc = svm;
+        dpc->redirect_hproc_id = 0;
 
 out:
         return dpc;
 }
 
-void dsm_dealloc_dpc(struct dsm_page_cache **dpc)
+void dsm_dealloc_dpc(struct heca_page_cache **dpc)
 {
         int i;
 
-        for (i = 0; i < (*dpc)->svms.num; i++)
+        for (i = 0; i < (*dpc)->hprocs.num; i++)
                 (*dpc)->pages[i] = 0;
-        release_svm((*dpc)->svm);
+        release_svm((*dpc)->hproc);
         kmem_cache_free(dsm_cache_kmem, *dpc);
         *dpc = NULL;
 }
 
-struct dsm_page_cache *dsm_cache_get(struct heca_process *svm,
+struct heca_page_cache *dsm_cache_get(struct heca_process *svm,
                 unsigned long addr)
 {
         void **ppc;
-        struct dsm_page_cache *dpc;
+        struct heca_page_cache *dpc;
 
         rcu_read_lock();
 
@@ -326,11 +326,11 @@ out:
 }
 
 
-struct dsm_page_cache *dsm_cache_get_hold(struct heca_process *svm,
+struct heca_page_cache *dsm_cache_get_hold(struct heca_process *svm,
                 unsigned long addr)
 {
         void **ppc;
-        struct dsm_page_cache *dpc;
+        struct heca_page_cache *dpc;
 
         rcu_read_lock();
 
@@ -367,7 +367,7 @@ out:
 }
 
 int dsm_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
-                int tag, struct dsm_page_cache **dpc)
+                int tag, struct heca_page_cache **dpc)
 {
         struct heca_process_list svms;
         int r = 0;
@@ -404,10 +404,10 @@ int dsm_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
         return r;
 }
 
-struct dsm_page_cache *dsm_cache_release(struct heca_process *svm,
+struct heca_page_cache *dsm_cache_release(struct heca_process *svm,
                 unsigned long addr)
 {
-        struct dsm_page_cache *dpc;
+        struct heca_page_cache *dpc;
 
         spin_lock_irq(&svm->page_cache_spinlock);
         dpc = radix_tree_delete(&svm->page_cache, addr);

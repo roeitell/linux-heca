@@ -225,8 +225,8 @@ static inline int grab_svm(struct heca_process *svm)
 # ifdef CONFIG_PREEMPT_COUNT
         BUG_ON(!in_atomic());
 # endif
-        BUG_ON(atomic_read(&svm->refs) == 0);
-        atomic_inc(&svm->refs);
+        BUG_ON(atomic_read(&hproc->refs) == 0);
+        atomic_inc(&hproc->refs);
 #else
         if (!atomic_inc_not_zero(&svm->refs))
                 return -1;
@@ -488,12 +488,12 @@ static void surrogate_push_remote_svm(struct heca_process *svm,
 
         write_seqlock(&svm->push_cache_lock);
         for (node = rb_first(&svm->push_cache); node;) {
-                struct dsm_page_cache *dpc;
+                struct heca_page_cache *dpc;
                 int i;
-                dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+                dpc = rb_entry(node, struct heca_page_cache, rb_node);
                 node = rb_next(node);
-                for (i = 0; i < dpc->svms.num; i++) {
-                        if (dpc->svms.ids[i] == remote_svm->hproc_id)
+                for (i = 0; i < dpc->hprocs.num; i++) {
+                        if (dpc->hprocs.ids[i] == remote_svm->hproc_id)
                                 goto surrogate;
                 }
                 continue;
@@ -504,8 +504,8 @@ surrogate:
                         atomic_dec(&dpc->nproc);
                         if (atomic_cmpxchg(&dpc->nproc, 1, 0) ==
                                         1 && find_first_bit(&dpc->bitmap,
-                                                dpc->svms.num) >= dpc->svms.num)
-                                dsm_push_cache_release(dpc->svm, &dpc, 0);
+                                                dpc->hprocs.num) >= dpc->hprocs.num)
+                                dsm_push_cache_release(dpc->hproc, &dpc, 0);
                 }
         }
         write_sequnlock(&svm->push_cache_lock);
@@ -517,20 +517,20 @@ static void release_svm_push_elements(struct heca_process *svm)
 
         write_seqlock(&svm->push_cache_lock);
         for (node = rb_first(&svm->push_cache); node;) {
-                struct dsm_page_cache *dpc;
+                struct heca_page_cache *dpc;
                 int i;
 
-                dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+                dpc = rb_entry(node, struct heca_page_cache, rb_node);
                 node = rb_next(node);
                 /*
                  * dpc->svms has a pointer to the descriptor ids array, which already
                  * changed. we need to rely on the bitmap right now.
                  */
-                for (i = 0; i < dpc->svms.num; i++) {
+                for (i = 0; i < dpc->hprocs.num; i++) {
                         if (test_and_clear_bit(i, &dpc->bitmap))
                                 page_cache_release(dpc->pages[0]);
                 }
-                dsm_push_cache_release(dpc->svm, &dpc, 0);
+                dsm_push_cache_release(dpc->hproc, &dpc, 0);
         }
         write_sequnlock(&svm->push_cache_lock);
 }
@@ -562,7 +562,7 @@ static void release_svm_tx_elements(struct heca_process *svm,
                                 && (msg->src_id == svm->hproc_id
                                 || msg->dest_id == svm->hproc_id)
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
-                        struct dsm_page_cache *dpc = tx_e->wrk_req->hpc;
+                        struct heca_page_cache *dpc = tx_e->wrk_req->hpc;
 
                         dsm_pull_req_failure(dpc);
                         tx_e->wrk_req->dst_addr->mem_page = NULL;

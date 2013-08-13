@@ -16,7 +16,7 @@ inline struct heca_request *alloc_dsm_request(void);
 inline void release_dsm_request(struct heca_request *);
 int add_dsm_request(struct heca_request *, struct heca_connection_element *, u16, u32, u32,
                 u32, u32, unsigned long, int (*)(struct tx_buffer_element *),
-                struct dsm_page_cache *, struct page *, struct heca_page_pool_element *,
+                struct heca_page_cache *, struct page *, struct heca_page_pool_element *,
                 int, struct heca_message *);
 inline int request_queue_empty(struct heca_connection_element *);
 inline int request_queue_full(struct heca_connection_element *);
@@ -24,7 +24,7 @@ void dsm_request_queue_merge(struct tx_buffer *);
 void create_page_reclaim_request(struct tx_buffer_element *, u32, u32
                 , u32, u32, uint64_t);
 void create_page_request(struct heca_connection_element *, struct tx_buffer_element *, u32, u32,
-                u32, u32, uint64_t, struct page *, struct dsm_page_cache *,
+                u32, u32, uint64_t, struct page *, struct heca_page_cache *,
                 struct heca_page_pool_element *);
 void create_page_pull_request(struct heca_connection_element *, struct tx_buffer_element *,
                 u32, u32, u32, u32, uint64_t);
@@ -46,7 +46,7 @@ char *sockaddr_ntoa(struct sockaddr_in *, char *, int);
 char *conn_ntoa(struct sockaddr_in *, struct sockaddr_in *, char *, int);
 int dsm_send_tx_e(struct heca_connection_element *, struct tx_buffer_element *, int, int, u32,
                 u32, u32, u32, unsigned long, unsigned long,
-                struct dsm_page_cache *, struct page *,
+                struct heca_page_cache *, struct page *,
                 struct heca_page_pool_element *, int, int (*)(struct tx_buffer_element *),
                 struct heca_message *);
 

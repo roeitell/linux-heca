@@ -8,7 +8,7 @@ int dsm_claim_page(struct heca_process *, struct heca_process *,
 int request_dsm_page(struct page *, struct heca_process *,
                 struct heca_process *, struct heca_memory_region *,
                 unsigned long, int (*)(struct tx_buffer_element *), int,
-                struct dsm_page_cache *, struct heca_page_pool_element *);
+                struct heca_page_cache *, struct heca_page_pool_element *);
 int process_pull_request(struct heca_connection_element *, struct rx_buffer_element *);
 int process_svm_status(struct heca_connection_element *, struct rx_buffer_element *);
 int process_page_redirect(struct heca_connection_element *, struct tx_buffer_element *, u32);

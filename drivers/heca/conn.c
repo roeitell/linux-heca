@@ -143,7 +143,7 @@ static inline void queue_dsm_request(struct heca_connection_element *ele,
 int add_dsm_request(struct heca_request *req, struct heca_connection_element *ele,
                 u16 type, u32 dsm_id, u32 src_id, u32 mr_id, u32 dest_id,
                 unsigned long addr, int (*func)(struct tx_buffer_element *),
-                struct dsm_page_cache *dpc, struct page *page,
+                struct heca_page_cache *dpc, struct page *page,
                 struct heca_page_pool_element *ppe, int need_ppe,
                 struct heca_message *msg)
 {
@@ -199,7 +199,7 @@ static inline void dsm_tx_response_prepare(struct tx_buffer_element *tx_e,
 
 static void dsm_tx_prepare(struct heca_connection_element *ele, struct tx_buffer_element *tx_e,
                 u32 dsm_id, u32 mr_id, u32 src_id, u32 dest_id,
-                unsigned long shared_addr, struct dsm_page_cache *dpc,
+                unsigned long shared_addr, struct heca_page_cache *dpc,
                 struct page *page, struct heca_page_pool_element *ppe, int need_ppe)
 {
         struct heca_message *msg = tx_e->hmsg_buffer;
@@ -229,7 +229,7 @@ static void dsm_tx_prepare(struct heca_connection_element *ele, struct tx_buffer
 int dsm_send_tx_e(struct heca_connection_element *ele, struct tx_buffer_element *tx_e, int resp,
                 int type, u32 dsm_id, u32 mr_id, u32 src_id, u32 dest_id,
                 unsigned long local_addr, unsigned long shared_addr,
-                struct dsm_page_cache *dpc, struct page *page,
+                struct heca_page_cache *dpc, struct page *page,
                 struct heca_page_pool_element *ppe, int need_ppe,
                 int (*func)(struct tx_buffer_element *), struct heca_message *msg)
 {

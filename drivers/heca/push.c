@@ -41,16 +41,16 @@ static inline void dsm_push_finish_notify(struct page *page)
         __wake_up_bit(waitqueue, &page->flags, PG_writeback);
 }
 
-static int dsm_push_cache_add(struct dsm_page_cache *dpc,
+static int dsm_push_cache_add(struct heca_page_cache *dpc,
                 struct heca_process *svm, unsigned long addr)
 {
-        struct dsm_page_cache *rb_dpc;
+        struct heca_page_cache *rb_dpc;
         struct rb_node **new, *parent = NULL;
         int r = 0;
 
         write_seqlock(&svm->push_cache_lock);
         for (new = &svm->push_cache.rb_node; *new;) {
-                rb_dpc = rb_entry(*new, struct dsm_page_cache, rb_node);
+                rb_dpc = rb_entry(*new, struct heca_page_cache, rb_node);
                 parent = *new;
                 BUG_ON(!rb_dpc);
                 if (addr < rb_dpc->addr)
@@ -72,17 +72,17 @@ out:
 }
 
 /* FIXME: push_cache lookup needs rcu protection */
-static struct dsm_page_cache *dsm_push_cache_lookup(
+static struct heca_page_cache *dsm_push_cache_lookup(
                 struct heca_process *svm, unsigned long addr)
 {
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
         struct rb_node *node;
         int seq;
 
         do {
                 seq = read_seqbegin(&svm->push_cache_lock);
                 for (node = svm->push_cache.rb_node; node; dpc = NULL) {
-                        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+                        dpc = rb_entry(node, struct heca_page_cache, rb_node);
                         BUG_ON(!dpc);
                         if (addr < dpc->addr)
                                 node = node->rb_left;
@@ -96,11 +96,11 @@ static struct dsm_page_cache *dsm_push_cache_lookup(
         return dpc;
 }
 
-static struct dsm_page_cache *dsm_push_cache_get(struct heca_process *svm,
+static struct heca_page_cache *dsm_push_cache_get(struct heca_process *svm,
                 unsigned long addr, struct heca_process *remote_svm)
 {
         struct rb_node *node;
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
         int seq, i;
 
         BUG_ON(!svm);
@@ -108,7 +108,7 @@ static struct dsm_page_cache *dsm_push_cache_get(struct heca_process *svm,
         do {
                 seq = read_seqbegin(&svm->push_cache_lock);
                 for (node = svm->push_cache.rb_node; node; dpc = NULL) {
-                        dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+                        dpc = rb_entry(node, struct heca_page_cache, rb_node);
                         BUG_ON(!dpc);
                         if (addr < dpc->addr)
                                 node = node->rb_left;
@@ -120,8 +120,8 @@ static struct dsm_page_cache *dsm_push_cache_get(struct heca_process *svm,
         } while (read_seqretry(&svm->push_cache_lock, seq));
 
         if (likely(dpc) && remote_svm) {
-                for (i = 0; i < dpc->svms.num; i++) {
-                        if (dpc->svms.ids[i] == remote_svm->hproc_id) {
+                for (i = 0; i < dpc->hprocs.num; i++) {
+                        if (dpc->hprocs.ids[i] == remote_svm->hproc_id) {
                                 if (likely(test_and_clear_bit(i, &dpc->bitmap)
                                                         && atomic_add_unless(&dpc->nproc, 1, 0))) {
                                         goto out;
@@ -137,7 +137,7 @@ out:
 }
 
 inline void dsm_push_cache_release(struct heca_process *svm,
-                struct dsm_page_cache **dpc, int lock)
+                struct heca_page_cache **dpc, int lock)
 {
         if (likely(lock)) {
                 write_seqlock(&svm->push_cache_lock);
@@ -155,15 +155,15 @@ inline void dsm_push_cache_release(struct heca_process *svm,
         congestion--;
 }
 
-struct dsm_page_cache *dsm_push_cache_get_remove(struct heca_process *svm,
+struct heca_page_cache *dsm_push_cache_get_remove(struct heca_process *svm,
                 unsigned long addr)
 {
-        struct dsm_page_cache *dpc;
+        struct heca_page_cache *dpc;
         struct rb_node *node;
 
         write_seqlock(&svm->push_cache_lock);
         for (node = svm->push_cache.rb_node; node; dpc = 0) {
-                dpc = rb_entry(node, struct dsm_page_cache, rb_node);
+                dpc = rb_entry(node, struct heca_page_cache, rb_node);
                 if (addr < dpc->addr)
                         node = node->rb_left;
                 else if (addr > dpc->addr)
@@ -329,7 +329,7 @@ static int dsm_extract_read_dsm_pte(struct heca_process *local_svm,
                 struct dsm_pte_data *pd, int *redirect_id)
 {
         swp_entry_t swp_e;
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
 
         /* page could be swapped to disk */
         swp_e = pte_to_swp_entry(pte_entry);
@@ -636,7 +636,7 @@ static int try_dsm_extract_page(struct heca_process *local_svm,
                 struct heca_process *remote_svm, struct mm_struct *mm,
                 unsigned long addr, pte_t *return_pte, struct page **page)
 {
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
         pte_t pte_entry;
         struct dsm_pte_data pd;
         int clear_pte_flag = 0;
@@ -672,7 +672,7 @@ retry:
 
                 flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
                 ptep_clear_flush(pd.vma, addr, pd.pte);
-                if (dpc->svms.num > 1) {
+                if (dpc->hprocs.num > 1) {
                         pte_flag = DSM_PUSHING;
                         clear_pte_flag = 1; /* race condition */
                 }
@@ -695,7 +695,7 @@ retry:
         }
 
         atomic_dec(&dpc->nproc);
-        if (find_first_bit(&dpc->bitmap, dpc->svms.num) >= dpc->svms.num &&
+        if (find_first_bit(&dpc->bitmap, dpc->hprocs.num) >= dpc->hprocs.num &&
                         atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
                 if (clear_pte_flag)
                         dsm_clear_swp_entry_flag(mm, addr, *(pd.pte),
@@ -810,7 +810,7 @@ int dsm_prepare_page_for_push(struct heca_process *local_svm,
                 struct mm_struct *mm, u32 descriptor)
 {
         struct dsm_pte_data pd;
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
         pte_t pte_entry, *pte;
         spinlock_t *ptl;
         int i, r;
@@ -978,14 +978,14 @@ unlock:
 int dsm_cancel_page_push(struct heca_process *svm, unsigned long addr,
                 struct page *page)
 {
-        struct dsm_page_cache *dpc = dsm_push_cache_get(svm, addr, NULL);
+        struct heca_page_cache *dpc = dsm_push_cache_get(svm, addr, NULL);
         int i;
 
         if (unlikely(!dpc))
                 return -1;
 
         /* svm_list could have changed in the meanwhile, we rely on bitmap */
-        for (i = 0; i < dpc->svms.num; i++) {
+        for (i = 0; i < dpc->hprocs.num; i++) {
                 if (test_bit(i, &dpc->bitmap))
                         page_cache_release(dpc->pages[0]);
         }

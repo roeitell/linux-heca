@@ -67,7 +67,7 @@ int heca_detach_task(struct task_struct *tsk)
         struct heca_process *svm;
         struct list_head *pos, *n, *it;
 
-        list_for_each (pos, &get_dsm_module_state()->dsm_list) {
+        list_for_each (pos, &get_dsm_module_state()->hspaces_list) {
                 dsm = list_entry(pos, struct heca_space, hspace_ptr);
                 list_for_each_safe (it, n, &dsm->hprocs_list) {
                         svm = list_entry(it, struct heca_process, hproc_ptr);

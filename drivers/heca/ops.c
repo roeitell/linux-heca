@@ -639,7 +639,7 @@ retry:
         res = dsm_extract_page_from_remote(local_svm, remote_svm, addr,
                         msg->type, &tx_e->reply_work_req->pte, &page,
                         &redirect_id, deferred, mr);
-        if (unlikely(res != DSM_EXTRACT_SUCCESS))
+        if (unlikely(res != HECA_EXTRACT_SUCCESS))
                 goto no_page;
 
         BUG_ON(!page);
@@ -662,7 +662,7 @@ no_page:
         release_tx_element_reply(ele, tx_e);
 
         /* redirect instead of answer */
-        if (res == DSM_EXTRACT_REDIRECT) {
+        if (res == HECA_EXTRACT_REDIRECT) {
                 if (try_redirect_page_request(ele, msg, remote_svm,
                                         redirect_id))
                         goto fail;

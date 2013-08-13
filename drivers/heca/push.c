@@ -515,7 +515,7 @@ static int dsm_extract_page(struct heca_process *local_svm,
                 struct page **page, struct heca_memory_region *mr, int read_copy)
 {
         spinlock_t *ptl;
-        int r, res = DSM_EXTRACT_FAIL;
+        int r, res = HECA_EXTRACT_FAIL;
         struct heca_pte_data pd;
         pte_t pte_entry;
         u32 maintainer_id;
@@ -551,7 +551,7 @@ retry:
                 /* try and redirect, according to a dsm pte */
                 if (!dsm_extract_read_dsm_pte(local_svm, mm, addr, pte_entry,
                                         &pd, svm_id)) {
-                        res = DSM_EXTRACT_REDIRECT;
+                        res = HECA_EXTRACT_REDIRECT;
 
                         /* it's time to fault the page in... */
                 } else if (deferred) {
@@ -567,7 +567,7 @@ retry:
         maintainer_id = dsm_lookup_page_read(local_svm, addr);
         if (unlikely(maintainer_id)) {
                 *svm_id = maintainer_id;
-                res = DSM_EXTRACT_REDIRECT;
+                res = HECA_EXTRACT_REDIRECT;
                 goto no_page;
         }
 
@@ -624,7 +624,7 @@ retry:
                 mmu_notifier_invalidate_page(mm, addr);
                 page_cache_release(*page);
         }
-        return DSM_EXTRACT_SUCCESS;
+        return HECA_EXTRACT_SUCCESS;
 
 no_page:
         pte_unmap_unlock(pd.pte, ptl);
@@ -704,10 +704,10 @@ retry:
         }
 
         *return_pte = *(pd.pte);
-        return DSM_EXTRACT_SUCCESS;
+        return HECA_EXTRACT_SUCCESS;
 
 fail:
-        return DSM_EXTRACT_FAIL;
+        return HECA_EXTRACT_FAIL;
 }
 
 void dsm_invalidate_readers(struct heca_process *svm, unsigned long addr,

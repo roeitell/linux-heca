@@ -1,9 +1,9 @@
 #ifndef _HECA_PUSH_H
 #define _HECA_PUSH_H
 
-#define DSM_EXTRACT_SUCCESS     (1 << 0)
-#define DSM_EXTRACT_REDIRECT    (1 << 1)
-#define DSM_EXTRACT_FAIL        (1 << 2)
+#define HECA_EXTRACT_SUCCESS     (1 << 0)
+#define HECA_EXTRACT_REDIRECT    (1 << 1)
+#define HECA_EXTRACT_FAIL        (1 << 2)
 
 inline int dsm_is_congested(void);
 inline void dsm_push_cache_release(struct heca_process *,

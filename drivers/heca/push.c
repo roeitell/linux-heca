@@ -200,7 +200,7 @@ static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
         return r == 1;
 }
 
-int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
+int dsm_extract_pte_data(struct heca_pte_data *pd, struct mm_struct *mm,
                 unsigned long addr)
 {
         pmd_t pmdval;
@@ -254,7 +254,7 @@ int dsm_extract_pte_data(struct dsm_pte_data *pd, struct mm_struct *mm,
 
 static inline u32 dsm_pte_maintainer(swp_entry_t swp_e)
 {
-        struct dsm_swp_data dsd;
+        struct heca_swp_data dsd;
         u32 svm_id = 0;
 
         if (!is_dsm_entry(swp_e))
@@ -268,13 +268,13 @@ static inline u32 dsm_pte_maintainer(swp_entry_t swp_e)
          * we currently only support RRAIM for a specific configuration, consisting
          * of a single active node, and other passive nodes supplying memory.
          */
-        BUG_ON(dsd.svms.num > 1);
+        BUG_ON(dsd.hprocs.num > 1);
 
         /* FIXME: a deadlock waiting to happen; what can we do? */
-        if (unlikely(!dsd.svms.ids[0]))
+        if (unlikely(!dsd.hprocs.ids[0]))
                 goto out;
 
-        svm_id = dsd.svms.ids[0];
+        svm_id = dsd.hprocs.ids[0];
 out:
         return svm_id;
 }
@@ -282,7 +282,7 @@ out:
 /* if we don't find a dsm pte, we assume the page is ours */
 u32 dsm_query_pte_info(struct heca_process *svm, unsigned long addr)
 {
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         pte_t *pte;
         spinlock_t *ptl = NULL;
         swp_entry_t swp_e;
@@ -326,7 +326,7 @@ out:
 
 static int dsm_extract_read_dsm_pte(struct heca_process *local_svm,
                 struct mm_struct *mm, unsigned long addr, pte_t pte_entry,
-                struct dsm_pte_data *pd, int *redirect_id)
+                struct heca_pte_data *pd, int *redirect_id)
 {
         swp_entry_t swp_e;
         struct heca_page_cache *dpc = NULL;
@@ -359,7 +359,7 @@ fail:
 
 int dsm_pte_present(struct mm_struct *mm, unsigned long addr)
 {
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         int r;
 
         /*
@@ -382,7 +382,7 @@ int dsm_pte_present(struct mm_struct *mm, unsigned long addr)
 int dsm_try_unmap_page(struct heca_process *local_svm, unsigned long addr,
                 struct heca_process *remote_svm, int only_unmap)
 {
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         struct page *page;
         spinlock_t *ptl;
         pte_t pte_entry;
@@ -516,7 +516,7 @@ static int dsm_extract_page(struct heca_process *local_svm,
 {
         spinlock_t *ptl;
         int r, res = DSM_EXTRACT_FAIL;
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         pte_t pte_entry;
         u32 maintainer_id;
 
@@ -638,7 +638,7 @@ static int try_dsm_extract_page(struct heca_process *local_svm,
 {
         struct heca_page_cache *dpc = NULL;
         pte_t pte_entry;
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         int clear_pte_flag = 0;
         spinlock_t *ptl = NULL;
 
@@ -718,15 +718,15 @@ void dsm_invalidate_readers(struct heca_process *svm, unsigned long addr,
          * since after we will release it, the page could still be transferred
          * anywhere, and any read-copies could be re-created...
          */
-        struct dsm_page_reader *dpr = dsm_delete_readers(svm, addr);
+        struct heca_page_reader *dpr = dsm_delete_readers(svm, addr);
 
         while (dpr) {
-                struct dsm_page_reader *tmp = dpr;
+                struct heca_page_reader *tmp = dpr;
                 struct heca_process *remote_svm;
                 struct heca_memory_region *mr;
 
-                if (dpr->svm_id != exclude_id) {
-                        remote_svm = find_svm(svm->hspace, dpr->svm_id);
+                if (dpr->hproc_id != exclude_id) {
+                        remote_svm = find_svm(svm->hspace, dpr->hproc_id);
                         if (likely(remote_svm)) {
                                 mr = search_mr_by_addr(svm, addr);
                                 if (likely(mr))
@@ -781,7 +781,7 @@ int dsm_extract_page_from_remote(struct heca_process *local_svm,
 struct page *dsm_find_normal_page(struct mm_struct *mm, unsigned long addr)
 {
         struct page *page = NULL;
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         pte_t pte_entry, *pte;
         spinlock_t *ptl;
 
@@ -809,7 +809,7 @@ int dsm_prepare_page_for_push(struct heca_process *local_svm,
                 struct heca_process_list svms, struct page *page, unsigned long addr,
                 struct mm_struct *mm, u32 descriptor)
 {
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         struct heca_page_cache *dpc = NULL;
         pte_t pte_entry, *pte;
         spinlock_t *ptl;
@@ -904,7 +904,7 @@ static int dsm_try_discard_read_copy(struct heca_process *svm,
                 struct vm_area_struct *vma,
                 struct heca_memory_region *mr)
 {
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         pte_t *ptep;
         spinlock_t *ptl;
         int ret = 0, release = 0;

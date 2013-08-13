@@ -28,7 +28,7 @@ unsigned long zero_dsm_pfn __read_mostly;
 void init_dsm_prefetch_cache_kmem(void)
 {
         dsm_delayed_fault_cache_kmem = kmem_cache_create("dsm_delayed_fault_cache",
-                        sizeof(struct dsm_delayed_fault), 0,
+                        sizeof(struct heca_delayed_fault), 0,
                         SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, NULL);
 }
 
@@ -37,10 +37,10 @@ void destroy_dsm_prefetch_cache_kmem(void)
         kmem_cache_destroy(dsm_delayed_fault_cache_kmem);
 }
 
-static struct dsm_delayed_fault *alloc_dsm_delayed_fault_cache_elm(
+static struct heca_delayed_fault *alloc_dsm_delayed_fault_cache_elm(
                 unsigned long addr)
 {
-        struct dsm_delayed_fault *ddf = kmem_cache_alloc(
+        struct heca_delayed_fault *ddf = kmem_cache_alloc(
                         dsm_delayed_fault_cache_kmem, GFP_KERNEL);
         if (unlikely(!ddf))
                 goto out;
@@ -51,7 +51,7 @@ out:
         return ddf;
 }
 
-static void free_dsm_delayed_fault_cache_elm(struct dsm_delayed_fault ** ddf)
+static void free_dsm_delayed_fault_cache_elm(struct heca_delayed_fault ** ddf)
 {
         kmem_cache_free(dsm_delayed_fault_cache_kmem, *ddf);
         *ddf = NULL;
@@ -326,14 +326,14 @@ inline void dsm_release_pull_dpc(struct heca_page_cache **dpc)
 
 void dequeue_and_gup_cleanup(struct heca_process *svm)
 {
-        struct dsm_delayed_fault *ddf;
+        struct heca_delayed_fault *ddf;
         struct heca_page_cache *dpc;
         struct llist_node *head, *node;
 
         head = llist_del_all(&svm->heca_delayed_faults);
 
         for (node = head; node; node = llist_next(node)) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 /*
                  * we need to hold the dpc to guarantee it doesn't disappear while we
                  * do the if check
@@ -346,7 +346,7 @@ void dequeue_and_gup_cleanup(struct heca_process *svm)
         }
 
         while (node) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 node = llist_next(node);
                 free_dsm_delayed_fault_cache_elm(&ddf);
         }
@@ -406,14 +406,14 @@ static void heca_initiate_pull_gup(struct heca_page_cache *dpc, int delayed)
 
 static void dequeue_and_gup(struct heca_process *svm)
 {
-        struct dsm_delayed_fault *ddf;
+        struct heca_delayed_fault *ddf;
         struct heca_page_cache *dpc;
         struct llist_node *head, *node;
 
         head = llist_del_all(&svm->heca_delayed_faults);
         head = llist_nodes_reverse(head);
         for (node = head; node; node = llist_next(node)) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 dpc = dsm_cache_get_hold(svm, ddf->addr);
                 if (dpc) {
                         /*
@@ -428,7 +428,7 @@ static void dequeue_and_gup(struct heca_process *svm)
         }
         node = head;
         while (node) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 node = llist_next(node);
                 free_dsm_delayed_fault_cache_elm(&ddf);
         }
@@ -442,7 +442,7 @@ void delayed_gup_work_fn(struct work_struct *w)
         dequeue_and_gup(svm);
 }
 
-static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf,
+static inline void queue_ddf_for_delayed_gup(struct heca_delayed_fault *ddf,
                 struct heca_process *svm)
 {
         llist_add(&ddf->node, &svm->heca_delayed_faults);
@@ -481,7 +481,7 @@ unlock:
 
                 /* try to delay faulting pages that were prefetched or pushed to us */
                 if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                        struct dsm_delayed_fault *ddf;
+                        struct heca_delayed_fault *ddf;
 
                         /*
                          * FIXME: Immediate gup might cause shrink_page_list to deadlock if
@@ -799,7 +799,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 if (!pte_present(pte_entry) && !pte_none(pte_entry)) {
                         swp_e = pte_to_swp_entry(pte_entry);
                         if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
-                                struct dsm_swp_data dsd;
+                                struct heca_swp_data dsd;
 
                                 if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
                                         goto out;
@@ -812,7 +812,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                                  *  +1 for every svm we send to
                                  *  +1 for the fault that comes after fetching
                                  */
-                                dsm_cache_add_send(fault_svm, mr, dsd.svms,
+                                dsm_cache_add_send(fault_svm, mr, dsd.hprocs,
                                                 norm_addr, 2, tag, vma,
                                                 pte_entry, pte,
                                                 tag != PREFETCH_TAG);
@@ -835,7 +835,7 @@ out:
 static struct heca_page_cache *convert_push_dpc(
                 struct heca_process *fault_svm,
                 struct heca_memory_region *fault_mr, unsigned long norm_addr,
-                struct dsm_swp_data dsd)
+                struct heca_swp_data dsd)
 {
         struct heca_page_cache *push_dpc, *dpc;
         struct page *page;
@@ -873,7 +873,7 @@ static struct heca_page_cache *convert_push_dpc(
                 if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)
                         dsm_dealloc_dpc(&push_dpc);
                 dpc = dsm_cache_add_pushed(fault_svm, fault_mr,
-                                dsd.svms, addr, page);
+                                dsd.hprocs, addr, page);
         }
 
 out:
@@ -881,7 +881,7 @@ out:
 }
 
 static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
-                struct dsm_swp_data *dsd)
+                struct heca_swp_data *dsd)
 {
         pte_t pte;
         swp_entry_t swp_entry;
@@ -902,7 +902,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                                                 && is_dsm_entry(swp_entry)
                                                 && dsm_swp_entry_same(swp_entry,
                                                         *entry)) {
-                                        struct dsm_swp_data tmp_dsd;
+                                        struct heca_swp_data tmp_dsd;
 
                                         if (swp_entry_to_dsm_data(swp_entry,
                                                                 &tmp_dsd) < 0) {
@@ -991,7 +991,7 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned long address, pte_t *page_table, pmd_t *pmd,
                 unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
-        struct dsm_swp_data dsd;
+        struct heca_swp_data dsd;
         struct heca_process *fault_svm;
         struct heca_memory_region *fault_mr;
         unsigned long norm_addr = address & PAGE_MASK;
@@ -1011,7 +1011,7 @@ retry:
         if (swp_entry_to_dsm_data(entry, &dsd) < 0)
                 return VM_FAULT_ERROR;
 
-        dsm = find_dsm(dsd.svms.hspace_id);
+        dsm = find_dsm(dsd.hprocs.hspace_id);
         if (unlikely(!dsm))
                 return VM_FAULT_ERROR;
 
@@ -1071,7 +1071,7 @@ retry:
                  *  +1 for the current do_dsm_page_fault
                  *  +1 for the final, successful do_dsm_page_fault
                  */
-                dpc = dsm_cache_add_send(fault_svm, fault_mr, dsd.svms,
+                dpc = dsm_cache_add_send(fault_svm, fault_mr, dsd.hprocs,
                                 norm_addr, 3, read_fault? READ_TAG : PULL_TAG,
                                 vma, orig_pte, page_table, 1);
 
@@ -1312,7 +1312,7 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         struct heca_process *svm = NULL;
         struct heca_memory_region *mr;
         struct page *page;
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         pte_t pte;
         struct heca_page_cache *dpc = NULL;
         u32 maintainer_id = 0;

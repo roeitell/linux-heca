@@ -181,7 +181,7 @@ void remove_svm_from_descriptors(struct heca_process *svm)
         }
 }
 
-int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
+int swp_entry_to_dsm_data(swp_entry_t entry, struct heca_swp_data *dsd)
 {
         u32 desc = dsm_entry_to_desc(entry);
         int ret = 0;
@@ -191,10 +191,10 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
         dsd->flags = dsm_entry_to_flags(entry);
 
         rcu_read_lock();
-        dsd->svms = dsm_descriptor_to_svms(desc);
+        dsd->hprocs = dsm_descriptor_to_svms(desc);
         rcu_read_unlock();
 
-        if (unlikely(!dsd->svms.num || !dsd->svms.hspace_id))
+        if (unlikely(!dsd->hprocs.num || !dsd->hprocs.hspace_id))
                 ret = -ENODATA;
 
         return ret;
@@ -210,7 +210,7 @@ int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2)
 void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
                 pte_t orig_pte, int pos)
 {
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         spinlock_t *ptl;
         swp_entry_t arch, entry;
         u32 desc, flags;
@@ -627,13 +627,13 @@ static struct kmem_cache *dsm_reader_kmem;
 
 static inline void init_dsm_reader_elm(void *obj)
 {
-        ((struct dsm_page_reader *) obj)->next = NULL;
+        ((struct heca_page_reader *) obj)->next = NULL;
 }
 
 void init_dsm_reader_kmem(void)
 {
         dsm_reader_kmem = kmem_cache_create("dsm_reader_cache",
-                        sizeof(struct dsm_page_reader), 0, SLAB_TEMPORARY,
+                        sizeof(struct heca_page_reader), 0, SLAB_TEMPORARY,
                         init_dsm_reader_elm);
 }
 
@@ -642,15 +642,15 @@ void destroy_dsm_reader_kmem(void)
         kmem_cache_destroy(dsm_reader_kmem);
 }
 
-inline void dsm_free_page_reader(struct dsm_page_reader *dpr)
+inline void dsm_free_page_reader(struct heca_page_reader *dpr)
 {
         kmem_cache_free(dsm_reader_kmem, dpr);
 }
 
-struct dsm_page_reader *dsm_delete_readers(struct heca_process *svm,
+struct heca_page_reader *dsm_delete_readers(struct heca_process *svm,
                 unsigned long addr)
 {
-        struct dsm_page_reader *dpr;
+        struct heca_page_reader *dpr;
 
         spin_lock_irq(&svm->page_readers_spinlock);
         dpr = radix_tree_delete(&svm->page_readers, addr);
@@ -659,10 +659,10 @@ struct dsm_page_reader *dsm_delete_readers(struct heca_process *svm,
         return dpr;
 }
 
-struct dsm_page_reader *dsm_lookup_readers(struct heca_process *svm,
+struct heca_page_reader *dsm_lookup_readers(struct heca_process *svm,
                 unsigned long addr)
 {
-        struct dsm_page_reader *dpr;
+        struct heca_page_reader *dpr;
         void **ppc;
 
         rcu_read_lock();
@@ -692,7 +692,7 @@ int dsm_add_reader(struct heca_process *svm, unsigned long addr,
                 u32 svm_id)
 {
         int r;
-        struct dsm_page_reader *dpr, *head;
+        struct heca_page_reader *dpr, *head;
 
 retry:
         r = radix_tree_preload(GFP_ATOMIC);
@@ -706,7 +706,7 @@ retry:
 
         /* already exists? */
         for (dpr = head; dpr; dpr = dpr->next) {
-                if (dpr->svm_id == svm_id)
+                if (dpr->hproc_id == svm_id)
                         goto unlock;
         }
 
@@ -718,7 +718,7 @@ retry:
                 cond_resched();
                 goto retry;
         }
-        dpr->svm_id = svm_id;
+        dpr->hproc_id = svm_id;
 
         /* TODO: optimize a bit for big clusters */
         if (head) {

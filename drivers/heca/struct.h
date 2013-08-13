@@ -85,6 +85,14 @@
 #define HSPACE_PAGE_POOL_SZ 1000
 
 /*
+ * BITOPS to identify page in flux
+ */
+#define DSM_INFLIGHT            0x04
+#define DSM_INFLIGHT_BITPOS     0x02
+#define DSM_PUSHING             0x08
+#define DSM_PUSHING_BITPOS      0x03
+
+/*
  * Useful macro for parsing heca processes
  */
 #define for_each_valid_hproc(hprocs, i) \
@@ -425,12 +433,12 @@ struct heca_page_cache {
         struct rb_node rb_node;
 };
 
-struct dsm_delayed_fault {
+struct heca_delayed_fault {
         unsigned long addr;
         struct llist_node node;
 };
 
-struct dsm_pte_data {
+struct heca_pte_data {
         struct vm_area_struct *vma;
         pgd_t *pgd;
         pud_t *pud;
@@ -438,20 +446,17 @@ struct dsm_pte_data {
         pte_t *pte;
 };
 
-#define DSM_INFLIGHT            0x04
-#define DSM_INFLIGHT_BITPOS     0x02
-#define DSM_PUSHING             0x08
-#define DSM_PUSHING_BITPOS      0x03
 
-struct dsm_swp_data {
-        struct heca_space *dsm;
-        struct heca_process_list svms;
+
+struct heca_swp_data {
+        struct heca_space *hspace;
+        struct heca_process_list hprocs;
         u32 flags;
 };
 
-struct dsm_page_reader {
-        u32 svm_id;
-        struct dsm_page_reader *next;
+struct heca_page_reader {
+        u32 hproc_id;
+        struct heca_page_reader *next;
 };
 
 void dsm_init_descriptors(void);
@@ -460,7 +465,7 @@ u32 dsm_get_descriptor(u32, u32 *);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
 inline struct heca_process_list dsm_descriptor_to_svms(u32);
 void remove_svm_from_descriptors(struct heca_process *);
-int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
+int swp_entry_to_dsm_data(swp_entry_t, struct heca_swp_data *);
 int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
 void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
 void init_dsm_cache_kmem(void);
@@ -485,11 +490,11 @@ u32 dsm_extract_page_read(struct heca_process *, unsigned long);
 int dsm_flag_page_read(struct heca_process *, unsigned long, u32);
 int dsm_cache_add(struct heca_process *, unsigned long, int, int,
                 struct heca_page_cache **);
-struct dsm_page_reader *dsm_delete_readers(struct heca_process *,
+struct heca_page_reader *dsm_delete_readers(struct heca_process *,
                 unsigned long);
-struct dsm_page_reader *dsm_lookup_readers(struct heca_process *,
+struct heca_page_reader *dsm_lookup_readers(struct heca_process *,
                 unsigned long);
 int dsm_add_reader(struct heca_process *, unsigned long, u32);
-inline void dsm_free_page_reader(struct dsm_page_reader *);
+inline void dsm_free_page_reader(struct heca_page_reader *);
 
 #endif /* HECA_STRUCT_H_ */

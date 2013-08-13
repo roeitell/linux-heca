@@ -10,7 +10,7 @@ inline void dsm_push_cache_release(struct heca_process *,
                 struct heca_page_cache **, int);
 struct heca_page_cache *dsm_push_cache_get_remove(struct heca_process *,
                 unsigned long);
-int dsm_extract_pte_data(struct dsm_pte_data *, struct mm_struct *,
+int dsm_extract_pte_data(struct heca_pte_data *, struct mm_struct *,
                 unsigned long);
 int dsm_try_unmap_page(struct heca_process *, unsigned long,
                 struct heca_process *, int);

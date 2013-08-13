@@ -21,7 +21,7 @@
  */
 struct heca_connection_element *search_rb_conn(int node_ip)
 {
-        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->hcm;
         struct rb_root *root;
         struct rb_node *node;
         struct heca_connection_element *this = 0;
@@ -47,7 +47,7 @@ struct heca_connection_element *search_rb_conn(int node_ip)
 
 void insert_rb_conn(struct heca_connection_element *ele)
 {
-        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->hcm;
         struct rb_root *root;
         struct rb_node **new, *parent = NULL;
         struct heca_connection_element *this;
@@ -70,7 +70,7 @@ void insert_rb_conn(struct heca_connection_element *ele)
 
 void erase_rb_conn(struct heca_connection_element *ele)
 {
-        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->hcm;
 
         write_seqlock(&rcm->connections_lock);
         rb_erase(&ele->rb_node, &rcm->connections_rb_tree_root);
@@ -82,13 +82,13 @@ void erase_rb_conn(struct heca_connection_element *ele)
  */
 struct heca_space *find_dsm(u32 id)
 {
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
         struct heca_space *dsm;
         struct heca_space **dsmp;
         struct radix_tree_root *root;
 
         rcu_read_lock();
-        root = &dsm_state->dsm_tree_root;
+        root = &dsm_state->hspaces_tree_root;
 repeat:
         dsm = NULL;
         dsmp = (struct heca_space **) radix_tree_lookup_slot(root, (unsigned long) id);
@@ -109,7 +109,7 @@ out:
 void remove_dsm(struct heca_space *dsm)
 {
         struct heca_process *svm;
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
         struct list_head *pos, *n;
 
         BUG_ON(!dsm);
@@ -121,18 +121,18 @@ void remove_dsm(struct heca_space *dsm)
                 remove_svm(dsm->hspace_id, svm->hproc_id);
         }
 
-        mutex_lock(&dsm_state->dsm_state_mutex);
+        mutex_lock(&dsm_state->heca_state_mutex);
         list_del(&dsm->hspace_ptr);
-        radix_tree_delete(&dsm_state->dsm_tree_root,
+        radix_tree_delete(&dsm_state->hspaces_tree_root,
                         (unsigned long) dsm->hspace_id);
-        mutex_unlock(&dsm_state->dsm_state_mutex);
+        mutex_unlock(&dsm_state->heca_state_mutex);
         synchronize_rcu();
 
         delete_dsm_sysfs_entry(&dsm->hspace_kobject);
 
-        mutex_lock(&dsm_state->dsm_state_mutex);
+        mutex_lock(&dsm_state->heca_state_mutex);
         kfree(dsm);
-        mutex_unlock(&dsm_state->dsm_state_mutex);
+        mutex_unlock(&dsm_state->heca_state_mutex);
 
         heca_printk(KERN_DEBUG "<exit>");
 }
@@ -142,7 +142,7 @@ int create_dsm(__u32 dsm_id)
 {
         int r = 0;
         struct heca_space *found_dsm, *new_dsm = NULL;
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
 
         /* already exists? (first check; the next one is under lock */
         found_dsm = find_dsm(dsm_id);
@@ -180,7 +180,7 @@ int create_dsm(__u32 dsm_id)
         }
 
         spin_lock(&dsm_state->radix_lock);
-        r = radix_tree_insert(&dsm_state->dsm_tree_root,
+        r = radix_tree_insert(&dsm_state->hspaces_tree_root,
                         (unsigned long) new_dsm->hspace_id, new_dsm);
         spin_unlock(&dsm_state->radix_lock);
         radix_tree_preload_end();
@@ -196,13 +196,13 @@ int create_dsm(__u32 dsm_id)
                 goto err_delete;
         }
 
-        list_add(&new_dsm->hspace_ptr, &dsm_state->dsm_list);
+        list_add(&new_dsm->hspace_ptr, &dsm_state->hspaces_list);
         heca_printk("registered dsm %p, dsm_id : %u, res: %d",
                         new_dsm, dsm_id, r);
         return r;
 
 err_delete:
-        radix_tree_delete(&dsm_state->dsm_tree_root,
+        radix_tree_delete(&dsm_state->hspaces_tree_root,
                         (unsigned long) dsm_id);
 failed:
         kfree(new_dsm);
@@ -277,14 +277,14 @@ inline struct heca_process *find_local_svm_in_dsm(struct heca_space *dsm,
 
 inline struct heca_process *find_local_svm_from_mm(struct mm_struct *mm)
 {
-        struct dsm_module_state *mod = get_dsm_module_state();
+        struct heca_module_state *mod = get_dsm_module_state();
 
         return (likely(mod)) ?
                 _find_svm_in_tree(&mod->mm_tree_root, (unsigned long) mm) :
                 NULL;
 }
 
-static int insert_svm_to_radix_trees(struct dsm_module_state *dsm_state,
+static int insert_svm_to_radix_trees(struct heca_module_state *dsm_state,
                 struct heca_space *dsm, struct heca_process *new_svm)
 {
         int r;
@@ -340,7 +340,7 @@ out:
 
 int create_svm(struct hecaioc_svm *svm_info)
 {
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
         int r = 0;
         struct heca_space *dsm;
         struct heca_process *found_svm, *new_svm = NULL;
@@ -353,11 +353,11 @@ int create_svm(struct hecaioc_svm *svm_info)
         }
 
         /* grab dsm lock */
-        mutex_lock(&dsm_state->dsm_state_mutex);
+        mutex_lock(&dsm_state->heca_state_mutex);
         dsm = find_dsm(svm_info->dsm_id);
         if (dsm)
                 mutex_lock(&dsm->hspace_mutex);
-        mutex_unlock(&dsm_state->dsm_state_mutex);
+        mutex_unlock(&dsm_state->heca_state_mutex);
         if (!dsm) {
                 heca_printk(KERN_ERR "could not find dsm: %d",
                                 svm_info->dsm_id);
@@ -600,28 +600,28 @@ static void release_svm_queued_requests(struct heca_process *svm,
 
 void remove_svm(u32 dsm_id, u32 svm_id)
 {
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
         struct heca_space *dsm;
         struct heca_process *svm = NULL;
 
-        mutex_lock(&dsm_state->dsm_state_mutex);
+        mutex_lock(&dsm_state->heca_state_mutex);
         dsm = find_dsm(dsm_id);
         if (!dsm) {
-                mutex_unlock(&dsm_state->dsm_state_mutex);
+                mutex_unlock(&dsm_state->heca_state_mutex);
                 return;
         }
 
         mutex_lock(&dsm->hspace_mutex);
         svm = find_svm(dsm, svm_id);
         if (!svm) {
-                mutex_unlock(&dsm_state->dsm_state_mutex);
+                mutex_unlock(&dsm_state->heca_state_mutex);
                 goto out;
         }
         if (is_svm_local(svm)) {
                 radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
                                 (unsigned long) svm->mm);
         }
-        mutex_unlock(&dsm_state->dsm_state_mutex);
+        mutex_unlock(&dsm_state->heca_state_mutex);
 
         list_del(&svm->hproc_ptr);
         radix_tree_delete(&dsm->hprocs_tree_root, (unsigned long) svm->hproc_id);
@@ -661,8 +661,8 @@ void remove_svm(u32 dsm_id, u32 svm_id)
                 struct rb_root *root;
                 struct rb_node *node;
 
-                if (dsm_state->rcm) {
-                        root = &dsm_state->rcm->connections_rb_tree_root;
+                if (dsm_state->hcm) {
+                        root = &dsm_state->hcm->connections_rb_tree_root;
                         for (node = rb_first(root);
                                         node; node = rb_next(node)) {
                                 struct heca_connection_element *ele;
@@ -1041,9 +1041,9 @@ int fini_rcm(void)
         return 0;
 }
 
-int destroy_rcm_listener(struct dsm_module_state *dsm_state);
+int destroy_rcm_listener(struct heca_module_state *dsm_state);
 
-int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
+int create_rcm_listener(struct heca_module_state *dsm_state, unsigned long ip,
                 unsigned short port)
 {
         int ret = 0;
@@ -1107,7 +1107,7 @@ int create_rcm_listener(struct dsm_module_state *dsm_state, unsigned long ip,
                 goto failed;
         }
 
-        dsm_state->rcm = rcm;
+        dsm_state->hcm = rcm;
 
         ret = rdma_listen(rcm->cm_id, 2);
         if (ret)
@@ -1140,17 +1140,17 @@ static int rcm_disconnect(struct heca_connections_manager *rcm)
         return 0;
 }
 
-int destroy_rcm_listener(struct dsm_module_state *dsm_state)
+int destroy_rcm_listener(struct heca_module_state *dsm_state)
 {
         int rc = 0;
-        struct heca_connections_manager *rcm = dsm_state->rcm;
+        struct heca_connections_manager *rcm = dsm_state->hcm;
 
         heca_printk(KERN_DEBUG "<enter>");
 
         if (!rcm)
                 goto done;
 
-        if (!list_empty(&dsm_state->dsm_list)) {
+        if (!list_empty(&dsm_state->hspaces_list)) {
                 heca_printk(KERN_INFO "can't delete rcm - dsms exist");
                 rc = -EBUSY;
         }
@@ -1186,7 +1186,7 @@ int destroy_rcm_listener(struct dsm_module_state *dsm_state)
 destroy:
         mutex_destroy(&rcm->hcm_mutex);
         kfree(rcm);
-        dsm_state->rcm = NULL;
+        dsm_state->hcm = NULL;
 
 done:
         heca_printk(KERN_DEBUG "<exit> %d", rc);

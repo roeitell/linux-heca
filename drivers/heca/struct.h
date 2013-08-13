@@ -389,17 +389,17 @@ struct heca_deferred_gup {
 };
 
 
-struct dsm_module_state {
-        struct heca_connections_manager *rcm;
-        struct mutex dsm_state_mutex;
+struct heca_module_state {
+        struct heca_connections_manager *hcm;
+        struct mutex heca_state_mutex;
         spinlock_t radix_lock;
-        struct radix_tree_root dsm_tree_root;
+        struct radix_tree_root hspaces_tree_root;
         struct radix_tree_root mm_tree_root;
-        struct list_head dsm_list;
+        struct list_head hspaces_list;
 
-        struct heca_space_kobjects dsm_kobjects;
-        struct workqueue_struct * dsm_rx_wq;
-        struct workqueue_struct * dsm_tx_wq;
+        struct heca_space_kobjects hspaces_kobjects;
+        struct workqueue_struct * heca_rx_wq;
+        struct workqueue_struct * heca_tx_wq;
 };
 
 struct svm_list {

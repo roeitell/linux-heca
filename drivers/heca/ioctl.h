@@ -7,8 +7,8 @@ void __heca_printk(const char *, int, const char *, const char *, ...);
         __heca_printk(__FILE__, __LINE__, __func__, fmt, ##__VA_ARGS__)
 
 /* module */
-inline struct dsm_module_state *get_dsm_module_state(void);
-struct dsm_module_state *create_dsm_module_state(void);
+inline struct heca_module_state *get_dsm_module_state(void);
+struct heca_module_state *create_dsm_module_state(void);
 void destroy_dsm_module_state(void);
 
 #endif /* _HECA_IOCTL_H */

@@ -308,7 +308,7 @@ static void delayed_request_flush_work_fn(struct work_struct *w)
 
 static void destroy_connection_work(struct work_struct *work)
 {
-        struct heca_connections_manager *rcm = get_dsm_module_state()->rcm;
+        struct heca_connections_manager *rcm = get_dsm_module_state()->hcm;
         struct rb_root *root;
         struct rb_node *node, *next;
         struct heca_connection_element *ele;
@@ -340,7 +340,7 @@ static inline void queue_recv_work(struct heca_connection_element *ele)
 {
         rcu_read_lock();
         if (atomic_read(&ele->alive))
-                queue_work(get_dsm_module_state()->dsm_rx_wq, &ele->recv_work);
+                queue_work(get_dsm_module_state()->heca_rx_wq, &ele->recv_work);
         rcu_read_unlock();
 }
 
@@ -348,7 +348,7 @@ static inline void queue_send_work(struct heca_connection_element *ele)
 {
         rcu_read_lock();
         if (atomic_read(&ele->alive))
-                queue_work(get_dsm_module_state()->dsm_tx_wq, &ele->send_work);
+                queue_work(get_dsm_module_state()->heca_tx_wq, &ele->send_work);
         rcu_read_unlock();
 }
 
@@ -644,12 +644,12 @@ static int exchange_info(struct heca_connection_element *ele, int id)
 
                 ele->remote_node_ip = (u32) ele->rid.remote_info->node_ip;
                 ele->remote.sin_addr.s_addr = (u32) ele->rid.remote_info->node_ip;
-                ele->local = get_dsm_module_state()->rcm->sin;
+                ele->local = get_dsm_module_state()->hcm->sin;
                 ele_found = search_rb_conn(ele->remote_node_ip);
 
                 if (ele_found) {
                         if (ele->remote_node_ip !=
-                                        get_dsm_module_state()->rcm->node_ip) {
+                                        get_dsm_module_state()->hcm->node_ip) {
                                 char curr[20], prev[20];
 
                                 inet_ntoa(ele->remote_node_ip,
@@ -1622,7 +1622,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
         struct heca_space *dsm;
         struct heca_process *svm;
         struct heca_connection_element *cele;
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
 
         dsm = find_dsm(dsm_id);
         if (!dsm) {
@@ -1648,7 +1648,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
                 goto done;
         }
 
-        r = create_connection(dsm_state->rcm, ip_addr, port);
+        r = create_connection(dsm_state->hcm, ip_addr, port);
         if (r) {
                 heca_printk(KERN_ERR "create_connection failed %d", r);
                 goto failed;
@@ -1721,7 +1721,7 @@ static void remove_svms_for_conn(struct heca_connection_element *ele)
         struct heca_process *svm;
         struct list_head *pos, *n, *it;
 
-        list_for_each (pos, &get_dsm_module_state()->dsm_list) {
+        list_for_each (pos, &get_dsm_module_state()->hspaces_list) {
                 dsm = list_entry(pos, struct heca_space, hspace_ptr);
                 list_for_each_safe (it, n, &dsm->hprocs_list) {
                         svm = list_entry(it, struct heca_process,

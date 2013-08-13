@@ -269,12 +269,12 @@ static ssize_t instance_dsm_server_show(struct heca_space *dsm,
                 char *data)
 {
         char s[20];
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
 
         BUG_ON(!dsm_state);
-        BUG_ON(!dsm_state->rcm);
+        BUG_ON(!dsm_state->hcm);
 
-        sockaddr_ntoa(&dsm_state->rcm->sin, s, sizeof s);
+        sockaddr_ntoa(&dsm_state->hcm->sin, s, sizeof s);
         return sprintf(data, "%s\n", s);
 }
 
@@ -306,9 +306,9 @@ void delete_dsm_sysfs_entry(struct kobject *obj)
 }
 
 int create_dsm_sysfs_entry(struct heca_space *dsm,
-                struct dsm_module_state *dsm_state) {
+                struct heca_module_state *dsm_state) {
         return kobject_init_and_add(&dsm->hspace_kobject, &ktype_dsm_instance,
-                        dsm_state->dsm_kobjects.domains_kobject,
+                        dsm_state->hspaces_kobjects.domains_kobject,
                         HECA_SYSFS_DSM_FMT, dsm->hspace_id);
 }
 
@@ -386,7 +386,7 @@ int create_connection_sysfs_entry(struct heca_connection_element *ele)
         int rc;
 
         struct kobject *root_kobj =
-                get_dsm_module_state()->dsm_kobjects.rdma_kobject;
+                get_dsm_module_state()->hspaces_kobjects.rdma_kobject;
 
         rc = kobject_init_and_add(&ele->kobj,
                         &ktype_conn_instance, root_kobj,
@@ -400,9 +400,9 @@ done:
 }
 
 /* toplevel sysfs functions */
-void heca_sysfs_cleanup(struct dsm_module_state *dsm_state)
+void heca_sysfs_cleanup(struct heca_module_state *dsm_state)
 {
-        struct heca_space_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
+        struct heca_space_kobjects *dsm_kobjects = &dsm_state->hspaces_kobjects;
 
         kobject_put(dsm_kobjects->rdma_kobject);
         kobject_del(dsm_kobjects->rdma_kobject);
@@ -411,9 +411,9 @@ void heca_sysfs_cleanup(struct dsm_module_state *dsm_state)
         kobject_del(dsm_kobjects->hspace_glob_kobject);
 }
 
-int heca_sysfs_setup(struct dsm_module_state *dsm_state)
+int heca_sysfs_setup(struct heca_module_state *dsm_state)
 {
-        struct heca_space_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
+        struct heca_space_kobjects *dsm_kobjects = &dsm_state->hspaces_kobjects;
 
         dsm_kobjects->hspace_glob_kobject = kobject_create_and_add(HECA_SYSFS_MODULE,
                         kernel_kobj);

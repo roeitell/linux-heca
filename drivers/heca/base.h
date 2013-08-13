@@ -40,9 +40,9 @@ int pushback_ps(struct hecaioc_ps *udata);
 int unmap_ps(struct hecaioc_ps *udata);
 
 /* rcm */
-int create_rcm_listener(struct dsm_module_state *, unsigned long,
+int create_rcm_listener(struct heca_module_state *, unsigned long,
                 unsigned short);
-int destroy_rcm_listener(struct dsm_module_state *);
+int destroy_rcm_listener(struct heca_module_state *);
 int init_rcm(void);
 int fini_rcm(void);
 

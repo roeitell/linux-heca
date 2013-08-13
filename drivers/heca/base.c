@@ -697,7 +697,7 @@ out:
         mutex_unlock(&dsm->hspace_mutex);
 }
 
-struct heca_process *find_any_svm(struct heca_space *dsm, struct svm_list svms)
+struct heca_process *find_any_svm(struct heca_space *dsm, struct heca_process_list svms)
 {
         int i;
         struct heca_process *svm;

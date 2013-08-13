@@ -11,22 +11,22 @@
 #include "base.h"
 
 /* svm_descriptors */
-static struct svm_list *sdsc;
+static struct heca_process_list *sdsc;
 static u32 sdsc_max;
 static struct mutex sdsc_lock;
 #define SDSC_MIN 0x10
 
 static u64 dsm_descriptors_realloc(void)
 {
-        struct svm_list *new_sdsc, *old_sdsc = NULL;
+        struct heca_process_list *new_sdsc, *old_sdsc = NULL;
         u32 new_sdsc_max;
 
         new_sdsc_max = sdsc_max + 256;
-        new_sdsc = kzalloc(sizeof(struct svm_list) * new_sdsc_max, GFP_KERNEL);
+        new_sdsc = kzalloc(sizeof(struct heca_process_list) * new_sdsc_max, GFP_KERNEL);
         BUG_ON(!new_sdsc); /* TODO: handle failure, fail the calling ioctl */
 
         if (sdsc) {
-                memcpy(new_sdsc, sdsc, sizeof(struct svm_list) * sdsc_max);
+                memcpy(new_sdsc, sdsc, sizeof(struct heca_process_list) * sdsc_max);
                 old_sdsc = sdsc;
         }
 
@@ -66,7 +66,7 @@ static int dsm_add_descriptor(u32 dsm_id, u32 desc, u32 *svm_ids)
         sdsc[desc].num = j;
         BUG_ON(!sdsc[desc].num);
 
-        sdsc[desc].dsm_id = dsm_id;
+        sdsc[desc].hspace_id = dsm_id;
 
         /* recycle used descriptor? */
         if (sdsc[desc].ids)
@@ -111,7 +111,7 @@ u32 dsm_get_descriptor(u32 dsm_id, u32 *svm_ids)
 retry:
         mutex_lock(&sdsc_lock);
         for (i = SDSC_MIN; i < sdsc_max && sdsc[i].num; i++) {
-                if (sdsc[i].dsm_id != dsm_id)
+                if (sdsc[i].hspace_id != dsm_id)
                         continue;
 
                 /* don't use changed descriptors! */
@@ -147,7 +147,7 @@ inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
         return swp_entry_to_pte(swp_e);
 }
 
-inline struct svm_list dsm_descriptor_to_svms(u32 dsc)
+inline struct heca_process_list dsm_descriptor_to_svms(u32 dsc)
 {
         BUG_ON(dsc < SDSC_MIN || dsc >= sdsc_max);
         return rcu_dereference(sdsc)[dsc];
@@ -159,7 +159,7 @@ void remove_svm_from_descriptors(struct heca_process *svm)
         int i;
 
         for (i = SDSC_MIN; i < sdsc_max && sdsc[i].num; i++) {
-                struct svm_list svms;
+                struct heca_process_list svms;
                 int j;
 
                 rcu_read_lock();
@@ -194,7 +194,7 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct dsm_swp_data *dsd)
         dsd->svms = dsm_descriptor_to_svms(desc);
         rcu_read_unlock();
 
-        if (unlikely(!dsd->svms.num || !dsd->svms.dsm_id))
+        if (unlikely(!dsd->svms.num || !dsd->svms.hspace_id))
                 ret = -ENODATA;
 
         return ret;
@@ -265,7 +265,7 @@ void destroy_dsm_cache_kmem(void)
 
 /* assuming we hold the svm, we inc its refcount again for the dpc */
 struct dsm_page_cache *dsm_alloc_dpc(struct heca_process *svm,
-                unsigned long addr, struct svm_list svms, int nproc, int tag)
+                unsigned long addr, struct heca_process_list svms, int nproc, int tag)
 {
         struct dsm_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_ATOMIC);
         if (unlikely(!dpc))
@@ -369,7 +369,7 @@ out:
 int dsm_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
                 int tag, struct dsm_page_cache **dpc)
 {
-        struct svm_list svms;
+        struct heca_process_list svms;
         int r = 0;
 
         svms.num = 0;

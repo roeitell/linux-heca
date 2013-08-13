@@ -89,7 +89,7 @@ static void release_kmem_deferred_gup_cache_elm(struct heca_deferred_gup *req)
 }
 
 static int send_request_dsm_page_pull(struct heca_process *fault_svm,
-                struct heca_memory_region *fault_mr, struct svm_list svms,
+                struct heca_memory_region *fault_mr, struct heca_process_list svms,
                 unsigned long addr)
 {
         struct tx_buffer_element *tx_elms[svms.num];
@@ -351,7 +351,7 @@ int process_page_redirect(struct heca_connection_element *ele, struct tx_buffer_
         struct heca_process *mr_owner = NULL, *remote_svm;
         struct heca_memory_region *fault_mr;
         int ret = -1;
-        struct svm_list svms;
+        struct heca_process_list svms;
 
         tx_e->wrk_req->dst_addr->mem_page = NULL;
         dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
@@ -497,7 +497,7 @@ static int dsm_retry_claim(struct heca_message *msg, struct page *page)
         struct heca_space *dsm;
         struct heca_process *svm = NULL, *remote_svm, *owner;
         struct heca_memory_region *mr;
-        struct svm_list svms;
+        struct heca_process_list svms;
         struct dsm_page_cache *dpc;
 
         dsm = find_dsm(msg->dsm_id);
@@ -761,7 +761,7 @@ int dsm_request_page_pull(struct heca_space *dsm, struct heca_process *fault_svm
                 struct page *page, unsigned long addr, struct mm_struct *mm,
                 struct heca_memory_region *mr)
 {
-        struct svm_list svms;
+        struct heca_process_list svms;
         int ret = 0, i;
 
         rcu_read_lock();

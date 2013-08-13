@@ -580,7 +580,7 @@ out:
 
 static struct dsm_page_cache *dsm_cache_add_pushed(
                 struct heca_process *fault_svm,
-                struct heca_memory_region *fault_mr, struct svm_list svms,
+                struct heca_memory_region *fault_mr, struct heca_process_list svms,
                 unsigned long addr, struct page *page)
 {
         struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
@@ -636,7 +636,7 @@ fail:
 
 static struct dsm_page_cache *dsm_cache_add_send(
                 struct heca_process *fault_svm,
-                struct heca_memory_region *fault_mr, struct svm_list svms,
+                struct heca_memory_region *fault_mr, struct heca_process_list svms,
                 unsigned long norm_addr, int nproc, int tag,
                 struct vm_area_struct *vma, pte_t orig_pte,
                 pte_t *ptep, int alloc)
@@ -959,7 +959,7 @@ static int dsm_maintain_notify(struct heca_process *svm,
                 struct heca_memory_region *mr, unsigned long addr, u32 exclude_id)
 {
         struct heca_process *owner;
-        struct svm_list svms;
+        struct heca_process_list svms;
         int r = -EFAULT, i;
 
         rcu_read_lock();
@@ -1011,7 +1011,7 @@ retry:
         if (swp_entry_to_dsm_data(entry, &dsd) < 0)
                 return VM_FAULT_ERROR;
 
-        dsm = find_dsm(dsd.svms.dsm_id);
+        dsm = find_dsm(dsd.svms.hspace_id);
         if (unlikely(!dsm))
                 return VM_FAULT_ERROR;
 

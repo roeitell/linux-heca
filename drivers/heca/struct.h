@@ -402,8 +402,8 @@ struct heca_module_state {
         struct workqueue_struct * heca_tx_wq;
 };
 
-struct svm_list {
-        u32 dsm_id;
+struct heca_process_list {
+        u32 hspace_id;
         u32 *ids;
         int num;
 };
@@ -414,7 +414,7 @@ struct dsm_page_cache {
         u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
         struct page *pages[MAX_SVMS_PER_PAGE];
-        struct svm_list svms;
+        struct heca_process_list svms;
         /* memory barrier are ok with these atomic */
         atomic_t found;
         atomic_t nproc;
@@ -445,7 +445,7 @@ struct dsm_pte_data {
 
 struct dsm_swp_data {
         struct heca_space *dsm;
-        struct svm_list svms;
+        struct heca_process_list svms;
         u32 flags;
 };
 
@@ -458,7 +458,7 @@ void dsm_init_descriptors(void);
 void dsm_destroy_descriptors(void);
 u32 dsm_get_descriptor(u32, u32 *);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
-inline struct svm_list dsm_descriptor_to_svms(u32);
+inline struct heca_process_list dsm_descriptor_to_svms(u32);
 void remove_svm_from_descriptors(struct heca_process *);
 int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
 int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
@@ -466,7 +466,7 @@ void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
 void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);
 struct dsm_page_cache *dsm_alloc_dpc(struct heca_process *,
-                unsigned long, struct svm_list, int, int);
+                unsigned long, struct heca_process_list, int, int);
 void dsm_dealloc_dpc(struct dsm_page_cache **);
 struct dsm_page_cache *dsm_cache_get(struct heca_process *,
                 unsigned long);

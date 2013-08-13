@@ -806,7 +806,7 @@ out:
 }
 
 int dsm_prepare_page_for_push(struct heca_process *local_svm,
-                struct svm_list svms, struct page *page, unsigned long addr,
+                struct heca_process_list svms, struct page *page, unsigned long addr,
                 struct mm_struct *mm, u32 descriptor)
 {
         struct dsm_pte_data pd;

@@ -66,14 +66,14 @@ static struct kmem_cache *kmem_deferred_gup_cache;
 
 static inline void init_kmem_deferred_gup_cache_elm(void *obj)
 {
-        struct deferred_gup *dgup = (struct deferred_gup *) obj;
-        memset(dgup, 0, sizeof(struct deferred_gup));
+        struct heca_deferred_gup *dgup = (struct heca_deferred_gup *) obj;
+        memset(dgup, 0, sizeof(struct heca_deferred_gup));
 }
 
 void init_kmem_deferred_gup_cache(void)
 {
         kmem_deferred_gup_cache = kmem_cache_create("kmem_deferred_gup_cache",
-                        sizeof(struct deferred_gup), 0,
+                        sizeof(struct heca_deferred_gup), 0,
                         SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
                         init_kmem_deferred_gup_cache_elm);
 }
@@ -83,7 +83,7 @@ void destroy_kmem_deferred_gup_cache(void)
         kmem_cache_destroy(kmem_deferred_gup_cache);
 }
 
-static void release_kmem_deferred_gup_cache_elm(struct deferred_gup *req)
+static void release_kmem_deferred_gup_cache_elm(struct heca_deferred_gup *req)
 {
         kmem_cache_free(kmem_deferred_gup_cache, req);
 }
@@ -419,7 +419,7 @@ static inline void defer_gup(struct heca_message *msg,
                 struct heca_process *local_svm, struct heca_memory_region *mr,
                 struct heca_process *remote_svm, struct heca_connection_element *ele)
 {
-        struct deferred_gup *dgup = NULL;
+        struct heca_deferred_gup *dgup = NULL;
 
 retry:
         dgup = kmem_cache_alloc(kmem_deferred_gup_cache, GFP_KERNEL);
@@ -427,10 +427,10 @@ retry:
                 might_sleep();
                 goto retry;
         }
-        dgup->origin_ele = ele;
-        dgup->remote_svm = remote_svm;
-        dgup->mr = mr;
-        dsm_msg_cpy(&dgup->dsm_buf, msg);
+        dgup->connection_origin = ele;
+        dgup->remote_hproc = remote_svm;
+        dgup->hmr = mr;
+        dsm_msg_cpy(&dgup->hmsg, msg);
         llist_add(&dgup->lnode, &local_svm->heca_deferred_gups);
         schedule_work(&local_svm->heca_deferred_gup_work);
 }
@@ -696,22 +696,22 @@ out_keep:
  */
 static inline void process_deferred_gups(struct heca_process *svm)
 {
-        struct deferred_gup *dgup = NULL;
+        struct heca_deferred_gup *dgup = NULL;
         struct llist_node *llnode = llist_del_all(&svm->heca_deferred_gups);
 
         do {
                 while (llnode) {
-                        dgup = container_of(llnode, struct deferred_gup, lnode);
+                        dgup = container_of(llnode, struct heca_deferred_gup, lnode);
                         llnode = llnode->next;
                         /* the deferred is set to one i.e if we need to gup we will block */
                         trace_dsm_defer_gup_execute(svm->hspace->hspace_id,
-                                        svm->hproc_id, dgup->remote_svm->hproc_id,
-                                        dgup->mr->hmr_id,
-                                        dgup->dsm_buf.req_addr + dgup->mr->addr,
-                                        dgup->dsm_buf.req_addr,
-                                        dgup->dsm_buf.type);
-                        process_page_request(dgup->origin_ele, svm, dgup->mr,
-                                        dgup->remote_svm, &dgup->dsm_buf, 1);
+                                        svm->hproc_id, dgup->remote_hproc->hproc_id,
+                                        dgup->hmr->hmr_id,
+                                        dgup->hmsg.req_addr + dgup->hmr->addr,
+                                        dgup->hmsg.req_addr,
+                                        dgup->hmsg.type);
+                        process_page_request(dgup->connection_origin, svm, dgup->hmr,
+                                        dgup->remote_hproc, &dgup->hmsg, 1);
                         /* release the element */
                         release_kmem_deferred_gup_cache_elm(dgup);
                 }

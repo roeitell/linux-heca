@@ -380,11 +380,11 @@ struct heca_request {
         struct list_head ordered_list;
 };
 
-struct deferred_gup {
-        struct heca_message dsm_buf;
-        struct heca_process *remote_svm;
-        struct heca_connection_element *origin_ele;
-        struct heca_memory_region *mr;
+struct heca_deferred_gup {
+        struct heca_message hmsg;
+        struct heca_process *remote_hproc;
+        struct heca_connection_element *connection_origin;
+        struct heca_memory_region *hmr;
         struct llist_node lnode;
 };
 

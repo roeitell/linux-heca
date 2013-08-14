@@ -10,9 +10,9 @@
 #include "struct.h"
 
 /* conn */
-struct heca_connection_element *search_rb_conn(int);
-void insert_rb_conn(struct heca_connection_element *);
-void erase_rb_conn(struct heca_connection_element *);
+struct heca_connection *search_rb_conn(int);
+void insert_rb_conn(struct heca_connection *);
+void erase_rb_conn(struct heca_connection *);
 
 /* dsm */
 struct heca_space *find_dsm(u32 dsm_id);

@@ -198,11 +198,11 @@ struct heca_space_page_pool {
         int cpu;
         struct heca_page_pool_element *hspace_page_pool[HSPACE_PAGE_POOL_SZ];
         int head;
-        struct heca_connection_element *connection;
+        struct heca_connection *connection;
         struct work_struct work;
 };
 
-struct heca_connection_element {
+struct heca_connection {
         struct heca_connections_manager *hcm;
         /* not 100% sure of this atomic regarding barrier*/
         atomic_t alive;
@@ -271,7 +271,7 @@ struct heca_process {
         u32 hproc_id;
         int is_local;
         struct heca_space *hspace;
-        struct heca_connection_element *connection;
+        struct heca_connection *connection;
         pid_t pid;
         struct mm_struct *mm;
         u32 descriptor;
@@ -308,7 +308,7 @@ struct heca_process {
 
 
 struct heca_work_request_element {
-        struct heca_connection_element *connection;
+        struct heca_connection *connection;
         struct ib_send_wr wr;
         struct ib_sge sg;
         struct ib_send_wr *bad_wr;
@@ -322,7 +322,7 @@ struct heca_msg_work_request {
 };
 
 struct heca_recv_work_req_element {
-        struct heca_connection_element *connection;
+        struct heca_connection *connection;
         struct ib_recv_wr sq_wr;
         struct ib_recv_wr *bad_wr;
         struct ib_sge recv_sgl;
@@ -391,7 +391,7 @@ struct heca_request {
 struct heca_deferred_gup {
         struct heca_message hmsg;
         struct heca_process *remote_hproc;
-        struct heca_connection_element *connection_origin;
+        struct heca_connection *connection_origin;
         struct heca_memory_region *hmr;
         struct llist_node lnode;
 };
@@ -479,13 +479,13 @@ struct heca_page_cache *dsm_cache_get_hold(struct heca_process *,
                 unsigned long);
 struct heca_page_cache *dsm_cache_release(struct heca_process *,
                 unsigned long);
-void dsm_destroy_page_pool(struct heca_connection_element *);
-int dsm_init_page_pool(struct heca_connection_element *);
+void dsm_destroy_page_pool(struct heca_connection *);
+int dsm_init_page_pool(struct heca_connection *);
 struct heca_page_pool_element *dsm_fetch_ready_ppe(
-                struct heca_connection_element *);
-struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection_element *,
+                struct heca_connection *);
+struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection *,
                 struct page *);
-void dsm_ppe_clear_release(struct heca_connection_element *,
+void dsm_ppe_clear_release(struct heca_connection *,
                 struct heca_page_pool_element **);
 void init_dsm_reader_kmem(void);
 u32 dsm_lookup_page_read(struct heca_process *, unsigned long);

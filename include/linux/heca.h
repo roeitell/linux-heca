@@ -52,13 +52,13 @@ struct hecaioc_ps {
 
 #define HECAIOC                      0xFF
 
-#define HECAIOC_HSPACE_ADD              _IOW(HECAIOC, 0xA0, struct hecaioc_hspace)
-#define HECAIOC_HSPACE_RM               _IOW(HECAIOC, 0xA1, struct hecaioc_hspace)
+#define HECAIOC_HSPACE_ADD           _IOW(HECAIOC, 0xA0, struct hecaioc_hspace)
+#define HECAIOC_HSPACE_RM            _IOW(HECAIOC, 0xA1, struct hecaioc_hspace)
 
-#define HECAIOC_HPROC_ADD              _IOW(HECAIOC, 0xB0, struct hecaioc_hproc)
-#define HECAIOC_HPROC_RM               _IOW(HECAIOC, 0xB1, struct hecaioc_hproc)
+#define HECAIOC_HPROC_ADD            _IOW(HECAIOC, 0xB0, struct hecaioc_hproc)
+#define HECAIOC_HPROC_RM             _IOW(HECAIOC, 0xB1, struct hecaioc_hproc)
 
-#define HECAIOC_HMR_ADD               _IOW(HECAIOC, 0xC0, struct hecaioc_hmr)
+#define HECAIOC_HMR_ADD              _IOW(HECAIOC, 0xC0, struct hecaioc_hmr)
 
 #define HECAIOC_PS_PUSHBACK          _IOW(HECAIOC, 0xD0, struct hecaioc_ps)
 #define HECAIOC_PS_UNMAP             _IOW(HECAIOC, 0xD1, struct hecaioc_ps)

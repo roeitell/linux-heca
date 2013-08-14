@@ -58,9 +58,12 @@ DECLARE_EVENT_CLASS(dsm_full_template,
 
 #define DSM_DECLARE_EVENT_FULL(name) \
                 DEFINE_EVENT(dsm_full_template, name, \
-                                TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id, \
-                                        unsigned long addr, unsigned long shared_addr, int tag), \
-                                TP_ARGS(dsm_id, svm_id, remote_svm_id, mr_id, addr, shared_addr, tag));
+                                TP_PROTO(int dsm_id, int svm_id, \
+                                        int remote_svm_id, int mr_id, \
+                                        unsigned long addr, \
+                                        unsigned long shared_addr, int tag), \
+                                TP_ARGS(dsm_id, svm_id, remote_svm_id, mr_id, \
+                                        addr, shared_addr, tag));
         DSM_DECLARE_EVENT_FULL(do_dsm_page_fault_svm);
         DSM_DECLARE_EVENT_FULL(dsm_cache_add_send);
         DSM_DECLARE_EVENT_FULL(do_dsm_page_fault_svm_complete);
@@ -104,11 +107,13 @@ DECLARE_EVENT_CLASS(dsm_message_template,
 
 #define DSM_DECLARE_EVENT_MESSAGE(name) \
                 DEFINE_EVENT(dsm_message_template, name, \
-                                TP_PROTO(int dsm_id, int svm_id, int remote_svm_id, int mr_id, \
-                                        unsigned long addr, unsigned long shared_addr, int type, \
+                                TP_PROTO(int dsm_id, int svm_id, \
+                                        int remote_svm_id, int mr_id, \
+                                        unsigned long addr, \
+                                        unsigned long shared_addr, int type, \
                                         int tx_id), \
-                                TP_ARGS(dsm_id, svm_id, remote_svm_id, mr_id, addr, shared_addr, \
-                                        type, tx_id));
+                                TP_ARGS(dsm_id, svm_id, remote_svm_id, mr_id, \
+                                        addr, shared_addr, type, tx_id));
         DSM_DECLARE_EVENT_MESSAGE(dsm_rx_msg);
         DSM_DECLARE_EVENT_MESSAGE(dsm_tx_msg);
         DSM_DECLARE_EVENT_MESSAGE(queued_request);

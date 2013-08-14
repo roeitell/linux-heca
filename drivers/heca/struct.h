@@ -481,9 +481,12 @@ struct heca_page_cache *dsm_cache_release(struct heca_process *,
                 unsigned long);
 void dsm_destroy_page_pool(struct heca_connection_element *);
 int dsm_init_page_pool(struct heca_connection_element *);
-struct heca_page_pool_element *dsm_fetch_ready_ppe(struct heca_connection_element *);
-struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection_element *, struct page *);
-void dsm_ppe_clear_release(struct heca_connection_element *, struct heca_page_pool_element **);
+struct heca_page_pool_element *dsm_fetch_ready_ppe(
+                struct heca_connection_element *);
+struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection_element *,
+                struct page *);
+void dsm_ppe_clear_release(struct heca_connection_element *,
+                struct heca_page_pool_element **);
 void init_dsm_reader_kmem(void);
 u32 dsm_lookup_page_read(struct heca_process *, unsigned long);
 u32 dsm_extract_page_read(struct heca_process *, unsigned long);

@@ -87,10 +87,10 @@
 /*
  * BITOPS to identify page in flux
  */
-#define DSM_INFLIGHT            0x04
-#define DSM_INFLIGHT_BITPOS     0x02
-#define DSM_PUSHING             0x08
-#define DSM_PUSHING_BITPOS      0x03
+#define HECA_INFLIGHT            0x04
+#define HECA_INFLIGHT_BITPOS     0x02
+#define HECA_PUSHING             0x08
+#define HECA_PUSHING_BITPOS      0x03
 
 /*
  * Useful macro for parsing heca processes

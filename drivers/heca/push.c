@@ -607,7 +607,7 @@ retry:
                         dsm_add_reader(local_svm, addr, remote_svm->hproc_id);
                 } else {
                         pte_entry = dsm_descriptor_to_pte(remote_svm->descriptor,
-                                        DSM_INFLIGHT);
+                        		HECA_INFLIGHT);
                         page_remove_rmap(*page);
                         dec_mm_counter(mm, MM_ANONPAGES);
                         /* FIXME: the following line might_sleep, as it sends msgs */
@@ -673,7 +673,7 @@ retry:
                 flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
                 ptep_clear_flush(pd.vma, addr, pd.pte);
                 if (dpc->hprocs.num > 1) {
-                        pte_flag = DSM_PUSHING;
+                        pte_flag = HECA_PUSHING;
                         clear_pte_flag = 1; /* race condition */
                 }
                 set_pte_at(mm, addr, pd.pte,
@@ -699,7 +699,7 @@ retry:
                         atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
                 if (clear_pte_flag)
                         dsm_clear_swp_entry_flag(mm, addr, *(pd.pte),
-                                        DSM_PUSHING_BITPOS);
+                                        HECA_PUSHING_BITPOS);
                 dsm_push_cache_release(local_svm, &dpc, 1);
         }
 

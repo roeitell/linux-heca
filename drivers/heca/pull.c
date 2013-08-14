@@ -804,7 +804,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                                 if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
                                         goto out;
 
-                                if (dsd.flags & (DSM_INFLIGHT | DSM_PUSHING))
+                                if (dsd.flags & (HECA_INFLIGHT | HECA_PUSHING))
                                         goto out;
 
                                 /*
@@ -910,7 +910,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                                                 goto out;
                                         }
 
-                                        if (tmp_dsd.flags & DSM_INFLIGHT) {
+                                        if (tmp_dsd.flags & HECA_INFLIGHT) {
                                                 continue;
                                         } else {
                                                 *orig_pte = pte;
@@ -1041,12 +1041,12 @@ retry:
          * fault, wait for it to finish before faulting ourselves.
          */
         if (unlikely(dsd.flags)) {
-                if (dsd.flags & DSM_PUSHING) {
+                if (dsd.flags & HECA_PUSHING) {
                         dpc = convert_push_dpc(fault_svm, fault_mr,
                                         norm_addr, dsd);
                         if (likely(dpc))
                                 goto lock;
-                } else if (dsd.flags & DSM_INFLIGHT) {
+                } else if (dsd.flags & HECA_INFLIGHT) {
                         int inflight = inflight_wait(page_table, &orig_pte,
                                         &entry, &dsd);
 

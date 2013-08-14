@@ -464,7 +464,7 @@ static int dsm_send_message_handler(struct heca_connection_element *ele,
                         dsm_clear_swp_entry_flag(tx_e->reply_work_req->mm,
                                         tx_e->reply_work_req->addr,
                                         tx_e->reply_work_req->pte,
-                                        DSM_INFLIGHT_BITPOS);
+                                        HECA_INFLIGHT_BITPOS);
                 }
                 dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
                 release_tx_element_reply(ele, tx_e);

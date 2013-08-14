@@ -330,7 +330,7 @@ void dequeue_and_gup_cleanup(struct heca_process *svm)
         struct heca_page_cache *dpc;
         struct llist_node *head, *node;
 
-        head = llist_del_all(&svm->heca_delayed_faults);
+        head = llist_del_all(&svm->delayed_gup);
 
         for (node = head; node; node = llist_next(node)) {
                 ddf = llist_entry(node, struct heca_delayed_fault, node);
@@ -410,7 +410,7 @@ static void dequeue_and_gup(struct heca_process *svm)
         struct heca_page_cache *dpc;
         struct llist_node *head, *node;
 
-        head = llist_del_all(&svm->heca_delayed_faults);
+        head = llist_del_all(&svm->delayed_gup);
         head = llist_nodes_reverse(head);
         for (node = head; node; node = llist_next(node)) {
                 ddf = llist_entry(node, struct heca_delayed_fault, node);
@@ -438,15 +438,15 @@ void delayed_gup_work_fn(struct work_struct *w)
 {
         struct heca_process *svm;
         svm = container_of(to_delayed_work(w), struct heca_process,
-                        heca_delayed_gup_work);
+                        delayed_gup_work);
         dequeue_and_gup(svm);
 }
 
 static inline void queue_ddf_for_delayed_gup(struct heca_delayed_fault *ddf,
                 struct heca_process *svm)
 {
-        llist_add(&ddf->node, &svm->heca_delayed_faults);
-        schedule_delayed_work(&svm->heca_delayed_gup_work, GUP_DELAY);
+        llist_add(&ddf->node, &svm->delayed_gup);
+        schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
 }
 
 static int dsm_pull_req_success(struct page *page,

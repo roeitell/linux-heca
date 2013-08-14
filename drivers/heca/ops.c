@@ -431,8 +431,8 @@ retry:
         dgup->remote_hproc = remote_svm;
         dgup->hmr = mr;
         dsm_msg_cpy(&dgup->hmsg, msg);
-        llist_add(&dgup->lnode, &local_svm->heca_deferred_gups);
-        schedule_work(&local_svm->heca_deferred_gup_work);
+        llist_add(&dgup->lnode, &local_svm->deferred_gups);
+        schedule_work(&local_svm->deferred_gup_work);
 }
 
 int process_page_claim(struct heca_connection_element *ele, struct heca_message *msg)
@@ -697,7 +697,7 @@ out_keep:
 static inline void process_deferred_gups(struct heca_process *svm)
 {
         struct heca_deferred_gup *dgup = NULL;
-        struct llist_node *llnode = llist_del_all(&svm->heca_deferred_gups);
+        struct llist_node *llnode = llist_del_all(&svm->deferred_gups);
 
         do {
                 while (llnode) {
@@ -715,7 +715,7 @@ static inline void process_deferred_gups(struct heca_process *svm)
                         /* release the element */
                         release_kmem_deferred_gup_cache_elm(dgup);
                 }
-                llnode = llist_del_all(&svm->heca_deferred_gups);
+                llnode = llist_del_all(&svm->deferred_gups);
         } while (llnode);
 }
 
@@ -723,7 +723,7 @@ void deferred_gup_work_fn(struct work_struct *w)
 {
         struct heca_process *svm;
 
-        svm = container_of(w, struct heca_process, heca_deferred_gup_work);
+        svm = container_of(w, struct heca_process, deferred_gup_work);
         process_deferred_gups(svm);
 }
 

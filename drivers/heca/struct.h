@@ -296,11 +296,11 @@ struct heca_process {
 
         struct kobject hproc_kobject;
 
-        struct llist_head heca_delayed_faults;
-        struct delayed_work heca_delayed_gup_work;
+        struct llist_head delayed_gup;
+        struct delayed_work delayed_gup_work;
 
-        struct llist_head heca_deferred_gups;
-        struct work_struct heca_deferred_gup_work;
+        struct llist_head deferred_gups;
+        struct work_struct deferred_gup_work;
 
         atomic_t refs;
 };

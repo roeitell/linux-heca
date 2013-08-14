@@ -405,11 +405,11 @@ int create_svm(struct hecaioc_hproc *svm_info)
                 seqlock_init(&new_svm->hmr_seq_lock);
                 new_svm->hmr_cache = NULL;
 
-                init_llist_head(&new_svm->heca_delayed_faults);
-                INIT_DELAYED_WORK(&new_svm->heca_delayed_gup_work,
+                init_llist_head(&new_svm->delayed_gup);
+                INIT_DELAYED_WORK(&new_svm->delayed_gup_work,
                                 delayed_gup_work_fn);
-                init_llist_head(&new_svm->heca_deferred_gups);
-                INIT_WORK(&new_svm->heca_deferred_gup_work, deferred_gup_work_fn);
+                init_llist_head(&new_svm->deferred_gups);
+                INIT_WORK(&new_svm->deferred_gup_work, deferred_gup_work_fn);
 
                 spin_lock_init(&new_svm->page_cache_spinlock);
                 spin_lock_init(&new_svm->page_readers_spinlock);
@@ -626,7 +626,7 @@ void remove_svm(u32 dsm_id, u32 svm_id)
         list_del(&svm->hproc_ptr);
         radix_tree_delete(&dsm->hprocs_tree_root, (unsigned long) svm->hproc_id);
         if (is_svm_local(svm)) {
-                cancel_delayed_work_sync(&svm->heca_delayed_gup_work);
+                cancel_delayed_work_sync(&svm->delayed_gup_work);
                 // to make sure everything is clean
                 dequeue_and_gup_cleanup(svm);
                 dsm->nb_local_hprocs--;

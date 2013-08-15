@@ -119,13 +119,13 @@ static int send_request_heca_page_pull(struct heca_process *fault_hproc,
         }
 
         /*
-         * we have to iterate all svms, and rely on tx_elms or reqs, since some
+         * we have to iterate all hprocs, and rely on tx_elms or reqs, since some
          * might have been dropped since the previous iteration.
          */
         might_sleep();
         for (i = 0; i < hprocs.num; i++) {
                 if (tx_elms[i]) {
-                        /* note that dest_id == local_svm */
+                        /* note that dest_id == local_hproc */
                         r |= heca_send_tx_e(cons[i], tx_elms[i], 0,
                                         MSG_REQ_PAGE_PULL,
                                         fault_hproc->hspace->hspace_id,
@@ -344,7 +344,7 @@ fail:
 int process_hproc_status(struct heca_connection *conn,
                 struct rx_buffer_element *rx_buf_e)
 {
-        heca_printk(KERN_DEBUG "removing svm %d",
+        heca_printk(KERN_DEBUG "removing hproc %d",
                         rx_buf_e->hmsg_buffer->src_id);
         remove_hproc(rx_buf_e->hmsg_buffer->hspace_id,
                         rx_buf_e->hmsg_buffer->src_id);
@@ -465,11 +465,11 @@ int process_page_claim(struct heca_connection *conn, struct heca_message *msg)
 
         mr = find_heca_mr(local_hproc, msg->mr_id);
         if (unlikely(!mr))
-                goto out_svm;
+                goto out_hproc;
 
         remote_proc = find_hproc(hspace, msg->src_id);
         if (unlikely(!remote_proc))
-                goto out_svm;
+                goto out_hproc;
 
         addr = msg->req_addr + mr->addr;
 
@@ -492,7 +492,7 @@ int process_page_claim(struct heca_connection *conn, struct heca_message *msg)
         }
 
         release_hproc(remote_proc);
-out_svm:
+out_hproc:
         release_hproc(local_hproc);
 out:
         /*
@@ -687,7 +687,7 @@ no_page:
                                 local_hproc->hproc_id, remote_hproc->hproc_id,
                                 mr->hmr_id, addr, msg->req_addr, msg->type);
                 defer_gup(msg, local_hproc, mr, remote_hproc, origin_conn);
-                /* we release the svms when we actually solve the gup */
+                /* we release the hprocs when we actually solve the gup */
                 goto out_keep;
         }
 
@@ -793,10 +793,10 @@ int heca_request_page_pull(struct heca_space *hspace,
          * use them anyway to free the req_queue.
          */
         for_each_valid_hproc(hprocs, i) {
-                struct heca_process *svm = find_hproc(hspace, hprocs.ids[i]);
-                int full = heca_request_queue_full(svm->connection);
+                struct heca_process *hproc = find_hproc(hspace, hprocs.ids[i]);
+                int full = heca_request_queue_full(hproc->connection);
 
-                release_hproc(svm);
+                release_hproc(hproc);
                 if (full)
                         return -ENOMEM;
         }

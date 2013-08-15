@@ -520,7 +520,7 @@ retry:
                 if (atomic_cmpxchg(&hpc->found, found, found - 1) != found)
                         goto retry;
 
-                /* -found == svm_num <-> -(found-1) == svm_num+1 */
+                /* -found == hproc_num <-> -(found-1) == hproc_num+1 */
                 if (found * -1 == hpc->hprocs.num) {
                         for (i = 0; i < hpc->hprocs.num; i++) {
                                 if (likely(hpc->pages[i]))
@@ -814,8 +814,8 @@ static int get_heca_page(struct mm_struct *mm, unsigned long addr,
                                         goto out;
 
                                 /*
-                                 * refcount for dpc:
-                                 *  +1 for every svm we send to
+                                 * refcount for hpc:
+                                 *  +1 for every hproc we send to
                                  *  +1 for the fault that comes after fetching
                                  */
                                 heca_cache_add_send(fault_hproc, mr, dsd.hprocs,
@@ -855,7 +855,7 @@ static struct heca_page_cache *convert_push_hpc(
         if (likely(push_hpc)) {
                 page = push_hpc->pages[0];
                 /*
-                 * decrease page refcount as to surrogate for all the svms that didn't
+                 * decrease page refcount as to surrogate for all the hprocs that didn't
                  * answer yet; then increase by two, as this is the correct, "found"
                  * page.
                  */
@@ -1074,7 +1074,7 @@ retry:
         if (!hpc) {
                 /*
                  * refcount for dpc:
-                 *  +1 for every svm sent to
+                 *  +1 for every hproc sent to
                  *  +1 for the current do_heca_page_fault
                  *  +1 for the final, successful do_heca_page_fault
                  */

@@ -19,7 +19,7 @@ struct heca_space *find_hspace(u32);
 void remove_hspace(struct heca_space *);
 int create_hspace(__u32);
 
-/* svm */
+/* hproc */
 inline struct heca_process *find_hproc(struct heca_space *, u32);
 inline struct heca_process *find_local_hproc_in_hspace(struct heca_space *,
                 struct mm_struct *);
@@ -40,7 +40,7 @@ int create_heca_mr(struct hecaioc_hmr *udata);
 int pushback_ps(struct hecaioc_ps *udata);
 int unmap_ps(struct hecaioc_ps *udata);
 
-/* rcm */
+/* hcm */
 int create_hcm_listener(struct heca_module_state *, unsigned long,
                 unsigned short);
 int destroy_hcm_listener(struct heca_module_state *);

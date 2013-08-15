@@ -208,7 +208,7 @@ static void heca_tx_prepare(struct heca_connection *conn,
 
         while (need_ppe && !ppe) {
                 might_sleep();
-                ppe = dsm_prepare_ppe(conn, page);
+                ppe = heca_prepare_ppe(conn, page);
                 if (likely(ppe))
                         break;
                 cond_resched();
@@ -475,12 +475,12 @@ static int heca_send_message_handler(struct heca_connection *conn,
         switch (tx_e->hmsg_buffer->type) {
         case MSG_RES_PAGE:
                 if (!pte_present(tx_e->reply_work_req->pte)) {
-                        dsm_clear_swp_entry_flag(tx_e->reply_work_req->mm,
+                        heca_clear_swp_entry_flag(tx_e->reply_work_req->mm,
                                         tx_e->reply_work_req->addr,
                                         tx_e->reply_work_req->pte,
                                         HECA_INFLIGHT_BITPOS);
                 }
-                dsm_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
+                heca_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
                 release_tx_element_reply(conn, tx_e);
                 break;
 
@@ -1336,7 +1336,7 @@ static int setup_connection(struct heca_connection *conn, int type)
                 goto err5;
         if (create_rx_buffer(conn))
                 goto err6;
-        if (dsm_init_page_pool(conn))
+        if (heca_init_page_pool(conn))
                 goto err7;
         if (create_rdma_info(conn))
                 goto err8;
@@ -1799,7 +1799,7 @@ int destroy_connection(struct heca_connection *conn)
                 rdma_destroy_id(conn->cm_id);
         }
 
-        dsm_destroy_page_pool(conn);
+        heca_destroy_page_pool(conn);
 
         erase_rb_conn(conn);
         delete_connection_sysfs_entry(conn);

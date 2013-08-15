@@ -40,13 +40,13 @@ static u64 dsm_descriptors_realloc(void)
         return sdsc_max;
 }
 
-void dsm_init_descriptors(void)
+void heca_init_descriptors(void)
 {
         mutex_init(&sdsc_lock);
         (void) dsm_descriptors_realloc();
 }
 
-void dsm_destroy_descriptors(void)
+void heca_destroy_descriptors(void)
 {
         int i;
 
@@ -104,7 +104,7 @@ static inline u32 dsm_entry_to_flags(swp_entry_t entry)
  * descriptors, or walk the page table when a descriptor is dead (on remove_svm)
  * or solve otherwise.
  */
-u32 dsm_get_descriptor(u32 dsm_id, u32 *svm_ids)
+u32 heca_get_descriptor(u32 dsm_id, u32 *svm_ids)
 {
         u32 i, j;
 
@@ -139,7 +139,7 @@ out:
         return i;
 }
 
-inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
+inline pte_t heca_descriptor_to_pte(u32 dsc, u32 flags)
 {
         u64 val = dsc;
         swp_entry_t swp_e = val_to_dsm_entry((val << 24) | flags);
@@ -147,14 +147,14 @@ inline pte_t dsm_descriptor_to_pte(u32 dsc, u32 flags)
         return swp_entry_to_pte(swp_e);
 }
 
-inline struct heca_process_list dsm_descriptor_to_svms(u32 dsc)
+inline struct heca_process_list heca_descriptor_to_hprocs(u32 dsc)
 {
         BUG_ON(dsc < SDSC_MIN || dsc >= sdsc_max);
         return rcu_dereference(sdsc)[dsc];
 }
 
 /* arrive with dsm mutex held! */
-void remove_svm_from_descriptors(struct heca_process *svm)
+void remove_hproc_from_descriptors(struct heca_process *svm)
 {
         int i;
 
@@ -163,7 +163,7 @@ void remove_svm_from_descriptors(struct heca_process *svm)
                 int j;
 
                 rcu_read_lock();
-                svms = dsm_descriptor_to_svms(i);
+                svms = heca_descriptor_to_hprocs(i);
                 rcu_read_unlock();
 
                 /*
@@ -181,7 +181,7 @@ void remove_svm_from_descriptors(struct heca_process *svm)
         }
 }
 
-int swp_entry_to_dsm_data(swp_entry_t entry, struct heca_swp_data *dsd)
+int swp_entry_to_heca_data(swp_entry_t entry, struct heca_swp_data *dsd)
 {
         u32 desc = dsm_entry_to_desc(entry);
         int ret = 0;
@@ -191,7 +191,7 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct heca_swp_data *dsd)
         dsd->flags = dsm_entry_to_flags(entry);
 
         rcu_read_lock();
-        dsd->hprocs = dsm_descriptor_to_svms(desc);
+        dsd->hprocs = heca_descriptor_to_hprocs(desc);
         rcu_read_unlock();
 
         if (unlikely(!dsd->hprocs.num || !dsd->hprocs.hspace_id))
@@ -200,14 +200,14 @@ int swp_entry_to_dsm_data(swp_entry_t entry, struct heca_swp_data *dsd)
         return ret;
 }
 
-int dsm_swp_entry_same(swp_entry_t entry, swp_entry_t entry2)
+int heca_swp_entry_same(swp_entry_t entry, swp_entry_t entry2)
 {
         u32 desc = dsm_entry_to_desc(entry);
         u32 desc2 = dsm_entry_to_desc(entry2);
         return desc == desc2;
 }
 
-void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
+void heca_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
                 pte_t orig_pte, int pos)
 {
         struct heca_pte_data pd;
@@ -232,7 +232,7 @@ void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
         flags = dsm_entry_to_flags(entry);
 
         clear_bit(pos, (volatile long unsigned int *) &flags);
-        set_pte_at(mm, addr, pd.pte, dsm_descriptor_to_pte(desc, flags));
+        set_pte_at(mm, addr, pd.pte, heca_descriptor_to_pte(desc, flags));
 
 out:
         pte_unmap_unlock(pd.pte, ptl);
@@ -250,7 +250,7 @@ static inline void init_dsm_cache_elm(void *obj)
                 dpc->pages[i] = NULL;
 }
 
-void init_dsm_cache_kmem(void)
+void init_heca_cache_kmem(void)
 {
         dsm_cache_kmem = kmem_cache_create("dsm_page_cache",
                         sizeof(struct heca_page_cache), 0,
@@ -258,13 +258,13 @@ void init_dsm_cache_kmem(void)
                         init_dsm_cache_elm);
 }
 
-void destroy_dsm_cache_kmem(void)
+void destroy_heca_cache_kmem(void)
 {
         kmem_cache_destroy(dsm_cache_kmem);
 }
 
 /* assuming we hold the svm, we inc its refcount again for the dpc */
-struct heca_page_cache *dsm_alloc_dpc(struct heca_process *svm,
+struct heca_page_cache *heca_alloc_hpc(struct heca_process *svm,
                 unsigned long addr, struct heca_process_list svms, int nproc, int tag)
 {
         struct heca_page_cache *dpc = kmem_cache_alloc(dsm_cache_kmem, GFP_ATOMIC);
@@ -285,7 +285,7 @@ out:
         return dpc;
 }
 
-void dsm_dealloc_dpc(struct heca_page_cache **dpc)
+void heca_dealloc_hpc(struct heca_page_cache **dpc)
 {
         int i;
 
@@ -296,7 +296,7 @@ void dsm_dealloc_dpc(struct heca_page_cache **dpc)
         *dpc = NULL;
 }
 
-struct heca_page_cache *dsm_cache_get(struct heca_process *svm,
+struct heca_page_cache *heca_cache_get(struct heca_process *svm,
                 unsigned long addr)
 {
         void **ppc;
@@ -326,7 +326,7 @@ out:
 }
 
 
-struct heca_page_cache *dsm_cache_get_hold(struct heca_process *svm,
+struct heca_page_cache *heca_cache_get_hold(struct heca_process *svm,
                 unsigned long addr)
 {
         void **ppc;
@@ -366,7 +366,7 @@ out:
         return dpc;
 }
 
-int dsm_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
+int heca_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
                 int tag, struct heca_page_cache **dpc)
 {
         struct heca_process_list svms;
@@ -376,7 +376,7 @@ int dsm_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
         svms.ids = NULL;
 
         do {
-                *dpc = dsm_alloc_dpc(svm, addr, svms, nproc, tag);
+                *dpc = heca_alloc_hpc(svm, addr, svms, nproc, tag);
                 if (unlikely(!*dpc))
                         return -ENOMEM;
 
@@ -392,19 +392,19 @@ int dsm_cache_add(struct heca_process *svm, unsigned long addr, int nproc,
                 if (likely(!r))
                         return 0;
 
-                dsm_dealloc_dpc(dpc);
-                *dpc = dsm_cache_get(svm, addr);
+                heca_dealloc_hpc(dpc);
+                *dpc = heca_cache_get(svm, addr);
                 if (unlikely(*dpc)) /* do not dealloc! */
                         return -EEXIST;
 
         } while (r != -ENOMEM);
 
         if (*dpc)
-                dsm_dealloc_dpc(dpc);
+                heca_dealloc_hpc(dpc);
         return r;
 }
 
-struct heca_page_cache *dsm_cache_release(struct heca_process *svm,
+struct heca_page_cache *heca_cache_release(struct heca_process *svm,
                 unsigned long addr)
 {
         struct heca_page_cache *dpc;
@@ -507,7 +507,7 @@ static void dsm_page_pool_refill(struct work_struct *work)
 }
 
 /* svms erased, cm_id destroyed, work cancelled => no race conditions */
-void dsm_destroy_page_pool(struct heca_connection *ele)
+void heca_destroy_page_pool(struct heca_connection *ele)
 {
         int i;
         struct heca_page_pool_element *ppe;
@@ -532,7 +532,7 @@ void dsm_destroy_page_pool(struct heca_connection *ele)
         }
 }
 
-int dsm_init_page_pool(struct heca_connection *ele)
+int heca_init_page_pool(struct heca_connection *ele)
 {
         int i;
 
@@ -572,7 +572,7 @@ nomem:
         return -EFAULT;
 }
 
-struct heca_page_pool_element *dsm_fetch_ready_ppe(struct heca_connection *ele)
+struct heca_page_pool_element *heca_fetch_ready_ppe(struct heca_connection *ele)
 {
         struct heca_space_page_pool *pp;
         struct heca_page_pool_element *ppe = NULL;
@@ -588,7 +588,7 @@ struct heca_page_pool_element *dsm_fetch_ready_ppe(struct heca_connection *ele)
         return ppe;
 }
 
-struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection *ele,
+struct heca_page_pool_element *heca_prepare_ppe(struct heca_connection *ele,
                 struct page *page)
 {
         struct heca_page_pool_element *ppe;
@@ -604,7 +604,7 @@ err:
         return NULL;
 }
 
-void dsm_ppe_clear_release(struct heca_connection *ele, struct heca_page_pool_element **ppe)
+void heca_ppe_clear_release(struct heca_connection *ele, struct heca_page_pool_element **ppe)
 {
         if ((*ppe)->page_buf) {
                 ib_dma_unmap_page(ele->cm_id->device, (u64) (*ppe)->page_buf,
@@ -630,7 +630,7 @@ static inline void init_dsm_reader_elm(void *obj)
         ((struct heca_page_reader *) obj)->next = NULL;
 }
 
-void init_dsm_reader_kmem(void)
+void init_heca_reader_kmem(void)
 {
         dsm_reader_kmem = kmem_cache_create("dsm_reader_cache",
                         sizeof(struct heca_page_reader), 0, SLAB_TEMPORARY,
@@ -642,12 +642,12 @@ void destroy_dsm_reader_kmem(void)
         kmem_cache_destroy(dsm_reader_kmem);
 }
 
-inline void dsm_free_page_reader(struct heca_page_reader *dpr)
+inline void heca_free_page_reader(struct heca_page_reader *dpr)
 {
         kmem_cache_free(dsm_reader_kmem, dpr);
 }
 
-struct heca_page_reader *dsm_delete_readers(struct heca_process *svm,
+struct heca_page_reader *heca_delete_readers(struct heca_process *svm,
                 unsigned long addr)
 {
         struct heca_page_reader *dpr;
@@ -659,7 +659,7 @@ struct heca_page_reader *dsm_delete_readers(struct heca_process *svm,
         return dpr;
 }
 
-struct heca_page_reader *dsm_lookup_readers(struct heca_process *svm,
+struct heca_page_reader *heca_lookup_readers(struct heca_process *svm,
                 unsigned long addr)
 {
         struct heca_page_reader *dpr;
@@ -688,7 +688,7 @@ out:
         return dpr;
 }
 
-int dsm_add_reader(struct heca_process *svm, unsigned long addr,
+int heca_add_reader(struct heca_process *svm, unsigned long addr,
                 u32 svm_id)
 {
         int r;
@@ -702,7 +702,7 @@ retry:
         }
 
         spin_lock_irq(&svm->page_readers_spinlock);
-        head = dsm_lookup_readers(svm, addr);
+        head = heca_lookup_readers(svm, addr);
 
         /* already exists? */
         for (dpr = head; dpr; dpr = dpr->next) {
@@ -759,7 +759,7 @@ static inline u32 node_to_maintainer_id(void *node)
         return (u32)(((unsigned long) node) >> RADIX_TREE_EXCEPTIONAL_SHIFT);
 }
 
-int dsm_flag_page_read(struct heca_process *svm, unsigned long addr,
+int heca_flag_page_read(struct heca_process *svm, unsigned long addr,
                 u32 svm_id)
 {
         int r = radix_tree_preload(GFP_ATOMIC);
@@ -776,7 +776,7 @@ out:
         return r;
 }
 
-u32 dsm_lookup_page_read(struct heca_process *svm, unsigned long addr)
+u32 heca_lookup_page_read(struct heca_process *svm, unsigned long addr)
 {
         u32 *node, svm_id = 0;
         void **pval;
@@ -806,7 +806,7 @@ out:
         return svm_id;
 }
 
-u32 dsm_extract_page_read(struct heca_process *svm, unsigned long addr)
+u32 heca_extract_page_read(struct heca_process *svm, unsigned long addr)
 {
         u32 *node, svm_id = 0;
 

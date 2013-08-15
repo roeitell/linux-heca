@@ -289,7 +289,7 @@ int process_query_info(struct tx_buffer_element *tx_e)
                 goto out;
 
         addr = msg->req_addr + mr->addr;
-        hpc = dsm_cache_get_hold(hproc, addr);
+        hpc = heca_cache_get_hold(hproc, addr);
         if (likely(hpc)) {
                 if (likely(hpc == tx_e->wrk_req->hpc))
                         hpc->redirect_hproc_id = msg->dest_id;
@@ -364,7 +364,7 @@ int process_page_redirect(struct heca_connection *conn,
         struct heca_process_list hprocs;
 
         tx_e->wrk_req->dst_addr->mem_page = NULL;
-        dsm_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
+        heca_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
         release_tx_element(conn, tx_e);
 
         fault_mr = find_heca_mr(hpc->hproc, tx_e->hmsg_buffer->mr_id);
@@ -372,7 +372,7 @@ int process_page_redirect(struct heca_connection *conn,
                 goto out;
 
         rcu_read_lock();
-        hprocs = dsm_descriptor_to_svms(fault_mr->descriptor);
+        hprocs = heca_descriptor_to_hprocs(fault_mr->descriptor);
         rcu_read_unlock();
 
         mr_owner = find_any_hproc(hpc->hproc->hspace, hprocs);
@@ -412,7 +412,7 @@ int process_page_response(struct heca_connection *conn,
                 struct tx_buffer_element *tx_e)
 {
         if (!tx_e->callback.func || tx_e->callback.func(tx_e))
-                dsm_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
+                heca_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
         return 0;
 }
 
@@ -484,8 +484,8 @@ int process_page_claim(struct heca_connection *conn, struct heca_message *msg)
          * read request until it finishes.
          */
         if (r == 1) {
-                if (dsm_lookup_page_read(local_hproc, addr))
-                        BUG_ON(!dsm_extract_page_read(local_hproc, addr));
+                if (heca_lookup_page_read(local_hproc, addr))
+                        BUG_ON(!heca_extract_page_read(local_hproc, addr));
                 else
                         heca_invalidate_readers(local_hproc, addr,
                                         remote_proc->hproc_id);
@@ -534,7 +534,7 @@ static int heca_retry_claim(struct heca_message *msg, struct page *page)
                 goto fail;
 
         rcu_read_lock();
-        hprocs = dsm_descriptor_to_svms(mr->descriptor);
+        hprocs = heca_descriptor_to_hprocs(mr->descriptor);
         rcu_read_unlock();
 
         owner = find_any_hproc(hspace, hprocs);
@@ -550,7 +550,7 @@ static int heca_retry_claim(struct heca_message *msg, struct page *page)
          * this only happens when write-faulting on a page we are not
          * maintaining, in which case a dpc will be in-place until we finish.
          */
-        hpc = dsm_cache_get(hproc, msg->req_addr);
+        hpc = heca_cache_get(hproc, msg->req_addr);
         BUG_ON(!hpc);
 
         heca_request_query(hproc, owner, mr, msg->req_addr, hpc);
@@ -656,7 +656,7 @@ retry:
                 goto no_page;
 
         BUG_ON(!page);
-        ppe = dsm_prepare_ppe(conn, page);
+        ppe = heca_prepare_ppe(conn, page);
         if (!ppe)
                 goto no_page;
 
@@ -784,7 +784,7 @@ int heca_request_page_pull(struct heca_space *hspace,
         int ret = 0, i;
 
         rcu_read_lock();
-        hprocs = dsm_descriptor_to_svms(mr->descriptor);
+        hprocs = heca_descriptor_to_hprocs(mr->descriptor);
         rcu_read_unlock();
 
         /*

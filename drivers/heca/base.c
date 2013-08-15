@@ -441,7 +441,7 @@ int create_hproc(struct hecaioc_hproc *hproc_info)
         /* assign descriptor for remote hproc */
         if (!is_hproc_local(new_hproc)) {
                 u32 hproc_ids[] = {new_hproc->hproc_id, 0};
-                new_hproc->descriptor = dsm_get_descriptor(hspace->hspace_id,
+                new_hproc->descriptor = heca_get_descriptor(hspace->hspace_id,
                                 hproc_ids);
         }
 
@@ -576,7 +576,7 @@ static void release_hproc_tx_elements(struct heca_process *hproc,
                         heca_pull_req_failure(dpc);
                         tx_e->wrk_req->dst_addr->mem_page = NULL;
                         heca_release_pull_hpc(&dpc);
-                        dsm_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
+                        heca_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
 
                         /* rdma processing already finished, we have to release ourselves */
                         smp_mb();
@@ -644,7 +644,7 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
                                 (unsigned long) hproc->mm);
         }
 
-        remove_svm_from_descriptors(hproc);
+        remove_hproc_from_descriptors(hproc);
 
         /*
          * we removed the svm from all descriptors and trees, so we won't make any
@@ -920,7 +920,7 @@ int create_heca_mr(struct hecaioc_hmr *udata)
                 ret = -EFAULT;
                 goto out_free;
         }
-        mr->descriptor = dsm_get_descriptor(hspace->hspace_id, udata->hproc_ids);
+        mr->descriptor = heca_get_descriptor(hspace->hspace_id, udata->hproc_ids);
         if (!mr->descriptor) {
                 heca_printk(KERN_ERR "can't find MR descriptor for hproc_ids");
                 ret = -EFAULT;
@@ -1041,20 +1041,20 @@ int init_hcm(void)
 {
         init_kmem_heca_request_cache();
         init_kmem_deferred_gup_cache();
-        init_dsm_cache_kmem();
-        init_dsm_reader_kmem();
+        init_heca_cache_kmem();
+        init_heca_reader_kmem();
         init_heca_prefetch_cache_kmem();
-        dsm_init_descriptors();
+        heca_init_descriptors();
         return 0;
 }
 
 int fini_hcm(void)
 {
-        destroy_dsm_cache_kmem();
+        destroy_heca_cache_kmem();
         destroy_heca_prefetch_cache_kmem();
         destroy_kmem_heca_request_cache();
         destroy_kmem_deferred_gup_cache();
-        dsm_destroy_descriptors();
+        heca_destroy_descriptors();
         return 0;
 }
 

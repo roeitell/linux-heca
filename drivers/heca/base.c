@@ -1049,96 +1049,96 @@ int fini_rcm(void)
         return 0;
 }
 
-int destroy_rcm_listener(struct heca_module_state *dsm_state);
+int destroy_rcm_listener(struct heca_module_state *heca_state);
 
-int create_rcm_listener(struct heca_module_state *dsm_state, unsigned long ip,
+int create_rcm_listener(struct heca_module_state *heca_state, unsigned long ip,
                 unsigned short port)
 {
         int ret = 0;
-        struct heca_connections_manager *rcm = kzalloc(sizeof(struct heca_connections_manager), GFP_KERNEL);
+        struct heca_connections_manager *hcm = kzalloc(sizeof(struct heca_connections_manager), GFP_KERNEL);
 
-        if (!rcm)
+        if (!hcm)
                 return -ENOMEM;
 
-        mutex_init(&rcm->hcm_mutex);
-        seqlock_init(&rcm->connections_lock);
-        rcm->node_ip = ip;
-        rcm->connections_rb_tree_root = RB_ROOT;
+        mutex_init(&hcm->hcm_mutex);
+        seqlock_init(&hcm->connections_lock);
+        hcm->node_ip = ip;
+        hcm->connections_rb_tree_root = RB_ROOT;
 
-        rcm->cm_id = rdma_create_id(server_event_handler, rcm, RDMA_PS_TCP,
+        hcm->cm_id = rdma_create_id(server_event_handler, hcm, RDMA_PS_TCP,
                         IB_QPT_RC);
-        if (IS_ERR(rcm->cm_id)) {
-                rcm->cm_id = NULL;
-                ret = PTR_ERR(rcm->cm_id);
+        if (IS_ERR(hcm->cm_id)) {
+                hcm->cm_id = NULL;
+                ret = PTR_ERR(hcm->cm_id);
                 heca_printk(KERN_ERR "Failed rdma_create_id: %d", ret);
                 goto failed;
         }
 
-        rcm->sin.sin_family = AF_INET;
-        rcm->sin.sin_addr.s_addr = rcm->node_ip;
-        rcm->sin.sin_port = port;
+        hcm->sin.sin_family = AF_INET;
+        hcm->sin.sin_addr.s_addr = hcm->node_ip;
+        hcm->sin.sin_port = port;
 
-        ret = rdma_bind_addr(rcm->cm_id, (struct sockaddr *)&rcm->sin);
+        ret = rdma_bind_addr(hcm->cm_id, (struct sockaddr *)&hcm->sin);
         if (ret) {
                 heca_printk(KERN_ERR "Failed rdma_bind_addr: %d", ret);
                 goto failed;
         }
 
-        rcm->pd = ib_alloc_pd(rcm->cm_id->device);
-        if (IS_ERR(rcm->pd)) {
-                ret = PTR_ERR(rcm->pd);
-                rcm->pd = NULL;
+        hcm->pd = ib_alloc_pd(hcm->cm_id->device);
+        if (IS_ERR(hcm->pd)) {
+                ret = PTR_ERR(hcm->pd);
+                hcm->pd = NULL;
                 heca_printk(KERN_ERR "Failed id_alloc_pd: %d", ret);
                 goto failed;
         }
 
-        rcm->listen_cq = ib_create_cq(rcm->cm_id->device, listener_cq_handle,
-                        NULL, rcm, 2, 0);
-        if (IS_ERR(rcm->listen_cq)) {
-                ret = PTR_ERR(rcm->listen_cq);
-                rcm->listen_cq = NULL;
+        hcm->listen_cq = ib_create_cq(hcm->cm_id->device, listener_cq_handle,
+                        NULL, hcm, 2, 0);
+        if (IS_ERR(hcm->listen_cq)) {
+                ret = PTR_ERR(hcm->listen_cq);
+                hcm->listen_cq = NULL;
                 heca_printk(KERN_ERR "Failed ib_create_cq: %d", ret);
                 goto failed;
         }
 
-        if ((ret = ib_req_notify_cq(rcm->listen_cq, IB_CQ_NEXT_COMP))) {
+        if ((ret = ib_req_notify_cq(hcm->listen_cq, IB_CQ_NEXT_COMP))) {
                 heca_printk(KERN_ERR "Failed ib_req_notify_cq: %d", ret);
                 goto failed;
         }
 
-        rcm->mr = ib_get_dma_mr(rcm->pd, IB_ACCESS_LOCAL_WRITE |
+        hcm->mr = ib_get_dma_mr(hcm->pd, IB_ACCESS_LOCAL_WRITE |
                         IB_ACCESS_REMOTE_READ | IB_ACCESS_REMOTE_WRITE);
-        if (IS_ERR(rcm->mr)) {
-                ret = PTR_ERR(rcm->mr);
-                rcm->mr = NULL;
+        if (IS_ERR(hcm->mr)) {
+                ret = PTR_ERR(hcm->mr);
+                hcm->mr = NULL;
                 heca_printk(KERN_ERR "Failed ib_get_dma_mr: %d", ret);
                 goto failed;
         }
 
-        dsm_state->hcm = rcm;
+        heca_state->hcm = hcm;
 
-        ret = rdma_listen(rcm->cm_id, 2);
+        ret = rdma_listen(hcm->cm_id, 2);
         if (ret)
                 heca_printk(KERN_ERR "Failed rdma_listen: %d", ret);
         return 0;
 
 failed:
-        destroy_rcm_listener(dsm_state);
+        destroy_rcm_listener(heca_state);
         return ret;
 }
 
-static int rcm_disconnect(struct heca_connections_manager *rcm)
+static int rcm_disconnect(struct heca_connections_manager *hcm)
 {
-        struct rb_root *root = &rcm->connections_rb_tree_root;
+        struct rb_root *root = &hcm->connections_rb_tree_root;
         struct rb_node *node = rb_first(root);
-        struct heca_connection *ele;
+        struct heca_connection *conn;
 
         while (node) {
-                ele = rb_entry(node, struct heca_connection, rb_node);
+                conn = rb_entry(node, struct heca_connection, rb_node);
                 node = rb_next(node);
-                if (atomic_cmpxchg(&ele->alive, 1, 0)) {
-                        rdma_disconnect(ele->cm_id);
-                        destroy_connection(ele);
+                if (atomic_cmpxchg(&conn->alive, 1, 0)) {
+                        rdma_disconnect(conn->cm_id);
+                        destroy_connection(conn);
                 }
         }
 
@@ -1148,53 +1148,53 @@ static int rcm_disconnect(struct heca_connections_manager *rcm)
         return 0;
 }
 
-int destroy_rcm_listener(struct heca_module_state *dsm_state)
+int destroy_rcm_listener(struct heca_module_state *heca_state)
 {
         int rc = 0;
-        struct heca_connections_manager *rcm = dsm_state->hcm;
+        struct heca_connections_manager *hcm = heca_state->hcm;
 
         heca_printk(KERN_DEBUG "<enter>");
 
-        if (!rcm)
+        if (!hcm)
                 goto done;
 
-        if (!list_empty(&dsm_state->hspaces_list)) {
-                heca_printk(KERN_INFO "can't delete rcm - dsms exist");
+        if (!list_empty(&heca_state->hspaces_list)) {
+                heca_printk(KERN_INFO "can't delete hcm - hspaces exist");
                 rc = -EBUSY;
         }
 
-        rcm_disconnect(rcm);
+        rcm_disconnect(hcm);
 
-        if (!rcm->cm_id)
+        if (!hcm->cm_id)
                 goto destroy;
 
-        if (rcm->cm_id->qp) {
-                ib_destroy_qp(rcm->cm_id->qp);
-                rcm->cm_id->qp = NULL;
+        if (hcm->cm_id->qp) {
+                ib_destroy_qp(hcm->cm_id->qp);
+                hcm->cm_id->qp = NULL;
         }
 
-        if (rcm->listen_cq) {
-                ib_destroy_cq(rcm->listen_cq);
-                rcm->listen_cq = NULL;
+        if (hcm->listen_cq) {
+                ib_destroy_cq(hcm->listen_cq);
+                hcm->listen_cq = NULL;
         }
 
-        if (rcm->mr) {
-                ib_dereg_mr(rcm->mr);
-                rcm->mr = NULL;
+        if (hcm->mr) {
+                ib_dereg_mr(hcm->mr);
+                hcm->mr = NULL;
         }
 
-        if (rcm->pd) {
-                ib_dealloc_pd(rcm->pd);
-                rcm->pd = NULL;
+        if (hcm->pd) {
+                ib_dealloc_pd(hcm->pd);
+                hcm->pd = NULL;
         }
 
-        rdma_destroy_id(rcm->cm_id);
-        rcm->cm_id = NULL;
+        rdma_destroy_id(hcm->cm_id);
+        hcm->cm_id = NULL;
 
 destroy:
-        mutex_destroy(&rcm->hcm_mutex);
-        kfree(rcm);
-        dsm_state->hcm = NULL;
+        mutex_destroy(&hcm->hcm_mutex);
+        kfree(hcm);
+        heca_state->hcm = NULL;
 
 done:
         heca_printk(KERN_DEBUG "<exit> %d", rc);

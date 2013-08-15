@@ -21,15 +21,15 @@
  */
 struct heca_connection *search_rb_conn(int node_ip)
 {
-        struct heca_connections_manager *rcm = get_dsm_module_state()->hcm;
+        struct heca_connections_manager *hcm = get_dsm_module_state()->hcm;
         struct rb_root *root;
         struct rb_node *node;
         struct heca_connection *this = 0;
         unsigned long seq;
 
         do {
-                seq = read_seqbegin(&rcm->connections_lock);
-                root = &rcm->connections_rb_tree_root;
+                seq = read_seqbegin(&hcm->connections_lock);
+                root = &hcm->connections_rb_tree_root;
                 for (node = root->rb_node; node; this = 0) {
                         this = rb_entry(node, struct heca_connection, rb_node);
 
@@ -40,7 +40,7 @@ struct heca_connection *search_rb_conn(int node_ip)
                         else
                                 break;
                 }
-        } while (read_seqretry(&rcm->connections_lock, seq));
+        } while (read_seqretry(&hcm->connections_lock, seq));
 
         return this;
 }

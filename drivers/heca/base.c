@@ -129,7 +129,7 @@ void remove_hspace(struct heca_space *hspace)
         mutex_unlock(&heca_state->heca_state_mutex);
         synchronize_rcu();
 
-        delete_dsm_sysfs_entry(&hspace->hspace_kobject);
+        delete_hspace_sysfs_entry(&hspace->hspace_kobject);
 
         mutex_lock(&heca_state->heca_state_mutex);
         kfree(hspace);
@@ -193,7 +193,7 @@ int create_hspace(__u32 hspace_id)
                 goto failed;
         }
 
-        r = create_dsm_sysfs_entry(new_hspace, heca_state);
+        r = create_hspace_sysfs_entry(new_hspace, heca_state);
         if (r) {
                 heca_printk("create_dsm_sysfs_entry: failed %d", r);
                 goto err_delete;
@@ -427,7 +427,7 @@ int create_hproc(struct hecaioc_hproc *hproc_info)
                 seqlock_init(&new_hproc->push_cache_lock);
         }
 
-        r = create_svm_sysfs_entry(new_hproc);
+        r = create_hproc_sysfs_entry(new_hproc);
         if (r) {
                 heca_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
                 goto out;
@@ -479,7 +479,7 @@ inline void release_hproc(struct heca_process *hproc)
         atomic_dec(&hproc->refs);
         if (atomic_cmpxchg(&hproc->refs, 1, 0) == 1) {
                 trace_free_svm(hproc->hproc_id);
-                delete_svm_sysfs_entry(&hproc->hproc_kobject);
+                delete_hproc_sysfs_entry(&hproc->hproc_kobject);
                 synchronize_rcu();
                 kfree(hproc);
         }

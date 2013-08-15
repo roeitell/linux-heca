@@ -140,13 +140,13 @@ static struct kobj_type ktype_svm_instance = {
         .default_attrs = (struct attribute **) svm_instance_attr,
 };
 
-void delete_svm_sysfs_entry(struct kobject *obj)
+void delete_hproc_sysfs_entry(struct kobject *obj)
 {
         kobject_put(obj);
         kobject_del(obj);
 }
 
-int create_svm_sysfs_entry(struct heca_process *svm)
+int create_hproc_sysfs_entry(struct heca_process *svm)
 {
         struct kobject *kobj = &svm->hproc_kobject;
         int r;
@@ -299,13 +299,13 @@ static struct kobj_type ktype_dsm_instance = {
         .default_attrs = (struct attribute **) dsm_instance_attr,
 };
 
-void delete_dsm_sysfs_entry(struct kobject *obj)
+void delete_hspace_sysfs_entry(struct kobject *obj)
 {
         kobject_put(obj);
         kobject_del(obj);
 }
 
-int create_dsm_sysfs_entry(struct heca_space *dsm,
+int create_hspace_sysfs_entry(struct heca_space *dsm,
                 struct heca_module_state *dsm_state) {
         return kobject_init_and_add(&dsm->hspace_kobject, &ktype_dsm_instance,
                         dsm_state->hspaces_kobjects.domains_kobject,

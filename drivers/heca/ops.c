@@ -167,7 +167,7 @@ static int dsm_request_query(struct heca_process *svm,
         return dsm_send_msg(owner->connection, svm->hspace->hspace_id, mr->hmr_id,
                         svm->hproc_id, owner->hproc_id, shared_addr + mr->addr,
                         shared_addr, NULL, MSG_REQ_QUERY,
-                        dsm_process_query_info, dpc, NULL, NULL, 0);
+                        process_query_info, dpc, NULL, NULL, 0);
 }
 
 /*
@@ -176,7 +176,7 @@ static int dsm_request_query(struct heca_process *svm,
  * a page will actually be unmapped. without the flag, we will be content with
  * only changing the pte on the other side to point to us.
  */
-int dsm_claim_page(struct heca_process *fault_svm,
+int heca_claim_page(struct heca_process *fault_svm,
                 struct heca_process *remote_svm,
                 struct heca_memory_region *fault_mr, unsigned long addr,
                 struct page *page, int only_unmap)
@@ -193,7 +193,7 @@ int dsm_claim_page(struct heca_process *fault_svm,
                         NULL, NULL, NULL, NULL, 0);
 }
 
-int request_dsm_page(struct page *page, struct heca_process *remote_svm,
+int heca_request_page(struct page *page, struct heca_process *remote_svm,
                 struct heca_process *fault_svm,
                 struct heca_memory_region *fault_mr, unsigned long addr,
                 int (*func)(struct tx_buffer_element *), int tag,
@@ -226,7 +226,7 @@ int request_dsm_page(struct page *page, struct heca_process *remote_svm,
                         NULL, 1);
 }
 
-int dsm_process_request_query(struct heca_connection *ele, struct rx_buffer_element *rx_e)
+int process_request_query(struct heca_connection *ele, struct rx_buffer_element *rx_e)
 {
         struct heca_message *msg = rx_e->hmsg_buffer;
         struct heca_space *dsm;
@@ -260,7 +260,7 @@ fail:
         return r;
 }
 
-int dsm_process_query_info(struct tx_buffer_element *tx_e)
+int process_query_info(struct tx_buffer_element *tx_e)
 {
         struct heca_message *msg = tx_e->hmsg_buffer;
         struct heca_space *dsm;
@@ -334,7 +334,7 @@ fail:
         return send_svm_status_update(ele, msg);
 }
 
-int process_svm_status(struct heca_connection *ele, struct rx_buffer_element *rx_buf_e)
+int process_hproc_status(struct heca_connection *ele, struct rx_buffer_element *rx_buf_e)
 {
         heca_printk(KERN_DEBUG "removing svm %d", rx_buf_e->hmsg_buffer->src_id);
         remove_hproc(rx_buf_e->hmsg_buffer->dsm_id, rx_buf_e->hmsg_buffer->src_id);
@@ -386,7 +386,7 @@ int process_page_redirect(struct heca_connection *ele, struct tx_buffer_element 
         trace_redirect(dpc->hproc->hspace->hspace_id, dpc->hproc->hproc_id,
                         remote_svm->hproc_id, fault_mr->hmr_id,
                         req_addr + fault_mr->addr, req_addr, dpc->tag);
-        ret = request_dsm_page(page, remote_svm, dpc->hproc, fault_mr, req_addr,
+        ret = heca_request_page(page, remote_svm, dpc->hproc, fault_mr, req_addr,
                         func, dpc->tag, dpc, NULL);
         release_hproc(remote_svm);
 
@@ -552,7 +552,7 @@ static int dsm_retry_claim(struct heca_message *msg, struct page *page)
         if (unlikely(!remote_svm))
                 goto fail;
 
-        dsm_claim_page(svm, remote_svm, mr, msg->req_addr, page, 1);
+        heca_claim_page(svm, remote_svm, mr, msg->req_addr, page, 1);
         release_hproc(svm);
         return 0;
 
@@ -757,7 +757,7 @@ fail:
         return -EFAULT;
 }
 
-int dsm_request_page_pull(struct heca_space *dsm, struct heca_process *fault_svm,
+int heca_request_page_pull(struct heca_space *dsm, struct heca_process *fault_svm,
                 struct page *page, unsigned long addr, struct mm_struct *mm,
                 struct heca_memory_region *mr)
 {

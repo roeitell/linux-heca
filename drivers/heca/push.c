@@ -730,7 +730,7 @@ void dsm_invalidate_readers(struct heca_process *svm, unsigned long addr,
                         if (likely(remote_svm)) {
                                 mr = search_heca_mr_by_addr(svm, addr);
                                 if (likely(mr))
-                                        dsm_claim_page(svm, remote_svm, mr,
+                                        heca_claim_page(svm, remote_svm, mr,
                                                         addr, NULL, 0);
                                 release_hproc(remote_svm);
                         }
@@ -1049,7 +1049,7 @@ int push_back_if_remote_dsm_page(struct page *page)
                                 page, vma, mr);
                 if (discarded < 0) {
                         if (discarded == -EEXIST) {
-                                dsm_request_page_pull(svm->hspace, svm, page,
+                                heca_request_page_pull(svm->hspace, svm, page,
                                                 address, vma->vm_mm, mr);
                         }
                         if (unlikely(PageSwapCache(page)))

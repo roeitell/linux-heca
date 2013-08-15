@@ -428,7 +428,7 @@ static int heca_recv_message_handler(struct heca_connection *conn,
                 ack_msg(conn, rx_e->hmsg_buffer, MSG_RES_ACK);
                 break;
         case MSG_RES_SVM_FAIL:
-                process_svm_status(conn, rx_e);
+                process_hproc_status(conn, rx_e);
                 break;
         case MSG_RES_ACK:
         case MSG_RES_ACK_FAIL:
@@ -442,14 +442,14 @@ static int heca_recv_message_handler(struct heca_connection *conn,
                 handle_tx_element(conn, tx_e, NULL);
                 break;
         case MSG_REQ_QUERY:
-                dsm_process_request_query(conn, rx_e);
+                process_request_query(conn, rx_e);
                 break;
         case MSG_RES_QUERY:
                 BUG_ON(rx_e->hmsg_buffer->offset < 0 ||
                                 rx_e->hmsg_buffer->offset >=
                                 conn->tx_buffer.len);
                 tx_e = &conn->tx_buffer.tx_buf[rx_e->hmsg_buffer->offset];
-                dsm_process_query_info(tx_e);
+                process_query_info(tx_e);
                 handle_tx_element(conn, tx_e, NULL);
                 break;
         default:

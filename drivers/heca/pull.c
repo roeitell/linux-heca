@@ -571,7 +571,7 @@ static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
                         remote_svm->hproc_id, fault_mr->hmr_id, addr,
                         addr - fault_mr->addr, tag);
 
-        request_dsm_page(page, remote_svm, fault_svm, fault_mr, addr,
+        heca_request_page(page, remote_svm, fault_svm, fault_mr, addr,
                         dsm_pull_req_complete, tag, dpc, ppe);
 
 out:
@@ -619,7 +619,7 @@ static struct heca_page_cache *dsm_cache_add_pushed(
                                 remote_svm = find_hproc(fault_svm->hspace,
                                                 svms.ids[i]);
                                 if (likely(remote_svm)) {
-                                        dsm_claim_page(fault_svm, remote_svm,
+                                        heca_claim_page(fault_svm, remote_svm,
                                                         fault_mr, addr, NULL, 0);
                                         release_hproc(remote_svm);
                                 }
@@ -978,7 +978,7 @@ static int dsm_maintain_notify(struct heca_process *svm,
 
                 owner = find_hproc(svm->hspace, svms.ids[i]);
                 if (likely(owner)) {
-                        r = dsm_claim_page(svm, owner, mr, addr, NULL, 0);
+                        r = heca_claim_page(svm, owner, mr, addr, NULL, 0);
                         release_hproc(owner);
                         break;
                 }
@@ -1427,7 +1427,7 @@ retry:
 
                 /* required as the page is locked, and will unlock only on claim_ack */
                 page_cache_get(page);
-                dsm_claim_page(svm, mnt_svm, mr, addr, page, 1);
+                heca_claim_page(svm, mnt_svm, mr, addr, page, 1);
                 release_hproc(mnt_svm);
 
         } else {

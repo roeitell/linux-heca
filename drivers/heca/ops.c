@@ -256,7 +256,7 @@ int process_request_query(struct heca_connection *conn,
         addr = msg->req_addr + mr->addr;
 
         /* this cannot fail: if we don't have a valid dsm pte, the page is ours */
-        msg->dest_id = dsm_query_pte_info(hproc, addr);
+        msg->dest_id = heca_query_pte_info(hproc, addr);
 
         r = heca_send_response(conn, MSG_RES_QUERY, msg);
 
@@ -474,7 +474,7 @@ int process_page_claim(struct heca_connection *conn, struct heca_message *msg)
         addr = msg->req_addr + mr->addr;
 
         BUG_ON(!local_hproc->mm);
-        r = dsm_try_unmap_page(local_hproc, addr, remote_proc,
+        r = heca_try_unmap_page(local_hproc, addr, remote_proc,
                         msg->type == MSG_REQ_CLAIM);
 
         /*
@@ -487,7 +487,7 @@ int process_page_claim(struct heca_connection *conn, struct heca_message *msg)
                 if (dsm_lookup_page_read(local_hproc, addr))
                         BUG_ON(!dsm_extract_page_read(local_hproc, addr));
                 else
-                        dsm_invalidate_readers(local_hproc, addr,
+                        heca_invalidate_readers(local_hproc, addr,
                                         remote_proc->hproc_id);
         }
 
@@ -530,7 +530,7 @@ static int heca_retry_claim(struct heca_message *msg, struct page *page)
          * the maintainer not to do anything stupid (like invalidating a writeable
          * copy, or invalidating when it's trying to invalidate reader copies).
          */
-        if (!dsm_pte_present(hproc->mm, msg->req_addr + mr->addr))
+        if (!heca_pte_present(hproc->mm, msg->req_addr + mr->addr))
                 goto fail;
 
         rcu_read_lock();
@@ -649,7 +649,7 @@ retry:
         tx_e->reply_work_req->mm = local_hproc->mm;
         tx_e->reply_work_req->addr = addr;
 
-        res = dsm_extract_page_from_remote(local_hproc, remote_hproc, addr,
+        res = heca_extract_page_from_remote(local_hproc, remote_hproc, addr,
                         msg->type, &tx_e->reply_work_req->pte, &page,
                         &redirect_id, deferred, mr);
         if (unlikely(res != HECA_EXTRACT_SUCCESS))
@@ -801,7 +801,7 @@ int heca_request_page_pull(struct heca_space *hspace,
                         return -ENOMEM;
         }
 
-        ret = dsm_prepare_page_for_push(fault_hproc, hprocs, page, addr, mm,
+        ret = heca_prepare_page_for_push(fault_hproc, hprocs, page, addr, mm,
                         mr->descriptor);
         if (unlikely(ret))
                 goto out;
@@ -809,7 +809,7 @@ int heca_request_page_pull(struct heca_space *hspace,
         ret = send_request_heca_page_pull(fault_hproc, mr, hprocs,
                         addr - mr->addr);
         if (unlikely(ret == -ENOMEM))
-                dsm_cancel_page_push(fault_hproc, addr, page);
+                heca_cancel_page_push(fault_hproc, addr, page);
 
 out:
         return ret;
@@ -832,7 +832,7 @@ int unmap_range(struct heca_space *hspace, int dsc, pid_t pid,
         mm = find_mm_by_pid(pid);
 
         for (it = addr; it < end; it += PAGE_SIZE) {
-                r = dsm_flag_page_remote(mm, hspace, dsc, it);
+                r = hproc_flag_page_remote(mm, hspace, dsc, it);
                 if (r)
                         break;
         }

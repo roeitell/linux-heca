@@ -388,11 +388,11 @@ static void heca_initiate_pull_gup(struct heca_page_cache *dpc, int delayed)
         struct heca_memory_region *mr;
 
         if (delayed) {
-                trace_delayed_initiated_fault(svm->hspace->hspace_id, svm->hproc_id,
-                                -1, -1, dpc->addr, 0, dpc->tag);
+                trace_delayed_initiated_fault(svm->hspace->hspace_id,
+                                svm->hproc_id, -1, -1, dpc->addr, 0, dpc->tag);
         } else {
-                trace_immediate_initiated_fault(svm->hspace->hspace_id, svm->hproc_id,
-                                -1, -1, dpc->addr, 0, dpc->tag);
+                trace_immediate_initiated_fault(svm->hspace->hspace_id,
+                                svm->hproc_id, -1, -1, dpc->addr, 0, dpc->tag);
         }
 
         /* TODO: we do not allow deleting mrs; handle this case when we do */
@@ -453,8 +453,8 @@ static int dsm_pull_req_success(struct page *page,
                 struct heca_page_cache *dpc)
 {
         int i, found;
-        trace_dsm_pull_req_complete(dpc->hproc->hspace->hspace_id, dpc->hproc->hproc_id, -1,
-                        -1, dpc->addr, 0, dpc->tag);
+        trace_dsm_pull_req_complete(dpc->hproc->hspace->hspace_id,
+                        dpc->hproc->hproc_id, -1, -1, dpc->addr, 0, dpc->tag);
 
         for (i = 0; i < dpc->hprocs.num; i++) {
                 if (dpc->pages[i] == page)
@@ -567,9 +567,9 @@ static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
                 goto out;
         SetPageSwapBacked(page);
 
-        trace_dsm_get_remote_page(fault_svm->hspace->hspace_id, fault_svm->hproc_id,
-                        remote_svm->hproc_id, fault_mr->hmr_id, addr,
-                        addr - fault_mr->addr, tag);
+        trace_dsm_get_remote_page(fault_svm->hspace->hspace_id,
+                        fault_svm->hproc_id, remote_svm->hproc_id,
+                        fault_mr->hmr_id, addr, addr - fault_mr->addr, tag);
 
         heca_request_page(page, remote_svm, fault_svm, fault_mr, addr,
                         dsm_pull_req_complete, tag, dpc, ppe);
@@ -580,8 +580,9 @@ out:
 
 static struct heca_page_cache *dsm_cache_add_pushed(
                 struct heca_process *fault_svm,
-                struct heca_memory_region *fault_mr, struct heca_process_list svms,
-                unsigned long addr, struct page *page)
+                struct heca_memory_region *fault_mr,
+                struct heca_process_list svms, unsigned long addr,
+                struct page *page)
 {
         struct heca_page_cache *new_dpc = NULL, *found_dpc = NULL;
         int r, i;
@@ -620,7 +621,8 @@ static struct heca_page_cache *dsm_cache_add_pushed(
                                                 svms.ids[i]);
                                 if (likely(remote_svm)) {
                                         heca_claim_page(fault_svm, remote_svm,
-                                                        fault_mr, addr, NULL, 0);
+                                                        fault_mr, addr,
+                                                        NULL, 0);
                                         release_hproc(remote_svm);
                                 }
                         }
@@ -636,8 +638,9 @@ fail:
 
 static struct heca_page_cache *dsm_cache_add_send(
                 struct heca_process *fault_svm,
-                struct heca_memory_region *fault_mr, struct heca_process_list svms,
-                unsigned long norm_addr, int nproc, int tag,
+                struct heca_memory_region *fault_mr,
+                struct heca_process_list svms, unsigned long norm_addr,
+                int nproc, int tag,
                 struct vm_area_struct *vma, pte_t orig_pte,
                 pte_t *ptep, int alloc)
 {
@@ -647,9 +650,9 @@ static struct heca_page_cache *dsm_cache_add_send(
         int r;
         struct heca_process *first_svm = NULL;
 
-        trace_dsm_cache_add_send(fault_svm->hspace->hspace_id, fault_svm->hproc_id, -1,
-                        fault_mr->hmr_id, norm_addr, norm_addr - fault_mr->addr,
-                        tag);
+        trace_dsm_cache_add_send(fault_svm->hspace->hspace_id,
+                        fault_svm->hproc_id, -1, fault_mr->hmr_id, norm_addr,
+                        norm_addr - fault_mr->addr, tag);
 
         do {
                 found_dpc = dsm_cache_get_hold(fault_svm, norm_addr);
@@ -730,7 +733,8 @@ fail:
                         ClearPageSwapBacked(page);
                         unlock_page(page);
                         if (ppe)
-                                dsm_ppe_clear_release(first_svm->connection, &ppe);
+                                dsm_ppe_clear_release(first_svm->connection,
+                                                &ppe);
                         else
                                 page_cache_release(page);
                 }
@@ -845,7 +849,7 @@ static struct heca_page_cache *convert_push_dpc(
         if (dpc)
                 goto out;
 
-        push_dpc = dsm_push_cache_get_remove(fault_svm, norm_addr);
+        push_dpc = heca_push_cache_get_remove(fault_svm, norm_addr);
         if (likely(push_dpc)) {
                 page = push_dpc->pages[0];
                 /*
@@ -956,7 +960,8 @@ static int dsm_fault_do_readahead(struct mm_struct *mm, unsigned long addr,
 }
 
 static int dsm_maintain_notify(struct heca_process *svm,
-                struct heca_memory_region *mr, unsigned long addr, u32 exclude_id)
+                struct heca_memory_region *mr, unsigned long addr,
+                u32 exclude_id)
 {
         struct heca_process *owner;
         struct heca_process_list svms;
@@ -1226,7 +1231,8 @@ resolve:
                 dsm_maintain_notify(dpc->hproc, fault_mr, dpc->addr,
                                 dpc->hprocs.ids[found]);
         else
-                dsm_flag_page_read(dpc->hproc, dpc->addr, dpc->hprocs.ids[found]);
+                dsm_flag_page_read(dpc->hproc, dpc->addr,
+                                dpc->hprocs.ids[found]);
         page_cache_release(found_page);
         atomic_dec(&dpc->nproc);
         trace_do_dsm_page_fault_svm_complete(dsm_id, svm_id, -1, mr_id,
@@ -1287,8 +1293,9 @@ int heca_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
 
 }
 
-int heca_trigger_page_pull(struct heca_space *dsm, struct heca_process *local_svm,
-                struct heca_memory_region *mr, unsigned long norm_addr)
+int heca_trigger_page_pull(struct heca_space *dsm,
+                struct heca_process *local_svm, struct heca_memory_region *mr,
+                unsigned long norm_addr)
 {
         int r = 0;
         struct mm_struct *mm = local_svm->mm;
@@ -1327,8 +1334,8 @@ int heca_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 return 0;
         }
 
-        trace_dsm_write_fault(svm->hspace->hspace_id, svm->hproc_id, -1, mr->hmr_id,
-                        addr, addr - mr->addr, 0);
+        trace_dsm_write_fault(svm->hspace->hspace_id, svm->hproc_id, -1,
+                        mr->hmr_id, addr, addr - mr->addr, 0);
 
 retry:
         pte = *ptep;
@@ -1431,7 +1438,7 @@ retry:
                 release_hproc(mnt_svm);
 
         } else {
-                dsm_invalidate_readers(svm, addr, 0);
+                heca_invalidate_readers(svm, addr, 0);
 
                 /*
                  * TODO: with strict coherency policy, only the last ACK from readers
@@ -1453,7 +1460,7 @@ wait:
          * request is processed (requiring the lock for read) before the ACK.
          */
         down_read(&mm->mmap_sem);
-        if (unlikely(dsm_extract_pte_data(&pd, mm, address))) {
+        if (unlikely(heca_extract_pte_data(&pd, mm, address))) {
                 up_read(&mm->mmap_sem);
                 return 0;
         }

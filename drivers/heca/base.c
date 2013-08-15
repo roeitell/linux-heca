@@ -514,7 +514,7 @@ surrogate:
                                         find_first_bit(&hpc->bitmap,
                                                 hpc->hprocs.num) >=
                                         hpc->hprocs.num)
-                                dsm_push_cache_release(hpc->hproc, &hpc, 0);
+                                heca_push_cache_release(hpc->hproc, &hpc, 0);
                 }
         }
         write_sequnlock(&hproc->push_cache_lock);
@@ -539,7 +539,7 @@ static void release_hproc_push_elements(struct heca_process *hproc)
                         if (test_and_clear_bit(i, &hpc->bitmap))
                                 page_cache_release(hpc->pages[0]);
                 }
-                dsm_push_cache_release(hpc->hproc, &hpc, 0);
+                heca_push_cache_release(hpc->hproc, &hpc, 0);
         }
         write_sequnlock(&hproc->push_cache_lock);
 }
@@ -1021,11 +1021,11 @@ int pushback_ps(struct hecaioc_ps *udata)
         addr = start_addr = ((unsigned long) udata->addr) & PAGE_MASK;
         for (addr = start_addr; addr < start_addr + udata->sz;
                         addr += PAGE_SIZE) {
-                page = dsm_find_normal_page(mm, addr);
+                page = heca_find_normal_page(mm, addr);
                 if (!page || !trylock_page(page))
                         continue;
 
-                r = !push_back_if_remote_dsm_page(page);
+                r = !push_back_if_remote_heca_page(page);
                 if (r)
                         unlock_page(page);
         }

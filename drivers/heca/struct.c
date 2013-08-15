@@ -219,7 +219,7 @@ void dsm_clear_swp_entry_flag(struct mm_struct *mm, unsigned long addr,
         if (pte_present(orig_pte))
                 return;
 
-        if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
+        if (unlikely(heca_extract_pte_data(&pd, mm, addr)))
                 return;
 
         pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);

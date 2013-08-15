@@ -260,7 +260,7 @@ static inline u32 heca_pte_maintainer(swp_entry_t swp_e)
         if (!is_heca_entry(swp_e))
                 goto out;
 
-        /* dsm is missing, we can bail out */
+        /* heca is missing, we can bail out */
         if (swp_entry_to_heca_data(swp_e, &hsd) < 0)
                 goto out;
 
@@ -442,8 +442,8 @@ retry:
                                 goto unmap;
                         }
                 }
-                /* TODO: If pte isn't dsm, gup or defer_gup (it should be dsm); If pte
-                 * is dsm, validate descriptor == remote_dsm->descriptor
+                /* TODO: If pte isn't heca, gup or defer_gup (it should be heca); If pte
+                 * is heca, validate descriptor == remote_hspace->descriptor
                  */
                 r = -EEXIST;
                 goto out;
@@ -548,7 +548,7 @@ retry:
         }
 
         if (unlikely(!pte_present(pte_entry))) {
-                /* try and redirect, according to a dsm pte */
+                /* try and redirect, according to a heca pte */
                 if (!heca_extract_read_hspace_pte(local_hproc, mm, addr, pte_entry,
                                         &pd, hproc_id)) {
                         res = HECA_EXTRACT_REDIRECT;
@@ -867,7 +867,7 @@ retry:
         /*
          * refcount is as follows:
          *  1 for being in dpc (released upon dealloc)
-         *  1 for every hproc sent to (released on dsm_ppe_clear_release)
+         *  1 for every hproc sent to (released on heca_ppe_clear_release)
          */
         page_cache_get(page);
         for_each_valid_hproc(hprocs, i) {
@@ -946,7 +946,7 @@ retry:
                 goto retry;
         }
 
-        /* lockless, much faster than dsm_get_descriptor */
+        /* lockless, much faster than heca_get_descriptor */
         maintainer = find_hproc(hproc->hspace, maintainer_id);
         if (likely(maintainer)) {
                 descriptor = maintainer->descriptor;
@@ -995,8 +995,8 @@ int heca_cancel_page_push(struct heca_process *hproc, unsigned long addr,
 }
 
 /*
- * Return 0 => page dsm or not dsm_remote => try to swap out
- * Return 1 => page is dsm => do not swap out (not necessarily scheduled yet to
+ * Return 0 => page heca or not heca_remote => try to swap out
+ * Return 1 => page is heca => do not swap out (not necessarily scheduled yet to
  *             be pushed back, could also be done in next cycle)
  */
 int push_back_if_remote_heca_page(struct page *page)

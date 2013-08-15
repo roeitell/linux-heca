@@ -1075,8 +1075,8 @@ retry:
                 /*
                  * refcount for dpc:
                  *  +1 for every svm sent to
-                 *  +1 for the current do_dsm_page_fault
-                 *  +1 for the final, successful do_dsm_page_fault
+                 *  +1 for the current do_heca_page_fault
+                 *  +1 for the final, successful do_heca_page_fault
                  */
                 hpc = heca_cache_add_send(fault_hproc, fault_mr, hsd.hprocs,
                                 norm_addr, 3, read_fault? READ_TAG : PULL_TAG,
@@ -1098,7 +1098,7 @@ retry:
                 /*
                  * we requested a read copy initially, but now we need to write. as a read
                  * response is already underway, we will try to fault it in ASAP and then
-                 * go through dsm_write_fault to claim it. it's better than discarding it
+                 * go through heca_write_fault to claim it. it's better than discarding it
                  * and write faulting, as a page is already ready and page contents already
                  * being transferred to us (CLAIM req is cheaper).
                  */
@@ -1364,7 +1364,7 @@ retry:
 
         hpc = heca_cache_get_hold(hproc, addr);
         if (unlikely(hpc)) {
-                /* these should be handled in the first do_dsm_page_fault */
+                /* these should be handled in the first do_heca_page_fault */
                 BUG_ON(hpc->tag == PULL_TRY_TAG);
 
                 if (hpc->tag == CLAIM_TAG) {
@@ -1403,17 +1403,17 @@ retry:
          * we leave the critical section. as we invalidate the page copies,
          * someone else can take the page - any maintainer will answer requests
          * by order of arrival. but we ourselves will not answer any read
-         * request, as the dpc is in-place.
+         * request, as the hpc is in-place.
          *
-         * any subsequent write-fault will now encounter the CLAIM_TAG dpc and
+         * any subsequent write-fault will now encounter the CLAIM_TAG hpc and
          * know it can back away.
          */
         pte_unmap_unlock(ptep, ptl);
 
         /*
          * this races with try_discard_read_copy (which locks the page and checks
-         * for dsm_cache_get), and with process_page_claim (which locks the pte
-         * and checks for dsm_cache_get). so no locking needed.
+         * for heca_cache_get), and with process_page_claim (which locks the pte
+         * and checks for heca_cache_get). so no locking needed.
          */
         if (heca_lookup_page_read(hproc, addr))
                 maintainer_id = heca_extract_page_read(hproc, addr);

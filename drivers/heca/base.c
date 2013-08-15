@@ -217,9 +217,9 @@ failed:
  */
 static void destroy_hproc_mrs(struct heca_process *hproc);
 
-static inline int is_hproc_local(struct heca_process *svm)
+static inline int is_hproc_local(struct heca_process *hproc)
 {
-        return !!svm->mm;
+        return !!hproc->mm;
 }
 
 static inline int grab_hproc(struct heca_process *hproc)
@@ -429,7 +429,7 @@ int create_hproc(struct hecaioc_hproc *hproc_info)
 
         r = create_hproc_sysfs_entry(new_hproc);
         if (r) {
-                heca_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
+                heca_printk(KERN_ERR "failed create_hproc_sysfs_entry %d", r);
                 goto out;
         }
 
@@ -532,7 +532,7 @@ static void release_hproc_push_elements(struct heca_process *hproc)
                 hpc = rb_entry(node, struct heca_page_cache, rb_node);
                 node = rb_next(node);
                 /*
-                 * dpc->svms has a pointer to the descriptor ids array, which already
+                 * dpc->hprocs has a pointer to the descriptor ids array, which already
                  * changed. we need to rely on the bitmap right now.
                  */
                 for (i = 0; i < hpc->hprocs.num; i++) {
@@ -647,9 +647,9 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
         remove_hproc_from_descriptors(hproc);
 
         /*
-         * we removed the svm from all descriptors and trees, so we won't make any
+         * we removed the hproc from all descriptors and trees, so we won't make any
          * new operations concerning it. now we only have to make sure to cancel
-         * all pending operations involving this svm, and it will be safe to remove
+         * all pending operations involving this hproc, and it will be safe to remove
          * it.
          *
          * we cannot actually hold until every operation is complete, so we rely on
@@ -659,11 +659,11 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
          * anything unattended (thus creating a resource leak).
          *
          * we catch all pending operations using (by order) the queued requests
-         * lists, the tx elements buffers, and the push caches of svms.
+         * lists, the tx elements buffers, and the push caches of hprocs.
          *
-         * FIXME: what about pull operations, in which we remove_svm() after
-         * find_svm(), but before tx_hspace_send()??? We can't disable preemption
-         * there, but we might lookup_svm() after we send, and handle the case in
+         * FIXME: what about pull operations, in which we remove_hproc() after
+         * find_hproc(), but before tx_hspace_send()??? We can't disable preemption
+         * there, but we might lookup_hproc() after we send, and handle the case in
          * which it isn't!
          * FIXME: the same problem is valid for push operations!
          */
@@ -689,17 +689,17 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
                 release_hproc_push_elements(hproc);
                 destroy_hproc_mrs(hproc);
         } else if (hproc->connection) {
-                struct heca_process *local_svm;
+                struct heca_process *local_hproc;
 
                 release_hproc_queued_requests(hproc,
                                 &hproc->connection->tx_buffer);
                 release_hproc_tx_elements(hproc, hproc->connection);
 
                 /* potentially very expensive way to do this */
-                list_for_each_entry (local_svm, &hproc->hspace->hprocs_list,
+                list_for_each_entry (local_hproc, &hproc->hspace->hprocs_list,
                                 hproc_ptr) {
-                        if (is_hproc_local(local_svm))
-                                surrogate_push_remote_hproc(local_svm, hproc);
+                        if (is_hproc_local(local_hproc))
+                                surrogate_push_remote_hproc(local_hproc, hproc);
                 }
         }
 
@@ -850,7 +850,7 @@ static void destroy_hproc_mrs(struct heca_process *hproc)
                 mr = rb_entry(node, struct heca_memory_region, rb_node);
                 rb_erase(&mr->rb_node, root);
                 write_sequnlock(&hproc->hmr_seq_lock);
-                heca_printk(KERN_INFO "removing hspace_id: %u svm_id: %u, mr_id: %u",
+                heca_printk(KERN_INFO "removing hspace_id: %u hproc_id: %u, mr_id: %u",
                                 hproc->hspace->hspace_id, hproc->hproc_id,
                                 mr->hmr_id);
                 synchronize_rcu();
@@ -929,12 +929,12 @@ int create_heca_mr(struct hecaioc_hmr *udata)
 
         for (i = 0; udata->hproc_ids[i]; i++) {
                 struct heca_process *owner;
-                u32 svm_id = udata->hproc_ids[i];
+                u32 hproc_id = udata->hproc_ids[i];
 
-                owner = find_hproc(hspace, svm_id);
+                owner = find_hproc(hspace, hproc_id);
                 if (!owner) {
                         heca_printk(KERN_ERR "[i=%d] can't find hproc %d",
-                                        i, svm_id);
+                                        i, hproc_id);
                         ret = -EFAULT;
                         goto out_remove_tree;
                 }

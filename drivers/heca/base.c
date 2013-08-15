@@ -867,27 +867,27 @@ static struct heca_process *find_local_svm_from_list(struct heca_space *hspace)
 int create_mr(struct hecaioc_hmr *udata)
 {
         int ret = 0, i;
-        struct heca_space *dsm;
+        struct heca_space *hspace;
         struct heca_memory_region *mr = NULL;
-        struct heca_process *local_svm = NULL;
+        struct heca_process *local_hproc = NULL;
 
-        dsm = find_dsm(udata->hspace_id);
-        if (!dsm) {
+        hspace = find_dsm(udata->hspace_id);
+        if (!hspace) {
                 heca_printk(KERN_ERR "can't find dsm %d", udata->hspace_id);
                 ret = -EFAULT;
                 goto out;
         }
 
-        local_svm = find_local_svm_from_list(dsm);
-        if (!local_svm) {
-                heca_printk(KERN_ERR "can't find local svm for dsm %d",
+        local_hproc = find_local_svm_from_list(hspace);
+        if (!local_hproc) {
+                heca_printk(KERN_ERR "can't find local hproc for hspace %d",
                                 udata->hspace_id);
                 ret = -EFAULT;
                 goto out;
         }
 
         /* FIXME: Validate against every kind of overlap! */
-        if (search_mr_by_addr(local_svm, (unsigned long) udata->addr)) {
+        if (search_mr_by_addr(local_hproc, (unsigned long) udata->addr)) {
                 heca_printk(KERN_ERR "mr already exists at addr 0x%lx",
                                 udata->addr);
                 ret = -EEXIST;
@@ -905,15 +905,15 @@ int create_mr(struct hecaioc_hmr *udata)
         mr->addr = (unsigned long) udata->addr;
         mr->sz = udata->sz;
 
-        if (insert_mr(local_svm, mr)){
+        if (insert_mr(local_hproc, mr)){
                 heca_printk(KERN_ERR "insert MR failed  addr 0x%lx",
                                 udata->addr);
                 ret = -EFAULT;
                 goto out_free;
         }
-        mr->descriptor = dsm_get_descriptor(dsm->hspace_id, udata->hproc_ids);
+        mr->descriptor = dsm_get_descriptor(hspace->hspace_id, udata->hproc_ids);
         if (!mr->descriptor) {
-                heca_printk(KERN_ERR "can't find MR descriptor for svm_ids");
+                heca_printk(KERN_ERR "can't find MR descriptor for hproc_ids");
                 ret = -EFAULT;
                 goto out_remove_tree;
         }
@@ -922,9 +922,9 @@ int create_mr(struct hecaioc_hmr *udata)
                 struct heca_process *owner;
                 u32 svm_id = udata->hproc_ids[i];
 
-                owner = find_svm(dsm, svm_id);
+                owner = find_svm(hspace, svm_id);
                 if (!owner) {
-                        heca_printk(KERN_ERR "[i=%d] can't find svm %d",
+                        heca_printk(KERN_ERR "[i=%d] can't find hproc %d",
                                         i, svm_id);
                         ret = -EFAULT;
                         goto out_remove_tree;
@@ -946,20 +946,20 @@ int create_mr(struct hecaioc_hmr *udata)
         }
 
         if (!(mr->flags & MR_LOCAL) && (udata->flags & UD_AUTO_UNMAP)) {
-                ret = unmap_range(dsm, mr->descriptor, local_svm->pid, mr->addr,
+                ret = unmap_range(hspace, mr->descriptor, local_hproc->pid, mr->addr,
                                 mr->sz);
         }
 
-        create_mr_sysfs_entry(local_svm, mr);
+        create_mr_sysfs_entry(local_hproc, mr);
         goto out;
 
 out_remove_tree:
-        rb_erase(&mr->rb_node, &local_svm->hmr_tree_root);
+        rb_erase(&mr->rb_node, &local_hproc->hmr_tree_root);
 out_free:
         kfree(mr);
 out:
-        if (local_svm)
-                release_svm(local_svm);
+        if (local_hproc)
+                release_svm(local_hproc);
         heca_printk(KERN_INFO "id [%d] addr [0x%lx] sz [0x%lx] --> ret %d",
                         udata->hmr_id, udata->addr, udata->sz, ret);
         return ret;
@@ -968,8 +968,8 @@ out:
 int unmap_ps(struct hecaioc_ps *udata)
 {
         int r = -EFAULT;
-        struct heca_space *dsm = NULL;
-        struct heca_process *local_svm = NULL;
+        struct heca_space *hspace = NULL;
+        struct heca_process *local_hproc = NULL;
         struct heca_memory_region *mr = NULL;
         struct mm_struct *mm = find_mm_by_pid(udata->pid);
 
@@ -978,22 +978,22 @@ int unmap_ps(struct hecaioc_ps *udata)
                 goto out;
         }
 
-        local_svm = find_local_svm_from_mm(mm);
-        if (!local_svm)
+        local_hproc = find_local_svm_from_mm(mm);
+        if (!local_hproc)
                 goto out;
 
-        dsm = local_svm->hspace;
+        hspace = local_hproc->hspace;
 
-        mr = search_mr_by_addr(local_svm, (unsigned long) udata->addr);
+        mr = search_mr_by_addr(local_hproc, (unsigned long) udata->addr);
         if (!mr)
                 goto out;
 
-        r = unmap_range(dsm, mr->descriptor, udata->pid, (unsigned long)
+        r = unmap_range(hspace, mr->descriptor, udata->pid, (unsigned long)
                         udata->addr, udata->sz);
 
 out:
-        if (local_svm)
-                release_svm(local_svm);
+        if (local_hproc)
+                release_svm(local_hproc);
         return r;
 }
 

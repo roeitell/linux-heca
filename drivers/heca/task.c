@@ -74,7 +74,7 @@ int heca_detach_task(struct task_struct *tsk)
                         if (tsk == find_task_by_vpid(svm->pid)) {
                                 heca_printk(KERN_DEBUG "removing SVM associated with pid %d",
                                                 svm->pid);
-                                remove_svm(dsm->hspace_id, svm->hproc_id);
+                                remove_hproc(dsm->hspace_id, svm->hproc_id);
                         }
                 }
         }

@@ -726,13 +726,13 @@ void dsm_invalidate_readers(struct heca_process *svm, unsigned long addr,
                 struct heca_memory_region *mr;
 
                 if (dpr->hproc_id != exclude_id) {
-                        remote_svm = find_svm(svm->hspace, dpr->hproc_id);
+                        remote_svm = find_hproc(svm->hspace, dpr->hproc_id);
                         if (likely(remote_svm)) {
-                                mr = search_mr_by_addr(svm, addr);
+                                mr = search_heca_mr_by_addr(svm, addr);
                                 if (likely(mr))
                                         dsm_claim_page(svm, remote_svm, mr,
                                                         addr, NULL, 0);
-                                release_svm(remote_svm);
+                                release_hproc(remote_svm);
                         }
                 }
 
@@ -947,10 +947,10 @@ retry:
         }
 
         /* lockless, much faster than dsm_get_descriptor */
-        maintainer = find_svm(svm->hspace, maintainer_id);
+        maintainer = find_hproc(svm->hspace, maintainer_id);
         if (likely(maintainer)) {
                 descriptor = maintainer->descriptor;
-                release_svm(maintainer);
+                release_hproc(maintainer);
         } else {
                 descriptor = mr->descriptor;
         }
@@ -1031,14 +1031,14 @@ int push_back_if_remote_dsm_page(struct page *page)
                 if (address == -EFAULT)
                         continue;
 
-                svm = find_local_svm_from_mm(vma->vm_mm);
+                svm = find_local_hproc_from_mm(vma->vm_mm);
                 if (!svm)
                         continue;
 
                 /* lookup a remote mr owner, to push the page to */
-                mr = search_mr_by_addr(svm, address);
+                mr = search_heca_mr_by_addr(svm, address);
                 if (!mr || mr->flags & (MR_LOCAL | MR_COPY_ON_ACCESS)) {
-                        release_svm(svm);
+                        release_hproc(svm);
                         continue;
                 }
                 /* we need to unlock the VMA before doing and Heca operation
@@ -1057,7 +1057,7 @@ int push_back_if_remote_dsm_page(struct page *page)
                         unlock_page(page);
                 }
 
-                release_svm(svm);
+                release_hproc(svm);
                 ret = 1;
                 goto out;
         }

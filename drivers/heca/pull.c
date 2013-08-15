@@ -396,7 +396,7 @@ static void heca_initiate_pull_gup(struct heca_page_cache *dpc, int delayed)
         }
 
         /* TODO: we do not allow deleting mrs; handle this case when we do */
-        mr = search_mr_by_addr(svm, dpc->addr);
+        mr = search_heca_mr_by_addr(svm, dpc->addr);
         if (unlikely(!mr))
                 return;
 
@@ -616,12 +616,12 @@ static struct heca_page_cache *dsm_cache_add_pushed(
                         for_each_valid_hproc(svms, i) {
                                 struct heca_process *remote_svm;
 
-                                remote_svm = find_svm(fault_svm->hspace,
+                                remote_svm = find_hproc(fault_svm->hspace,
                                                 svms.ids[i]);
                                 if (likely(remote_svm)) {
                                         dsm_claim_page(fault_svm, remote_svm,
                                                         fault_mr, addr, NULL, 0);
-                                        release_svm(remote_svm);
+                                        release_hproc(remote_svm);
                                 }
                         }
                         return new_dpc;
@@ -665,7 +665,7 @@ static struct heca_page_cache *dsm_cache_add_send(
 
                 if (likely(!page)) {
                         if (likely(svms.ids[0])) {
-                                first_svm = find_svm(fault_svm->hspace,
+                                first_svm = find_hproc(fault_svm->hspace,
                                                 svms.ids[0]);
                                 if (likely(first_svm))
                                         ppe = dsm_fetch_ready_ppe(first_svm->connection);
@@ -705,19 +705,19 @@ static struct heca_page_cache *dsm_cache_add_send(
                                 dsm_get_remote_page(vma, norm_addr, new_dpc,
                                                 fault_svm, fault_mr, first_svm,
                                                 tag, r, ppe);
-                                release_svm(first_svm);
+                                release_hproc(first_svm);
                         }
                         for (r = 1; r < svms.num; r++) {
                                 struct heca_process *remote_svm;
 
-                                remote_svm = find_svm(fault_svm->hspace,
+                                remote_svm = find_hproc(fault_svm->hspace,
                                                 svms.ids[r]);
                                 if (likely(remote_svm)) {
                                         dsm_get_remote_page(vma, norm_addr,
                                                         new_dpc, fault_svm,
                                                         fault_mr, remote_svm,
                                                         tag, r, NULL);
-                                        release_svm(remote_svm);
+                                        release_hproc(remote_svm);
                                 }
                         }
                         return new_dpc;
@@ -737,7 +737,7 @@ fail:
                 dsm_dealloc_dpc(&new_dpc);
         }
         if (first_svm)
-                release_svm(first_svm);
+                release_hproc(first_svm);
         return found_dpc;
 }
 
@@ -946,7 +946,7 @@ static int dsm_fault_do_readahead(struct mm_struct *mm, unsigned long addr,
                                 cont_back = 0;
                 }
                 if (trylock_page(dpc->pages[0])) {
-                        release_svm(svm);
+                        release_hproc(svm);
                         return 1;
                 }
                 j++;
@@ -976,10 +976,10 @@ static int dsm_maintain_notify(struct heca_process *svm,
                 if (svms.ids[i] == exclude_id)
                         continue;
 
-                owner = find_svm(svm->hspace, svms.ids[i]);
+                owner = find_hproc(svm->hspace, svms.ids[i]);
                 if (likely(owner)) {
                         r = dsm_claim_page(svm, owner, mr, addr, NULL, 0);
-                        release_svm(owner);
+                        release_hproc(owner);
                         break;
                 }
         }
@@ -1011,17 +1011,17 @@ retry:
         if (swp_entry_to_dsm_data(entry, &dsd) < 0)
                 return VM_FAULT_ERROR;
 
-        dsm = find_dsm(dsd.hprocs.hspace_id);
+        dsm = find_hspace(dsd.hprocs.hspace_id);
         if (unlikely(!dsm))
                 return VM_FAULT_ERROR;
 
-        fault_svm = find_local_svm_in_dsm(dsm, mm);
+        fault_svm = find_local_hproc_in_hspace(dsm, mm);
         if (unlikely(!fault_svm))
                 return VM_FAULT_ERROR;
 
-        fault_mr = search_mr_by_addr(fault_svm, norm_addr);
+        fault_mr = search_heca_mr_by_addr(fault_svm, norm_addr);
         if (unlikely(!fault_mr)) {
-                release_svm(fault_svm);
+                release_hproc(fault_svm);
                 return VM_FAULT_ERROR;
         }
 
@@ -1057,7 +1057,7 @@ retry:
                                         ret |= VM_FAULT_RETRY;
                                         up_read(&mm->mmap_sem);
                                 }
-                                release_svm(fault_svm);
+                                release_hproc(fault_svm);
                                 goto out_no_dpc;
                         }
                 }
@@ -1081,7 +1081,7 @@ retry:
                         if (likely(pte_same(*page_table, orig_pte)))
                                 ret = VM_FAULT_OOM;
                         pte_unmap_unlock(page_table, ptl);
-                        release_svm(fault_svm);
+                        release_hproc(fault_svm);
                         goto out_no_dpc;
                 }
                 ret = VM_FAULT_MAJOR;
@@ -1119,7 +1119,7 @@ retry:
          * cleared, then re-throw the fault.
          */
 lock:
-        release_svm(fault_svm);
+        release_hproc(fault_svm);
         if (!lock_page_or_retry(dpc->pages[0], mm, flags)) {
                 ret |= VM_FAULT_RETRY;
                 goto out;
@@ -1317,13 +1317,13 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         struct heca_page_cache *dpc = NULL;
         u32 maintainer_id = 0;
 
-        svm = find_local_svm_from_mm(mm);
+        svm = find_local_hproc_from_mm(mm);
         if (!svm)
                 return 0;
 
-        mr = search_mr_by_addr(svm, addr);
+        mr = search_heca_mr_by_addr(svm, addr);
         if (!mr) {
-                release_svm(svm);
+                release_hproc(svm);
                 return 0;
         }
 
@@ -1411,7 +1411,7 @@ retry:
         if (maintainer_id) {
                 struct heca_process *mnt_svm;
 
-                mnt_svm = find_svm(svm->hspace, maintainer_id);
+                mnt_svm = find_hproc(svm->hspace, maintainer_id);
                 if (!mnt_svm) {
                         /*
                          * TODO: the maintainer has left the cluster, and left us hanging.
@@ -1428,7 +1428,7 @@ retry:
                 /* required as the page is locked, and will unlock only on claim_ack */
                 page_cache_get(page);
                 dsm_claim_page(svm, mnt_svm, mr, addr, page, 1);
-                release_svm(mnt_svm);
+                release_hproc(mnt_svm);
 
         } else {
                 dsm_invalidate_readers(svm, addr, 0);
@@ -1479,7 +1479,7 @@ write:
         dsm_release_pull_dpc(&dpc);
 
 out:
-        release_svm(svm);
+        release_hproc(svm);
         return 1;
 }
 

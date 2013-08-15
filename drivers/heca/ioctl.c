@@ -107,10 +107,10 @@ void destroy_dsm_module_state(void)
 
         list_for_each_safe (curr, next, &dsm_state->hspaces_list) {
                 dsm = list_entry(curr, struct heca_space, hspace_ptr);
-                remove_dsm(dsm);
+                remove_hspace(dsm);
         }
 
-        destroy_rcm_listener(dsm_state);
+        destroy_hcm_listener(dsm_state);
         mutex_destroy(&dsm_state->heca_state_mutex);
         destroy_workqueue(dsm_state->heca_tx_wq);
         destroy_workqueue(dsm_state->heca_rx_wq);
@@ -129,10 +129,10 @@ static int deregister_dsm(__u32 dsm_id)
         list_for_each_safe (curr, next, &dsm_state->hspaces_list) {
                 dsm = list_entry(curr, struct heca_space, hspace_ptr);
                 if (dsm->hspace_id == dsm_id)
-                        remove_dsm(dsm);
+                        remove_hspace(dsm);
         }
 
-        destroy_rcm_listener(dsm_state);
+        destroy_hcm_listener(dsm_state);
         heca_printk(KERN_DEBUG "<exit> %d", ret);
         return ret;
 }
@@ -144,14 +144,14 @@ static int register_dsm(struct hecaioc_hspace *dsm_info)
 
         heca_printk(KERN_DEBUG "<enter>");
 
-        if ((rc = create_rcm_listener(dsm_state,
+        if ((rc = create_hcm_listener(dsm_state,
                                         dsm_info->local.sin_addr.s_addr,
                                         dsm_info->local.sin_port))) {
                 heca_printk(KERN_ERR "create_rcm %d", rc);
                 goto done;
         }
 
-        if ((rc = create_dsm(dsm_info->hspace_id))) {
+        if ((rc = create_hspace(dsm_info->hspace_id))) {
                 heca_printk(KERN_ERR "create_dsm %d", rc);
                 goto done;
         }
@@ -180,9 +180,9 @@ static int ioctl_svm(int ioctl, void __user *argp)
 
         switch (ioctl) {
         case HECAIOC_HPROC_ADD:
-                return create_svm(&svm_info);
+                return create_hproc(&svm_info);
         case HECAIOC_HPROC_RM:
-                remove_svm(svm_info.hspace_id, svm_info.hproc_id);
+                remove_hproc(svm_info.hspace_id, svm_info.hproc_id);
                 return 0;
         }
         return -EINVAL;
@@ -199,7 +199,7 @@ static int ioctl_mr(int ioctl, void __user *argp)
 
         switch (ioctl) {
         case HECAIOC_HMR_ADD:
-                return create_mr(&udata);
+                return create_heca_mr(&udata);
         }
 
         return -EINVAL;
@@ -318,7 +318,7 @@ static int dsm_init(void)
         dsm_zero_pfn_init();
         heca_sysfs_setup(dsm_state);
         rc = misc_register(&heca_misc);
-        init_rcm();
+        init_hcm();
         BUG_ON(heca_hook_register(&my_heca_hook));
 
         heca_printk(KERN_DEBUG "<exit> %d", rc);
@@ -332,7 +332,7 @@ static void dsm_exit(void)
 
         heca_printk(KERN_DEBUG "<enter>");
         BUG_ON(heca_hook_unregister());
-        fini_rcm();
+        fini_hcm();
         misc_deregister(&heca_misc);
         heca_sysfs_cleanup(dsm_state);
         dsm_zero_pfn_exit();

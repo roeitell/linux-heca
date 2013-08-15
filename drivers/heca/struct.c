@@ -291,7 +291,7 @@ void dsm_dealloc_dpc(struct heca_page_cache **dpc)
 
         for (i = 0; i < (*dpc)->hprocs.num; i++)
                 (*dpc)->pages[i] = 0;
-        release_svm((*dpc)->hproc);
+        release_hproc((*dpc)->hproc);
         kmem_cache_free(dsm_cache_kmem, *dpc);
         *dpc = NULL;
 }

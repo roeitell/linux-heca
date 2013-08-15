@@ -1624,7 +1624,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
         struct heca_connection *cele;
         struct heca_module_state *dsm_state = get_dsm_module_state();
 
-        dsm = find_dsm(dsm_id);
+        dsm = find_hspace(dsm_id);
         if (!dsm) {
                 heca_printk(KERN_ERR "can't find dsm %d", dsm_id);
                 return -EFAULT;
@@ -1634,7 +1634,7 @@ int connect_svm(__u32 dsm_id, __u32 svm_id, unsigned long ip_addr,
                         dsm_id, dsm, svm_id);
 
         mutex_lock(&dsm->hspace_mutex);
-        svm = find_svm(dsm, svm_id);
+        svm = find_hproc(dsm, svm_id);
         if (!svm) {
                 heca_printk(KERN_ERR "can't find svm %d", svm_id);
                 goto no_svm;
@@ -1673,7 +1673,7 @@ done:
         svm->connection = cele;
 
 failed:
-        release_svm(svm);
+        release_hproc(svm);
 no_svm:
         mutex_unlock(&dsm->hspace_mutex);
         heca_printk(KERN_INFO "dsm %d svm %d svm_connect ip %pI4: %d",
@@ -1727,7 +1727,7 @@ static void remove_svms_for_conn(struct heca_connection *ele)
                         svm = list_entry(it, struct heca_process,
                                         hproc_ptr);
                         if (svm->connection == ele)
-                                remove_svm(dsm->hspace_id, svm->hproc_id);
+                                remove_hproc(dsm->hspace_id, svm->hproc_id);
                 }
         }
 }

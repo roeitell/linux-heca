@@ -804,7 +804,7 @@ static int get_heca_page(struct mm_struct *mm, unsigned long addr,
 
                 if (!pte_present(pte_entry) && !pte_none(pte_entry)) {
                         swp_e = pte_to_swp_entry(pte_entry);
-                        if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
+                        if (non_swap_entry(swp_e) && is_heca_entry(swp_e)) {
                                 struct heca_swp_data dsd;
 
                                 if (swp_entry_to_heca_data(swp_e, &dsd) < 0)
@@ -905,7 +905,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                         if (!pte_none(pte) && !pte_file(pte)) {
                                 swp_entry = pte_to_swp_entry(pte);
                                 if (non_swap_entry(swp_entry)
-                                                && is_dsm_entry(swp_entry)
+                                                && is_heca_entry(swp_entry)
                                                 && heca_swp_entry_same(swp_entry,
                                                         *entry)) {
                                         struct heca_swp_data tmp_dsd;

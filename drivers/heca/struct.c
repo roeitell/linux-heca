@@ -97,7 +97,7 @@ static int heca_add_descriptor(u32 hspace_id, u32 desc, u32 *hproc_ids)
 
 static inline u32 heca_entry_to_desc(swp_entry_t entry)
 {
-        u64 val = dsm_entry_to_val(entry);
+        u64 val = heca_entry_to_val(entry);
         u32 desc = (u32) (val >> 24);
         BUG_ON(desc < SDSC_MIN);
         return desc;
@@ -105,7 +105,7 @@ static inline u32 heca_entry_to_desc(swp_entry_t entry)
 
 static inline u32 heca_entry_to_flags(swp_entry_t entry)
 {
-        u64 val = dsm_entry_to_val(entry);
+        u64 val = heca_entry_to_val(entry);
         u32 flags = val & 0xFFFFFF;
         return flags;
 }
@@ -155,7 +155,7 @@ out:
 inline pte_t heca_descriptor_to_pte(u32 hsc, u32 flags)
 {
         u64 val = hsc;
-        swp_entry_t swp_e = val_to_dsm_entry((val << 24) | flags);
+        swp_entry_t swp_e = val_to_heca_entry((val << 24) | flags);
         BUG_ON(hsc < SDSC_MIN || hsc >= shsc_max);
         return swp_entry_to_pte(swp_e);
 }

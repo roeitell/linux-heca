@@ -257,7 +257,7 @@ static inline u32 heca_pte_maintainer(swp_entry_t swp_e)
         struct heca_swp_data hsd;
         u32 hproc_id = 0;
 
-        if (!is_dsm_entry(swp_e))
+        if (!is_heca_entry(swp_e))
                 goto out;
 
         /* dsm is missing, we can bail out */
@@ -432,7 +432,7 @@ retry:
                         pte_t new_pte = heca_descriptor_to_pte(
                                         remote_hproc->descriptor, 0);
                         if (!pte_same(pte_entry, new_pte)) {
-                                if (unlikely(!is_dsm_entry(pte_to_swp_entry(pte_entry)))) {
+                                if (unlikely(!is_heca_entry(pte_to_swp_entry(pte_entry)))) {
                                         pte_unmap_unlock(pd.pte, ptl);
                                         heca_initiate_fault_fast(mm, addr, 1);
                                         goto retry;

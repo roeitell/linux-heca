@@ -166,7 +166,7 @@ inline struct heca_process_list heca_descriptor_to_hprocs(u32 hsc)
         return rcu_dereference(shsc)[hsc];
 }
 
-/* arrive with dsm mutex held! */
+/* arrive with hspace mutex held! */
 void remove_hproc_from_descriptors(struct heca_process *hproc)
 {
         int i;
@@ -262,7 +262,7 @@ static inline void init_heca_cache_elm(void *obj)
 
 void init_heca_cache_kmem(void)
 {
-        heca_cache_kmem = kmem_cache_create("dsm_page_cache",
+        heca_cache_kmem = kmem_cache_create("heca_page_cache",
                         sizeof(struct heca_page_cache), 0,
                         SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
                         init_heca_cache_elm);
@@ -473,7 +473,7 @@ static struct heca_page_pool_element *heca_get_ppe(struct heca_connection *conn)
         struct heca_page_pool_element *ppe;
 
 retry:
-        /* FIXME: when flushing dsm_requests we might be mutex_locked */
+        /* FIXME: when flushing heca_requests we might be mutex_locked */
         while (llist_empty(&conn->page_pool_elements))
                 cond_resched();
 
@@ -645,7 +645,7 @@ static inline void init_heca_reader_elm(void *obj)
 
 void init_heca_reader_kmem(void)
 {
-        heca_reader_kmem = kmem_cache_create("dsm_reader_cache",
+        heca_reader_kmem = kmem_cache_create("heca_reader_cache",
                         sizeof(struct heca_page_reader), 0, SLAB_TEMPORARY,
                         init_heca_reader_elm);
 }

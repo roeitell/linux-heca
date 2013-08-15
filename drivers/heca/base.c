@@ -215,7 +215,7 @@ failed:
 /*
  * svm funcs
  */
-static void destroy_svm_mrs(struct heca_process *svm);
+static void destroy_svm_mrs(struct heca_process *hproc);
 
 static inline int is_svm_local(struct heca_process *svm)
 {
@@ -723,14 +723,14 @@ struct heca_process *find_any_svm(struct heca_space *hspace, struct heca_process
 /*
  * memory_region funcs
  */
-struct heca_memory_region *find_mr(struct heca_process *svm,
+struct heca_memory_region *find_mr(struct heca_process *hproc,
                 u32 id)
 {
         struct heca_memory_region *mr, **mrp;
         struct radix_tree_root *root;
 
         rcu_read_lock();
-        root = &svm->hmr_id_tree_root;
+        root = &hproc->hmr_id_tree_root;
 repeat:
         mr = NULL;
         mrp = (struct heca_memory_region **) radix_tree_lookup_slot(root,
@@ -749,12 +749,12 @@ out:
         return mr;
 }
 
-struct heca_memory_region *search_mr_by_addr(struct heca_process *svm,
+struct heca_memory_region *search_mr_by_addr(struct heca_process *hproc,
                 unsigned long addr)
 {
-        struct rb_root *root = &svm->hmr_tree_root;
+        struct rb_root *root = &hproc->hmr_tree_root;
         struct rb_node *node;
-        struct heca_memory_region *this = svm->hmr_cache;
+        struct heca_memory_region *this = hproc->hmr_cache;
         unsigned long seq;
 
         /* try to follow cache hint */
@@ -764,7 +764,7 @@ struct heca_memory_region *search_mr_by_addr(struct heca_process *svm,
         }
 
         do {
-                seq = read_seqbegin(&svm->hmr_seq_lock);
+                seq = read_seqbegin(&hproc->hmr_seq_lock);
                 for (node = root->rb_node; node; this = 0) {
                         this = rb_entry(node, struct heca_memory_region, rb_node);
 
@@ -778,18 +778,18 @@ struct heca_memory_region *search_mr_by_addr(struct heca_process *svm,
                         else
                                 break;
                 }
-        } while (read_seqretry(&svm->hmr_seq_lock, seq));
+        } while (read_seqretry(&hproc->hmr_seq_lock, seq));
 
         if (likely(this))
-                svm->hmr_cache = this;
+                hproc->hmr_cache = this;
 
 out:
         return this;
 }
 
-static int insert_mr(struct heca_process *svm, struct heca_memory_region *mr)
+static int insert_mr(struct heca_process *hproc, struct heca_memory_region *mr)
 {
-        struct rb_root *root = &svm->hmr_tree_root;
+        struct rb_root *root = &hproc->hmr_tree_root;
         struct rb_node **new = &root->rb_node, *parent = NULL;
         struct heca_memory_region *this;
         int r;
@@ -798,10 +798,10 @@ static int insert_mr(struct heca_process *svm, struct heca_memory_region *mr)
         if (r)
                 goto fail;
 
-        write_seqlock(&svm->hmr_seq_lock);
+        write_seqlock(&hproc->hmr_seq_lock);
 
         /* insert to radix tree */
-        r = radix_tree_insert(&svm->hmr_id_tree_root, (unsigned long) mr->hmr_id,
+        r = radix_tree_insert(&hproc->hmr_id_tree_root, (unsigned long) mr->hmr_id,
                         mr);
         if (r)
                 goto out;
@@ -820,46 +820,46 @@ static int insert_mr(struct heca_process *svm, struct heca_memory_region *mr)
         rb_insert_color(&mr->rb_node, root);
 out:
         radix_tree_preload_end();
-        write_sequnlock(&svm->hmr_seq_lock);
+        write_sequnlock(&hproc->hmr_seq_lock);
 fail:
         return r;
 }
 
-static void destroy_svm_mrs(struct heca_process *svm)
+static void destroy_svm_mrs(struct heca_process *hproc)
 {
-        struct rb_root *root = &svm->hmr_tree_root;
+        struct rb_root *root = &hproc->hmr_tree_root;
 
         do {
                 struct heca_memory_region *mr;
                 struct rb_node *node;
 
-                write_seqlock(&svm->hmr_seq_lock);
+                write_seqlock(&hproc->hmr_seq_lock);
                 node = rb_first(root);
                 if (!node) {
-                        write_sequnlock(&svm->hmr_seq_lock);
+                        write_sequnlock(&hproc->hmr_seq_lock);
                         break;
                 }
                 mr = rb_entry(node, struct heca_memory_region, rb_node);
                 rb_erase(&mr->rb_node, root);
-                write_sequnlock(&svm->hmr_seq_lock);
+                write_sequnlock(&hproc->hmr_seq_lock);
                 heca_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
-                                svm->hspace->hspace_id, svm->hproc_id, mr->hmr_id);
+                                hproc->hspace->hspace_id, hproc->hproc_id, mr->hmr_id);
                 synchronize_rcu();
                 kfree(mr);
         } while(1);
 }
 
-static struct heca_process *find_local_svm_from_list(struct heca_space *dsm)
+static struct heca_process *find_local_svm_from_list(struct heca_space *hspace)
 {
-        struct heca_process *tmp_svm;
+        struct heca_process *tmp_hproc;
 
-        list_for_each_entry (tmp_svm, &dsm->hprocs_list, hproc_ptr) {
-                if (!is_svm_local(tmp_svm))
+        list_for_each_entry (tmp_hproc, &hspace->hprocs_list, hproc_ptr) {
+                if (!is_svm_local(tmp_hproc))
                         continue;
-                heca_printk(KERN_DEBUG "dsm %d local svm is %d", dsm->hspace_id,
-                                tmp_svm->hproc_id);
-                grab_svm(tmp_svm);
-                return tmp_svm;
+                heca_printk(KERN_DEBUG "hspace %d local hproc is %d", hspace->hspace_id,
+                                tmp_hproc->hproc_id);
+                grab_svm(tmp_hproc);
+                return tmp_hproc;
         }
         return NULL;
 }

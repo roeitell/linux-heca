@@ -213,7 +213,7 @@ failed:
 }
 
 /*
- * svm funcs
+ * hprocs funcs
  */
 static void destroy_hproc_mrs(struct heca_process *hproc);
 
@@ -273,8 +273,8 @@ inline struct heca_process *find_hproc(struct heca_space *hspace, u32 hproc_id)
                         (unsigned long) hproc_id);
 }
 
-inline struct heca_process *find_local_hproc_in_hspace(struct heca_space *hspace,
-                struct mm_struct *mm)
+inline struct heca_process *find_local_hproc_in_hspace(
+                struct heca_space *hspace, struct mm_struct *mm)
 {
         return _find_hproc_in_tree(&hspace->hprocs_mm_tree_root,
                         (unsigned long) mm);
@@ -510,9 +510,10 @@ surrogate:
                 if (likely(test_and_clear_bit(i, &hpc->bitmap))) {
                         page_cache_release(hpc->pages[0]);
                         atomic_dec(&hpc->nproc);
-                        if (atomic_cmpxchg(&hpc->nproc, 1, 0) ==
-                                        1 && find_first_bit(&hpc->bitmap,
-                                                hpc->hprocs.num) >= hpc->hprocs.num)
+                        if (atomic_cmpxchg(&hpc->nproc, 1, 0) == 1 &&
+                                        find_first_bit(&hpc->bitmap,
+                                                hpc->hprocs.num) >=
+                                        hpc->hprocs.num)
                                 dsm_push_cache_release(hpc->hproc, &hpc, 0);
                 }
         }
@@ -568,7 +569,7 @@ static void release_hproc_tx_elements(struct heca_process *hproc,
 
                 if (msg->type & types && msg->dsm_id == hproc->hspace->hspace_id
                                 && (msg->src_id == hproc->hproc_id
-                                || msg->dest_id == hproc->hproc_id)
+                                        || msg->dest_id == hproc->hproc_id)
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                         struct heca_page_cache *dpc = tx_e->wrk_req->hpc;
 
@@ -632,7 +633,8 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
         mutex_unlock(&heca_state->heca_state_mutex);
 
         list_del(&hproc->hproc_ptr);
-        radix_tree_delete(&hspace->hprocs_tree_root, (unsigned long) hproc->hproc_id);
+        radix_tree_delete(&hspace->hprocs_tree_root,
+                        (unsigned long) hproc->hproc_id);
         if (is_hproc_local(hproc)) {
                 cancel_delayed_work_sync(&hproc->delayed_gup_work);
                 // to make sure everything is clean
@@ -676,7 +678,8 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
                                 struct heca_connection *ele;
 
                                 ele = rb_entry(node,
-                                                struct heca_connection, rb_node);
+                                                struct heca_connection,
+                                                rb_node);
                                 BUG_ON(!ele);
                                 release_hproc_queued_requests(hproc,
                                                 &ele->tx_buffer);
@@ -688,11 +691,13 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
         } else if (hproc->connection) {
                 struct heca_process *local_svm;
 
-                release_hproc_queued_requests(hproc, &hproc->connection->tx_buffer);
+                release_hproc_queued_requests(hproc,
+                                &hproc->connection->tx_buffer);
                 release_hproc_tx_elements(hproc, hproc->connection);
 
                 /* potentially very expensive way to do this */
-                list_for_each_entry (local_svm, &hproc->hspace->hprocs_list, hproc_ptr) {
+                list_for_each_entry (local_svm, &hproc->hspace->hprocs_list,
+                                hproc_ptr) {
                         if (is_hproc_local(local_svm))
                                 surrogate_push_remote_hproc(local_svm, hproc);
                 }
@@ -705,7 +710,8 @@ out:
         mutex_unlock(&hspace->hspace_mutex);
 }
 
-struct heca_process *find_any_hproc(struct heca_space *hspace, struct heca_process_list hprocs)
+struct heca_process *find_any_hproc(struct heca_space *hspace,
+                struct heca_process_list hprocs)
 {
         int i;
         struct heca_process *hproc;
@@ -766,7 +772,8 @@ struct heca_memory_region *search_heca_mr_by_addr(struct heca_process *hproc,
         do {
                 seq = read_seqbegin(&hproc->hmr_seq_lock);
                 for (node = root->rb_node; node; this = 0) {
-                        this = rb_entry(node, struct heca_memory_region, rb_node);
+                        this = rb_entry(node, struct heca_memory_region,
+                                        rb_node);
 
                         if (addr < this->addr)
                                 node = node->rb_left;
@@ -787,7 +794,8 @@ out:
         return this;
 }
 
-static int insert_heca_mr(struct heca_process *hproc, struct heca_memory_region *mr)
+static int insert_heca_mr(struct heca_process *hproc,
+                struct heca_memory_region *mr)
 {
         struct rb_root *root = &hproc->hmr_tree_root;
         struct rb_node **new = &root->rb_node, *parent = NULL;
@@ -801,8 +809,8 @@ static int insert_heca_mr(struct heca_process *hproc, struct heca_memory_region 
         write_seqlock(&hproc->hmr_seq_lock);
 
         /* insert to radix tree */
-        r = radix_tree_insert(&hproc->hmr_id_tree_root, (unsigned long) mr->hmr_id,
-                        mr);
+        r = radix_tree_insert(&hproc->hmr_id_tree_root,
+                        (unsigned long) mr->hmr_id, mr);
         if (r)
                 goto out;
 
@@ -843,7 +851,8 @@ static void destroy_hproc_mrs(struct heca_process *hproc)
                 rb_erase(&mr->rb_node, root);
                 write_sequnlock(&hproc->hmr_seq_lock);
                 heca_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
-                                hproc->hspace->hspace_id, hproc->hproc_id, mr->hmr_id);
+                                hproc->hspace->hspace_id, hproc->hproc_id,
+                                mr->hmr_id);
                 synchronize_rcu();
                 kfree(mr);
         } while(1);
@@ -856,8 +865,8 @@ static struct heca_process *find_local_hproc_from_list(struct heca_space *hspace
         list_for_each_entry (tmp_hproc, &hspace->hprocs_list, hproc_ptr) {
                 if (!is_hproc_local(tmp_hproc))
                         continue;
-                heca_printk(KERN_DEBUG "hspace %d local hproc is %d", hspace->hspace_id,
-                                tmp_hproc->hproc_id);
+                heca_printk(KERN_DEBUG "hspace %d local hproc is %d",
+                                hspace->hspace_id, tmp_hproc->hproc_id);
                 grab_hproc(tmp_hproc);
                 return tmp_hproc;
         }
@@ -946,8 +955,8 @@ int create_heca_mr(struct hecaioc_hmr *udata)
         }
 
         if (!(mr->flags & MR_LOCAL) && (udata->flags & UD_AUTO_UNMAP)) {
-                ret = unmap_range(hspace, mr->descriptor, local_hproc->pid, mr->addr,
-                                mr->sz);
+                ret = unmap_range(hspace, mr->descriptor, local_hproc->pid,
+                                mr->addr, mr->sz);
         }
 
         create_mr_sysfs_entry(local_hproc, mr);
@@ -1026,7 +1035,7 @@ out:
 }
 
 /*
- * rcm funcs
+ * hcm funcs
  */
 int init_hcm(void)
 {
@@ -1055,7 +1064,8 @@ int create_hcm_listener(struct heca_module_state *heca_state, unsigned long ip,
                 unsigned short port)
 {
         int ret = 0;
-        struct heca_connections_manager *hcm = kzalloc(sizeof(struct heca_connections_manager), GFP_KERNEL);
+        struct heca_connections_manager *hcm = kzalloc(
+                        sizeof(struct heca_connections_manager), GFP_KERNEL);
 
         if (!hcm)
                 return -ENOMEM;

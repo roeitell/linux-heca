@@ -69,15 +69,15 @@ static struct kobj_type kobj_default_type = {
 /* svm sysfs functions */
 struct svm_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct subvirtual_machine *, char *);
-        ssize_t(*store)(struct subvirtual_machine *, char *, size_t);
+        ssize_t(*show)(struct heca_process *, char *);
+        ssize_t(*store)(struct heca_process *, char *, size_t);
 };
 
 static ssize_t svm_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct subvirtual_machine *svm = container_of(k,
-                        struct subvirtual_machine, svm_kobject);
+        struct heca_process *svm = container_of(k,
+                        struct heca_process, hproc_kobject);
         struct svm_instance_attribute *instance_attr =
                 container_of(a, struct svm_instance_attribute, attr);
 
@@ -86,34 +86,34 @@ static ssize_t svm_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_svm_id_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_id_show(struct heca_process *svm,
                 char *data)
 {
-        return sprintf(data, "%u\n", svm->svm_id);
+        return sprintf(data, "%u\n", svm->hproc_id);
 }
 
-static ssize_t instance_svm_pid_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_pid_show(struct heca_process *svm,
                 char *data)
 {
         return sprintf(data, "%u\n", svm->pid);
 }
 
-static ssize_t instance_svm_conn_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_conn_show(struct heca_process *svm,
                 char *data)
 {
-        if (!svm->ele || (!svm->ele->cm_id))
+        if (!svm->connection || (!svm->connection->cm_id))
                 return sprintf(data, "\n");
 
-        return sprintf(data, HECA_SYSFS_CONN_FMT "\n", svm->ele->cm_id);
+        return sprintf(data, HECA_SYSFS_CONN_FMT "\n", svm->connection->cm_id);
 }
 
-static ssize_t instance_svm_is_local_show(struct subvirtual_machine *svm,
+static ssize_t instance_svm_is_local_show(struct heca_process *svm,
                 char *data)
 {
         return sprintf(data, "%u\n", svm->is_local);
 }
 
-INSTANCE_ATTR(struct svm_instance_attribute, svm_id, S_IRUGO,
+INSTANCE_ATTR(struct svm_instance_attribute, hproc_id, S_IRUGO,
                 instance_svm_id_show, NULL);
 INSTANCE_ATTR(struct svm_instance_attribute, svm_pid, S_IRUGO,
                 instance_svm_pid_show, NULL);
@@ -123,7 +123,7 @@ INSTANCE_ATTR(struct svm_instance_attribute, svm_is_local, S_IRUGO,
                 instance_svm_is_local_show, NULL);
 
 static struct svm_instance_attribute *svm_instance_attr[] = {
-        &ATTR_NAME(svm_id),
+        &ATTR_NAME(hproc_id),
         &ATTR_NAME(svm_pid),
         &ATTR_NAME(svm_conn),
         &ATTR_NAME(svm_is_local),
@@ -146,29 +146,29 @@ void delete_svm_sysfs_entry(struct kobject *obj)
         kobject_del(obj);
 }
 
-int create_svm_sysfs_entry(struct subvirtual_machine *svm)
+int create_svm_sysfs_entry(struct heca_process *svm)
 {
-        struct kobject *kobj = &svm->svm_kobject;
+        struct kobject *kobj = &svm->hproc_kobject;
         int r;
 
         r = kobject_init_and_add(kobj, &ktype_svm_instance,
-                        &svm->dsm->dsm_kobject, HECA_SYSFS_SVM_FMT,
-                        svm->svm_id);
+                        &svm->hspace->hspace_kobject, HECA_SYSFS_SVM_FMT,
+                        svm->hproc_id);
         return r;
 }
 
 /* mr sysfs functions */
 struct mr_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct memory_region *, char *);
-        ssize_t(*store)(struct memory_region *, char *, size_t);
+        ssize_t(*show)(struct heca_memory_region *, char *);
+        ssize_t(*store)(struct heca_memory_region *, char *, size_t);
 };
 
 static ssize_t mr_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct memory_region *mr = container_of(k,
-                        struct memory_region, mr_kobject);
+        struct heca_memory_region *mr = container_of(k,
+                        struct heca_memory_region, hmr_kobject);
         struct mr_instance_attribute *instance_attr =
                 container_of(a, struct mr_instance_attribute, attr);
 
@@ -177,27 +177,27 @@ static ssize_t mr_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_mr_id_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_id_show(struct heca_memory_region *mr, char *data)
 {
-        return sprintf(data, "%u\n", mr->mr_id);
+        return sprintf(data, "%u\n", mr->hmr_id);
 }
 
-static ssize_t instance_mr_addr_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_addr_show(struct heca_memory_region *mr, char *data)
 {
         return sprintf(data, "0x%lx\n", mr->addr);
 }
 
-static ssize_t instance_mr_sz_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_sz_show(struct heca_memory_region *mr, char *data)
 {
         return sprintf(data, "0x%lx\n", mr->sz);
 }
 
-static ssize_t instance_mr_flags_show(struct memory_region *mr, char *data)
+static ssize_t instance_mr_flags_show(struct heca_memory_region *mr, char *data)
 {
         return sprintf(data, "0x%x\n", mr->flags);
 }
 
-INSTANCE_ATTR(struct mr_instance_attribute, mr_id, S_IRUGO,
+INSTANCE_ATTR(struct mr_instance_attribute, hmr_id, S_IRUGO,
                 instance_mr_id_show, NULL);
 INSTANCE_ATTR(struct mr_instance_attribute, mr_addr, S_IRUGO,
                 instance_mr_addr_show, NULL);
@@ -207,7 +207,7 @@ INSTANCE_ATTR(struct mr_instance_attribute, mr_flags, S_IRUGO,
                 instance_mr_flags_show, NULL);
 
 static struct mr_instance_attribute *mr_instance_attr[] = {
-        &ATTR_NAME(mr_id),
+        &ATTR_NAME(hmr_id),
         &ATTR_NAME(mr_addr),
         &ATTR_NAME(mr_sz),
         &ATTR_NAME(mr_flags),
@@ -230,27 +230,27 @@ void delete_mr_sysfs_entry(struct kobject *obj)
         kobject_del(obj);
 }
 
-int create_mr_sysfs_entry(struct subvirtual_machine *svm,
-                struct memory_region *mr)
+int create_mr_sysfs_entry(struct heca_process *svm,
+                struct heca_memory_region *mr)
 {
-        struct kobject *kobj = &mr->mr_kobject;
-        struct kobject *root_kobj = &svm->svm_kobject;
+        struct kobject *kobj = &mr->hmr_kobject;
+        struct kobject *root_kobj = &svm->hproc_kobject;
 
         return kobject_init_and_add(kobj, &ktype_mr_instance, root_kobj,
-                        HECA_SYSFS_MR_FMT, mr->mr_id);
+                        HECA_SYSFS_MR_FMT, mr->hmr_id);
 }
 
 /* dsm sysfs functions */
 struct dsm_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct dsm *, char *);
-        ssize_t(*store)(struct dsm *, char *, size_t);
+        ssize_t(*show)(struct heca_space *, char *);
+        ssize_t(*store)(struct heca_space *, char *, size_t);
 };
 
 static ssize_t dsm_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct dsm *dsm = container_of(k, struct dsm, dsm_kobject);
+        struct heca_space *dsm = container_of(k, struct heca_space, hspace_kobject);
         struct dsm_instance_attribute *instance_attr =
                 container_of(a, struct dsm_instance_attribute, attr);
 
@@ -259,32 +259,32 @@ static ssize_t dsm_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_dsm_id_show(struct dsm *dsm,
+static ssize_t instance_dsm_id_show(struct heca_space *dsm,
                 char *data)
 {
-        return sprintf(data, "%u\n", dsm->dsm_id);
+        return sprintf(data, "%u\n", dsm->hspace_id);
 }
 
-static ssize_t instance_dsm_server_show(struct dsm *dsm,
+static ssize_t instance_dsm_server_show(struct heca_space *dsm,
                 char *data)
 {
         char s[20];
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
 
         BUG_ON(!dsm_state);
-        BUG_ON(!dsm_state->rcm);
+        BUG_ON(!dsm_state->hcm);
 
-        sockaddr_ntoa(&dsm_state->rcm->sin, s, sizeof s);
+        sockaddr_ntoa(&dsm_state->hcm->sin, s, sizeof s);
         return sprintf(data, "%s\n", s);
 }
 
-INSTANCE_ATTR(struct dsm_instance_attribute, dsm_id, S_IRUGO,
+INSTANCE_ATTR(struct dsm_instance_attribute, hspace_id, S_IRUGO,
                 instance_dsm_id_show, NULL);
 INSTANCE_ATTR(struct dsm_instance_attribute, dsm_server, S_IRUGO,
                 instance_dsm_server_show, NULL);
 
 static struct dsm_instance_attribute *dsm_instance_attr[] = {
-        &ATTR_NAME(dsm_id),
+        &ATTR_NAME(hspace_id),
         &ATTR_NAME(dsm_server),
         NULL
 };
@@ -305,24 +305,24 @@ void delete_dsm_sysfs_entry(struct kobject *obj)
         kobject_del(obj);
 }
 
-int create_dsm_sysfs_entry(struct dsm *dsm,
-                struct dsm_module_state *dsm_state) {
-        return kobject_init_and_add(&dsm->dsm_kobject, &ktype_dsm_instance,
-                        dsm_state->dsm_kobjects.domains_kobject,
-                        HECA_SYSFS_DSM_FMT, dsm->dsm_id);
+int create_dsm_sysfs_entry(struct heca_space *dsm,
+                struct heca_module_state *dsm_state) {
+        return kobject_init_and_add(&dsm->hspace_kobject, &ktype_dsm_instance,
+                        dsm_state->hspaces_kobjects.domains_kobject,
+                        HECA_SYSFS_DSM_FMT, dsm->hspace_id);
 }
 
 /* conn sysfs functions */
 struct conn_instance_attribute {
         struct attribute attr;
-        ssize_t(*show)(struct conn_element *, char *);
-        ssize_t(*store)(struct conn_element *, char *, size_t);
+        ssize_t(*show)(struct heca_connection *, char *);
+        ssize_t(*store)(struct heca_connection *, char *, size_t);
 };
 
 static ssize_t conn_instance_show(struct kobject *k,
                 struct attribute *a, char *buffer)
 {
-        struct conn_element *conn = container_of(k, struct conn_element, kobj);
+        struct heca_connection *conn = container_of(k, struct heca_connection, kobj);
         struct conn_instance_attribute *instance_attr =
                 container_of(a, struct conn_instance_attribute, attr);
 
@@ -331,21 +331,21 @@ static ssize_t conn_instance_show(struct kobject *k,
         return 0;
 }
 
-static ssize_t instance_conn_local_show(struct conn_element *conn, char *data)
+static ssize_t instance_conn_local_show(struct heca_connection *conn, char *data)
 {
         char s[20];
         sockaddr_ntoa(&conn->local, s, sizeof s);
         return sprintf(data, "%s\n", s);
 }
 
-static ssize_t instance_conn_remote_show(struct conn_element *conn, char *data)
+static ssize_t instance_conn_remote_show(struct heca_connection *conn, char *data)
 {
         char s[20];
         sockaddr_ntoa(&conn->remote, s, sizeof s);
         return sprintf(data, "%s\n", s);
 }
 
-static ssize_t instance_conn_alive_show(struct conn_element *conn,
+static ssize_t instance_conn_alive_show(struct heca_connection *conn,
                 char *data)
 {
         return sprintf(data, "%d\n", atomic_read(&conn->alive));
@@ -375,18 +375,18 @@ static struct kobj_type ktype_conn_instance = {
         .default_attrs = (struct attribute **) conn_instance_attr,
 };
 
-void delete_connection_sysfs_entry(struct conn_element *ele)
+void delete_connection_sysfs_entry(struct heca_connection *ele)
 {
         kobject_put(&ele->kobj);
         kobject_del(&ele->kobj);
 }
 
-int create_connection_sysfs_entry(struct conn_element *ele)
+int create_connection_sysfs_entry(struct heca_connection *ele)
 {
         int rc;
 
         struct kobject *root_kobj =
-                get_dsm_module_state()->dsm_kobjects.rdma_kobject;
+                get_dsm_module_state()->hspaces_kobjects.rdma_kobject;
 
         rc = kobject_init_and_add(&ele->kobj,
                         &ktype_conn_instance, root_kobj,
@@ -400,31 +400,31 @@ done:
 }
 
 /* toplevel sysfs functions */
-void heca_sysfs_cleanup(struct dsm_module_state *dsm_state)
+void heca_sysfs_cleanup(struct heca_module_state *dsm_state)
 {
-        struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
+        struct heca_space_kobjects *dsm_kobjects = &dsm_state->hspaces_kobjects;
 
         kobject_put(dsm_kobjects->rdma_kobject);
         kobject_del(dsm_kobjects->rdma_kobject);
         kobject_put(dsm_kobjects->domains_kobject);
         kobject_del(dsm_kobjects->domains_kobject);
-        kobject_del(dsm_kobjects->dsm_glob_kobject);
+        kobject_del(dsm_kobjects->hspace_glob_kobject);
 }
 
-int heca_sysfs_setup(struct dsm_module_state *dsm_state)
+int heca_sysfs_setup(struct heca_module_state *dsm_state)
 {
-        struct dsm_kobjects *dsm_kobjects = &dsm_state->dsm_kobjects;
+        struct heca_space_kobjects *dsm_kobjects = &dsm_state->hspaces_kobjects;
 
-        dsm_kobjects->dsm_glob_kobject = kobject_create_and_add(HECA_SYSFS_MODULE,
+        dsm_kobjects->hspace_glob_kobject = kobject_create_and_add(HECA_SYSFS_MODULE,
                         kernel_kobj);
-        if (!dsm_kobjects->dsm_glob_kobject)
+        if (!dsm_kobjects->hspace_glob_kobject)
                 goto err;
         dsm_kobjects->rdma_kobject = kobject_create_and_add(HECA_SYSFS_RDMA,
-                        dsm_kobjects->dsm_glob_kobject);
+                        dsm_kobjects->hspace_glob_kobject);
         if (!dsm_kobjects->rdma_kobject)
                 goto err1;
         dsm_kobjects->domains_kobject = kobject_create_and_add(HECA_SYSFS_CONF,
-                        dsm_kobjects->dsm_glob_kobject);
+                        dsm_kobjects->hspace_glob_kobject);
         if (!dsm_kobjects->domains_kobject)
                 goto err2;
 
@@ -434,7 +434,7 @@ err2:
         kobject_put(dsm_kobjects->rdma_kobject);
         kobject_del(dsm_kobjects->rdma_kobject);
 err1:
-        kobject_del(dsm_kobjects->dsm_glob_kobject);
+        kobject_del(dsm_kobjects->hspace_glob_kobject);
 err:
         return -ENOMEM;
 }

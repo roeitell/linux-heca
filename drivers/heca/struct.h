@@ -79,30 +79,52 @@
 #define MR_SHARED               (1 << 2)
 
 /*
+ * Heca Space Page Pool Size
+ * 1000 * 4 KB ~= 4 MB
+ */
+#define HSPACE_PAGE_POOL_SZ 1000
+
+/*
+ * BITOPS to identify page in flux
+ */
+#define HECA_INFLIGHT            0x04
+#define HECA_INFLIGHT_BITPOS     0x02
+#define HECA_PUSHING             0x08
+#define HECA_PUSHING_BITPOS      0x03
+
+/*
+ * Useful macro for parsing heca processes
+ */
+#define for_each_valid_hproc(hprocs, i) \
+        for (i = 0; i < (hprocs).num; i++) \
+if (likely((hprocs).ids[i]))
+
+
+/*
  * DSM DATA structure
  */
-struct dsm {
-        u32 dsm_id;
+struct heca_space {
+        u32 hspace_id;
 
-        struct radix_tree_root svm_tree_root;
-        struct radix_tree_root svm_mm_tree_root;
+        struct radix_tree_root hprocs_tree_root;
+        struct radix_tree_root hprocs_mm_tree_root;
 
-        struct mutex dsm_mutex;
-        struct list_head svm_list;
+        struct mutex hspace_mutex;
+        struct list_head hprocs_list;
 
-        struct list_head dsm_ptr;
+        struct list_head hspace_ptr;
 
-        struct kobject dsm_kobject;
-        int nb_local_svm;
+        struct kobject hspace_kobject;
+        int nb_local_hprocs;
 };
 
-struct dsm_kobjects {
-        struct kobject *dsm_glob_kobject;
+struct heca_space_kobjects {
+        struct kobject *hspace_glob_kobject;
         struct kobject *rdma_kobject;
         struct kobject *domains_kobject;
 };
 
-struct rcm {
+struct heca_connections_manager {
         int node_ip;
 
         struct rdma_cm_id *cm_id;
@@ -112,10 +134,10 @@ struct rcm {
 
         struct ib_cq *listen_cq;
 
-        struct mutex rcm_mutex;
+        struct mutex hcm_mutex;
 
-        struct rb_root root_conn;
-        seqlock_t conn_lock;
+        struct rb_root connections_rb_tree_root;
+        seqlock_t connections_lock;
 
         struct sockaddr_in sin;
 };
@@ -127,12 +149,12 @@ struct map_dma {
 };
 
 struct rdma_info_data {
-        struct rdma_info *send_buf;
-        struct rdma_info *recv_buf;
+        struct heca_rdma_info *send_buf;
+        struct heca_rdma_info *recv_buf;
 
         struct map_dma send_dma;
         struct map_dma recv_dma;
-        struct rdma_info *remote_info;
+        struct heca_rdma_info *remote_info;
 
         struct ib_sge recv_sge;
         struct ib_recv_wr recv_wr;
@@ -145,12 +167,12 @@ struct rdma_info_data {
 };
 
 struct rx_buffer {
-        struct rx_buf_ele *rx_buf;
+        struct rx_buffer_element *rx_buf;
         int len;
 };
 
 struct tx_buffer {
-        struct tx_buf_ele *tx_buf;
+        struct tx_buffer_element *tx_buf;
         int len;
 
         struct llist_head tx_free_elements_list;
@@ -165,24 +187,24 @@ struct tx_buffer {
         struct work_struct delayed_request_flush_work;
 };
 
-#define DSM_PAGE_POOL_SZ 1000
-struct page_pool_ele {
+
+struct heca_page_pool_element {
         void *page_buf;
         struct page *mem_page;
         struct llist_node llnode;
 };
 
-struct dsm_page_pool {
+struct heca_space_page_pool {
         int cpu;
-        struct page_pool_ele *buf[DSM_PAGE_POOL_SZ];
+        struct heca_page_pool_element *hspace_page_pool[HSPACE_PAGE_POOL_SZ];
         int head;
-        struct conn_element *ele;
+        struct heca_connection *connection;
         struct work_struct work;
 };
 
-struct conn_element {
-        struct rcm *rcm;
-        /* not 100% sur of this atomic regarding barrier*/
+struct heca_connection {
+        struct heca_connections_manager *hcm;
+        /* not 100% sure of this atomic regarding barrier*/
         atomic_t alive;
 
         struct sockaddr_in local, remote;
@@ -211,7 +233,7 @@ struct conn_element {
         struct work_struct delayed_request_flush_work;
 };
 
-struct rdma_info {
+struct heca_rdma_info {
 
         u8 flag;
         u32 node_ip;
@@ -222,7 +244,7 @@ struct rdma_info {
         u32 rx_buf_size;
 };
 
-struct dsm_message {
+struct heca_message {
         /* hdr */
         u16 type;
         u64 req_addr;
@@ -235,25 +257,25 @@ struct dsm_message {
         u32 rkey;
 };
 
-struct memory_region {
+struct heca_memory_region {
         unsigned long addr;
         unsigned long sz;
         u32 descriptor;
-        u32 mr_id;
+        u32 hmr_id;
         u32 flags;
         struct rb_node rb_node;
-        struct kobject mr_kobject;
+        struct kobject hmr_kobject;
 };
 
-struct subvirtual_machine {
-        u32 svm_id;
+struct heca_process {
+        u32 hproc_id;
         int is_local;
-        struct dsm *dsm;
-        struct conn_element *ele;
+        struct heca_space *hspace;
+        struct heca_connection *connection;
         pid_t pid;
         struct mm_struct *mm;
         u32 descriptor;
-        struct list_head svm_ptr;
+        struct list_head hproc_ptr;
 
         struct radix_tree_root page_cache;
         spinlock_t page_cache_spinlock;
@@ -264,17 +286,17 @@ struct subvirtual_machine {
         struct radix_tree_root page_maintainers;
         spinlock_t page_maintainers_spinlock;
 
-        struct radix_tree_root mr_id_tree_root;
-        struct rb_root mr_tree_root;
-        struct memory_region *mr_cache;
-        seqlock_t mr_seq_lock;
+        struct radix_tree_root hmr_id_tree_root;
+        struct rb_root hmr_tree_root;
+        struct heca_memory_region *hmr_cache;
+        seqlock_t hmr_seq_lock;
 
         struct rb_root push_cache;
         seqlock_t push_cache_lock;
 
-        struct kobject svm_kobject;
+        struct kobject hproc_kobject;
 
-        struct llist_head delayed_faults;
+        struct llist_head delayed_gup;
         struct delayed_work delayed_gup_work;
 
         struct llist_head deferred_gups;
@@ -283,34 +305,32 @@ struct subvirtual_machine {
         atomic_t refs;
 };
 
-#define for_each_valid_svm(svms, i)         \
-        for (i = 0; i < (svms).num; i++)        \
-if (likely((svms).ids[i]))
 
-struct work_request_ele {
-        struct conn_element *ele;
+
+struct heca_work_request_element {
+        struct heca_connection *connection;
         struct ib_send_wr wr;
         struct ib_sge sg;
         struct ib_send_wr *bad_wr;
-        struct map_dma dsm_dma;
+        struct map_dma heca_dma;
 };
 
-struct msg_work_request {
-        struct work_request_ele *wr_ele;
-        struct page_pool_ele *dst_addr;
-        struct dsm_page_cache *dpc;
+struct heca_msg_work_request {
+        struct heca_work_request_element *wr_ele;
+        struct heca_page_pool_element *dst_addr;
+        struct heca_page_cache *hpc;
 };
 
-struct recv_work_req_ele {
-        struct conn_element *ele;
+struct heca_recv_work_req_element {
+        struct heca_connection *connection;
         struct ib_recv_wr sq_wr;
         struct ib_recv_wr *bad_wr;
         struct ib_sge recv_sgl;
 };
 
-struct reply_work_request {
+struct heca_reply_work_request {
         //The one for sending back a message
-        struct work_request_ele *wr_ele;
+        struct heca_work_request_element *hwr_ele;
 
         //The one for sending the page
         struct ib_send_wr wr;
@@ -325,15 +345,15 @@ struct reply_work_request {
 };
 
 struct tx_callback {
-        int (*func)(struct tx_buf_ele *);
+        int (*func)(struct tx_buffer_element *);
 };
 
-struct tx_buf_ele {
+struct tx_buffer_element {
         int id;
-        struct dsm_message *dsm_buf;
-        struct map_dma dsm_dma;
-        struct msg_work_request *wrk_req;
-        struct reply_work_request *reply_work_req;
+        struct heca_message *hmsg_buffer;
+        struct map_dma heca_dma;
+        struct heca_msg_work_request *wrk_req;
+        struct heca_reply_work_request *reply_work_req;
         struct llist_node tx_buf_ele_ptr;
 
         struct tx_callback callback;
@@ -341,26 +361,26 @@ struct tx_buf_ele {
         atomic_t released;
 };
 
-struct rx_buf_ele {
+struct rx_buffer_element {
         int id;
-        struct dsm_message *dsm_buf;
-        struct map_dma dsm_dma;
+        struct heca_message *hmsg_buffer;
+        struct map_dma heca_dma;
         //The one for catching the request in the first place
-        struct recv_work_req_ele *recv_wrk_rq_ele;
+        struct heca_recv_work_req_element *recv_wrk_rq_ele;
 };
 
-struct dsm_request {
+struct heca_request {
         u16 type;
-        u32 dsm_id;
-        u32 local_svm_id;
-        u32 remote_svm_id;
-        u32 mr_id;
+        u32 hspace_id;
+        u32 local_hproc_id;
+        u32 remote_hproc_id;
+        u32 hmr_id;
         struct page *page;
-        struct page_pool_ele *ppe;
+        struct heca_page_pool_element *ppe;
         uint64_t addr;
-        int (*func)(struct tx_buf_ele *);
-        struct dsm_message dsm_buf;
-        struct dsm_page_cache *dpc;
+        int (*func)(struct tx_buffer_element *);
+        struct heca_message hmsg;
+        struct heca_page_cache *hpc;
         int response;
         int need_ppe;
 
@@ -368,57 +388,57 @@ struct dsm_request {
         struct list_head ordered_list;
 };
 
-struct deferred_gup {
-        struct dsm_message dsm_buf;
-        struct subvirtual_machine *remote_svm;
-        struct conn_element *origin_ele;
-        struct memory_region *mr;
+struct heca_deferred_gup {
+        struct heca_message hmsg;
+        struct heca_process *remote_hproc;
+        struct heca_connection *connection_origin;
+        struct heca_memory_region *hmr;
         struct llist_node lnode;
 };
 
 
-struct dsm_module_state {
-        struct rcm *rcm;
-        struct mutex dsm_state_mutex;
+struct heca_module_state {
+        struct heca_connections_manager *hcm;
+        struct mutex heca_state_mutex;
         spinlock_t radix_lock;
-        struct radix_tree_root dsm_tree_root;
+        struct radix_tree_root hspaces_tree_root;
         struct radix_tree_root mm_tree_root;
-        struct list_head dsm_list;
+        struct list_head hspaces_list;
 
-        struct dsm_kobjects dsm_kobjects;
-        struct workqueue_struct * dsm_rx_wq;
-        struct workqueue_struct * dsm_tx_wq;
+        struct heca_space_kobjects hspaces_kobjects;
+        struct workqueue_struct * heca_rx_wq;
+        struct workqueue_struct * heca_tx_wq;
 };
 
-struct svm_list {
-        u32 dsm_id;
+struct heca_process_list {
+        u32 hspace_id;
         u32 *ids;
         int num;
 };
 
-struct dsm_page_cache {
-        struct subvirtual_machine *svm;
+struct heca_page_cache {
+        struct heca_process *hproc;
         unsigned long addr;
         u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
         struct page *pages[MAX_SVMS_PER_PAGE];
-        struct svm_list svms;
+        struct heca_process_list hprocs;
         /* memory barrier are ok with these atomic */
         atomic_t found;
         atomic_t nproc;
         int released;
         unsigned long bitmap;
-        u32 redirect_svm_id;
+        u32 redirect_hproc_id;
 
         struct rb_node rb_node;
 };
 
-struct dsm_delayed_fault {
+struct heca_delayed_fault {
         unsigned long addr;
         struct llist_node node;
 };
 
-struct dsm_pte_data {
+struct heca_pte_data {
         struct vm_area_struct *vma;
         pgd_t *pgd;
         pud_t *pud;
@@ -426,58 +446,58 @@ struct dsm_pte_data {
         pte_t *pte;
 };
 
-#define DSM_INFLIGHT            0x04
-#define DSM_INFLIGHT_BITPOS     0x02
-#define DSM_PUSHING             0x08
-#define DSM_PUSHING_BITPOS      0x03
 
-struct dsm_swp_data {
-        struct dsm *dsm;
-        struct svm_list svms;
+
+struct heca_swp_data {
+        struct heca_space *hspace;
+        struct heca_process_list hprocs;
         u32 flags;
 };
 
-struct dsm_page_reader {
-        u32 svm_id;
-        struct dsm_page_reader *next;
+struct heca_page_reader {
+        u32 hproc_id;
+        struct heca_page_reader *next;
 };
 
 void dsm_init_descriptors(void);
 void dsm_destroy_descriptors(void);
 u32 dsm_get_descriptor(u32, u32 *);
 inline pte_t dsm_descriptor_to_pte(u32, u32);
-inline struct svm_list dsm_descriptor_to_svms(u32);
-void remove_svm_from_descriptors(struct subvirtual_machine *);
-int swp_entry_to_dsm_data(swp_entry_t, struct dsm_swp_data *);
+inline struct heca_process_list dsm_descriptor_to_svms(u32);
+void remove_svm_from_descriptors(struct heca_process *);
+int swp_entry_to_dsm_data(swp_entry_t, struct heca_swp_data *);
 int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
 void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
 void init_dsm_cache_kmem(void);
 void destroy_dsm_cache_kmem(void);
-struct dsm_page_cache *dsm_alloc_dpc(struct subvirtual_machine *,
-                unsigned long, struct svm_list, int, int);
-void dsm_dealloc_dpc(struct dsm_page_cache **);
-struct dsm_page_cache *dsm_cache_get(struct subvirtual_machine *,
+struct heca_page_cache *dsm_alloc_dpc(struct heca_process *,
+                unsigned long, struct heca_process_list, int, int);
+void dsm_dealloc_dpc(struct heca_page_cache **);
+struct heca_page_cache *dsm_cache_get(struct heca_process *,
                 unsigned long);
-struct dsm_page_cache *dsm_cache_get_hold(struct subvirtual_machine *,
+struct heca_page_cache *dsm_cache_get_hold(struct heca_process *,
                 unsigned long);
-struct dsm_page_cache *dsm_cache_release(struct subvirtual_machine *,
+struct heca_page_cache *dsm_cache_release(struct heca_process *,
                 unsigned long);
-void dsm_destroy_page_pool(struct conn_element *);
-int dsm_init_page_pool(struct conn_element *);
-struct page_pool_ele *dsm_fetch_ready_ppe(struct conn_element *);
-struct page_pool_ele *dsm_prepare_ppe(struct conn_element *, struct page *);
-void dsm_ppe_clear_release(struct conn_element *, struct page_pool_ele **);
+void dsm_destroy_page_pool(struct heca_connection *);
+int dsm_init_page_pool(struct heca_connection *);
+struct heca_page_pool_element *dsm_fetch_ready_ppe(
+                struct heca_connection *);
+struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection *,
+                struct page *);
+void dsm_ppe_clear_release(struct heca_connection *,
+                struct heca_page_pool_element **);
 void init_dsm_reader_kmem(void);
-u32 dsm_lookup_page_read(struct subvirtual_machine *, unsigned long);
-u32 dsm_extract_page_read(struct subvirtual_machine *, unsigned long);
-int dsm_flag_page_read(struct subvirtual_machine *, unsigned long, u32);
-int dsm_cache_add(struct subvirtual_machine *, unsigned long, int, int,
-                struct dsm_page_cache **);
-struct dsm_page_reader *dsm_delete_readers(struct subvirtual_machine *,
+u32 dsm_lookup_page_read(struct heca_process *, unsigned long);
+u32 dsm_extract_page_read(struct heca_process *, unsigned long);
+int dsm_flag_page_read(struct heca_process *, unsigned long, u32);
+int dsm_cache_add(struct heca_process *, unsigned long, int, int,
+                struct heca_page_cache **);
+struct heca_page_reader *dsm_delete_readers(struct heca_process *,
                 unsigned long);
-struct dsm_page_reader *dsm_lookup_readers(struct subvirtual_machine *,
+struct heca_page_reader *dsm_lookup_readers(struct heca_process *,
                 unsigned long);
-int dsm_add_reader(struct subvirtual_machine *, unsigned long, u32);
-inline void dsm_free_page_reader(struct dsm_page_reader *);
+int dsm_add_reader(struct heca_process *, unsigned long, u32);
+inline void dsm_free_page_reader(struct heca_page_reader *);
 
 #endif /* HECA_STRUCT_H_ */

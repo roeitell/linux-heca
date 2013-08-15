@@ -9,17 +9,17 @@
 #include <linux/kobject.h>
 #include "struct.h"
 
-int create_svm_sysfs_entry(struct subvirtual_machine *);
+int create_svm_sysfs_entry(struct heca_process *);
 void delete_svm_sysfs_entry(struct kobject *);
-int create_mr_sysfs_entry(struct subvirtual_machine *,
-                struct memory_region *);
+int create_mr_sysfs_entry(struct heca_process *,
+                struct heca_memory_region *);
 void delete_mr_sysfs_entry(struct kobject *);
-int create_dsm_sysfs_entry(struct dsm *, struct dsm_module_state *);
+int create_dsm_sysfs_entry(struct heca_space *, struct heca_module_state *);
 void delete_dsm_sysfs_entry(struct kobject *);
-int create_connection_sysfs_entry(struct conn_element *);
-void delete_connection_sysfs_entry(struct conn_element *);
-int heca_sysfs_setup(struct dsm_module_state *);
-void heca_sysfs_cleanup(struct dsm_module_state *);
+int create_connection_sysfs_entry(struct heca_connection *);
+void delete_connection_sysfs_entry(struct heca_connection *);
+int heca_sysfs_setup(struct heca_module_state *);
+void heca_sysfs_cleanup(struct heca_module_state *);
 
 #endif /* _HECA_SYSFS_H */
 

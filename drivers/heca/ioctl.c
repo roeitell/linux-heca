@@ -77,25 +77,25 @@ EXPORT_SYMBOL(__heca_printk);
 
 static int deregister_dsm(__u32 dsm_id);
 
-static struct dsm_module_state *dsm_state;
+static struct heca_module_state *dsm_state;
 
-inline struct dsm_module_state *get_dsm_module_state(void)
+inline struct heca_module_state *get_dsm_module_state(void)
 {
         return dsm_state;
 }
 
-struct dsm_module_state *create_dsm_module_state(void)
+struct heca_module_state *create_dsm_module_state(void)
 {
-        dsm_state = kzalloc(sizeof(struct dsm_module_state), GFP_KERNEL);
+        dsm_state = kzalloc(sizeof(struct heca_module_state), GFP_KERNEL);
         BUG_ON(!(dsm_state));
-        INIT_RADIX_TREE(&dsm_state->dsm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
+        INIT_RADIX_TREE(&dsm_state->hspaces_tree_root, GFP_KERNEL & ~__GFP_WAIT);
         INIT_RADIX_TREE(&dsm_state->mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
-        INIT_LIST_HEAD(&dsm_state->dsm_list);
-        mutex_init(&dsm_state->dsm_state_mutex);
+        INIT_LIST_HEAD(&dsm_state->hspaces_list);
+        mutex_init(&dsm_state->heca_state_mutex);
         spin_lock_init(&dsm_state->radix_lock);
-        dsm_state->dsm_tx_wq = alloc_workqueue("dsm_rx_wq",
+        dsm_state->heca_tx_wq = alloc_workqueue("dsm_rx_wq",
                         WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
-        dsm_state->dsm_rx_wq = alloc_workqueue("dsm_tx_wq",
+        dsm_state->heca_rx_wq = alloc_workqueue("dsm_tx_wq",
                         WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
         return dsm_state;
 }
@@ -103,32 +103,32 @@ struct dsm_module_state *create_dsm_module_state(void)
 void destroy_dsm_module_state(void)
 {
         struct list_head *curr, *next;
-        struct dsm *dsm;
+        struct heca_space *dsm;
 
-        list_for_each_safe (curr, next, &dsm_state->dsm_list) {
-                dsm = list_entry(curr, struct dsm, dsm_ptr);
+        list_for_each_safe (curr, next, &dsm_state->hspaces_list) {
+                dsm = list_entry(curr, struct heca_space, hspace_ptr);
                 remove_dsm(dsm);
         }
 
         destroy_rcm_listener(dsm_state);
-        mutex_destroy(&dsm_state->dsm_state_mutex);
-        destroy_workqueue(dsm_state->dsm_tx_wq);
-        destroy_workqueue(dsm_state->dsm_rx_wq);
+        mutex_destroy(&dsm_state->heca_state_mutex);
+        destroy_workqueue(dsm_state->heca_tx_wq);
+        destroy_workqueue(dsm_state->heca_rx_wq);
         kfree(dsm_state);
         dsm_state = NULL;
 }
 
 static int deregister_dsm(__u32 dsm_id)
 {
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
         int ret = 0;
-        struct dsm *dsm;
+        struct heca_space *dsm;
         struct list_head *curr, *next;
 
         heca_printk(KERN_DEBUG "<enter> dsm_id=%d", dsm_id);
-        list_for_each_safe (curr, next, &dsm_state->dsm_list) {
-                dsm = list_entry(curr, struct dsm, dsm_ptr);
-                if (dsm->dsm_id == dsm_id)
+        list_for_each_safe (curr, next, &dsm_state->hspaces_list) {
+                dsm = list_entry(curr, struct heca_space, hspace_ptr);
+                if (dsm->hspace_id == dsm_id)
                         remove_dsm(dsm);
         }
 
@@ -137,9 +137,9 @@ static int deregister_dsm(__u32 dsm_id)
         return ret;
 }
 
-static int register_dsm(struct hecaioc_dsm *dsm_info)
+static int register_dsm(struct hecaioc_hspace *dsm_info)
 {
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
         int rc;
 
         heca_printk(KERN_DEBUG "<enter>");
@@ -151,21 +151,21 @@ static int register_dsm(struct hecaioc_dsm *dsm_info)
                 goto done;
         }
 
-        if ((rc = create_dsm(dsm_info->dsm_id))) {
+        if ((rc = create_dsm(dsm_info->hspace_id))) {
                 heca_printk(KERN_ERR "create_dsm %d", rc);
                 goto done;
         }
 
 done:
         if (rc)
-                deregister_dsm(dsm_info->dsm_id);
+                deregister_dsm(dsm_info->hspace_id);
         heca_printk(KERN_DEBUG "<exit> %d", rc);
         return rc;
 }
 
 static int ioctl_svm(int ioctl, void __user *argp)
 {
-        struct hecaioc_svm svm_info;
+        struct hecaioc_hproc svm_info;
 
         if (copy_from_user((void *) &svm_info, argp, sizeof svm_info)) {
                 heca_printk(KERN_ERR "copy_from_user failed");
@@ -179,10 +179,10 @@ static int ioctl_svm(int ioctl, void __user *argp)
         }
 
         switch (ioctl) {
-        case HECAIOC_SVM_ADD:
+        case HECAIOC_HPROC_ADD:
                 return create_svm(&svm_info);
-        case HECAIOC_SVM_RM:
-                remove_svm(svm_info.dsm_id, svm_info.svm_id);
+        case HECAIOC_HPROC_RM:
+                remove_svm(svm_info.hspace_id, svm_info.hproc_id);
                 return 0;
         }
         return -EINVAL;
@@ -190,7 +190,7 @@ static int ioctl_svm(int ioctl, void __user *argp)
 
 static int ioctl_mr(int ioctl, void __user *argp)
 {
-        struct hecaioc_mr udata;
+        struct hecaioc_hmr udata;
 
         if (copy_from_user((void *) &udata, argp, sizeof udata)) {
                 heca_printk(KERN_ERR "copy_from_user failed");
@@ -198,7 +198,7 @@ static int ioctl_mr(int ioctl, void __user *argp)
         }
 
         switch (ioctl) {
-        case HECAIOC_MR_ADD:
+        case HECAIOC_HMR_ADD:
                 return create_mr(&udata);
         }
 
@@ -231,7 +231,7 @@ static int ioctl_ps(int ioctl, void __user *argp)
 
 static long ioctl_dsm(unsigned int ioctl, void __user *argp)
 {
-        struct hecaioc_dsm dsm_info;
+        struct hecaioc_hspace dsm_info;
         int rc = -EFAULT;
 
         if ((rc = copy_from_user((void *) &dsm_info, argp, sizeof dsm_info))) {
@@ -240,10 +240,10 @@ static long ioctl_dsm(unsigned int ioctl, void __user *argp)
         }
 
         switch (ioctl) {
-        case HECAIOC_DSM_ADD:
+        case HECAIOC_HSPACE_ADD:
                 return register_dsm(&dsm_info);
-        case HECAIOC_DSM_RM:
-                return deregister_dsm(dsm_info.dsm_id);
+        case HECAIOC_HSPACE_RM:
+                return deregister_dsm(dsm_info.hspace_id);
         default:
                 goto failed;
         }
@@ -261,15 +261,15 @@ static long heca_ioctl(struct file *f, unsigned int ioctl, unsigned long arg)
 
         /* special case: no need for prior dsm in process */
         switch (ioctl) {
-        case HECAIOC_DSM_ADD:
-        case HECAIOC_DSM_RM:
+        case HECAIOC_HSPACE_ADD:
+        case HECAIOC_HSPACE_RM:
                 r = ioctl_dsm(ioctl, argp);
                 goto out;
-        case HECAIOC_SVM_ADD:
-        case HECAIOC_SVM_RM:
+        case HECAIOC_HPROC_ADD:
+        case HECAIOC_HPROC_RM:
                 r = ioctl_svm(ioctl, argp);
                 goto out;
-        case HECAIOC_MR_ADD:
+        case HECAIOC_HMR_ADD:
                 r = ioctl_mr(ioctl, argp);
                 goto out;
         case HECAIOC_PS_PUSHBACK:
@@ -309,7 +309,7 @@ const struct heca_hook_struct my_heca_hook = {
 
 static int dsm_init(void)
 {
-        struct dsm_module_state *dsm_state = create_dsm_module_state();
+        struct heca_module_state *dsm_state = create_dsm_module_state();
         int rc;
 
         heca_printk(KERN_DEBUG "<enter>");
@@ -328,7 +328,7 @@ module_init(dsm_init);
 
 static void dsm_exit(void)
 {
-        struct dsm_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_dsm_module_state();
 
         heca_printk(KERN_DEBUG "<enter>");
         BUG_ON(heca_hook_unregister());

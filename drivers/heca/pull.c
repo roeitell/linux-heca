@@ -28,7 +28,7 @@ unsigned long zero_dsm_pfn __read_mostly;
 void init_dsm_prefetch_cache_kmem(void)
 {
         dsm_delayed_fault_cache_kmem = kmem_cache_create("dsm_delayed_fault_cache",
-                        sizeof(struct dsm_delayed_fault), 0,
+                        sizeof(struct heca_delayed_fault), 0,
                         SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY, NULL);
 }
 
@@ -37,10 +37,10 @@ void destroy_dsm_prefetch_cache_kmem(void)
         kmem_cache_destroy(dsm_delayed_fault_cache_kmem);
 }
 
-static struct dsm_delayed_fault *alloc_dsm_delayed_fault_cache_elm(
+static struct heca_delayed_fault *alloc_dsm_delayed_fault_cache_elm(
                 unsigned long addr)
 {
-        struct dsm_delayed_fault *ddf = kmem_cache_alloc(
+        struct heca_delayed_fault *ddf = kmem_cache_alloc(
                         dsm_delayed_fault_cache_kmem, GFP_KERNEL);
         if (unlikely(!ddf))
                 goto out;
@@ -51,7 +51,7 @@ out:
         return ddf;
 }
 
-static void free_dsm_delayed_fault_cache_elm(struct dsm_delayed_fault ** ddf)
+static void free_dsm_delayed_fault_cache_elm(struct heca_delayed_fault ** ddf)
 {
         kmem_cache_free(dsm_delayed_fault_cache_kmem, *ddf);
         *ddf = NULL;
@@ -74,7 +74,7 @@ static inline int is_dsm_zero_pfn(unsigned long pfn)
 }
 
 static int reuse_dsm_page(struct page *page, unsigned long addr,
-                struct dsm_page_cache *dpc)
+                struct heca_page_cache *dpc)
 {
         int count;
 
@@ -110,7 +110,7 @@ static inline void cow_user_page(struct page *dst, struct page *src,
 static int do_wp_dsm_page(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned long address, pte_t *page_table, pmd_t *pmd,
                 spinlock_t *ptl, pte_t orig_pte, unsigned long norm_address,
-                struct dsm_page_cache *dpc)
+                struct heca_page_cache *dpc)
 __releases(ptl)
 {
         struct page *old_page, *new_page;
@@ -310,13 +310,13 @@ unwritable_page:
         return ret;
 }
 
-inline void dsm_release_pull_dpc(struct dsm_page_cache **dpc)
+inline void dsm_release_pull_dpc(struct heca_page_cache **dpc)
 {
         atomic_dec(&(*dpc)->nproc);
         if (atomic_cmpxchg(&(*dpc)->nproc, 1, 0) == 1) {
                 int i;
 
-                for (i = 0; i < (*dpc)->svms.num; i++) {
+                for (i = 0; i < (*dpc)->hprocs.num; i++) {
                         if (likely((*dpc)->pages[i]))
                                 page_cache_release((*dpc)->pages[i]);
                 }
@@ -324,16 +324,16 @@ inline void dsm_release_pull_dpc(struct dsm_page_cache **dpc)
         }
 }
 
-void dequeue_and_gup_cleanup(struct subvirtual_machine *svm)
+void dequeue_and_gup_cleanup(struct heca_process *svm)
 {
-        struct dsm_delayed_fault *ddf;
-        struct dsm_page_cache *dpc;
+        struct heca_delayed_fault *ddf;
+        struct heca_page_cache *dpc;
         struct llist_node *head, *node;
 
-        head = llist_del_all(&svm->delayed_faults);
+        head = llist_del_all(&svm->delayed_gup);
 
         for (node = head; node; node = llist_next(node)) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 /*
                  * we need to hold the dpc to guarantee it doesn't disappear while we
                  * do the if check
@@ -346,7 +346,7 @@ void dequeue_and_gup_cleanup(struct subvirtual_machine *svm)
         }
 
         while (node) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 node = llist_next(node);
                 free_dsm_delayed_fault_cache_elm(&ddf);
         }
@@ -382,16 +382,16 @@ int dsm_initiate_fault(struct mm_struct *mm, unsigned long addr, int write)
         return r == 1;
 }
 
-static void heca_initiate_pull_gup(struct dsm_page_cache *dpc, int delayed)
+static void heca_initiate_pull_gup(struct heca_page_cache *dpc, int delayed)
 {
-        struct subvirtual_machine *svm = dpc->svm;
-        struct memory_region *mr;
+        struct heca_process *svm = dpc->hproc;
+        struct heca_memory_region *mr;
 
         if (delayed) {
-                trace_delayed_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                trace_delayed_initiated_fault(svm->hspace->hspace_id, svm->hproc_id,
                                 -1, -1, dpc->addr, 0, dpc->tag);
         } else {
-                trace_immediate_initiated_fault(svm->dsm->dsm_id, svm->svm_id,
+                trace_immediate_initiated_fault(svm->hspace->hspace_id, svm->hproc_id,
                                 -1, -1, dpc->addr, 0, dpc->tag);
         }
 
@@ -404,16 +404,16 @@ static void heca_initiate_pull_gup(struct dsm_page_cache *dpc, int delayed)
                         (~mr->flags & MR_SHARED));
 }
 
-static void dequeue_and_gup(struct subvirtual_machine *svm)
+static void dequeue_and_gup(struct heca_process *svm)
 {
-        struct dsm_delayed_fault *ddf;
-        struct dsm_page_cache *dpc;
+        struct heca_delayed_fault *ddf;
+        struct heca_page_cache *dpc;
         struct llist_node *head, *node;
 
-        head = llist_del_all(&svm->delayed_faults);
+        head = llist_del_all(&svm->delayed_gup);
         head = llist_nodes_reverse(head);
         for (node = head; node; node = llist_next(node)) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 dpc = dsm_cache_get_hold(svm, ddf->addr);
                 if (dpc) {
                         /*
@@ -428,7 +428,7 @@ static void dequeue_and_gup(struct subvirtual_machine *svm)
         }
         node = head;
         while (node) {
-                ddf = llist_entry(node, struct dsm_delayed_fault, node);
+                ddf = llist_entry(node, struct heca_delayed_fault, node);
                 node = llist_next(node);
                 free_dsm_delayed_fault_cache_elm(&ddf);
         }
@@ -436,27 +436,27 @@ static void dequeue_and_gup(struct subvirtual_machine *svm)
 
 void delayed_gup_work_fn(struct work_struct *w)
 {
-        struct subvirtual_machine *svm;
-        svm = container_of(to_delayed_work(w), struct subvirtual_machine,
+        struct heca_process *svm;
+        svm = container_of(to_delayed_work(w), struct heca_process,
                         delayed_gup_work);
         dequeue_and_gup(svm);
 }
 
-static inline void queue_ddf_for_delayed_gup(struct dsm_delayed_fault *ddf,
-                struct subvirtual_machine *svm)
+static inline void queue_ddf_for_delayed_gup(struct heca_delayed_fault *ddf,
+                struct heca_process *svm)
 {
-        llist_add(&ddf->node, &svm->delayed_faults);
+        llist_add(&ddf->node, &svm->delayed_gup);
         schedule_delayed_work(&svm->delayed_gup_work, GUP_DELAY);
 }
 
 static int dsm_pull_req_success(struct page *page,
-                struct dsm_page_cache *dpc)
+                struct heca_page_cache *dpc)
 {
         int i, found;
-        trace_dsm_pull_req_complete(dpc->svm->dsm->dsm_id, dpc->svm->svm_id, -1,
+        trace_dsm_pull_req_complete(dpc->hproc->hspace->hspace_id, dpc->hproc->hproc_id, -1,
                         -1, dpc->addr, 0, dpc->tag);
 
-        for (i = 0; i < dpc->svms.num; i++) {
+        for (i = 0; i < dpc->hprocs.num; i++) {
                 if (dpc->pages[i] == page)
                         goto unlock;
         }
@@ -469,19 +469,19 @@ unlock:
                         goto unlock;
                 page_cache_get(page);
                 lru_cache_add_anon(page);
-                for (i = 0; i < dpc->svms.num; i++) {
+                for (i = 0; i < dpc->hprocs.num; i++) {
                         if (likely(dpc->pages[i]))
                                 SetPageUptodate(dpc->pages[i]);
                 }
-                trace_dsm_pull_req_success(dpc->svm->dsm->dsm_id,
-                                dpc->svm->svm_id, -1, -1,
+                trace_dsm_pull_req_success(dpc->hproc->hspace->hspace_id,
+                                dpc->hproc->hproc_id, -1, -1,
                                 dpc->addr, 0, dpc->tag);
                 unlock_page(dpc->pages[0]);
                 lru_add_drain();
 
                 /* try to delay faulting pages that were prefetched or pushed to us */
                 if (dpc->tag & (PREFETCH_TAG | PULL_TRY_TAG)) {
-                        struct dsm_delayed_fault *ddf;
+                        struct heca_delayed_fault *ddf;
 
                         /*
                          * FIXME: Immediate gup might cause shrink_page_list to deadlock if
@@ -490,7 +490,7 @@ unlock:
                          */
                         ddf = alloc_dsm_delayed_fault_cache_elm(dpc->addr);
                         if (likely(ddf))
-                                queue_ddf_for_delayed_gup(ddf, dpc->svm);
+                                queue_ddf_for_delayed_gup(ddf, dpc->hproc);
                         else
                                 heca_initiate_pull_gup(dpc, 0);
                 }
@@ -500,12 +500,12 @@ unlock:
 }
 
 /* last failure should also account for the fault/gup refcount */
-int dsm_pull_req_failure(struct dsm_page_cache *dpc)
+int dsm_pull_req_failure(struct heca_page_cache *dpc)
 {
         int found, i;
 
-        trace_dsm_try_pull_req_complete_fail(dpc->svm->dsm->dsm_id,
-                        dpc->svm->svm_id, -1, -1, dpc->addr, 0, dpc->tag);
+        trace_dsm_try_pull_req_complete_fail(dpc->hproc->hspace->hspace_id,
+                        dpc->hproc->hproc_id, -1, -1, dpc->addr, 0, dpc->tag);
 
 retry:
         /*
@@ -519,13 +519,13 @@ retry:
                         goto retry;
 
                 /* -found == svm_num <-> -(found-1) == svm_num+1 */
-                if (found * -1 == dpc->svms.num) {
-                        for (i = 0; i < dpc->svms.num; i++) {
+                if (found * -1 == dpc->hprocs.num) {
+                        for (i = 0; i < dpc->hprocs.num; i++) {
                                 if (likely(dpc->pages[i]))
                                         SetPageUptodate(dpc->pages[i]);
                         }
                         unlock_page(dpc->pages[0]);
-                        dsm_cache_release(dpc->svm, dpc->addr);
+                        dsm_cache_release(dpc->hproc, dpc->addr);
                         atomic_dec(&dpc->nproc);
                 }
         }
@@ -533,13 +533,13 @@ retry:
         return -EFAULT;
 }
 
-static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
+static int dsm_pull_req_complete(struct tx_buffer_element *tx_e)
 {
-        struct dsm_page_cache *dpc = tx_e->wrk_req->dpc;
+        struct heca_page_cache *dpc = tx_e->wrk_req->hpc;
         struct page *page = tx_e->wrk_req->dst_addr->mem_page;
         int r;
 
-        r = unlikely(tx_e->dsm_buf->type == MSG_RES_PAGE_FAIL) ?
+        r = unlikely(tx_e->hmsg_buffer->type == MSG_RES_PAGE_FAIL) ?
                 dsm_pull_req_failure(dpc) :
                 dsm_pull_req_success(page, dpc);
 
@@ -549,16 +549,16 @@ static int dsm_pull_req_complete(struct tx_buf_ele *tx_e)
 }
 
 static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
-                unsigned long addr, struct dsm_page_cache *dpc,
-                struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr,
-                struct subvirtual_machine *remote_svm, int tag, int i,
-                struct page_pool_ele *ppe)
+                unsigned long addr, struct heca_page_cache *dpc,
+                struct heca_process *fault_svm,
+                struct heca_memory_region *fault_mr,
+                struct heca_process *remote_svm, int tag, int i,
+                struct heca_page_pool_element *ppe)
 {
         struct page *page = NULL;
 
         if (!dpc->pages[i]) {
-                ppe = dsm_fetch_ready_ppe(remote_svm->ele);
+                ppe = dsm_fetch_ready_ppe(remote_svm->connection);
                 dpc->pages[i] = ppe ? ppe->mem_page :
                         alloc_page_vma(GFP_HIGHUSER_MOVABLE, vma, addr);
         }
@@ -567,8 +567,8 @@ static struct page *dsm_get_remote_page(struct vm_area_struct *vma,
                 goto out;
         SetPageSwapBacked(page);
 
-        trace_dsm_get_remote_page(fault_svm->dsm->dsm_id, fault_svm->svm_id,
-                        remote_svm->svm_id, fault_mr->mr_id, addr,
+        trace_dsm_get_remote_page(fault_svm->hspace->hspace_id, fault_svm->hproc_id,
+                        remote_svm->hproc_id, fault_mr->hmr_id, addr,
                         addr - fault_mr->addr, tag);
 
         request_dsm_page(page, remote_svm, fault_svm, fault_mr, addr,
@@ -578,12 +578,12 @@ out:
         return page;
 }
 
-static struct dsm_page_cache *dsm_cache_add_pushed(
-                struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr, struct svm_list svms,
+static struct heca_page_cache *dsm_cache_add_pushed(
+                struct heca_process *fault_svm,
+                struct heca_memory_region *fault_mr, struct heca_process_list svms,
                 unsigned long addr, struct page *page)
 {
-        struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
+        struct heca_page_cache *new_dpc = NULL, *found_dpc = NULL;
         int r, i;
 
         do {
@@ -613,10 +613,10 @@ static struct dsm_page_cache *dsm_cache_add_pushed(
                 spin_unlock_irq(&fault_svm->page_cache_spinlock);
                 radix_tree_preload_end();
                 if (likely(!r)) {
-                        for_each_valid_svm(svms, i) {
-                                struct subvirtual_machine *remote_svm;
+                        for_each_valid_hproc(svms, i) {
+                                struct heca_process *remote_svm;
 
-                                remote_svm = find_svm(fault_svm->dsm,
+                                remote_svm = find_svm(fault_svm->hspace,
                                                 svms.ids[i]);
                                 if (likely(remote_svm)) {
                                         dsm_claim_page(fault_svm, remote_svm,
@@ -634,21 +634,21 @@ fail:
         return found_dpc;
 }
 
-static struct dsm_page_cache *dsm_cache_add_send(
-                struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr, struct svm_list svms,
+static struct heca_page_cache *dsm_cache_add_send(
+                struct heca_process *fault_svm,
+                struct heca_memory_region *fault_mr, struct heca_process_list svms,
                 unsigned long norm_addr, int nproc, int tag,
                 struct vm_area_struct *vma, pte_t orig_pte,
                 pte_t *ptep, int alloc)
 {
-        struct dsm_page_cache *new_dpc = NULL, *found_dpc = NULL;
+        struct heca_page_cache *new_dpc = NULL, *found_dpc = NULL;
         struct page *page = NULL;
-        struct page_pool_ele *ppe = NULL;
+        struct heca_page_pool_element *ppe = NULL;
         int r;
-        struct subvirtual_machine *first_svm = NULL;
+        struct heca_process *first_svm = NULL;
 
-        trace_dsm_cache_add_send(fault_svm->dsm->dsm_id, fault_svm->svm_id, -1,
-                        fault_mr->mr_id, norm_addr, norm_addr - fault_mr->addr,
+        trace_dsm_cache_add_send(fault_svm->hspace->hspace_id, fault_svm->hproc_id, -1,
+                        fault_mr->hmr_id, norm_addr, norm_addr - fault_mr->addr,
                         tag);
 
         do {
@@ -665,10 +665,10 @@ static struct dsm_page_cache *dsm_cache_add_send(
 
                 if (likely(!page)) {
                         if (likely(svms.ids[0])) {
-                                first_svm = find_svm(fault_svm->dsm,
+                                first_svm = find_svm(fault_svm->hspace,
                                                 svms.ids[0]);
                                 if (likely(first_svm))
-                                        ppe = dsm_fetch_ready_ppe(first_svm->ele);
+                                        ppe = dsm_fetch_ready_ppe(first_svm->connection);
                         }
                         if (ppe) {
                                 page = ppe->mem_page;
@@ -708,9 +708,9 @@ static struct dsm_page_cache *dsm_cache_add_send(
                                 release_svm(first_svm);
                         }
                         for (r = 1; r < svms.num; r++) {
-                                struct subvirtual_machine *remote_svm;
+                                struct heca_process *remote_svm;
 
-                                remote_svm = find_svm(fault_svm->dsm,
+                                remote_svm = find_svm(fault_svm->hspace,
                                                 svms.ids[r]);
                                 if (likely(remote_svm)) {
                                         dsm_get_remote_page(vma, norm_addr,
@@ -730,7 +730,7 @@ fail:
                         ClearPageSwapBacked(page);
                         unlock_page(page);
                         if (ppe)
-                                dsm_ppe_clear_release(first_svm->ele, &ppe);
+                                dsm_ppe_clear_release(first_svm->connection, &ppe);
                         else
                                 page_cache_release(page);
                 }
@@ -750,7 +750,7 @@ fail:
  * a normalized one
  */
 static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
-                struct subvirtual_machine *fault_svm, struct memory_region *mr,
+                struct heca_process *fault_svm, struct heca_memory_region *mr,
                 int tag)
 {
         pte_t *pte;
@@ -761,7 +761,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
         swp_entry_t swp_e;
         struct vm_area_struct *vma;
         unsigned long norm_addr = addr & PAGE_MASK;
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
         int ret = 0;
 
         if (norm_addr < mr->addr || norm_addr >= mr->addr + mr->sz)
@@ -799,12 +799,12 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                 if (!pte_present(pte_entry) && !pte_none(pte_entry)) {
                         swp_e = pte_to_swp_entry(pte_entry);
                         if (non_swap_entry(swp_e) && is_dsm_entry(swp_e)) {
-                                struct dsm_swp_data dsd;
+                                struct heca_swp_data dsd;
 
                                 if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
                                         goto out;
 
-                                if (dsd.flags & (DSM_INFLIGHT | DSM_PUSHING))
+                                if (dsd.flags & (HECA_INFLIGHT | HECA_PUSHING))
                                         goto out;
 
                                 /*
@@ -812,7 +812,7 @@ static int get_dsm_page(struct mm_struct *mm, unsigned long addr,
                                  *  +1 for every svm we send to
                                  *  +1 for the fault that comes after fetching
                                  */
-                                dsm_cache_add_send(fault_svm, mr, dsd.svms,
+                                dsm_cache_add_send(fault_svm, mr, dsd.hprocs,
                                                 norm_addr, 2, tag, vma,
                                                 pte_entry, pte,
                                                 tag != PREFETCH_TAG);
@@ -832,12 +832,12 @@ out:
  * issued read copies in the meanwhile, it will invalidate them when we request
  * the page from it.
  */
-static struct dsm_page_cache *convert_push_dpc(
-                struct subvirtual_machine *fault_svm,
-                struct memory_region *fault_mr, unsigned long norm_addr,
-                struct dsm_swp_data dsd)
+static struct heca_page_cache *convert_push_dpc(
+                struct heca_process *fault_svm,
+                struct heca_memory_region *fault_mr, unsigned long norm_addr,
+                struct heca_swp_data dsd)
 {
-        struct dsm_page_cache *push_dpc, *dpc;
+        struct heca_page_cache *push_dpc, *dpc;
         struct page *page;
         unsigned long addr, bit;
 
@@ -855,8 +855,8 @@ static struct dsm_page_cache *convert_push_dpc(
                  */
                 do {
                         bit = find_first_bit(&push_dpc->bitmap,
-                                        push_dpc->svms.num);
-                        if (bit >= push_dpc->svms.num)
+                                        push_dpc->hprocs.num);
+                        if (bit >= push_dpc->hprocs.num)
                                 break;
                         if (test_and_clear_bit(bit, &push_dpc->bitmap))
                                 page_cache_release(page);
@@ -873,7 +873,7 @@ static struct dsm_page_cache *convert_push_dpc(
                 if (atomic_cmpxchg(&push_dpc->nproc, 1, 0) == 1)
                         dsm_dealloc_dpc(&push_dpc);
                 dpc = dsm_cache_add_pushed(fault_svm, fault_mr,
-                                dsd.svms, addr, page);
+                                dsd.hprocs, addr, page);
         }
 
 out:
@@ -881,7 +881,7 @@ out:
 }
 
 static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
-                struct dsm_swp_data *dsd)
+                struct heca_swp_data *dsd)
 {
         pte_t pte;
         swp_entry_t swp_entry;
@@ -902,7 +902,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                                                 && is_dsm_entry(swp_entry)
                                                 && dsm_swp_entry_same(swp_entry,
                                                         *entry)) {
-                                        struct dsm_swp_data tmp_dsd;
+                                        struct heca_swp_data tmp_dsd;
 
                                         if (swp_entry_to_dsm_data(swp_entry,
                                                                 &tmp_dsd) < 0) {
@@ -910,7 +910,7 @@ static int inflight_wait(pte_t *page_table, pte_t *orig_pte, swp_entry_t *entry,
                                                 goto out;
                                         }
 
-                                        if (tmp_dsd.flags & DSM_INFLIGHT) {
+                                        if (tmp_dsd.flags & HECA_INFLIGHT) {
                                                 continue;
                                         } else {
                                                 *orig_pte = pte;
@@ -928,8 +928,8 @@ out:
 }
 
 static int dsm_fault_do_readahead(struct mm_struct *mm, unsigned long addr,
-                struct subvirtual_machine *svm, struct memory_region *mr,
-                struct dsm_page_cache *dpc)
+                struct heca_process *svm, struct heca_memory_region *mr,
+                struct heca_page_cache *dpc)
 {
         int max_retry = 20, cont_back = 1, cont_forward = 1, j = 1;
 
@@ -955,20 +955,20 @@ static int dsm_fault_do_readahead(struct mm_struct *mm, unsigned long addr,
         return 0;
 }
 
-static int dsm_maintain_notify(struct subvirtual_machine *svm,
-                struct memory_region *mr, unsigned long addr, u32 exclude_id)
+static int dsm_maintain_notify(struct heca_process *svm,
+                struct heca_memory_region *mr, unsigned long addr, u32 exclude_id)
 {
-        struct subvirtual_machine *owner;
-        struct svm_list svms;
+        struct heca_process *owner;
+        struct heca_process_list svms;
         int r = -EFAULT, i;
 
         rcu_read_lock();
         svms = dsm_descriptor_to_svms(mr->descriptor);
         rcu_read_unlock();
 
-        for_each_valid_svm(svms, i) {
+        for_each_valid_hproc(svms, i) {
                 /* the page returned home to us, its owners */
-                if (svms.ids[i] == svm->svm_id) {
+                if (svms.ids[i] == svm->hproc_id) {
                         r = 0;
                         break;
                 }
@@ -976,7 +976,7 @@ static int dsm_maintain_notify(struct subvirtual_machine *svm,
                 if (svms.ids[i] == exclude_id)
                         continue;
 
-                owner = find_svm(svm->dsm, svms.ids[i]);
+                owner = find_svm(svm->hspace, svms.ids[i]);
                 if (likely(owner)) {
                         r = dsm_claim_page(svm, owner, mr, addr, NULL, 0);
                         release_svm(owner);
@@ -991,27 +991,27 @@ static int do_dsm_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned long address, pte_t *page_table, pmd_t *pmd,
                 unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
-        struct dsm_swp_data dsd;
-        struct subvirtual_machine *fault_svm;
-        struct memory_region *fault_mr;
+        struct heca_swp_data dsd;
+        struct heca_process *fault_svm;
+        struct heca_memory_region *fault_mr;
         unsigned long norm_addr = address & PAGE_MASK;
         spinlock_t *ptl;
         int ret = 0, found = -1, exclusive = 0, write,
             finalize_write = 0, read_fault = 0;
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
         struct page *found_page, *swapcache = NULL;
         struct mem_cgroup *ptr;
         pte_t pte;
         u32 dsm_id, svm_id, mr_id; /* used only for trace record later */
         unsigned long shared_addr; /* used only for trace record later */
-        struct dsm *dsm;
+        struct heca_space *dsm;
 
 retry:
         /* if the data in the swp_entry is invalid, we have nothing to do */
         if (swp_entry_to_dsm_data(entry, &dsd) < 0)
                 return VM_FAULT_ERROR;
 
-        dsm = find_dsm(dsd.svms.dsm_id);
+        dsm = find_dsm(dsd.hprocs.hspace_id);
         if (unlikely(!dsm))
                 return VM_FAULT_ERROR;
 
@@ -1028,9 +1028,9 @@ retry:
         if ((fault_mr->flags & MR_SHARED) && ~flags & FAULT_FLAG_WRITE)
                 read_fault = 1;
 
-        dsm_id = dsm->dsm_id;
-        svm_id = fault_svm->svm_id;
-        mr_id = fault_mr->mr_id;
+        dsm_id = dsm->hspace_id;
+        svm_id = fault_svm->hproc_id;
+        mr_id = fault_mr->hmr_id;
         shared_addr = norm_addr - fault_mr->addr;
         trace_do_dsm_page_fault_svm(dsm_id, svm_id, -1, mr_id, norm_addr,
                         shared_addr, dsd.flags);
@@ -1041,12 +1041,12 @@ retry:
          * fault, wait for it to finish before faulting ourselves.
          */
         if (unlikely(dsd.flags)) {
-                if (dsd.flags & DSM_PUSHING) {
+                if (dsd.flags & HECA_PUSHING) {
                         dpc = convert_push_dpc(fault_svm, fault_mr,
                                         norm_addr, dsd);
                         if (likely(dpc))
                                 goto lock;
-                } else if (dsd.flags & DSM_INFLIGHT) {
+                } else if (dsd.flags & HECA_INFLIGHT) {
                         int inflight = inflight_wait(page_table, &orig_pte,
                                         &entry, &dsd);
 
@@ -1071,7 +1071,7 @@ retry:
                  *  +1 for the current do_dsm_page_fault
                  *  +1 for the final, successful do_dsm_page_fault
                  */
-                dpc = dsm_cache_add_send(fault_svm, fault_mr, dsd.svms,
+                dpc = dsm_cache_add_send(fault_svm, fault_mr, dsd.hprocs,
                                 norm_addr, 3, read_fault? READ_TAG : PULL_TAG,
                                 vma, orig_pte, page_table, 1);
 
@@ -1219,14 +1219,14 @@ resolve:
 
         update_mmu_cache(vma, address, page_table);
         if (dpc->released == 1)
-                dsm_cache_release(dpc->svm, dpc->addr);
+                dsm_cache_release(dpc->hproc, dpc->addr);
         pte_unmap_unlock(pte, ptl);
 
         if (write)
-                dsm_maintain_notify(dpc->svm, fault_mr, dpc->addr,
-                                dpc->svms.ids[found]);
+                dsm_maintain_notify(dpc->hproc, fault_mr, dpc->addr,
+                                dpc->hprocs.ids[found]);
         else
-                dsm_flag_page_read(dpc->svm, dpc->addr, dpc->svms.ids[found]);
+                dsm_flag_page_read(dpc->hproc, dpc->addr, dpc->hprocs.ids[found]);
         page_cache_release(found_page);
         atomic_dec(&dpc->nproc);
         trace_do_dsm_page_fault_svm_complete(dsm_id, svm_id, -1, mr_id,
@@ -1287,8 +1287,8 @@ int dsm_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
 
 }
 
-int dsm_trigger_page_pull(struct dsm *dsm, struct subvirtual_machine *local_svm,
-                struct memory_region *mr, unsigned long norm_addr)
+int dsm_trigger_page_pull(struct heca_space *dsm, struct heca_process *local_svm,
+                struct heca_memory_region *mr, unsigned long norm_addr)
 {
         int r = 0;
         struct mm_struct *mm = local_svm->mm;
@@ -1309,12 +1309,12 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned int flags)
 {
         unsigned long addr = address & PAGE_MASK;
-        struct subvirtual_machine *svm = NULL;
-        struct memory_region *mr;
+        struct heca_process *svm = NULL;
+        struct heca_memory_region *mr;
         struct page *page;
-        struct dsm_pte_data pd;
+        struct heca_pte_data pd;
         pte_t pte;
-        struct dsm_page_cache *dpc = NULL;
+        struct heca_page_cache *dpc = NULL;
         u32 maintainer_id = 0;
 
         svm = find_local_svm_from_mm(mm);
@@ -1327,7 +1327,7 @@ int dsm_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 return 0;
         }
 
-        trace_dsm_write_fault(svm->dsm->dsm_id, svm->svm_id, -1, mr->mr_id,
+        trace_dsm_write_fault(svm->hspace->hspace_id, svm->hproc_id, -1, mr->hmr_id,
                         addr, addr - mr->addr, 0);
 
 retry:
@@ -1409,9 +1409,9 @@ retry:
                 maintainer_id = dsm_extract_page_read(svm, addr);
 
         if (maintainer_id) {
-                struct subvirtual_machine *mnt_svm;
+                struct heca_process *mnt_svm;
 
-                mnt_svm = find_svm(svm->dsm, maintainer_id);
+                mnt_svm = find_svm(svm->hspace, maintainer_id);
                 if (!mnt_svm) {
                         /*
                          * TODO: the maintainer has left the cluster, and left us hanging.
@@ -1423,7 +1423,7 @@ retry:
                         goto write;
                 }
 
-                dpc->redirect_svm_id = mnt_svm->svm_id;
+                dpc->redirect_hproc_id = mnt_svm->hproc_id;
 
                 /* required as the page is locked, and will unlock only on claim_ack */
                 page_cache_get(page);

@@ -45,36 +45,36 @@ struct heca_connection *search_rb_conn(int node_ip)
         return this;
 }
 
-void insert_rb_conn(struct heca_connection *ele)
+void insert_rb_conn(struct heca_connection *conn)
 {
-        struct heca_connections_manager *rcm = get_dsm_module_state()->hcm;
+        struct heca_connections_manager *hcm = get_dsm_module_state()->hcm;
         struct rb_root *root;
         struct rb_node **new, *parent = NULL;
         struct heca_connection *this;
 
-        write_seqlock(&rcm->connections_lock);
-        root = &rcm->connections_rb_tree_root;
+        write_seqlock(&hcm->connections_lock);
+        root = &hcm->connections_rb_tree_root;
         new = &root->rb_node;
         while (*new) {
                 this = rb_entry(*new, struct heca_connection, rb_node);
                 parent = *new;
-                if (ele->remote_node_ip < this->remote_node_ip)
+                if (conn->remote_node_ip < this->remote_node_ip)
                         new = &((*new)->rb_left);
-                else if (ele->remote_node_ip > this->remote_node_ip)
+                else if (conn->remote_node_ip > this->remote_node_ip)
                         new = &((*new)->rb_right);
         }
-        rb_link_node(&ele->rb_node, parent, new);
-        rb_insert_color(&ele->rb_node, root);
-        write_sequnlock(&rcm->connections_lock);
+        rb_link_node(&conn->rb_node, parent, new);
+        rb_insert_color(&conn->rb_node, root);
+        write_sequnlock(&hcm->connections_lock);
 }
 
-void erase_rb_conn(struct heca_connection *ele)
+void erase_rb_conn(struct heca_connection *conn)
 {
-        struct heca_connections_manager *rcm = get_dsm_module_state()->hcm;
+        struct heca_connections_manager *hcm = get_dsm_module_state()->hcm;
 
-        write_seqlock(&rcm->connections_lock);
-        rb_erase(&ele->rb_node, &rcm->connections_rb_tree_root);
-        write_sequnlock(&rcm->connections_lock);
+        write_seqlock(&hcm->connections_lock);
+        rb_erase(&conn->rb_node, &hcm->connections_rb_tree_root);
+        write_sequnlock(&hcm->connections_lock);
 }
 
 /*

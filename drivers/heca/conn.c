@@ -134,8 +134,9 @@ static void schedule_delayed_request_flush(struct heca_connection *conn)
 static inline void queue_heca_request(struct heca_connection *conn,
                 struct heca_request *req)
 {
-        trace_queued_request(req->hspace_id, req->local_hproc_id, req->remote_hproc_id,
-                        req->hmr_id, 0, req->addr, req->type, -1);
+        trace_queued_request(req->hspace_id, req->local_hproc_id,
+                        req->remote_hproc_id, req->hmr_id, 0, req->addr,
+                        req->type, -1);
         llist_add(&req->lnode, &conn->tx_buffer.request_queue);
         schedule_delayed_request_flush(conn);
 }
@@ -197,10 +198,11 @@ static inline void heca_tx_response_prepare(struct tx_buffer_element *tx_e,
         tx_e->wrk_req->dst_addr = NULL;
 }
 
-static void heca_tx_prepare(struct heca_connection *conn, struct tx_buffer_element *tx_e,
-                u32 hspace_id, u32 mr_id, u32 src_id, u32 dest_id,
-                unsigned long shared_addr, struct heca_page_cache *hpc,
-                struct page *page, struct heca_page_pool_element *ppe, int need_ppe)
+static void heca_tx_prepare(struct heca_connection *conn,
+                struct tx_buffer_element *tx_e, u32 hspace_id, u32 mr_id,
+                u32 src_id, u32 dest_id, unsigned long shared_addr,
+                struct heca_page_cache *hpc, struct page *page,
+                struct heca_page_pool_element *ppe, int need_ppe)
 {
         struct heca_message *msg = tx_e->hmsg_buffer;
 
@@ -226,12 +228,13 @@ static void heca_tx_prepare(struct heca_connection *conn, struct tx_buffer_eleme
         tx_e->reply_work_req->mem_page = page;
 }
 
-int heca_send_tx_e(struct heca_connection *conn, struct tx_buffer_element *tx_e, int resp,
-                int type, u32 hspace_id, u32 mr_id, u32 src_id, u32 dest_id,
-                unsigned long local_addr, unsigned long shared_addr,
-                struct heca_page_cache *hpc, struct page *page,
-                struct heca_page_pool_element *ppe, int need_ppe,
-                int (*func)(struct tx_buffer_element *), struct heca_message *msg)
+int heca_send_tx_e(struct heca_connection *conn, struct tx_buffer_element *tx_e,
+                int resp, int type, u32 hspace_id, u32 mr_id,
+                u32 src_id, u32 dest_id, unsigned long local_addr,
+                unsigned long shared_addr, struct heca_page_cache *hpc,
+                struct page *page, struct heca_page_pool_element *ppe,
+                int need_ppe, int (*func)(struct tx_buffer_element *),
+                struct heca_message *msg)
 {
         if (resp) {
                 heca_tx_response_prepare(tx_e, msg);
@@ -284,10 +287,10 @@ static inline int flush_heca_request_queue(struct heca_connection *conn)
                 req = list_first_entry(&tx->ordered_request_queue,
                                 struct heca_request, ordered_list);
                 trace_flushing_requests(tx->request_queue_sz);
-                heca_send_tx_e(conn, tx_e, req->response, req->type, req->hspace_id,
-                                req->hmr_id, req->local_hproc_id,
-                                req->remote_hproc_id, 0, req->addr,
-                                req->hpc, req->page, req->ppe,
+                heca_send_tx_e(conn, tx_e, req->response, req->type,
+                                req->hspace_id, req->hmr_id,
+                                req->local_hproc_id, req->remote_hproc_id, 0,
+                                req->addr, req->hpc, req->page, req->ppe,
                                 req->need_ppe, req->func, &req->hmsg);
                 list_del(&req->ordered_list);
                 release_heca_request(req);
@@ -301,7 +304,8 @@ static void delayed_request_flush_work_fn(struct work_struct *w)
 {
         struct heca_connection *conn;
         udelay(REQUEST_FLUSH_DELAY);
-        conn = container_of(w, struct heca_connection , delayed_request_flush_work);
+        conn = container_of(w, struct heca_connection,
+                        delayed_request_flush_work);
         if (flush_heca_request_queue(conn))
                 schedule_delayed_request_flush(conn);
 }
@@ -340,7 +344,8 @@ static inline void queue_recv_work(struct heca_connection *conn)
 {
         rcu_read_lock();
         if (atomic_read(&conn->alive))
-                queue_work(get_dsm_module_state()->heca_rx_wq, &conn->recv_work);
+                queue_work(get_dsm_module_state()->heca_rx_wq,
+                                &conn->recv_work);
         rcu_read_unlock();
 }
 
@@ -348,12 +353,14 @@ static inline void queue_send_work(struct heca_connection *conn)
 {
         rcu_read_lock();
         if (atomic_read(&conn->alive))
-                queue_work(get_dsm_module_state()->heca_tx_wq, &conn->send_work);
+                queue_work(get_dsm_module_state()->heca_tx_wq,
+                                &conn->send_work);
         rcu_read_unlock();
 }
 
 static inline void handle_tx_element(struct heca_connection *conn,
-                struct tx_buffer_element *tx_e, int (*callback)(struct heca_connection *,
+                struct tx_buffer_element *tx_e,
+                int (*callback)(struct heca_connection *,
                         struct tx_buffer_element *))
 {
         /* if tx_e->used > 2, we're racing with release_svm_tx_elements */
@@ -364,7 +371,8 @@ static inline void handle_tx_element(struct heca_connection *conn,
         }
 }
 
-static int refill_recv_wr(struct heca_connection *conn, struct rx_buffer_element *rx_e)
+static int refill_recv_wr(struct heca_connection *conn,
+                struct rx_buffer_element *rx_e)
 {
         int ret = 0;
         ret = ib_post_recv(conn->cm_id->qp, &rx_e->recv_wrk_rq_ele->sq_wr,
@@ -389,7 +397,8 @@ static int heca_recv_message_handler(struct heca_connection *conn,
         switch (rx_e->hmsg_buffer->type) {
         case MSG_RES_PAGE:
                 BUG_ON(rx_e->hmsg_buffer->offset < 0 ||
-                                rx_e->hmsg_buffer->offset >= conn->tx_buffer.len);
+                                rx_e->hmsg_buffer->offset >=
+                                conn->tx_buffer.len);
                 tx_e = &conn->tx_buffer.tx_buf[rx_e->hmsg_buffer->offset];
                 handle_tx_element(conn, tx_e, process_page_response);
                 break;
@@ -399,7 +408,8 @@ static int heca_recv_message_handler(struct heca_connection *conn,
                 break;
         case MSG_RES_PAGE_FAIL:
                 BUG_ON(rx_e->hmsg_buffer->offset < 0 ||
-                                rx_e->hmsg_buffer->offset >= conn->tx_buffer.len);
+                                rx_e->hmsg_buffer->offset >=
+                                conn->tx_buffer.len);
                 tx_e = &conn->tx_buffer.tx_buf[rx_e->hmsg_buffer->offset];
                 tx_e->hmsg_buffer->type = MSG_RES_PAGE_FAIL;
                 handle_tx_element(conn, tx_e, process_page_response);
@@ -423,9 +433,11 @@ static int heca_recv_message_handler(struct heca_connection *conn,
         case MSG_RES_ACK:
         case MSG_RES_ACK_FAIL:
                 BUG_ON(rx_e->hmsg_buffer->offset < 0 ||
-                                rx_e->hmsg_buffer->offset >= conn->tx_buffer.len);
+                                rx_e->hmsg_buffer->offset >=
+                                conn->tx_buffer.len);
                 tx_e = &conn->tx_buffer.tx_buf[rx_e->hmsg_buffer->offset];
-                if (tx_e->hmsg_buffer->type & (MSG_REQ_CLAIM | MSG_REQ_CLAIM_TRY))
+                if (tx_e->hmsg_buffer->type &
+                                (MSG_REQ_CLAIM | MSG_REQ_CLAIM_TRY))
                         process_claim_ack(conn, tx_e, rx_e->hmsg_buffer);
                 handle_tx_element(conn, tx_e, NULL);
                 break;
@@ -434,7 +446,8 @@ static int heca_recv_message_handler(struct heca_connection *conn,
                 break;
         case MSG_RES_QUERY:
                 BUG_ON(rx_e->hmsg_buffer->offset < 0 ||
-                                rx_e->hmsg_buffer->offset >= conn->tx_buffer.len);
+                                rx_e->hmsg_buffer->offset >=
+                                conn->tx_buffer.len);
                 tx_e = &conn->tx_buffer.tx_buf[rx_e->hmsg_buffer->offset];
                 dsm_process_query_info(tx_e);
                 handle_tx_element(conn, tx_e, NULL);
@@ -455,8 +468,9 @@ static int heca_send_message_handler(struct heca_connection *conn,
                 struct tx_buffer_element *tx_e)
 {
         trace_dsm_tx_msg(tx_e->hmsg_buffer->dsm_id, tx_e->hmsg_buffer->src_id,
-                        tx_e->hmsg_buffer->dest_id, -1, 0, tx_e->hmsg_buffer->req_addr,
-                        tx_e->hmsg_buffer->type, tx_e->hmsg_buffer->offset);
+                        tx_e->hmsg_buffer->dest_id, -1, 0,
+                        tx_e->hmsg_buffer->req_addr, tx_e->hmsg_buffer->type,
+                        tx_e->hmsg_buffer->offset);
 
         switch (tx_e->hmsg_buffer->type) {
         case MSG_RES_PAGE:
@@ -726,10 +740,12 @@ static void conn_recv_poll(struct ib_cq *cq)
                 } else {
                         if (wc.status == IB_WC_WR_FLUSH_ERR) {
                                 heca_printk(KERN_INFO "rx id %llx status %d vendor_err %x",
-                                                wc.wr_id, wc.status, wc.vendor_err);
+                                                wc.wr_id, wc.status,
+                                                wc.vendor_err);
                         } else {
                                 heca_printk(KERN_ERR "rx id %llx status %d vendor_err %x",
-                                                wc.wr_id, wc.status, wc.vendor_err);
+                                                wc.wr_id, wc.status,
+                                                wc.vendor_err);
                         }
                         continue;
                 }
@@ -741,15 +757,16 @@ static void conn_recv_poll(struct ib_cq *cq)
                 } else {
                         BUG_ON(wc.byte_len != sizeof(struct heca_message));
                         BUG_ON(wc.wr_id < 0 || wc.wr_id >= conn->rx_buffer.len);
-                        heca_recv_message_handler(conn, &conn->rx_buffer.rx_buf[wc.wr_id]);
+                        heca_recv_message_handler(conn,
+                                        &conn->rx_buffer.rx_buf[wc.wr_id]);
                 }
         }
 }
 
 static void send_cq_handle_work(struct work_struct *work)
 {
-        struct heca_connection *conn = container_of(work, struct heca_connection,
-                        send_work);
+        struct heca_connection *conn = container_of(work,
+                        struct heca_connection, send_work);
         int ret = 0;
 
         heca_send_poll(conn->qp_attr.send_cq);
@@ -762,8 +779,8 @@ static void send_cq_handle_work(struct work_struct *work)
 
 static void recv_cq_handle_work(struct work_struct *work)
 {
-        struct heca_connection *conn = container_of(work, struct heca_connection,
-                        recv_work);
+        struct heca_connection *conn = container_of(work,
+                        struct heca_connection, recv_work);
         int ret = 0;
 
         conn_recv_poll(conn->qp_attr.recv_cq);
@@ -876,8 +893,8 @@ static int setup_qp(struct heca_connection *conn)
         INIT_WORK(&conn->send_work, send_cq_handle_work);
         INIT_WORK(&conn->recv_work, recv_cq_handle_work);
 
-        conn->qp_attr.send_cq = ib_create_cq(conn->cm_id->device, send_cq_handle,
-                        dsm_cq_event_handler, (void *) conn,
+        conn->qp_attr.send_cq = ib_create_cq(conn->cm_id->device,
+                        send_cq_handle, dsm_cq_event_handler, (void *) conn,
                         conn->qp_attr.cap.max_send_wr, 0);
         if (IS_ERR(conn->qp_attr.send_cq)) {
                 heca_printk(KERN_ERR "Cannot create cq");
@@ -889,8 +906,8 @@ static int setup_qp(struct heca_connection *conn)
                 goto err2;
         }
 
-        conn->qp_attr.recv_cq = ib_create_cq(conn->cm_id->device, recv_cq_handle,
-                        dsm_cq_event_handler, (void *) conn,
+        conn->qp_attr.recv_cq = ib_create_cq(conn->cm_id->device,
+                        recv_cq_handle, dsm_cq_event_handler, (void *) conn,
                         conn->qp_attr.cap.max_recv_wr,0);
         if (IS_ERR(conn->qp_attr.recv_cq)) {
                 heca_printk(KERN_ERR "Cannot create cq");
@@ -977,8 +994,8 @@ static void init_page_wr(struct heca_reply_work_request *rwr, u32 lkey, int id)
         rwr->wr.wr_id = id;
 }
 
-static void init_tx_ele(struct tx_buffer_element *tx_ele, struct heca_connection *conn,
-                int id)
+static void init_tx_ele(struct tx_buffer_element *tx_ele,
+                struct heca_connection *conn, int id)
 {
         BUG_ON(!tx_ele);
         tx_ele->id = id;
@@ -1049,8 +1066,8 @@ static int create_tx_buffer(struct heca_connection *conn)
         might_sleep();
 
         conn->tx_buffer.len = get_nb_tx_buff_elements(conn);
-        tx_buff_e = kzalloc((sizeof(struct tx_buffer_element) * conn->tx_buffer.len),
-                        GFP_KERNEL);
+        tx_buff_e = kzalloc((sizeof(struct tx_buffer_element) *
+                                conn->tx_buffer.len), GFP_KERNEL);
         if (unlikely(!tx_buff_e)) {
                 heca_printk(KERN_ERR "Can't allocate memory");
                 return -ENOMEM;
@@ -1120,7 +1137,8 @@ err:
 done: return ret;
 }
 
-static void init_rx_ele(struct rx_buffer_element *rx_ele, struct heca_connection *conn)
+static void init_rx_ele(struct rx_buffer_element *rx_ele,
+                struct heca_connection *conn)
 {
         struct heca_recv_work_req_element *rwr = rx_ele->recv_wrk_rq_ele;
         struct ib_sge *recv_sge = &rwr->recv_sgl;
@@ -1149,7 +1167,8 @@ static int create_rx_buffer(struct heca_connection *conn)
         conn->rx_buffer.rx_buf = rx;
 
         for (i = 0; i < conn->rx_buffer.len; ++i) {
-                rx[i].hmsg_buffer = kzalloc(sizeof(struct heca_message), GFP_KERNEL);
+                rx[i].hmsg_buffer = kzalloc(sizeof(struct heca_message),
+                                GFP_KERNEL);
                 if (!rx[i].hmsg_buffer)
                         goto err1;
 
@@ -1529,14 +1548,18 @@ inline void heca_msg_cpy(struct heca_message *dst, struct heca_message *orig)
 static void free_rdma_info(struct heca_connection *conn)
 {
         if (conn->rid.send_dma.addr) {
-                ib_dma_unmap_single(conn->cm_id->device, conn->rid.send_dma.addr,
-                                conn->rid.send_dma.size, conn->rid.send_dma.dir);
+                ib_dma_unmap_single(conn->cm_id->device,
+                                conn->rid.send_dma.addr,
+                                conn->rid.send_dma.size,
+                                conn->rid.send_dma.dir);
                 kfree(conn->rid.send_buf);
         }
 
         if (conn->rid.recv_dma.addr) {
-                ib_dma_unmap_single(conn->cm_id->device, conn->rid.recv_dma.addr,
-                                conn->rid.recv_dma.size, conn->rid.recv_dma.dir);
+                ib_dma_unmap_single(conn->cm_id->device,
+                                conn->rid.recv_dma.addr,
+                                conn->rid.recv_dma.size,
+                                conn->rid.recv_dma.dir);
                 kfree(conn->rid.recv_buf);
         }
 
@@ -1547,7 +1570,8 @@ static void free_rdma_info(struct heca_connection *conn)
         memset(&conn->rid, 0, sizeof(struct rdma_info_data));
 }
 
-void release_tx_element(struct heca_connection *conn, struct tx_buffer_element *tx_e)
+void release_tx_element(struct heca_connection *conn,
+                struct tx_buffer_element *tx_e)
 {
         struct tx_buffer *tx = &conn->tx_buffer;
         atomic_set(&tx_e->used, 0);
@@ -1555,7 +1579,8 @@ void release_tx_element(struct heca_connection *conn, struct tx_buffer_element *
         llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list);
 }
 
-void release_tx_element_reply(struct heca_connection *conn, struct tx_buffer_element *tx_e)
+void release_tx_element_reply(struct heca_connection *conn,
+                struct tx_buffer_element *tx_e)
 {
         struct tx_buffer *tx = &conn->tx_buffer;
         atomic_set(&tx_e->used, 0);
@@ -1563,13 +1588,15 @@ void release_tx_element_reply(struct heca_connection *conn, struct tx_buffer_ele
         llist_add(&tx_e->tx_buf_ele_ptr, &tx->tx_free_elements_list_reply);
 }
 
-void try_release_tx_element(struct heca_connection *conn, struct tx_buffer_element *tx_e)
+void try_release_tx_element(struct heca_connection *conn,
+                struct tx_buffer_element *tx_e)
 {
         if (atomic_add_return(1, &tx_e->released) == 2)
                 release_tx_element(conn, tx_e);
 }
 
-static int create_connection(struct heca_connections_manager *hcm, unsigned long ip,
+static int create_connection(struct heca_connections_manager *hcm,
+                unsigned long ip,
                 unsigned short port)
 {
         struct rdma_conn_param param;
@@ -1681,7 +1708,8 @@ no_svm:
         return r;
 }
 
-struct tx_buffer_element *try_get_next_empty_tx_ele(struct heca_connection *conn,
+struct tx_buffer_element *try_get_next_empty_tx_ele(
+                struct heca_connection *conn,
                 int require_empty_list)
 {
         struct tx_buffer_element *tx_e = NULL;
@@ -1693,13 +1721,15 @@ struct tx_buffer_element *try_get_next_empty_tx_ele(struct heca_connection *conn
         spin_unlock(&conn->tx_buffer.tx_free_elements_list_lock);
 
         if (llnode) {
-                tx_e = container_of(llnode, struct tx_buffer_element, tx_buf_ele_ptr);
+                tx_e = container_of(llnode, struct tx_buffer_element,
+                                tx_buf_ele_ptr);
                 atomic_set(&tx_e->used, 1);
         }
         return tx_e;
 }
 
-struct tx_buffer_element *try_get_next_empty_tx_reply_ele(struct heca_connection *conn)
+struct tx_buffer_element *try_get_next_empty_tx_reply_ele(
+                struct heca_connection *conn)
 {
         struct tx_buffer_element *tx_e = NULL;
         struct llist_node *llnode;
@@ -1709,7 +1739,8 @@ struct tx_buffer_element *try_get_next_empty_tx_reply_ele(struct heca_connection
         spin_unlock(&conn->tx_buffer.tx_free_elements_list_reply_lock);
 
         if (llnode) {
-                tx_e = container_of(llnode, struct tx_buffer_element, tx_buf_ele_ptr);
+                tx_e = container_of(llnode, struct tx_buffer_element,
+                                tx_buf_ele_ptr);
                 atomic_set(&tx_e->used, 1);
         }
         return tx_e;
@@ -1727,7 +1758,8 @@ static void remove_hprocs_for_conn(struct heca_connection *conn)
                         hproc = list_entry(it, struct heca_process,
                                         hproc_ptr);
                         if (hproc->connection == conn)
-                                remove_hproc(hspace->hspace_id, hproc->hproc_id);
+                                remove_hproc(hspace->hspace_id,
+                                                hproc->hproc_id);
                 }
         }
 }

@@ -51,8 +51,8 @@ static int heca_send_msg(struct heca_connection *ele, u32 hspace_id, u32 mr_id,
 }
 
 /*
- * same as dsm_send_msg, only with different preparation of the tx_e, and
- * different method of queueing the args. dsm_send_tx_e receives response=1.
+ * same as hspace_send_msg, only with different preparation of the tx_e, and
+ * different method of queueing the args. hspace_send_tx_e receives response=1.
  */
 static int heca_send_response(struct heca_connection *conn, int type,
                 struct heca_message *msg)
@@ -255,7 +255,7 @@ int process_request_query(struct heca_connection *conn,
 
         addr = msg->req_addr + mr->addr;
 
-        /* this cannot fail: if we don't have a valid dsm pte, the page is ours */
+        /* this cannot fail: if we don't have a valid hspace pte, the page is ours */
         msg->dest_id = heca_query_pte_info(hproc, addr);
 
         r = heca_send_response(conn, MSG_RES_QUERY, msg);
@@ -540,7 +540,7 @@ static int heca_retry_claim(struct heca_message *msg, struct page *page)
         owner = find_any_hproc(hspace, hprocs);
         /*
          * in the bizarre situation in which we can't seem to get the page, and we
-         * don't have a valid directory, fall back to a regular fault (maybe dsm is
+         * don't have a valid directory, fall back to a regular fault (maybe hspace is
          * being removed?)
          */
         if (unlikely(!owner || owner == hproc))

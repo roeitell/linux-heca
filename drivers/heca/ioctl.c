@@ -94,9 +94,9 @@ struct heca_module_state *create_heca_module_state(void)
         INIT_LIST_HEAD(&heca_state->hspaces_list);
         mutex_init(&heca_state->heca_state_mutex);
         spin_lock_init(&heca_state->radix_lock);
-        heca_state->heca_tx_wq = alloc_workqueue("dsm_rx_wq",
+        heca_state->heca_tx_wq = alloc_workqueue("heca_rx_wq",
                         WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
-        heca_state->heca_rx_wq = alloc_workqueue("dsm_tx_wq",
+        heca_state->heca_rx_wq = alloc_workqueue("heca_tx_wq",
                         WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM , 0);
         return heca_state;
 }
@@ -126,7 +126,7 @@ static int deregister_hspace(__u32 hspace_id)
         struct heca_space *hspace;
         struct list_head *curr, *next;
 
-        heca_printk(KERN_DEBUG "<enter> dsm_id=%d", hspace_id);
+        heca_printk(KERN_DEBUG "<enter> hspace_id=%d", hspace_id);
         list_for_each_safe (curr, next, &heca_state->hspaces_list) {
                 hspace = list_entry(curr, struct heca_space, hspace_ptr);
                 if (hspace->hspace_id == hspace_id)

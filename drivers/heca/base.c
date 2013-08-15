@@ -457,7 +457,7 @@ out:
         }
 
         if (!hproc_info->is_local) {
-                r = connect_svm(hproc_info->hspace_id, hproc_info->hproc_id,
+                r = connect_hproc(hproc_info->hspace_id, hproc_info->hproc_id,
                                 hproc_info->remote.sin_addr.s_addr,
                                 hproc_info->remote.sin_port);
 
@@ -592,7 +592,7 @@ static void release_hproc_queued_requests(struct heca_process *hproc,
         u32 hproc_id = hproc->hproc_id;
 
         mutex_lock(&tx->flush_mutex);
-        dsm_request_queue_merge(tx);
+        heca_request_queue_merge(tx);
         list_for_each_entry_safe (req, n,
                         &tx->ordered_request_queue, ordered_list){
                 if (req->remote_hproc_id == hproc_id ||
@@ -600,7 +600,7 @@ static void release_hproc_queued_requests(struct heca_process *hproc,
                         list_del(&req->ordered_list);
                         if (req->hpc && req->hpc->tag == PULL_TAG)
                                 dsm_release_pull_dpc(&req->hpc);
-                        release_dsm_request(req);
+                        release_heca_request(req);
                 }
         }
         mutex_unlock(&tx->flush_mutex);
@@ -1030,7 +1030,7 @@ out:
  */
 int init_hcm(void)
 {
-        init_kmem_request_cache();
+        init_kmem_heca_request_cache();
         init_kmem_deferred_gup_cache();
         init_dsm_cache_kmem();
         init_dsm_reader_kmem();
@@ -1043,7 +1043,7 @@ int fini_hcm(void)
 {
         destroy_dsm_cache_kmem();
         destroy_dsm_prefetch_cache_kmem();
-        destroy_kmem_request_cache();
+        destroy_kmem_heca_request_cache();
         destroy_kmem_deferred_gup_cache();
         dsm_destroy_descriptors();
         return 0;

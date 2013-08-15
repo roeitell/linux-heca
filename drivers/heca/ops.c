@@ -34,13 +34,13 @@ static int dsm_send_msg(struct heca_connection *ele, u32 dsm_id, u32 mr_id,
         while (1) {
                 tx_e = try_get_next_empty_tx_ele(ele, 1);
                 if (likely(tx_e)) {
-                        return dsm_send_tx_e(ele, tx_e, !!msg, type,
+                        return heca_send_tx_e(ele, tx_e, !!msg, type,
                                         dsm_id, mr_id, src_id, dest_id,
                                         local_addr, shared_addr, dpc, page,
                                         ppe, need_ppe, func, msg);
                 }
 
-                if (!add_dsm_request(NULL, ele, type, dsm_id, src_id, mr_id,
+                if (!add_heca_request(NULL, ele, type, dsm_id, src_id, mr_id,
                                         dest_id, shared_addr, func, dpc, page,
                                         ppe, need_ppe, msg)) {
                         return 1;
@@ -112,7 +112,7 @@ static int send_request_dsm_page_pull(struct heca_process *fault_svm,
 
                 tx_elms[i] = try_get_next_empty_tx_ele(eles[i], 1);
                 if (unlikely(!tx_elms[i])) {
-                        reqs[i] = alloc_dsm_request();
+                        reqs[i] = alloc_heca_request();
                         if (unlikely(!reqs[i]))
                                 goto nomem;
                 }
@@ -126,7 +126,7 @@ static int send_request_dsm_page_pull(struct heca_process *fault_svm,
         for (i = 0; i < svms.num; i++) {
                 if (tx_elms[i]) {
                         /* note that dest_id == local_svm */
-                        r |= dsm_send_tx_e(eles[i], tx_elms[i], 0,
+                        r |= heca_send_tx_e(eles[i], tx_elms[i], 0,
                                         MSG_REQ_PAGE_PULL,
                                         fault_svm->hspace->hspace_id, fault_mr->hmr_id,
                                         svms.ids[i], fault_svm->hproc_id,
@@ -134,7 +134,7 @@ static int send_request_dsm_page_pull(struct heca_process *fault_svm,
                                         NULL, 0, NULL, NULL);
                 } else if (reqs[i]) {
                         /* can't fail, reqs[i] already allocated */
-                        j = add_dsm_request(reqs[i], eles[i], MSG_REQ_PAGE_PULL,
+                        j = add_heca_request(reqs[i], eles[i], MSG_REQ_PAGE_PULL,
                                         fault_svm->hspace->hspace_id, svms.ids[i],
                                         fault_mr->hmr_id, fault_svm->hproc_id,
                                         addr, NULL, NULL, NULL, NULL, 0, NULL);
@@ -149,7 +149,7 @@ nomem:
                 if (tx_elms[j])
                         release_tx_element(eles[j], tx_elms[j]);
                 else if (reqs[j])
-                        release_dsm_request(reqs[j]);
+                        release_heca_request(reqs[j]);
         }
         return -ENOMEM;
 }
@@ -430,7 +430,7 @@ retry:
         dgup->connection_origin = ele;
         dgup->remote_hproc = remote_svm;
         dgup->hmr = mr;
-        dsm_msg_cpy(&dgup->hmsg, msg);
+        heca_msg_cpy(&dgup->hmsg, msg);
         llist_add(&dgup->lnode, &local_svm->deferred_gups);
         schedule_work(&local_svm->deferred_gup_work);
 }
@@ -629,7 +629,7 @@ retry:
         }
         BUG_ON(!tx_e);
 
-        dsm_msg_cpy(tx_e->hmsg_buffer, msg);
+        heca_msg_cpy(tx_e->hmsg_buffer, msg);
         tx_e->hmsg_buffer->type = MSG_RES_PAGE;
         tx_e->reply_work_req->wr.wr.rdma.remote_addr = tx_e->hmsg_buffer->dst_addr;
         tx_e->reply_work_req->wr.wr.rdma.rkey = tx_e->hmsg_buffer->rkey;
@@ -653,7 +653,7 @@ retry:
         trace_process_page_request_complete(local_svm->hspace->hspace_id,
                         local_svm->hproc_id, remote_svm->hproc_id, mr->hmr_id,
                         addr, msg->req_addr, msg->type);
-        tx_dsm_send(ele, tx_e);
+        tx_heca_send(ele, tx_e);
         release_hproc(local_svm);
         release_hproc(remote_svm);
         return 0;
@@ -775,7 +775,7 @@ int dsm_request_page_pull(struct heca_space *dsm, struct heca_process *fault_svm
          */
         for_each_valid_hproc(svms, i) {
                 struct heca_process *svm = find_hproc(dsm, svms.ids[i]);
-                int full = request_queue_full(svm->connection);
+                int full = heca_request_queue_full(svm->connection);
 
                 release_hproc(svm);
                 if (full)

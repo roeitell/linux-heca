@@ -293,7 +293,7 @@ int process_query_info(struct tx_buffer_element *tx_e)
         if (likely(hpc)) {
                 if (likely(hpc == tx_e->wrk_req->hpc))
                         hpc->redirect_hproc_id = msg->dest_id;
-                dsm_release_pull_dpc(&hpc);
+                heca_release_pull_hpc(&hpc);
         }
         r = 0;
 
@@ -331,7 +331,7 @@ int process_pull_request(struct heca_connection *conn,
                 goto fail;
 
         // we get -1 if something bad happened, or >0 if we had dpc or we requested the page
-        if (dsm_trigger_page_pull(hspace, local_hproc, mr, msg->req_addr) < 0)
+        if (heca_trigger_page_pull(hspace, local_hproc, mr, msg->req_addr) < 0)
                 r = -1;
         release_hproc(local_hproc);
 
@@ -402,8 +402,8 @@ int process_page_redirect(struct heca_connection *conn,
 
 out:
         if (unlikely(ret)) {
-                dsm_pull_req_failure(hpc);
-                dsm_release_pull_dpc(&hpc);
+                heca_pull_req_failure(hpc);
+                heca_release_pull_hpc(&hpc);
         }
         return ret;
 }

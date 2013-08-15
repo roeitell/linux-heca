@@ -301,10 +301,10 @@ static struct miscdevice heca_misc = {
 
 const struct heca_hook_struct my_heca_hook = {
         .name = "HECA",
-        .fetch_page = dsm_swap_wrapper,
+        .fetch_page = heca_swap_wrapper,
         .pushback_page = push_back_if_remote_dsm_page,
         .is_congested = dsm_is_congested,
-        .write_fault = dsm_write_fault,
+        .write_fault = heca_write_fault,
         .attach_task = heca_attach_task,
         .detach_task = heca_detach_task,
 };
@@ -317,7 +317,7 @@ static int heca_init(void)
         heca_printk(KERN_DEBUG "<enter>");
 
         BUG_ON(!heca_state);
-        dsm_zero_pfn_init();
+        heca_zero_pfn_init();
         heca_sysfs_setup(heca_state);
         rc = misc_register(&heca_misc);
         init_hcm();
@@ -337,7 +337,7 @@ static void heca_exit(void)
         fini_hcm();
         misc_deregister(&heca_misc);
         heca_sysfs_cleanup(heca_state);
-        dsm_zero_pfn_exit();
+        heca_zero_pfn_exit();
         destroy_heca_module_state();
         heca_printk(KERN_DEBUG "<exit>");
 }

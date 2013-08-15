@@ -475,7 +475,7 @@ retry:
 
         if (unlikely(PageKsm(page))) {
                 pte_unmap_unlock(pd.pte, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1)) {
+                if (!heca_initiate_fault(mm, addr, 1)) {
                         r = -EFAULT;  /* DSM1 : better ksm error handling required. */
                         goto out;
                 }
@@ -852,7 +852,7 @@ retry:
 
         if (unlikely(PageKsm(page))) {
                 pte_unmap_unlock(pd.pte, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1))
+                if (!heca_initiate_fault(mm, addr, 1))
                         goto bad_page;
                 goto retry;
         }
@@ -941,7 +941,7 @@ retry:
 
         if (unlikely(PageKsm(page))) {
                 pte_unmap_unlock(ptep, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1))
+                if (!heca_initiate_fault(mm, addr, 1))
                         return -EFAULT;
                 goto retry;
         }

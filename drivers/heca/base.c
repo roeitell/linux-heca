@@ -573,9 +573,9 @@ static void release_hproc_tx_elements(struct heca_process *hproc,
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                         struct heca_page_cache *dpc = tx_e->wrk_req->hpc;
 
-                        dsm_pull_req_failure(dpc);
+                        heca_pull_req_failure(dpc);
                         tx_e->wrk_req->dst_addr->mem_page = NULL;
-                        dsm_release_pull_dpc(&dpc);
+                        heca_release_pull_hpc(&dpc);
                         dsm_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
 
                         /* rdma processing already finished, we have to release ourselves */
@@ -600,7 +600,7 @@ static void release_hproc_queued_requests(struct heca_process *hproc,
                                 req->local_hproc_id == hproc_id) {
                         list_del(&req->ordered_list);
                         if (req->hpc && req->hpc->tag == PULL_TAG)
-                                dsm_release_pull_dpc(&req->hpc);
+                                heca_release_pull_hpc(&req->hpc);
                         release_heca_request(req);
                 }
         }
@@ -1043,7 +1043,7 @@ int init_hcm(void)
         init_kmem_deferred_gup_cache();
         init_dsm_cache_kmem();
         init_dsm_reader_kmem();
-        init_dsm_prefetch_cache_kmem();
+        init_heca_prefetch_cache_kmem();
         dsm_init_descriptors();
         return 0;
 }
@@ -1051,7 +1051,7 @@ int init_hcm(void)
 int fini_hcm(void)
 {
         destroy_dsm_cache_kmem();
-        destroy_dsm_prefetch_cache_kmem();
+        destroy_heca_prefetch_cache_kmem();
         destroy_kmem_heca_request_cache();
         destroy_kmem_deferred_gup_cache();
         dsm_destroy_descriptors();

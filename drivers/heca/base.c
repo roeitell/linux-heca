@@ -152,7 +152,7 @@ int create_hspace(__u32 hspace_id)
                 return -EEXIST;
         }
 
-        /* allocate a new dsm */
+        /* allocate a new hspace */
         new_hspace = kzalloc(sizeof(*new_hspace), GFP_KERNEL);
         if (!new_hspace) {
                 heca_printk("can't allocate");
@@ -195,7 +195,7 @@ int create_hspace(__u32 hspace_id)
 
         r = create_hspace_sysfs_entry(new_hspace, heca_state);
         if (r) {
-                heca_printk("create_dsm_sysfs_entry: failed %d", r);
+                heca_printk("create_hspace_sysfs_entry: failed %d", r);
                 goto err_delete;
         }
 
@@ -433,7 +433,7 @@ int create_hproc(struct hecaioc_hproc *hproc_info)
                 goto out;
         }
 
-        /* register hproc by id and mm_struct (must come before dsm_get_descriptor) */
+        /* register hproc by id and mm_struct (must come before hspace_get_descriptor) */
         if (insert_hproc_to_radix_trees(heca_state, hspace, new_hproc))
                 goto out;
         list_add(&new_hproc->hproc_ptr, &hspace->hprocs_list);
@@ -487,7 +487,7 @@ inline void release_hproc(struct heca_process *hproc)
 
 /*
  * We dec page's refcount for every missing remote response (it would have
- * happened in dsm_ppe_clear_release after sending an answer to remote hproc)
+ * happened in hspace_ppe_clear_release after sending an answer to remote hproc)
  */
 static void surrogate_push_remote_hproc(struct heca_process *hproc,
                 struct heca_process *remote_hproc)
@@ -662,7 +662,7 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
          * lists, the tx elements buffers, and the push caches of svms.
          *
          * FIXME: what about pull operations, in which we remove_svm() after
-         * find_svm(), but before tx_dsm_send()??? We can't disable preemption
+         * find_svm(), but before tx_hspace_send()??? We can't disable preemption
          * there, but we might lookup_svm() after we send, and handle the case in
          * which it isn't!
          * FIXME: the same problem is valid for push operations!
@@ -850,7 +850,7 @@ static void destroy_hproc_mrs(struct heca_process *hproc)
                 mr = rb_entry(node, struct heca_memory_region, rb_node);
                 rb_erase(&mr->rb_node, root);
                 write_sequnlock(&hproc->hmr_seq_lock);
-                heca_printk(KERN_INFO "removing dsm_id: %u svm_id: %u, mr_id: %u",
+                heca_printk(KERN_INFO "removing hspace_id: %u svm_id: %u, mr_id: %u",
                                 hproc->hspace->hspace_id, hproc->hproc_id,
                                 mr->hmr_id);
                 synchronize_rcu();
@@ -882,7 +882,7 @@ int create_heca_mr(struct hecaioc_hmr *udata)
 
         hspace = find_hspace(udata->hspace_id);
         if (!hspace) {
-                heca_printk(KERN_ERR "can't find dsm %d", udata->hspace_id);
+                heca_printk(KERN_ERR "can't find hspace %d", udata->hspace_id);
                 ret = -EFAULT;
                 goto out;
         }

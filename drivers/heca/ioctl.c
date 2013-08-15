@@ -88,7 +88,8 @@ struct heca_module_state *create_heca_module_state(void)
 {
         heca_state = kzalloc(sizeof(struct heca_module_state), GFP_KERNEL);
         BUG_ON(!(heca_state));
-        INIT_RADIX_TREE(&heca_state->hspaces_tree_root, GFP_KERNEL & ~__GFP_WAIT);
+        INIT_RADIX_TREE(&heca_state->hspaces_tree_root,
+                        GFP_KERNEL & ~__GFP_WAIT);
         INIT_RADIX_TREE(&heca_state->mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
         INIT_LIST_HEAD(&heca_state->hspaces_list);
         mutex_init(&heca_state->heca_state_mutex);
@@ -234,7 +235,8 @@ static long ioctl_hspace(unsigned int ioctl, void __user *argp)
         struct hecaioc_hspace hspace_info;
         int rc = -EFAULT;
 
-        if ((rc = copy_from_user((void *) &hspace_info, argp, sizeof hspace_info))) {
+        if ((rc = copy_from_user((void *) &hspace_info, argp,
+                                        sizeof hspace_info))) {
                 heca_printk(KERN_ERR "copy_from_user %d", rc);
                 goto failed;
         }

@@ -344,7 +344,7 @@ static inline void queue_recv_work(struct heca_connection *conn)
 {
         rcu_read_lock();
         if (atomic_read(&conn->alive))
-                queue_work(get_dsm_module_state()->heca_rx_wq,
+                queue_work(get_heca_module_state()->heca_rx_wq,
                                 &conn->recv_work);
         rcu_read_unlock();
 }
@@ -353,7 +353,7 @@ static inline void queue_send_work(struct heca_connection *conn)
 {
         rcu_read_lock();
         if (atomic_read(&conn->alive))
-                queue_work(get_dsm_module_state()->heca_tx_wq,
+                queue_work(get_heca_module_state()->heca_tx_wq,
                                 &conn->send_work);
         rcu_read_unlock();
 }

@@ -57,7 +57,7 @@ static int heca_send_msg(struct heca_connection *ele, u32 hspace_id, u32 mr_id,
 static int heca_send_response(struct heca_connection *conn, int type,
                 struct heca_message *msg)
 {
-        return heca_send_msg(conn, msg->dsm_id, msg->mr_id,
+        return heca_send_msg(conn, msg->hspace_id, msg->mr_id,
                         msg->src_id, msg->dest_id, 0,
                         msg->req_addr, NULL, type, NULL, NULL, NULL, msg, 0);
 }
@@ -241,7 +241,7 @@ int process_request_query(struct heca_connection *conn,
         int r = -EFAULT;
         unsigned long addr;
 
-        hspace = find_hspace(msg->dsm_id);
+        hspace = find_hspace(msg->hspace_id);
         if (unlikely(!hspace))
                 goto fail;
 
@@ -276,7 +276,7 @@ int process_query_info(struct tx_buffer_element *tx_e)
         unsigned long addr;
         int r = -EFAULT;
 
-        hspace = find_hspace(msg->dsm_id);
+        hspace = find_hspace(msg->hspace_id);
         if (!hspace)
                 goto fail;
 
@@ -316,7 +316,7 @@ int process_pull_request(struct heca_connection *conn,
         BUG_ON(!rx_buf_e->hmsg_buffer);
         msg = rx_buf_e->hmsg_buffer;
 
-        hspace = find_hspace(msg->dsm_id);
+        hspace = find_hspace(msg->hspace_id);
         if (unlikely(!hspace))
                 goto fail;
 
@@ -346,7 +346,7 @@ int process_hproc_status(struct heca_connection *conn,
 {
         heca_printk(KERN_DEBUG "removing svm %d",
                         rx_buf_e->hmsg_buffer->src_id);
-        remove_hproc(rx_buf_e->hmsg_buffer->dsm_id,
+        remove_hproc(rx_buf_e->hmsg_buffer->hspace_id,
                         rx_buf_e->hmsg_buffer->src_id);
         return 1;
 }
@@ -455,7 +455,7 @@ int process_page_claim(struct heca_connection *conn, struct heca_message *msg)
         unsigned long addr;
         int r = -EFAULT;
 
-        hspace = find_hspace(msg->dsm_id);
+        hspace = find_hspace(msg->hspace_id);
         if (unlikely(!hspace))
                 goto out;
 
@@ -512,7 +512,7 @@ static int heca_retry_claim(struct heca_message *msg, struct page *page)
         struct heca_process_list hprocs;
         struct heca_page_cache *hpc;
 
-        hspace = find_hspace(msg->dsm_id);
+        hspace = find_hspace(msg->hspace_id);
         if (!hspace)
                 goto fail;
 
@@ -750,7 +750,7 @@ int process_page_request_msg(struct heca_connection *conn,
         struct heca_space *hspace = NULL;
         struct heca_memory_region *mr = NULL;
 
-        hspace = find_hspace(msg->dsm_id);
+        hspace = find_hspace(msg->hspace_id);
         if (unlikely(!hspace))
                 goto fail;
 

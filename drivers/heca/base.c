@@ -567,7 +567,7 @@ static void release_hproc_tx_elements(struct heca_process *hproc,
                 int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY |
                         MSG_RES_PAGE_FAIL | MSG_REQ_READ;
 
-                if (msg->type & types && msg->dsm_id == hproc->hspace->hspace_id
+                if (msg->type & types && msg->hspace_id == hproc->hspace->hspace_id
                                 && (msg->src_id == hproc->hproc_id
                                         || msg->dest_id == hproc->hproc_id)
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {

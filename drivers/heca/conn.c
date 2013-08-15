@@ -215,7 +215,7 @@ static void heca_tx_prepare(struct heca_connection *conn,
         }
 
         msg->offset = tx_e->id;
-        msg->dsm_id = hspace_id;
+        msg->hspace_id = hspace_id;
         msg->src_id = src_id;
         msg->dest_id = dest_id;
         msg->mr_id = mr_id;
@@ -389,7 +389,7 @@ static int heca_recv_message_handler(struct heca_connection *conn,
 {
         struct tx_buffer_element *tx_e = NULL;
 
-        trace_dsm_rx_msg(rx_e->hmsg_buffer->dsm_id, rx_e->hmsg_buffer->src_id,
+        trace_dsm_rx_msg(rx_e->hmsg_buffer->hspace_id, rx_e->hmsg_buffer->src_id,
                         rx_e->hmsg_buffer->dest_id, rx_e->hmsg_buffer->mr_id, 0,
                         rx_e->hmsg_buffer->req_addr, rx_e->hmsg_buffer->type,
                         rx_e->hmsg_buffer->offset);
@@ -467,7 +467,7 @@ err:
 static int heca_send_message_handler(struct heca_connection *conn,
                 struct tx_buffer_element *tx_e)
 {
-        trace_dsm_tx_msg(tx_e->hmsg_buffer->dsm_id, tx_e->hmsg_buffer->src_id,
+        trace_dsm_tx_msg(tx_e->hmsg_buffer->hspace_id, tx_e->hmsg_buffer->src_id,
                         tx_e->hmsg_buffer->dest_id, -1, 0,
                         tx_e->hmsg_buffer->req_addr, tx_e->hmsg_buffer->type,
                         tx_e->hmsg_buffer->offset);
@@ -1538,7 +1538,7 @@ err:
 
 inline void heca_msg_cpy(struct heca_message *dst, struct heca_message *orig)
 {
-        dst->dsm_id = orig->dsm_id;
+        dst->hspace_id = orig->hspace_id;
         dst->src_id = orig->src_id;
         dst->dest_id = orig->dest_id;
         dst->type = orig->type;

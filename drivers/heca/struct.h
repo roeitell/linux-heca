@@ -249,7 +249,7 @@ struct heca_message {
         u16 type;
         u64 req_addr;
         u64 dst_addr;
-        u32 dsm_id;
+        u32 hspace_id;
         u32 mr_id;
         u32 src_id;
         u32 dest_id;

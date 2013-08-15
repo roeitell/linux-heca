@@ -487,60 +487,60 @@ inline void release_svm(struct heca_process *hproc)
 
 /*
  * We dec page's refcount for every missing remote response (it would have
- * happened in dsm_ppe_clear_release after sending an answer to remote svm)
+ * happened in dsm_ppe_clear_release after sending an answer to remote hproc)
  */
-static void surrogate_push_remote_svm(struct heca_process *svm,
-                struct heca_process *remote_svm)
+static void surrogate_push_remote_svm(struct heca_process *hproc,
+                struct heca_process *remote_hproc)
 {
         struct rb_node *node;
 
-        write_seqlock(&svm->push_cache_lock);
-        for (node = rb_first(&svm->push_cache); node;) {
-                struct heca_page_cache *dpc;
+        write_seqlock(&hproc->push_cache_lock);
+        for (node = rb_first(&hproc->push_cache); node;) {
+                struct heca_page_cache *hpc;
                 int i;
-                dpc = rb_entry(node, struct heca_page_cache, rb_node);
+                hpc = rb_entry(node, struct heca_page_cache, rb_node);
                 node = rb_next(node);
-                for (i = 0; i < dpc->hprocs.num; i++) {
-                        if (dpc->hprocs.ids[i] == remote_svm->hproc_id)
+                for (i = 0; i < hpc->hprocs.num; i++) {
+                        if (hpc->hprocs.ids[i] == remote_hproc->hproc_id)
                                 goto surrogate;
                 }
                 continue;
 
 surrogate:
-                if (likely(test_and_clear_bit(i, &dpc->bitmap))) {
-                        page_cache_release(dpc->pages[0]);
-                        atomic_dec(&dpc->nproc);
-                        if (atomic_cmpxchg(&dpc->nproc, 1, 0) ==
-                                        1 && find_first_bit(&dpc->bitmap,
-                                                dpc->hprocs.num) >= dpc->hprocs.num)
-                                dsm_push_cache_release(dpc->hproc, &dpc, 0);
+                if (likely(test_and_clear_bit(i, &hpc->bitmap))) {
+                        page_cache_release(hpc->pages[0]);
+                        atomic_dec(&hpc->nproc);
+                        if (atomic_cmpxchg(&hpc->nproc, 1, 0) ==
+                                        1 && find_first_bit(&hpc->bitmap,
+                                                hpc->hprocs.num) >= hpc->hprocs.num)
+                                dsm_push_cache_release(hpc->hproc, &hpc, 0);
                 }
         }
-        write_sequnlock(&svm->push_cache_lock);
+        write_sequnlock(&hproc->push_cache_lock);
 }
 
-static void release_svm_push_elements(struct heca_process *svm)
+static void release_svm_push_elements(struct heca_process *hproc)
 {
         struct rb_node *node;
 
-        write_seqlock(&svm->push_cache_lock);
-        for (node = rb_first(&svm->push_cache); node;) {
-                struct heca_page_cache *dpc;
+        write_seqlock(&hproc->push_cache_lock);
+        for (node = rb_first(&hproc->push_cache); node;) {
+                struct heca_page_cache *hpc;
                 int i;
 
-                dpc = rb_entry(node, struct heca_page_cache, rb_node);
+                hpc = rb_entry(node, struct heca_page_cache, rb_node);
                 node = rb_next(node);
                 /*
                  * dpc->svms has a pointer to the descriptor ids array, which already
                  * changed. we need to rely on the bitmap right now.
                  */
-                for (i = 0; i < dpc->hprocs.num; i++) {
-                        if (test_and_clear_bit(i, &dpc->bitmap))
-                                page_cache_release(dpc->pages[0]);
+                for (i = 0; i < hpc->hprocs.num; i++) {
+                        if (test_and_clear_bit(i, &hpc->bitmap))
+                                page_cache_release(hpc->pages[0]);
                 }
-                dsm_push_cache_release(dpc->hproc, &dpc, 0);
+                dsm_push_cache_release(hpc->hproc, &hpc, 0);
         }
-        write_sequnlock(&svm->push_cache_lock);
+        write_sequnlock(&hproc->push_cache_lock);
 }
 
 /*
@@ -548,55 +548,55 @@ static void release_svm_push_elements(struct heca_process *svm)
  * therefore we can catch them and surrogate for them by iterating the tx
  * buffer.
  */
-static void release_svm_tx_elements(struct heca_process *svm,
-                struct heca_connection *ele)
+static void release_svm_tx_elements(struct heca_process *hproc,
+                struct heca_connection *conn)
 {
         struct tx_buffer_element *tx_buf;
         int i;
 
         /* killed before it was first connected */
-        if (!ele || !ele->tx_buffer.tx_buf)
+        if (!conn || !conn->tx_buffer.tx_buf)
                 return;
 
-        tx_buf = ele->tx_buffer.tx_buf;
+        tx_buf = conn->tx_buffer.tx_buf;
 
-        for (i = 0; i < ele->tx_buffer.len; i++) {
+        for (i = 0; i < conn->tx_buffer.len; i++) {
                 struct tx_buffer_element *tx_e = &tx_buf[i];
                 struct heca_message *msg = tx_e->hmsg_buffer;
                 int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY |
                         MSG_RES_PAGE_FAIL | MSG_REQ_READ;
 
-                if (msg->type & types && msg->dsm_id == svm->hspace->hspace_id
-                                && (msg->src_id == svm->hproc_id
-                                || msg->dest_id == svm->hproc_id)
+                if (msg->type & types && msg->dsm_id == hproc->hspace->hspace_id
+                                && (msg->src_id == hproc->hproc_id
+                                || msg->dest_id == hproc->hproc_id)
                                 && atomic_cmpxchg(&tx_e->used, 1, 2) == 1) {
                         struct heca_page_cache *dpc = tx_e->wrk_req->hpc;
 
                         dsm_pull_req_failure(dpc);
                         tx_e->wrk_req->dst_addr->mem_page = NULL;
                         dsm_release_pull_dpc(&dpc);
-                        dsm_ppe_clear_release(ele, &tx_e->wrk_req->dst_addr);
+                        dsm_ppe_clear_release(conn, &tx_e->wrk_req->dst_addr);
 
                         /* rdma processing already finished, we have to release ourselves */
                         smp_mb();
                         if (atomic_read(&tx_e->used) > 2)
-                                try_release_tx_element(ele, tx_e);
+                                try_release_tx_element(conn, tx_e);
                 }
         }
 }
 
-static void release_svm_queued_requests(struct heca_process *svm,
+static void release_svm_queued_requests(struct heca_process *hproc,
                 struct tx_buffer *tx)
 {
         struct heca_request *req, *n;
-        u32 svm_id = svm->hproc_id;
+        u32 hproc_id = hproc->hproc_id;
 
         mutex_lock(&tx->flush_mutex);
         dsm_request_queue_merge(tx);
         list_for_each_entry_safe (req, n,
                         &tx->ordered_request_queue, ordered_list){
-                if (req->remote_hproc_id == svm_id ||
-                                req->local_hproc_id == svm_id) {
+                if (req->remote_hproc_id == hproc_id ||
+                                req->local_hproc_id == hproc_id) {
                         list_del(&req->ordered_list);
                         if (req->hpc && req->hpc->tag == PULL_TAG)
                                 dsm_release_pull_dpc(&req->hpc);
@@ -606,43 +606,43 @@ static void release_svm_queued_requests(struct heca_process *svm,
         mutex_unlock(&tx->flush_mutex);
 }
 
-void remove_svm(u32 dsm_id, u32 svm_id)
+void remove_svm(u32 hspace_id, u32 hproc_id)
 {
-        struct heca_module_state *dsm_state = get_dsm_module_state();
-        struct heca_space *dsm;
-        struct heca_process *svm = NULL;
+        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_space *hspace;
+        struct heca_process *hproc = NULL;
 
-        mutex_lock(&dsm_state->heca_state_mutex);
-        dsm = find_dsm(dsm_id);
-        if (!dsm) {
-                mutex_unlock(&dsm_state->heca_state_mutex);
+        mutex_lock(&heca_state->heca_state_mutex);
+        hspace = find_dsm(hspace_id);
+        if (!hspace) {
+                mutex_unlock(&heca_state->heca_state_mutex);
                 return;
         }
 
-        mutex_lock(&dsm->hspace_mutex);
-        svm = find_svm(dsm, svm_id);
-        if (!svm) {
-                mutex_unlock(&dsm_state->heca_state_mutex);
+        mutex_lock(&hspace->hspace_mutex);
+        hproc = find_svm(hspace, hproc_id);
+        if (!hproc) {
+                mutex_unlock(&heca_state->heca_state_mutex);
                 goto out;
         }
-        if (is_svm_local(svm)) {
+        if (is_svm_local(hproc)) {
                 radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
-                                (unsigned long) svm->mm);
+                                (unsigned long) hproc->mm);
         }
-        mutex_unlock(&dsm_state->heca_state_mutex);
+        mutex_unlock(&heca_state->heca_state_mutex);
 
-        list_del(&svm->hproc_ptr);
-        radix_tree_delete(&dsm->hprocs_tree_root, (unsigned long) svm->hproc_id);
-        if (is_svm_local(svm)) {
-                cancel_delayed_work_sync(&svm->delayed_gup_work);
+        list_del(&hproc->hproc_ptr);
+        radix_tree_delete(&hspace->hprocs_tree_root, (unsigned long) hproc->hproc_id);
+        if (is_svm_local(hproc)) {
+                cancel_delayed_work_sync(&hproc->delayed_gup_work);
                 // to make sure everything is clean
-                dequeue_and_gup_cleanup(svm);
-                dsm->nb_local_hprocs--;
-                radix_tree_delete(&dsm->hprocs_mm_tree_root,
-                                (unsigned long) svm->mm);
+                dequeue_and_gup_cleanup(hproc);
+                hspace->nb_local_hprocs--;
+                radix_tree_delete(&hspace->hprocs_mm_tree_root,
+                                (unsigned long) hproc->mm);
         }
 
-        remove_svm_from_descriptors(svm);
+        remove_svm_from_descriptors(hproc);
 
         /*
          * we removed the svm from all descriptors and trees, so we won't make any
@@ -665,12 +665,12 @@ void remove_svm(u32 dsm_id, u32 svm_id)
          * which it isn't!
          * FIXME: the same problem is valid for push operations!
          */
-        if (is_svm_local(svm)) {
+        if (is_svm_local(hproc)) {
                 struct rb_root *root;
                 struct rb_node *node;
 
-                if (dsm_state->hcm) {
-                        root = &dsm_state->hcm->connections_rb_tree_root;
+                if (heca_state->hcm) {
+                        root = &heca_state->hcm->connections_rb_tree_root;
                         for (node = rb_first(root);
                                         node; node = rb_next(node)) {
                                 struct heca_connection *ele;
@@ -678,42 +678,42 @@ void remove_svm(u32 dsm_id, u32 svm_id)
                                 ele = rb_entry(node,
                                                 struct heca_connection, rb_node);
                                 BUG_ON(!ele);
-                                release_svm_queued_requests(svm,
+                                release_svm_queued_requests(hproc,
                                                 &ele->tx_buffer);
-                                release_svm_tx_elements(svm, ele);
+                                release_svm_tx_elements(hproc, ele);
                         }
                 }
-                release_svm_push_elements(svm);
-                destroy_svm_mrs(svm);
-        } else if (svm->connection) {
+                release_svm_push_elements(hproc);
+                destroy_svm_mrs(hproc);
+        } else if (hproc->connection) {
                 struct heca_process *local_svm;
 
-                release_svm_queued_requests(svm, &svm->connection->tx_buffer);
-                release_svm_tx_elements(svm, svm->connection);
+                release_svm_queued_requests(hproc, &hproc->connection->tx_buffer);
+                release_svm_tx_elements(hproc, hproc->connection);
 
                 /* potentially very expensive way to do this */
-                list_for_each_entry (local_svm, &svm->hspace->hprocs_list, hproc_ptr) {
+                list_for_each_entry (local_svm, &hproc->hspace->hprocs_list, hproc_ptr) {
                         if (is_svm_local(local_svm))
-                                surrogate_push_remote_svm(local_svm, svm);
+                                surrogate_push_remote_svm(local_svm, hproc);
                 }
         }
 
-        atomic_dec(&svm->refs);
-        release_svm(svm);
+        atomic_dec(&hproc->refs);
+        release_svm(hproc);
 
 out:
-        mutex_unlock(&dsm->hspace_mutex);
+        mutex_unlock(&hspace->hspace_mutex);
 }
 
-struct heca_process *find_any_svm(struct heca_space *dsm, struct heca_process_list svms)
+struct heca_process *find_any_svm(struct heca_space *hspace, struct heca_process_list hprocs)
 {
         int i;
-        struct heca_process *svm;
+        struct heca_process *hproc;
 
-        for_each_valid_hproc(svms, i) {
-                svm = find_svm(dsm, svms.ids[i]);
-                if (likely(svm))
-                        return svm;
+        for_each_valid_hproc(hprocs, i) {
+                hproc = find_svm(hspace, hprocs.ids[i]);
+                if (likely(hproc))
+                        return hproc;
         }
 
         return NULL;

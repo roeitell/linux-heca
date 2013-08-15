@@ -222,7 +222,7 @@ static inline int is_svm_local(struct heca_process *svm)
         return !!svm->mm;
 }
 
-static inline int grab_svm(struct heca_process *svm)
+static inline int grab_svm(struct heca_process *hproc)
 {
 #if !defined(CONFIG_SMP) && defined(CONFIG_TREE_RCU)
 # ifdef CONFIG_PREEMPT_COUNT
@@ -231,51 +231,53 @@ static inline int grab_svm(struct heca_process *svm)
         BUG_ON(atomic_read(&hproc->refs) == 0);
         atomic_inc(&hproc->refs);
 #else
-        if (!atomic_inc_not_zero(&svm->refs))
+        if (!atomic_inc_not_zero(&hproc->refs))
                 return -1;
 #endif
         return 0;
 }
 
 static struct heca_process *_find_svm_in_tree(
-                struct radix_tree_root *root, unsigned long svm_id)
+                struct radix_tree_root *root, unsigned long hproc_id)
 {
-        struct heca_process *svm;
-        struct heca_process **svmp;
+        struct heca_process *hproc;
+        struct heca_process **hprocp;
 
         rcu_read_lock();
 repeat:
-        svm = NULL;
-        svmp = (struct heca_process **) radix_tree_lookup_slot(root,
-                        (unsigned long) svm_id);
-        if (svmp) {
-                svm = radix_tree_deref_slot((void**) svmp);
-                if (unlikely(!svm))
+        hproc = NULL;
+        hprocp = (struct heca_process **) radix_tree_lookup_slot(root,
+                        (unsigned long) hproc_id);
+        if (hprocp) {
+                hproc = radix_tree_deref_slot((void**) hprocp);
+                if (unlikely(!hproc))
                         goto out;
-                if (radix_tree_exception(svm)) {
-                        if (radix_tree_deref_retry(svm))
+                if (radix_tree_exception(hproc)) {
+                        if (radix_tree_deref_retry(hproc))
                                 goto repeat;
                 }
 
-                if (grab_svm(svm))
+                if (grab_svm(hproc))
                         goto repeat;
 
         }
 
 out:
         rcu_read_unlock();
-        return svm;
+        return hproc;
 }
 
-inline struct heca_process *find_svm(struct heca_space *dsm, u32 svm_id)
+inline struct heca_process *find_svm(struct heca_space *hspace, u32 hproc_id)
 {
-        return _find_svm_in_tree(&dsm->hprocs_tree_root, (unsigned long) svm_id);
+        return _find_svm_in_tree(&hspace->hprocs_tree_root,
+                        (unsigned long) hproc_id);
 }
 
-inline struct heca_process *find_local_svm_in_dsm(struct heca_space *dsm,
+inline struct heca_process *find_local_svm_in_dsm(struct heca_space *hspace,
                 struct mm_struct *mm)
 {
-        return _find_svm_in_tree(&dsm->hprocs_mm_tree_root, (unsigned long) mm);
+        return _find_svm_in_tree(&hspace->hprocs_mm_tree_root,
+                        (unsigned long) mm);
 }
 
 inline struct heca_process *find_local_svm_from_mm(struct mm_struct *mm)
@@ -287,8 +289,8 @@ inline struct heca_process *find_local_svm_from_mm(struct mm_struct *mm)
                 NULL;
 }
 
-static int insert_svm_to_radix_trees(struct heca_module_state *dsm_state,
-                struct heca_space *dsm, struct heca_process *new_svm)
+static int insert_svm_to_radix_trees(struct heca_module_state *heca_state,
+                struct heca_space *hspace, struct heca_process *new_hproc)
 {
         int r;
 
@@ -305,35 +307,35 @@ preload:
         }
 
 
-        spin_lock(&dsm_state->radix_lock);
-        r = radix_tree_insert(&dsm->hprocs_tree_root,
-                        (unsigned long) new_svm->hproc_id, new_svm);
+        spin_lock(&heca_state->radix_lock);
+        r = radix_tree_insert(&hspace->hprocs_tree_root,
+                        (unsigned long) new_hproc->hproc_id, new_hproc);
         if (r)
                 goto unlock;
 
-        if (is_svm_local(new_svm)) {
-                r = radix_tree_insert(&dsm->hprocs_mm_tree_root,
-                                (unsigned long) new_svm->mm, new_svm);
+        if (is_svm_local(new_hproc)) {
+                r = radix_tree_insert(&hspace->hprocs_mm_tree_root,
+                                (unsigned long) new_hproc->mm, new_hproc);
                 if (r)
                         goto unlock;
 
-                r = radix_tree_insert(&dsm_state->mm_tree_root,
-                                (unsigned long) new_svm->mm, new_svm);
+                r = radix_tree_insert(&heca_state->mm_tree_root,
+                                (unsigned long) new_hproc->mm, new_hproc);
         }
 
 unlock:
-        spin_unlock(&dsm_state->radix_lock);
+        spin_unlock(&heca_state->radix_lock);
 
         radix_tree_preload_end();
         if (r) {
                 heca_printk(KERN_ERR "failed radix_tree_insert %d", r);
-                radix_tree_delete(&dsm->hprocs_tree_root,
-                                (unsigned long) new_svm->hproc_id);
-                if (is_svm_local(new_svm)) {
-                        radix_tree_delete(&dsm->hprocs_mm_tree_root,
-                                        (unsigned long) new_svm->mm);
-                        radix_tree_delete(&dsm_state->mm_tree_root,
-                                        (unsigned long) new_svm->mm);
+                radix_tree_delete(&hspace->hprocs_tree_root,
+                                (unsigned long) new_hproc->hproc_id);
+                if (is_svm_local(new_hproc)) {
+                        radix_tree_delete(&hspace->hprocs_mm_tree_root,
+                                        (unsigned long) new_hproc->mm);
+                        radix_tree_delete(&heca_state->mm_tree_root,
+                                        (unsigned long) new_hproc->mm);
                 }
         }
 
@@ -341,142 +343,145 @@ out:
         return r;
 }
 
-int create_svm(struct hecaioc_hproc *svm_info)
+int create_svm(struct hecaioc_hproc *hproc_info)
 {
-        struct heca_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *heca_state = get_dsm_module_state();
         int r = 0;
-        struct heca_space *dsm;
-        struct heca_process *found_svm, *new_svm = NULL;
+        struct heca_space *hspace;
+        struct heca_process *found_hproc, *new_hproc = NULL;
 
-        /* allocate a new svm */
-        new_svm = kzalloc(sizeof(*new_svm), GFP_KERNEL);
-        if (!new_svm) {
+        /* allocate a new hproc */
+        new_hproc = kzalloc(sizeof(*new_hproc), GFP_KERNEL);
+        if (!new_hproc) {
                 heca_printk(KERN_ERR "failed kzalloc");
                 return -ENOMEM;
         }
 
-        /* grab dsm lock */
-        mutex_lock(&dsm_state->heca_state_mutex);
-        dsm = find_dsm(svm_info->hspace_id);
-        if (dsm)
-                mutex_lock(&dsm->hspace_mutex);
-        mutex_unlock(&dsm_state->heca_state_mutex);
-        if (!dsm) {
-                heca_printk(KERN_ERR "could not find dsm: %d",
-                                svm_info->hspace_id);
+        /* grab hspace lock */
+        mutex_lock(&heca_state->heca_state_mutex);
+        hspace = find_dsm(hproc_info->hspace_id);
+        if (hspace)
+                mutex_lock(&hspace->hspace_mutex);
+        mutex_unlock(&heca_state->heca_state_mutex);
+        if (!hspace) {
+                heca_printk(KERN_ERR "could not find hspace: %d",
+                                hproc_info->hspace_id);
                 r = -EFAULT;
-                goto no_dsm;
+                goto no_hspace;
         }
 
         /* already exists? */
-        found_svm = find_svm(dsm, svm_info->hproc_id);
-        if (found_svm) {
-                heca_printk(KERN_ERR "svm %d (dsm %d) already exists",
-                                svm_info->hproc_id, svm_info->hspace_id);
+        found_hproc = find_svm(hspace, hproc_info->hproc_id);
+        if (found_hproc) {
+                heca_printk(KERN_ERR "hproc %d (hspace %d) already exists",
+                                hproc_info->hproc_id, hproc_info->hspace_id);
                 r = -EEXIST;
                 goto out;
         }
 
-        /* initial svm data */
-        new_svm->hproc_id = svm_info->hproc_id;
-        new_svm->is_local = svm_info->is_local;
-        new_svm->pid = svm_info->pid;
-        new_svm->hspace = dsm;
-        atomic_set(&new_svm->refs, 2);
+        /* initial hproc data */
+        new_hproc->hproc_id = hproc_info->hproc_id;
+        new_hproc->is_local = hproc_info->is_local;
+        new_hproc->pid = hproc_info->pid;
+        new_hproc->hspace = hspace;
+        atomic_set(&new_hproc->refs, 2);
 
-        /* register local svm */
-        if (svm_info->is_local) {
+        /* register local hproc */
+        if (hproc_info->is_local) {
                 struct mm_struct *mm;
 
-                mm = find_mm_by_pid(new_svm->pid);
+                mm = find_mm_by_pid(new_hproc->pid);
                 if (!mm) {
-                        heca_printk(KERN_ERR "can't find pid %d", new_svm->pid);
+                        heca_printk(KERN_ERR "can't find pid %d",
+                                        new_hproc->pid);
                         r = -ESRCH;
                         goto out;
                 }
 
-                found_svm = find_local_svm_from_mm(mm);
-                if (found_svm) {
-                        heca_printk(KERN_ERR "svm already exists for current process");
+                found_hproc = find_local_svm_from_mm(mm);
+                if (found_hproc) {
+                        heca_printk(KERN_ERR "Hproc already exists for current process");
                         r = -EEXIST;
                         goto out;
                 }
 
-                new_svm->mm = mm;
-                new_svm->hspace->nb_local_hprocs++;
-                new_svm->hmr_tree_root = RB_ROOT;
-                seqlock_init(&new_svm->hmr_seq_lock);
-                new_svm->hmr_cache = NULL;
+                new_hproc->mm = mm;
+                new_hproc->hspace->nb_local_hprocs++;
+                new_hproc->hmr_tree_root = RB_ROOT;
+                seqlock_init(&new_hproc->hmr_seq_lock);
+                new_hproc->hmr_cache = NULL;
 
-                init_llist_head(&new_svm->delayed_gup);
-                INIT_DELAYED_WORK(&new_svm->delayed_gup_work,
+                init_llist_head(&new_hproc->delayed_gup);
+                INIT_DELAYED_WORK(&new_hproc->delayed_gup_work,
                                 delayed_gup_work_fn);
-                init_llist_head(&new_svm->deferred_gups);
-                INIT_WORK(&new_svm->deferred_gup_work, deferred_gup_work_fn);
+                init_llist_head(&new_hproc->deferred_gups);
+                INIT_WORK(&new_hproc->deferred_gup_work, deferred_gup_work_fn);
 
-                spin_lock_init(&new_svm->page_cache_spinlock);
-                spin_lock_init(&new_svm->page_readers_spinlock);
-                spin_lock_init(&new_svm->page_maintainers_spinlock);
-                INIT_RADIX_TREE(&new_svm->page_cache, GFP_ATOMIC);
-                INIT_RADIX_TREE(&new_svm->page_readers, GFP_ATOMIC);
-                INIT_RADIX_TREE(&new_svm->page_maintainers, GFP_ATOMIC);
-                new_svm->push_cache = RB_ROOT;
-                seqlock_init(&new_svm->push_cache_lock);
+                spin_lock_init(&new_hproc->page_cache_spinlock);
+                spin_lock_init(&new_hproc->page_readers_spinlock);
+                spin_lock_init(&new_hproc->page_maintainers_spinlock);
+                INIT_RADIX_TREE(&new_hproc->page_cache, GFP_ATOMIC);
+                INIT_RADIX_TREE(&new_hproc->page_readers, GFP_ATOMIC);
+                INIT_RADIX_TREE(&new_hproc->page_maintainers, GFP_ATOMIC);
+                new_hproc->push_cache = RB_ROOT;
+                seqlock_init(&new_hproc->push_cache_lock);
         }
 
-        r = create_svm_sysfs_entry(new_svm);
+        r = create_svm_sysfs_entry(new_hproc);
         if (r) {
                 heca_printk(KERN_ERR "failed create_svm_sysfs_entry %d", r);
                 goto out;
         }
 
-        /* register svm by id and mm_struct (must come before dsm_get_descriptor) */
-        if (insert_svm_to_radix_trees(dsm_state, dsm, new_svm))
+        /* register hproc by id and mm_struct (must come before dsm_get_descriptor) */
+        if (insert_svm_to_radix_trees(heca_state, hspace, new_hproc))
                 goto out;
-        list_add(&new_svm->hproc_ptr, &dsm->hprocs_list);
+        list_add(&new_hproc->hproc_ptr, &hspace->hprocs_list);
 
-        /* assign descriptor for remote svm */
-        if (!is_svm_local(new_svm)) {
-                u32 svm_ids[] = {new_svm->hproc_id, 0};
-                new_svm->descriptor = dsm_get_descriptor(dsm->hspace_id, svm_ids);
+        /* assign descriptor for remote hproc */
+        if (!is_svm_local(new_hproc)) {
+                u32 hproc_ids[] = {new_hproc->hproc_id, 0};
+                new_hproc->descriptor = dsm_get_descriptor(hspace->hspace_id,
+                                hproc_ids);
         }
 
 out:
-        mutex_unlock(&dsm->hspace_mutex);
-        if (found_svm)
-                release_svm(found_svm);
+        mutex_unlock(&hspace->hspace_mutex);
+        if (found_hproc)
+                release_svm(found_hproc);
 
         if (r) {
-                kfree(new_svm);
-                new_svm = NULL;
-                goto no_dsm;
+                kfree(new_hproc);
+                new_hproc = NULL;
+                goto no_hspace;
         }
 
-        if (!svm_info->is_local) {
-                r = connect_svm(svm_info->hspace_id, svm_info->hproc_id,
-                                svm_info->remote.sin_addr.s_addr,
-                                svm_info->remote.sin_port);
+        if (!hproc_info->is_local) {
+                r = connect_svm(hproc_info->hspace_id, hproc_info->hproc_id,
+                                hproc_info->remote.sin_addr.s_addr,
+                                hproc_info->remote.sin_port);
 
                 if (r) {
-                        heca_printk(KERN_ERR "connect_svm failed %d", r);
-                        kfree(new_svm);
-                        new_svm = NULL;
+                        heca_printk(KERN_ERR "connect_hproc failed %d", r);
+                        kfree(new_hproc);
+                        new_hproc = NULL;
                 }
         }
-no_dsm:
-        heca_printk(KERN_INFO "svm %p, res %d, dsm_id %u, svm_id: %u --> ret %d",
-                        new_svm, r, svm_info->hspace_id, svm_info->hproc_id, r);
+no_hspace:
+        heca_printk(KERN_INFO "hproc %p, res %d, hspace_id %u, hproc_id: %u --> ret %d",
+                        new_hproc, r, hproc_info->hspace_id,
+                        hproc_info->hproc_id, r);
         return r;
 }
 
-inline void release_svm(struct heca_process *svm)
+inline void release_svm(struct heca_process *hproc)
 {
-        atomic_dec(&svm->refs);
-        if (atomic_cmpxchg(&svm->refs, 1, 0) == 1) {
-                trace_free_svm(svm->hproc_id);
-                delete_svm_sysfs_entry(&svm->hproc_kobject);
+        atomic_dec(&hproc->refs);
+        if (atomic_cmpxchg(&hproc->refs, 1, 0) == 1) {
+                trace_free_svm(hproc->hproc_id);
+                delete_svm_sysfs_entry(&hproc->hproc_kobject);
                 synchronize_rcu();
-                kfree(svm);
+                kfree(hproc);
         }
 }
 

@@ -78,91 +78,94 @@ void erase_rb_conn(struct heca_connection *conn)
 }
 
 /*
- * dsm funcs
+ * heca_space funcs
  */
 struct heca_space *find_dsm(u32 id)
 {
-        struct heca_module_state *dsm_state = get_dsm_module_state();
-        struct heca_space *dsm;
-        struct heca_space **dsmp;
+        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_space *hspace;
+        struct heca_space **hspacep;
         struct radix_tree_root *root;
 
         rcu_read_lock();
-        root = &dsm_state->hspaces_tree_root;
+        root = &heca_state->hspaces_tree_root;
 repeat:
-        dsm = NULL;
-        dsmp = (struct heca_space **) radix_tree_lookup_slot(root, (unsigned long) id);
-        if (dsmp) {
-                dsm = radix_tree_deref_slot((void **) dsmp);
-                if (unlikely(!dsm))
+        hspace = NULL;
+        hspacep = (struct heca_space **) radix_tree_lookup_slot(root,
+                        (unsigned long) id);
+        if (hspacep) {
+                hspace = radix_tree_deref_slot((void **) hspacep);
+                if (unlikely(!hspace))
                         goto out;
-                if (radix_tree_exception(dsm)) {
-                        if (radix_tree_deref_retry(dsm))
+                if (radix_tree_exception(hspace)) {
+                        if (radix_tree_deref_retry(hspace))
                                 goto repeat;
                 }
         }
 out:
         rcu_read_unlock();
-        return dsm;
+        return hspace;
 }
 
-void remove_dsm(struct heca_space *dsm)
+void remove_dsm(struct heca_space *hspace)
 {
-        struct heca_process *svm;
-        struct heca_module_state *dsm_state = get_dsm_module_state();
+        struct heca_process *hproc;
+        struct heca_module_state *heca_state = get_dsm_module_state();
         struct list_head *pos, *n;
 
-        BUG_ON(!dsm);
+        BUG_ON(!hspace);
 
-        heca_printk(KERN_DEBUG "<enter> dsm=%d", dsm->hspace_id);
+        heca_printk(KERN_DEBUG "<enter> hspace=%d", hspace->hspace_id);
 
-        list_for_each_safe (pos, n, &dsm->hprocs_list) {
-                svm = list_entry(pos, struct heca_process, hproc_ptr);
-                remove_svm(dsm->hspace_id, svm->hproc_id);
+        list_for_each_safe (pos, n, &hspace->hprocs_list) {
+                hproc = list_entry(pos, struct heca_process, hproc_ptr);
+                remove_svm(hspace->hspace_id, hproc->hproc_id);
         }
 
-        mutex_lock(&dsm_state->heca_state_mutex);
-        list_del(&dsm->hspace_ptr);
-        radix_tree_delete(&dsm_state->hspaces_tree_root,
-                        (unsigned long) dsm->hspace_id);
-        mutex_unlock(&dsm_state->heca_state_mutex);
+        mutex_lock(&heca_state->heca_state_mutex);
+        list_del(&hspace->hspace_ptr);
+        radix_tree_delete(&heca_state->hspaces_tree_root,
+                        (unsigned long) hspace->hspace_id);
+        mutex_unlock(&heca_state->heca_state_mutex);
         synchronize_rcu();
 
-        delete_dsm_sysfs_entry(&dsm->hspace_kobject);
+        delete_dsm_sysfs_entry(&hspace->hspace_kobject);
 
-        mutex_lock(&dsm_state->heca_state_mutex);
-        kfree(dsm);
-        mutex_unlock(&dsm_state->heca_state_mutex);
+        mutex_lock(&heca_state->heca_state_mutex);
+        kfree(hspace);
+        mutex_unlock(&heca_state->heca_state_mutex);
 
         heca_printk(KERN_DEBUG "<exit>");
 }
 
 
-int create_dsm(__u32 dsm_id)
+int create_dsm(__u32 hspace_id)
 {
         int r = 0;
-        struct heca_space *found_dsm, *new_dsm = NULL;
-        struct heca_module_state *dsm_state = get_dsm_module_state();
+        struct heca_space *found_hspace, *new_hspace = NULL;
+        struct heca_module_state *heca_state = get_dsm_module_state();
 
         /* already exists? (first check; the next one is under lock */
-        found_dsm = find_dsm(dsm_id);
-        if (found_dsm) {
-                heca_printk("we already have the dsm in place");
+        found_hspace = find_dsm(hspace_id);
+        if (found_hspace) {
+                heca_printk("we already have the hspace in place");
                 return -EEXIST;
         }
 
         /* allocate a new dsm */
-        new_dsm = kzalloc(sizeof(*new_dsm), GFP_KERNEL);
-        if (!new_dsm) {
+        new_hspace = kzalloc(sizeof(*new_hspace), GFP_KERNEL);
+        if (!new_hspace) {
                 heca_printk("can't allocate");
                 return -ENOMEM;
         }
-        new_dsm->hspace_id = dsm_id;
-        mutex_init(&new_dsm->hspace_mutex);
-        INIT_RADIX_TREE(&new_dsm->hprocs_tree_root, GFP_KERNEL & ~__GFP_WAIT);
-        INIT_RADIX_TREE(&new_dsm->hprocs_mm_tree_root, GFP_KERNEL & ~__GFP_WAIT);
-        INIT_LIST_HEAD(&new_dsm->hprocs_list);
-        new_dsm->nb_local_hprocs = 0;
+        new_hspace->hspace_id = hspace_id;
+        mutex_init(&new_hspace->hspace_mutex);
+        INIT_RADIX_TREE(&new_hspace->hprocs_tree_root,
+                        GFP_KERNEL & ~__GFP_WAIT);
+        INIT_RADIX_TREE(&new_hspace->hprocs_mm_tree_root,
+                        GFP_KERNEL & ~__GFP_WAIT);
+        INIT_LIST_HEAD(&new_hspace->hprocs_list);
+        new_hspace->nb_local_hprocs = 0;
 
         while (1) {
                 r = radix_tree_preload(GFP_HIGHUSER_MOVABLE & GFP_KERNEL);
@@ -179,10 +182,10 @@ int create_dsm(__u32 dsm_id)
                 goto failed;
         }
 
-        spin_lock(&dsm_state->radix_lock);
-        r = radix_tree_insert(&dsm_state->hspaces_tree_root,
-                        (unsigned long) new_dsm->hspace_id, new_dsm);
-        spin_unlock(&dsm_state->radix_lock);
+        spin_lock(&heca_state->radix_lock);
+        r = radix_tree_insert(&heca_state->hspaces_tree_root,
+                        (unsigned long) new_hspace->hspace_id, new_hspace);
+        spin_unlock(&heca_state->radix_lock);
         radix_tree_preload_end();
 
         if (r) {
@@ -190,22 +193,22 @@ int create_dsm(__u32 dsm_id)
                 goto failed;
         }
 
-        r = create_dsm_sysfs_entry(new_dsm, dsm_state);
+        r = create_dsm_sysfs_entry(new_hspace, heca_state);
         if (r) {
                 heca_printk("create_dsm_sysfs_entry: failed %d", r);
                 goto err_delete;
         }
 
-        list_add(&new_dsm->hspace_ptr, &dsm_state->hspaces_list);
-        heca_printk("registered dsm %p, dsm_id : %u, res: %d",
-                        new_dsm, dsm_id, r);
+        list_add(&new_hspace->hspace_ptr, &heca_state->hspaces_list);
+        heca_printk("registered hspace %p, hspace_id : %u, res: %d",
+                        new_hspace, hspace_id, r);
         return r;
 
 err_delete:
-        radix_tree_delete(&dsm_state->hspaces_tree_root,
-                        (unsigned long) dsm_id);
+        radix_tree_delete(&heca_state->hspaces_tree_root,
+                        (unsigned long) hspace_id);
 failed:
-        kfree(new_dsm);
+        kfree(new_hspace);
         return r;
 }
 

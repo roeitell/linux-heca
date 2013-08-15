@@ -21,7 +21,7 @@
  */
 struct heca_connection *search_rb_conn(int node_ip)
 {
-        struct heca_connections_manager *hcm = get_dsm_module_state()->hcm;
+        struct heca_connections_manager *hcm = get_heca_module_state()->hcm;
         struct rb_root *root;
         struct rb_node *node;
         struct heca_connection *this = 0;
@@ -47,7 +47,7 @@ struct heca_connection *search_rb_conn(int node_ip)
 
 void insert_rb_conn(struct heca_connection *conn)
 {
-        struct heca_connections_manager *hcm = get_dsm_module_state()->hcm;
+        struct heca_connections_manager *hcm = get_heca_module_state()->hcm;
         struct rb_root *root;
         struct rb_node **new, *parent = NULL;
         struct heca_connection *this;
@@ -70,7 +70,7 @@ void insert_rb_conn(struct heca_connection *conn)
 
 void erase_rb_conn(struct heca_connection *conn)
 {
-        struct heca_connections_manager *hcm = get_dsm_module_state()->hcm;
+        struct heca_connections_manager *hcm = get_heca_module_state()->hcm;
 
         write_seqlock(&hcm->connections_lock);
         rb_erase(&conn->rb_node, &hcm->connections_rb_tree_root);
@@ -82,7 +82,7 @@ void erase_rb_conn(struct heca_connection *conn)
  */
 struct heca_space *find_hspace(u32 id)
 {
-        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_module_state *heca_state = get_heca_module_state();
         struct heca_space *hspace;
         struct heca_space **hspacep;
         struct radix_tree_root *root;
@@ -110,7 +110,7 @@ out:
 void remove_hspace(struct heca_space *hspace)
 {
         struct heca_process *hproc;
-        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_module_state *heca_state = get_heca_module_state();
         struct list_head *pos, *n;
 
         BUG_ON(!hspace);
@@ -143,7 +143,7 @@ int create_hspace(__u32 hspace_id)
 {
         int r = 0;
         struct heca_space *found_hspace, *new_hspace = NULL;
-        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_module_state *heca_state = get_heca_module_state();
 
         /* already exists? (first check; the next one is under lock */
         found_hspace = find_hspace(hspace_id);
@@ -282,7 +282,7 @@ inline struct heca_process *find_local_hproc_in_hspace(
 
 inline struct heca_process *find_local_hproc_from_mm(struct mm_struct *mm)
 {
-        struct heca_module_state *mod = get_dsm_module_state();
+        struct heca_module_state *mod = get_heca_module_state();
 
         return (likely(mod)) ?
                 _find_hproc_in_tree(&mod->mm_tree_root, (unsigned long) mm) :
@@ -345,7 +345,7 @@ out:
 
 int create_hproc(struct hecaioc_hproc *hproc_info)
 {
-        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_module_state *heca_state = get_heca_module_state();
         int r = 0;
         struct heca_space *hspace;
         struct heca_process *found_hproc, *new_hproc = NULL;
@@ -609,7 +609,7 @@ static void release_hproc_queued_requests(struct heca_process *hproc,
 
 void remove_hproc(u32 hspace_id, u32 hproc_id)
 {
-        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_module_state *heca_state = get_heca_module_state();
         struct heca_space *hspace;
         struct heca_process *hproc = NULL;
 
@@ -627,7 +627,7 @@ void remove_hproc(u32 hspace_id, u32 hproc_id)
                 goto out;
         }
         if (is_hproc_local(hproc)) {
-                radix_tree_delete(&get_dsm_module_state()->mm_tree_root,
+                radix_tree_delete(&get_heca_module_state()->mm_tree_root,
                                 (unsigned long) hproc->mm);
         }
         mutex_unlock(&heca_state->heca_state_mutex);

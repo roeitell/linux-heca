@@ -308,7 +308,7 @@ static void delayed_request_flush_work_fn(struct work_struct *w)
 
 static void destroy_connection_work(struct work_struct *work)
 {
-        struct heca_connections_manager *hcm = get_dsm_module_state()->hcm;
+        struct heca_connections_manager *hcm = get_heca_module_state()->hcm;
         struct rb_root *root;
         struct rb_node *node, *next;
         struct heca_connection *conn;
@@ -340,7 +340,7 @@ static inline void queue_recv_work(struct heca_connection *conn)
 {
         rcu_read_lock();
         if (atomic_read(&conn->alive))
-                queue_work(get_dsm_module_state()->heca_rx_wq, &conn->recv_work);
+                queue_work(get_heca_module_state()->heca_rx_wq, &conn->recv_work);
         rcu_read_unlock();
 }
 
@@ -348,7 +348,7 @@ static inline void queue_send_work(struct heca_connection *conn)
 {
         rcu_read_lock();
         if (atomic_read(&conn->alive))
-                queue_work(get_dsm_module_state()->heca_tx_wq, &conn->send_work);
+                queue_work(get_heca_module_state()->heca_tx_wq, &conn->send_work);
         rcu_read_unlock();
 }
 
@@ -644,12 +644,12 @@ static int exchange_info(struct heca_connection *conn, int id)
 
                 conn->remote_node_ip = (u32) conn->rid.remote_info->node_ip;
                 conn->remote.sin_addr.s_addr = (u32) conn->rid.remote_info->node_ip;
-                conn->local = get_dsm_module_state()->hcm->sin;
+                conn->local = get_heca_module_state()->hcm->sin;
                 conn_found = search_rb_conn(conn->remote_node_ip);
 
                 if (conn_found) {
                         if (conn->remote_node_ip !=
-                                        get_dsm_module_state()->hcm->node_ip) {
+                                        get_heca_module_state()->hcm->node_ip) {
                                 char curr[20], prev[20];
 
                                 inet_ntoa(conn->remote_node_ip,
@@ -1622,7 +1622,7 @@ int connect_hproc(__u32 hspace_id, __u32 hproc_id, unsigned long ip_addr,
         struct heca_space *hspace;
         struct heca_process *hproc;
         struct heca_connection *conn;
-        struct heca_module_state *heca_state = get_dsm_module_state();
+        struct heca_module_state *heca_state = get_heca_module_state();
 
         hspace = find_hspace(hspace_id);
         if (!hspace) {
@@ -1721,7 +1721,7 @@ static void remove_hprocs_for_conn(struct heca_connection *conn)
         struct heca_process *hproc;
         struct list_head *pos, *n, *it;
 
-        list_for_each (pos, &get_dsm_module_state()->hspaces_list) {
+        list_for_each (pos, &get_heca_module_state()->hspaces_list) {
                 hspace = list_entry(pos, struct heca_space, hspace_ptr);
                 list_for_each_safe (it, n, &hspace->hprocs_list) {
                         hproc = list_entry(it, struct heca_process,

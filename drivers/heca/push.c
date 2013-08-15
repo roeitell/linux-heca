@@ -1006,7 +1006,7 @@ int push_back_if_remote_dsm_page(struct page *page)
         struct anon_vma_chain *avc;
         int ret = 0;
 
-        if (!get_dsm_module_state())
+        if (!get_heca_module_state())
                 goto out;
 
         /* don't push pages that belong to more than one process, avoid pitfalls */

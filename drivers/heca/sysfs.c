@@ -269,7 +269,7 @@ static ssize_t instance_dsm_server_show(struct heca_space *dsm,
                 char *data)
 {
         char s[20];
-        struct heca_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_heca_module_state();
 
         BUG_ON(!dsm_state);
         BUG_ON(!dsm_state->hcm);
@@ -386,7 +386,7 @@ int create_connection_sysfs_entry(struct heca_connection *ele)
         int rc;
 
         struct kobject *root_kobj =
-                get_dsm_module_state()->hspaces_kobjects.rdma_kobject;
+                get_heca_module_state()->hspaces_kobjects.rdma_kobject;
 
         rc = kobject_init_and_add(&ele->kobj,
                         &ktype_conn_instance, root_kobj,

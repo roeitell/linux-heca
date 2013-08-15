@@ -79,12 +79,12 @@ static int deregister_dsm(__u32 dsm_id);
 
 static struct heca_module_state *dsm_state;
 
-inline struct heca_module_state *get_dsm_module_state(void)
+inline struct heca_module_state *get_heca_module_state(void)
 {
         return dsm_state;
 }
 
-struct heca_module_state *create_dsm_module_state(void)
+struct heca_module_state *create_heca_module_state(void)
 {
         dsm_state = kzalloc(sizeof(struct heca_module_state), GFP_KERNEL);
         BUG_ON(!(dsm_state));
@@ -100,7 +100,7 @@ struct heca_module_state *create_dsm_module_state(void)
         return dsm_state;
 }
 
-void destroy_dsm_module_state(void)
+void destroy_heca_module_state(void)
 {
         struct list_head *curr, *next;
         struct heca_space *dsm;
@@ -120,7 +120,7 @@ void destroy_dsm_module_state(void)
 
 static int deregister_dsm(__u32 dsm_id)
 {
-        struct heca_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_heca_module_state();
         int ret = 0;
         struct heca_space *dsm;
         struct list_head *curr, *next;
@@ -139,7 +139,7 @@ static int deregister_dsm(__u32 dsm_id)
 
 static int register_dsm(struct hecaioc_hspace *dsm_info)
 {
-        struct heca_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_heca_module_state();
         int rc;
 
         heca_printk(KERN_DEBUG "<enter>");
@@ -309,7 +309,7 @@ const struct heca_hook_struct my_heca_hook = {
 
 static int dsm_init(void)
 {
-        struct heca_module_state *dsm_state = create_dsm_module_state();
+        struct heca_module_state *dsm_state = create_heca_module_state();
         int rc;
 
         heca_printk(KERN_DEBUG "<enter>");
@@ -328,7 +328,7 @@ module_init(dsm_init);
 
 static void dsm_exit(void)
 {
-        struct heca_module_state *dsm_state = get_dsm_module_state();
+        struct heca_module_state *dsm_state = get_heca_module_state();
 
         heca_printk(KERN_DEBUG "<enter>");
         BUG_ON(heca_hook_unregister());
@@ -336,7 +336,7 @@ static void dsm_exit(void)
         misc_deregister(&heca_misc);
         heca_sysfs_cleanup(dsm_state);
         dsm_zero_pfn_exit();
-        destroy_dsm_module_state();
+        destroy_heca_module_state();
         heca_printk(KERN_DEBUG "<exit>");
 }
 module_exit(dsm_exit);

@@ -90,7 +90,7 @@ static inline void init_kmem_request_cache_elm(void *obj)
 
 void init_kmem_heca_request_cache(void)
 {
-        kmem_heca_request_cache = kmem_cache_create("dsm_request",
+        kmem_heca_request_cache = kmem_cache_create("heca_request",
                         sizeof(struct heca_request), 0,
                         SLAB_HWCACHE_ALIGN | SLAB_TEMPORARY,
                         init_kmem_request_cache_elm);
@@ -512,7 +512,7 @@ static int heca_send_message_handler(struct heca_connection *conn,
         return 0;
 }
 
-static void dsm_cq_event_handler(struct ib_event *event, void *data)
+static void heca_cq_event_handler(struct ib_event *event, void *data)
 {
         heca_printk(KERN_DEBUG "event %u  data %p", event->event, data);
 }
@@ -894,7 +894,7 @@ static int setup_qp(struct heca_connection *conn)
         INIT_WORK(&conn->recv_work, recv_cq_handle_work);
 
         conn->qp_attr.send_cq = ib_create_cq(conn->cm_id->device,
-                        send_cq_handle, dsm_cq_event_handler, (void *) conn,
+                        send_cq_handle, heca_cq_event_handler, (void *) conn,
                         conn->qp_attr.cap.max_send_wr, 0);
         if (IS_ERR(conn->qp_attr.send_cq)) {
                 heca_printk(KERN_ERR "Cannot create cq");
@@ -907,7 +907,7 @@ static int setup_qp(struct heca_connection *conn)
         }
 
         conn->qp_attr.recv_cq = ib_create_cq(conn->cm_id->device,
-                        recv_cq_handle, dsm_cq_event_handler, (void *) conn,
+                        recv_cq_handle, heca_cq_event_handler, (void *) conn,
                         conn->qp_attr.cap.max_recv_wr,0);
         if (IS_ERR(conn->qp_attr.recv_cq)) {
                 heca_printk(KERN_ERR "Cannot create cq");
@@ -1078,7 +1078,7 @@ static int create_tx_buffer(struct heca_connection *conn)
                 tx_buff_e[i].hmsg_buffer = kzalloc(sizeof(struct heca_message),
                                 GFP_KERNEL);
                 if (!tx_buff_e[i].hmsg_buffer) {
-                        heca_printk(KERN_ERR "Failed to allocate .dsm_buf");
+                        heca_printk(KERN_ERR "Failed to allocate .heca_buf");
                         ret = -ENOMEM;
                         goto err;
                 }

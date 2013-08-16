@@ -256,7 +256,7 @@ static inline void init_heca_cache_elm(void *obj)
         struct heca_page_cache *hpc = (struct heca_page_cache *) obj;
         int i;
 
-        for (i = 0; i < MAX_SVMS_PER_PAGE; i++)
+        for (i = 0; i < MAX_HPROCS_PER_PAGE; i++)
                 hpc->pages[i] = NULL;
 }
 

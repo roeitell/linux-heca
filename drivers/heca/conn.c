@@ -427,7 +427,7 @@ static int heca_recv_message_handler(struct heca_connection *conn,
                 process_pull_request(conn, rx_e);
                 ack_msg(conn, rx_e->hmsg_buffer, MSG_RES_ACK);
                 break;
-        case MSG_RES_SVM_FAIL:
+        case MSG_RES_HPROC_FAIL:
                 process_hproc_status(conn, rx_e);
                 break;
         case MSG_RES_ACK:
@@ -488,7 +488,7 @@ static int heca_send_message_handler(struct heca_connection *conn,
         case MSG_RES_ACK:
         case MSG_RES_ACK_FAIL:
         case MSG_RES_PAGE_FAIL:
-        case MSG_RES_SVM_FAIL:
+        case MSG_RES_HPROC_FAIL:
         case MSG_RES_QUERY:
         case MSG_RES_PAGE_REDIRECT:
                 release_tx_element(conn, tx_e);
@@ -599,7 +599,7 @@ static int heca_recv_info(struct heca_connection *conn)
         rid->recv_sge.lkey = conn->mr->lkey;
 
         rid->recv_wr.next = NULL;
-        rid->recv_wr.wr_id = 0; // DSM2: unique id - address of data_struct
+        rid->recv_wr.wr_id = 0; // HECA2: unique id - address of data_struct
         rid->recv_wr.num_sge = 1;
         rid->recv_wr.sg_list = &rid->recv_sge;
 
@@ -1831,7 +1831,7 @@ retry:
         case MSG_REQ_PAGE_PULL:
         case MSG_RES_PAGE_REDIRECT:
         case MSG_RES_PAGE_FAIL:
-        case MSG_RES_SVM_FAIL:
+        case MSG_RES_HPROC_FAIL:
         case MSG_RES_ACK:
         case MSG_RES_ACK_FAIL:
         case MSG_RES_QUERY:

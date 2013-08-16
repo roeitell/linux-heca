@@ -160,7 +160,7 @@ nomem:
 static int send_hproc_status_update(struct heca_connection *conn,
                 struct heca_message *msg)
 {
-        return heca_send_response(conn, MSG_RES_SVM_FAIL, msg);
+        return heca_send_response(conn, MSG_RES_HPROC_FAIL, msg);
 }
 
 static int heca_request_query(struct heca_process *hproc,

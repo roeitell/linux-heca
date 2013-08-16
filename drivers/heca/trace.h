@@ -11,7 +11,7 @@
 #include <linux/tracepoint.h>
 #include "pull.h"
 
-#define heca_dpc_tag \
+#define heca_hpc_tag \
 { PULL_TAG,                 "PULL_TAG" }, \
 { PREFETCH_TAG,             "PREFETCH_TAG" }, \
 { PUSH_TAG,                 "PUSH_TAG" }, \
@@ -62,7 +62,7 @@ DECLARE_EVENT_CLASS(heca_generic_template,
                         __entry->hspace_id, __entry->hproc_id,
                         __entry->remote_hproc_id, __entry->mr_id, __entry->addr,
                         __entry->shared_addr,
-                        __print_symbolic(__entry->tag, hspace_dpc_tag),
+                        __print_symbolic(__entry->tag, heca_hpc_tag),
                         __print_symbolic(__entry->tag, msg_type_strings)));
 
 #define DSM_DECLARE_EVENT_FULL(name) \

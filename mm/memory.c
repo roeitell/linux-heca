@@ -3016,7 +3016,7 @@ static int do_swap_page(struct mm_struct *mm, struct vm_area_struct *vma,
 			ret = VM_FAULT_HWPOISON;
         }
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-        else if (is_dsm_entry(entry)) {
+        else if (is_heca_entry(entry)) {
             const struct heca_hook_struct *hook = heca_hook_read();
 
             if (hook) {

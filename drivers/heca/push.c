@@ -457,7 +457,7 @@ retry:
 
         page = vm_normal_page(pd.vma, addr, pte_entry);
         if (!page) {
-                /* DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */
+                /* HECA3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */
                 if (pte_pfn(*(pd.pte)) == (unsigned long) (void *) ZERO_PAGE(0))
                         goto out;
 
@@ -476,7 +476,7 @@ retry:
         if (unlikely(PageKsm(page))) {
                 pte_unmap_unlock(pd.pte, ptl);
                 if (!heca_initiate_fault(mm, addr, 1)) {
-                        r = -EFAULT;  /* DSM1 : better ksm error handling required. */
+                        r = -EFAULT;  /* HECA1 : better ksm error handling required. */
                         goto out;
                 }
         }
@@ -573,7 +573,7 @@ retry:
 
         *page = vm_normal_page(pd.vma, addr, *(pd.pte));
         if (!(*page)) {
-                /* DSM3 : follow_page uses - goto no_page; when !ZERO_PAGE..? wtf */
+                /* HECA3 : follow_page uses - goto no_page; when !ZERO_PAGE..? wtf */
                 if (pte_pfn(*(pd.pte)) == (unsigned long) (void *) ZERO_PAGE(0))
                         goto no_page;
 
@@ -1177,7 +1177,7 @@ retry:
         } else {
                 page = vm_normal_page(vma, request_addr, *pte);
                 if (unlikely(!page)) {
-                        //DSM1 we need to test if the pte is not null
+                        //HECA1 we need to test if the pte is not null
                         page = pte_page(*pte);
                 }
         }
@@ -1195,7 +1195,7 @@ retry:
                 pte_unmap_unlock(pte, ptl);
                 if (!heca_initiate_fault_fast(mm, addr, 0)) {
                         heca_printk(KERN_ERR "ksm_madvise ret : %d", r);
-                        // DSM1 : better ksm error handling required.
+                        // HECA1 : better ksm error handling required.
                         r = -EFAULT;
                         goto out;
                 }

@@ -39,7 +39,7 @@
 #define IW_MAX_SEND_SGE     2
 #define IW_MAX_RECV_SGE     2
 
-#define MAX_SVMS_PER_PAGE   2
+#define MAX_HPROCS_PER_PAGE   2
 
 #define GUP_DELAY           HZ*5    /* 5 second */
 #define REQUEST_FLUSH_DELAY 50      /* 50 usec delay */
@@ -66,7 +66,7 @@
 #define MSG_RES_PAGE                (1 << 7)
 #define MSG_RES_PAGE_REDIRECT       (1 << 8)
 #define MSG_RES_PAGE_FAIL           (1 << 9)
-#define MSG_RES_SVM_FAIL            (1 << 10)
+#define MSG_RES_HPROC_FAIL            (1 << 10)
 #define MSG_RES_ACK                 (1 << 11)
 #define MSG_RES_ACK_FAIL            (1 << 12)
 #define MSG_RES_QUERY               (1 << 13)
@@ -101,7 +101,7 @@ if (likely((hprocs).ids[i]))
 
 
 /*
- * DSM DATA structure
+ * HECA DATA structure
  */
 struct heca_space {
         u32 hspace_id;
@@ -421,7 +421,7 @@ struct heca_page_cache {
         unsigned long addr;
         u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
-        struct page *pages[MAX_SVMS_PER_PAGE];
+        struct page *pages[MAX_HPROCS_PER_PAGE];
         struct heca_process_list hprocs;
         /* memory barrier are ok with these atomic */
         atomic_t found;

@@ -26,7 +26,7 @@
 static unsigned long congestion = 0;
 inline int heca_is_congested(void)
 {
-        trace_is_congested(congestion);
+        trace_heca_is_congested(congestion);
         return congestion > HECA_CONGESTION_THRESHOLD;
 }
 
@@ -371,7 +371,7 @@ int heca_pte_present(struct mm_struct *mm, unsigned long addr)
         local_irq_enable();
 
         if (unlikely(r)) {
-                trace_extract_pte_data_err(r);
+                trace_heca_extract_pte_data_err(r);
                 return 0;
         }
 
@@ -394,7 +394,7 @@ int heca_try_unmap_page(struct heca_process *local_hproc, unsigned long addr,
 retry:
         r = heca_extract_pte_data(&pd, mm, addr);
         if (unlikely(r)) {
-                trace_extract_pte_data_err(r);
+                trace_heca_extract_pte_data_err(r);
                 goto out_mm;
         }
 
@@ -525,7 +525,7 @@ retry:
         *page = NULL;
         r = heca_extract_pte_data(&pd, mm, addr);
         if (unlikely(r)) {
-                trace_extract_pte_data_err(r);
+                trace_heca_extract_pte_data_err(r);
                 if (likely(deferred && r != -1)) {
                         if (heca_initiate_fault_fast(mm, addr, 1))
                                 goto retry;
@@ -964,7 +964,7 @@ retry:
         if (unlikely(PageSwapCache(page)))
                 try_to_free_swap(page);
         unlock_page(page);
-        trace_dsm_discard_read_copy(hproc->hspace->hspace_id, hproc->hproc_id,
+        trace_heca_discard_read_copy(hproc->hspace->hspace_id, hproc->hproc_id,
                         maintainer_id, mr->hmr_id, addr, addr-mr->addr, 0);
 unlock:
         pte_unmap_unlock(ptep, ptl);

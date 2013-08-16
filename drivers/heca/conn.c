@@ -134,7 +134,7 @@ static void schedule_delayed_request_flush(struct heca_connection *conn)
 static inline void queue_heca_request(struct heca_connection *conn,
                 struct heca_request *req)
 {
-        trace_queued_request(req->hspace_id, req->local_hproc_id,
+        trace_heca_queued_request(req->hspace_id, req->local_hproc_id,
                         req->remote_hproc_id, req->hmr_id, 0, req->addr,
                         req->type, -1);
         llist_add(&req->lnode, &conn->tx_buffer.request_queue);
@@ -246,7 +246,7 @@ int heca_send_tx_e(struct heca_connection *conn, struct tx_buffer_element *tx_e,
         tx_e->hmsg_buffer->type = type;
         tx_e->callback.func = func;
 
-        trace_send_request(hspace_id, src_id, dest_id, mr_id, local_addr,
+        trace_heca_send_request(hspace_id, src_id, dest_id, mr_id, local_addr,
                         shared_addr, type);
 
         return tx_heca_send(conn, tx_e);
@@ -286,7 +286,7 @@ static inline int flush_heca_request_queue(struct heca_connection *conn)
                 tx->request_queue_sz--;
                 req = list_first_entry(&tx->ordered_request_queue,
                                 struct heca_request, ordered_list);
-                trace_flushing_requests(tx->request_queue_sz);
+                trace_heca_flushing_requests(tx->request_queue_sz);
                 heca_send_tx_e(conn, tx_e, req->response, req->type,
                                 req->hspace_id, req->hmr_id,
                                 req->local_hproc_id, req->remote_hproc_id, 0,
@@ -389,7 +389,7 @@ static int heca_recv_message_handler(struct heca_connection *conn,
 {
         struct tx_buffer_element *tx_e = NULL;
 
-        trace_dsm_rx_msg(rx_e->hmsg_buffer->hspace_id, rx_e->hmsg_buffer->src_id,
+        trace_heca_rx_msg(rx_e->hmsg_buffer->hspace_id, rx_e->hmsg_buffer->src_id,
                         rx_e->hmsg_buffer->dest_id, rx_e->hmsg_buffer->mr_id, 0,
                         rx_e->hmsg_buffer->req_addr, rx_e->hmsg_buffer->type,
                         rx_e->hmsg_buffer->offset);
@@ -467,7 +467,7 @@ err:
 static int heca_send_message_handler(struct heca_connection *conn,
                 struct tx_buffer_element *tx_e)
 {
-        trace_dsm_tx_msg(tx_e->hmsg_buffer->hspace_id, tx_e->hmsg_buffer->src_id,
+        trace_heca_tx_msg(tx_e->hmsg_buffer->hspace_id, tx_e->hmsg_buffer->src_id,
                         tx_e->hmsg_buffer->dest_id, -1, 0,
                         tx_e->hmsg_buffer->req_addr, tx_e->hmsg_buffer->type,
                         tx_e->hmsg_buffer->offset);

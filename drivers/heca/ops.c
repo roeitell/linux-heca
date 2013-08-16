@@ -186,7 +186,7 @@ int heca_claim_page(struct heca_process *fault_hproc,
 {
         u32 type = only_unmap? MSG_REQ_CLAIM : MSG_REQ_CLAIM_TRY;
 
-        trace_dsm_claim_page(fault_hproc->hspace->hspace_id,
+        trace_heca_claim_page(fault_hproc->hspace->hspace_id,
                         fault_hproc->hproc_id, remote_hproc->hproc_id,
                         fault_mr->hmr_id, addr, addr - fault_mr->addr, type);
 
@@ -393,7 +393,7 @@ int process_page_redirect(struct heca_connection *conn,
         if (unlikely(!remote_hproc))
                 goto out;
 
-        trace_redirect(hpc->hproc->hspace->hspace_id, hpc->hproc->hproc_id,
+        trace_heca_redirect(hpc->hproc->hspace->hspace_id, hpc->hproc->hproc_id,
                         remote_hproc->hproc_id, fault_mr->hmr_id,
                         req_addr + fault_mr->addr, req_addr, hpc->tag);
         ret = heca_request_page(page, remote_hproc, hpc->hproc, fault_mr,
@@ -629,7 +629,7 @@ static int process_page_request(struct heca_connection *origin_conn,
         addr = msg->req_addr + mr->addr;
         BUG_ON(addr < mr->addr || addr > mr->addr + mr->sz);
 
-        trace_process_page_request(local_hproc->hspace->hspace_id,
+        trace_heca_process_page_request(local_hproc->hspace->hspace_id,
                         local_hproc->hproc_id, remote_hproc->hproc_id,
                         mr->hmr_id, addr, msg->req_addr,
                         msg->type);
@@ -663,7 +663,7 @@ retry:
         tx_e->wrk_req->dst_addr = ppe;
         tx_e->reply_work_req->page_sgl.addr = (u64) ppe->page_buf;
 
-        trace_process_page_request_complete(local_hproc->hspace->hspace_id,
+        trace_heca_process_page_request_complete(local_hproc->hspace->hspace_id,
                         local_hproc->hproc_id, remote_hproc->hproc_id,
                         mr->hmr_id, addr, msg->req_addr, msg->type);
         tx_heca_send(conn, tx_e);
@@ -683,7 +683,7 @@ no_page:
 
                 /* defer and try to get the page again out of sequence */
         } else if (msg->type & (MSG_REQ_PAGE | MSG_REQ_READ)) {
-                trace_dsm_defer_gup(local_hproc->hspace->hspace_id,
+                trace_heca_defer_gup(local_hproc->hspace->hspace_id,
                                 local_hproc->hproc_id, remote_hproc->hproc_id,
                                 mr->hmr_id, addr, msg->req_addr, msg->type);
                 defer_gup(msg, local_hproc, mr, remote_hproc, origin_conn);
@@ -718,7 +718,7 @@ static inline void process_deferred_gups(struct heca_process *hproc)
                                         lnode);
                         llnode = llnode->next;
                         /* the deferred is set to one i.e if we need to gup we will block */
-                        trace_dsm_defer_gup_execute(hproc->hspace->hspace_id,
+                        trace_heca_defer_gup_execute(hproc->hspace->hspace_id,
                                         hproc->hproc_id,
                                         dgup->remote_hproc->hproc_id,
                                         dgup->hmr->hmr_id,

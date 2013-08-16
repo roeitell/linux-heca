@@ -478,7 +478,7 @@ inline void release_hproc(struct heca_process *hproc)
 {
         atomic_dec(&hproc->refs);
         if (atomic_cmpxchg(&hproc->refs, 1, 0) == 1) {
-                trace_free_svm(hproc->hproc_id);
+                trace_heca_free_hproc(hproc->hproc_id);
                 delete_hproc_sysfs_entry(&hproc->hproc_kobject);
                 synchronize_rcu();
                 kfree(hproc);

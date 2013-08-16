@@ -363,7 +363,7 @@ static inline void handle_tx_element(struct heca_connection *conn,
                 int (*callback)(struct heca_connection *,
                         struct tx_buffer_element *))
 {
-        /* if tx_e->used > 2, we're racing with release_svm_tx_elements */
+        /* if tx_e->used > 2, we're racing with release_heca_tx_elements */
         if (atomic_add_return(1, &tx_e->used) == 2) {
                 if (callback)
                         callback(conn, tx_e);
@@ -1667,14 +1667,13 @@ int connect_hproc(__u32 hspace_id, __u32 hproc_id, unsigned long ip_addr,
         hproc = find_hproc(hspace, hproc_id);
         if (!hproc) {
                 heca_printk(KERN_ERR "can't find hproc %d", hproc_id);
-                goto no_svm;
+                goto no_hproc;
         }
 
         conn = search_rb_conn(ip_addr);
         if (conn) {
                 heca_printk(KERN_ERR "has existing connection to %pI4",
                                 &ip_addr);
-                /* BUG_ON(svm->ele != cele); */
                 goto done;
         }
 
@@ -1704,9 +1703,9 @@ done:
 
 failed:
         release_hproc(hproc);
-no_svm:
+no_hproc:
         mutex_unlock(&hspace->hspace_mutex);
-        heca_printk(KERN_INFO "hspace %d svm %d hproc_connect ip %pI4: %d",
+        heca_printk(KERN_INFO "hspace %d hproc %d hproc_connect ip %pI4: %d",
                         hspace_id, hproc_id, &ip_addr, r);
         return r;
 }

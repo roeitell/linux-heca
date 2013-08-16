@@ -39,14 +39,14 @@
 #define IW_MAX_SEND_SGE     2
 #define IW_MAX_RECV_SGE     2
 
-#define MAX_SVMS_PER_PAGE   2
+#define MAX_HPROCS_PER_PAGE   2
 
 #define GUP_DELAY           HZ*5    /* 5 second */
 #define REQUEST_FLUSH_DELAY 50      /* 50 usec delay */
 
 /*
  * RDMA_INFO
-*/
+ */
 #define RDMA_INFO_CL        4
 #define RDMA_INFO_SV        3
 #define RDMA_INFO_READY_CL  2
@@ -66,7 +66,7 @@
 #define MSG_RES_PAGE                (1 << 7)
 #define MSG_RES_PAGE_REDIRECT       (1 << 8)
 #define MSG_RES_PAGE_FAIL           (1 << 9)
-#define MSG_RES_SVM_FAIL            (1 << 10)
+#define MSG_RES_HPROC_FAIL            (1 << 10)
 #define MSG_RES_ACK                 (1 << 11)
 #define MSG_RES_ACK_FAIL            (1 << 12)
 #define MSG_RES_QUERY               (1 << 13)
@@ -101,7 +101,7 @@ if (likely((hprocs).ids[i]))
 
 
 /*
- * DSM DATA structure
+ * HECA DATA structure
  */
 struct heca_space {
         u32 hspace_id;
@@ -249,7 +249,7 @@ struct heca_message {
         u16 type;
         u64 req_addr;
         u64 dst_addr;
-        u32 dsm_id;
+        u32 hspace_id;
         u32 mr_id;
         u32 src_id;
         u32 dest_id;
@@ -421,7 +421,7 @@ struct heca_page_cache {
         unsigned long addr;
         u32 tag; /* used to diff between pull ops, and to store dsc for push ops */
 
-        struct page *pages[MAX_SVMS_PER_PAGE];
+        struct page *pages[MAX_HPROCS_PER_PAGE];
         struct heca_process_list hprocs;
         /* memory barrier are ok with these atomic */
         atomic_t found;
@@ -459,45 +459,45 @@ struct heca_page_reader {
         struct heca_page_reader *next;
 };
 
-void dsm_init_descriptors(void);
-void dsm_destroy_descriptors(void);
-u32 dsm_get_descriptor(u32, u32 *);
-inline pte_t dsm_descriptor_to_pte(u32, u32);
-inline struct heca_process_list dsm_descriptor_to_svms(u32);
-void remove_svm_from_descriptors(struct heca_process *);
-int swp_entry_to_dsm_data(swp_entry_t, struct heca_swp_data *);
-int dsm_swp_entry_same(swp_entry_t, swp_entry_t);
-void dsm_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
-void init_dsm_cache_kmem(void);
-void destroy_dsm_cache_kmem(void);
-struct heca_page_cache *dsm_alloc_dpc(struct heca_process *,
+void heca_init_descriptors(void);
+void heca_destroy_descriptors(void);
+u32 heca_get_descriptor(u32, u32 *);
+inline pte_t heca_descriptor_to_pte(u32, u32);
+inline struct heca_process_list heca_descriptor_to_hprocs(u32);
+void remove_hproc_from_descriptors(struct heca_process *);
+int swp_entry_to_heca_data(swp_entry_t, struct heca_swp_data *);
+int heca_swp_entry_same(swp_entry_t, swp_entry_t);
+void heca_clear_swp_entry_flag(struct mm_struct *, unsigned long, pte_t, int);
+void init_heca_cache_kmem(void);
+void destroy_heca_cache_kmem(void);
+struct heca_page_cache *heca_alloc_hpc(struct heca_process *,
                 unsigned long, struct heca_process_list, int, int);
-void dsm_dealloc_dpc(struct heca_page_cache **);
-struct heca_page_cache *dsm_cache_get(struct heca_process *,
+void heca_dealloc_hpc(struct heca_page_cache **);
+struct heca_page_cache *heca_cache_get(struct heca_process *,
                 unsigned long);
-struct heca_page_cache *dsm_cache_get_hold(struct heca_process *,
+struct heca_page_cache *heca_cache_get_hold(struct heca_process *,
                 unsigned long);
-struct heca_page_cache *dsm_cache_release(struct heca_process *,
+struct heca_page_cache *heca_cache_release(struct heca_process *,
                 unsigned long);
-void dsm_destroy_page_pool(struct heca_connection *);
-int dsm_init_page_pool(struct heca_connection *);
-struct heca_page_pool_element *dsm_fetch_ready_ppe(
+void heca_destroy_page_pool(struct heca_connection *);
+int heca_init_page_pool(struct heca_connection *);
+struct heca_page_pool_element *heca_fetch_ready_ppe(
                 struct heca_connection *);
-struct heca_page_pool_element *dsm_prepare_ppe(struct heca_connection *,
+struct heca_page_pool_element *heca_prepare_ppe(struct heca_connection *,
                 struct page *);
-void dsm_ppe_clear_release(struct heca_connection *,
+void heca_ppe_clear_release(struct heca_connection *,
                 struct heca_page_pool_element **);
-void init_dsm_reader_kmem(void);
-u32 dsm_lookup_page_read(struct heca_process *, unsigned long);
-u32 dsm_extract_page_read(struct heca_process *, unsigned long);
-int dsm_flag_page_read(struct heca_process *, unsigned long, u32);
-int dsm_cache_add(struct heca_process *, unsigned long, int, int,
+void init_heca_reader_kmem(void);
+u32 heca_lookup_page_read(struct heca_process *, unsigned long);
+u32 heca_extract_page_read(struct heca_process *, unsigned long);
+int heca_flag_page_read(struct heca_process *, unsigned long, u32);
+int heca_cache_add(struct heca_process *, unsigned long, int, int,
                 struct heca_page_cache **);
-struct heca_page_reader *dsm_delete_readers(struct heca_process *,
+struct heca_page_reader *heca_delete_readers(struct heca_process *,
                 unsigned long);
-struct heca_page_reader *dsm_lookup_readers(struct heca_process *,
+struct heca_page_reader *heca_lookup_readers(struct heca_process *,
                 unsigned long);
-int dsm_add_reader(struct heca_process *, unsigned long, u32);
-inline void dsm_free_page_reader(struct heca_page_reader *);
+int heca_add_reader(struct heca_process *, unsigned long, u32);
+inline void heca_free_page_reader(struct heca_page_reader *);
 
 #endif /* HECA_STRUCT_H_ */

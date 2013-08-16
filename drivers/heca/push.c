@@ -22,15 +22,15 @@
 #include "pull.h"
 #include "ops.h"
 
-#define DSM_CONGESTION_THRESHOLD 512
+#define HECA_CONGESTION_THRESHOLD 512
 static unsigned long congestion = 0;
-inline int dsm_is_congested(void)
+inline int heca_is_congested(void)
 {
-        trace_is_congested(congestion);
-        return congestion > DSM_CONGESTION_THRESHOLD;
+        trace_heca_is_congested(congestion);
+        return congestion > HECA_CONGESTION_THRESHOLD;
 }
 
-static inline void dsm_push_finish_notify(struct page *page)
+static inline void heca_push_finish_notify(struct page *page)
 {
         struct zone *zone = page_zone(page);
         wait_queue_head_t *waitqueue =
@@ -41,21 +41,21 @@ static inline void dsm_push_finish_notify(struct page *page)
         __wake_up_bit(waitqueue, &page->flags, PG_writeback);
 }
 
-static int dsm_push_cache_add(struct heca_page_cache *dpc,
-                struct heca_process *svm, unsigned long addr)
+static int heca_push_cache_add(struct heca_page_cache *hpc,
+                struct heca_process *hproc, unsigned long addr)
 {
-        struct heca_page_cache *rb_dpc;
+        struct heca_page_cache *rb_hpc;
         struct rb_node **new, *parent = NULL;
         int r = 0;
 
-        write_seqlock(&svm->push_cache_lock);
-        for (new = &svm->push_cache.rb_node; *new;) {
-                rb_dpc = rb_entry(*new, struct heca_page_cache, rb_node);
+        write_seqlock(&hproc->push_cache_lock);
+        for (new = &hproc->push_cache.rb_node; *new;) {
+                rb_hpc = rb_entry(*new, struct heca_page_cache, rb_node);
                 parent = *new;
-                BUG_ON(!rb_dpc);
-                if (addr < rb_dpc->addr)
+                BUG_ON(!rb_hpc);
+                if (addr < rb_hpc->addr)
                         new = &(*new)->rb_left;
-                else if (addr > rb_dpc->addr)
+                else if (addr > rb_hpc->addr)
                         new = &(*new)->rb_right;
                 else {
                         r = -EEXIST;
@@ -63,125 +63,125 @@ static int dsm_push_cache_add(struct heca_page_cache *dpc,
                 }
         }
 
-        rb_link_node(&dpc->rb_node, parent, new);
-        rb_insert_color(&dpc->rb_node, &svm->push_cache);
+        rb_link_node(&hpc->rb_node, parent, new);
+        rb_insert_color(&hpc->rb_node, &hproc->push_cache);
 
 out:
-        write_sequnlock(&svm->push_cache_lock);
+        write_sequnlock(&hproc->push_cache_lock);
         return r;
 }
 
 /* FIXME: push_cache lookup needs rcu protection */
-static struct heca_page_cache *dsm_push_cache_lookup(
-                struct heca_process *svm, unsigned long addr)
+static struct heca_page_cache *heca_push_cache_lookup(
+                struct heca_process *hproc, unsigned long addr)
 {
-        struct heca_page_cache *dpc = NULL;
+        struct heca_page_cache *hpc = NULL;
         struct rb_node *node;
         int seq;
 
         do {
-                seq = read_seqbegin(&svm->push_cache_lock);
-                for (node = svm->push_cache.rb_node; node; dpc = NULL) {
-                        dpc = rb_entry(node, struct heca_page_cache, rb_node);
-                        BUG_ON(!dpc);
-                        if (addr < dpc->addr)
+                seq = read_seqbegin(&hproc->push_cache_lock);
+                for (node = hproc->push_cache.rb_node; node; hpc = NULL) {
+                        hpc = rb_entry(node, struct heca_page_cache, rb_node);
+                        BUG_ON(!hpc);
+                        if (addr < hpc->addr)
                                 node = node->rb_left;
-                        else if (addr > dpc->addr)
+                        else if (addr > hpc->addr)
                                 node = node->rb_right;
                         else
                                 break;
                 }
-        } while (read_seqretry(&svm->push_cache_lock, seq));
+        } while (read_seqretry(&hproc->push_cache_lock, seq));
 
-        return dpc;
+        return hpc;
 }
 
-static struct heca_page_cache *dsm_push_cache_get(struct heca_process *svm,
-                unsigned long addr, struct heca_process *remote_svm)
+static struct heca_page_cache *heca_push_cache_get(struct heca_process *hproc,
+                unsigned long addr, struct heca_process *remote_hproc)
 {
         struct rb_node *node;
-        struct heca_page_cache *dpc = NULL;
+        struct heca_page_cache *hpc = NULL;
         int seq, i;
 
-        BUG_ON(!svm);
+        BUG_ON(!hproc);
 
         do {
-                seq = read_seqbegin(&svm->push_cache_lock);
-                for (node = svm->push_cache.rb_node; node; dpc = NULL) {
-                        dpc = rb_entry(node, struct heca_page_cache, rb_node);
-                        BUG_ON(!dpc);
-                        if (addr < dpc->addr)
+                seq = read_seqbegin(&hproc->push_cache_lock);
+                for (node = hproc->push_cache.rb_node; node; hpc = NULL) {
+                        hpc = rb_entry(node, struct heca_page_cache, rb_node);
+                        BUG_ON(!hpc);
+                        if (addr < hpc->addr)
                                 node = node->rb_left;
-                        else if (addr > dpc->addr)
+                        else if (addr > hpc->addr)
                                 node = node->rb_right;
                         else
                                 break;
                 }
-        } while (read_seqretry(&svm->push_cache_lock, seq));
+        } while (read_seqretry(&hproc->push_cache_lock, seq));
 
-        if (likely(dpc) && remote_svm) {
-                for (i = 0; i < dpc->hprocs.num; i++) {
-                        if (dpc->hprocs.ids[i] == remote_svm->hproc_id) {
-                                if (likely(test_and_clear_bit(i, &dpc->bitmap)
-                                                        && atomic_add_unless(&dpc->nproc, 1, 0))) {
+        if (likely(hpc) && remote_hproc) {
+                for (i = 0; i < hpc->hprocs.num; i++) {
+                        if (hpc->hprocs.ids[i] == remote_hproc->hproc_id) {
+                                if (likely(test_and_clear_bit(i, &hpc->bitmap)
+                                                        && atomic_add_unless(&hpc->nproc, 1, 0))) {
                                         goto out;
                                 }
                                 break;
                         }
                 }
-                dpc = NULL;
+                hpc = NULL;
         }
 
 out:
-        return dpc;
+        return hpc;
 }
 
-inline void dsm_push_cache_release(struct heca_process *svm,
-                struct heca_page_cache **dpc, int lock)
+inline void heca_push_cache_release(struct heca_process *hproc,
+                struct heca_page_cache **hpc, int lock)
 {
         if (likely(lock)) {
-                write_seqlock(&svm->push_cache_lock);
-                rb_erase(&(*dpc)->rb_node, &svm->push_cache);
-                write_sequnlock(&svm->push_cache_lock);
+                write_seqlock(&hproc->push_cache_lock);
+                rb_erase(&(*hpc)->rb_node, &hproc->push_cache);
+                write_sequnlock(&hproc->push_cache_lock);
         } else {
-                /* !lock only when traversing push_cache when removing svms */
-                rb_erase(&(*dpc)->rb_node, &svm->push_cache);
+                /* !lock only when traversing push_cache when removing hprocs */
+                rb_erase(&(*hpc)->rb_node, &hproc->push_cache);
         }
-        if (likely((*dpc)->pages[0])) {
-                page_cache_release((*dpc)->pages[0]);
-                dsm_push_finish_notify((*dpc)->pages[0]);
+        if (likely((*hpc)->pages[0])) {
+                page_cache_release((*hpc)->pages[0]);
+                heca_push_finish_notify((*hpc)->pages[0]);
         }
-        dsm_dealloc_dpc(dpc);
+        heca_dealloc_hpc(hpc);
         congestion--;
 }
 
-struct heca_page_cache *dsm_push_cache_get_remove(struct heca_process *svm,
+struct heca_page_cache *heca_push_cache_get_remove(struct heca_process *hproc,
                 unsigned long addr)
 {
-        struct heca_page_cache *dpc;
+        struct heca_page_cache *hpc;
         struct rb_node *node;
 
-        write_seqlock(&svm->push_cache_lock);
-        for (node = svm->push_cache.rb_node; node; dpc = 0) {
-                dpc = rb_entry(node, struct heca_page_cache, rb_node);
-                if (addr < dpc->addr)
+        write_seqlock(&hproc->push_cache_lock);
+        for (node = hproc->push_cache.rb_node; node; hpc = 0) {
+                hpc = rb_entry(node, struct heca_page_cache, rb_node);
+                if (addr < hpc->addr)
                         node = node->rb_left;
-                else if (addr > dpc->addr)
+                else if (addr > hpc->addr)
                         node = node->rb_right;
                 else
                         break;
         }
-        if (likely(dpc)) {
-                rb_erase(&dpc->rb_node, &svm->push_cache);
-                dpc->bitmap = 0;
+        if (likely(hpc)) {
+                rb_erase(&hpc->rb_node, &hproc->push_cache);
+                hpc->bitmap = 0;
         }
-        write_sequnlock(&svm->push_cache_lock);
+        write_sequnlock(&hproc->push_cache_lock);
 
-        return dpc;
+        return hpc;
 }
 
 /* mmap_sem already held for read */
-static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
+static int heca_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
                 int usemm)
 {
         int r;
@@ -200,7 +200,7 @@ static int dsm_initiate_fault_fast(struct mm_struct *mm, unsigned long addr,
         return r == 1;
 }
 
-int dsm_extract_pte_data(struct heca_pte_data *pd, struct mm_struct *mm,
+int heca_extract_pte_data(struct heca_pte_data *pd, struct mm_struct *mm,
                 unsigned long addr)
 {
         pmd_t pmdval;
@@ -252,47 +252,47 @@ int dsm_extract_pte_data(struct heca_pte_data *pd, struct mm_struct *mm,
         return !pd->pte;
 }
 
-static inline u32 dsm_pte_maintainer(swp_entry_t swp_e)
+static inline u32 heca_pte_maintainer(swp_entry_t swp_e)
 {
-        struct heca_swp_data dsd;
-        u32 svm_id = 0;
+        struct heca_swp_data hsd;
+        u32 hproc_id = 0;
 
-        if (!is_dsm_entry(swp_e))
+        if (!is_heca_entry(swp_e))
                 goto out;
 
-        /* dsm is missing, we can bail out */
-        if (swp_entry_to_dsm_data(swp_e, &dsd) < 0)
+        /* heca is missing, we can bail out */
+        if (swp_entry_to_heca_data(swp_e, &hsd) < 0)
                 goto out;
 
         /*
          * we currently only support RRAIM for a specific configuration, consisting
          * of a single active node, and other passive nodes supplying memory.
          */
-        BUG_ON(dsd.hprocs.num > 1);
+        BUG_ON(hsd.hprocs.num > 1);
 
         /* FIXME: a deadlock waiting to happen; what can we do? */
-        if (unlikely(!dsd.hprocs.ids[0]))
+        if (unlikely(!hsd.hprocs.ids[0]))
                 goto out;
 
-        svm_id = dsd.hprocs.ids[0];
+        hproc_id = hsd.hprocs.ids[0];
 out:
-        return svm_id;
+        return hproc_id;
 }
 
-/* if we don't find a dsm pte, we assume the page is ours */
-u32 dsm_query_pte_info(struct heca_process *svm, unsigned long addr)
+/* if we don't find a hspace pte, we assume the page is ours */
+u32 heca_query_pte_info(struct heca_process *hproc, unsigned long addr)
 {
         struct heca_pte_data pd;
         pte_t *pte;
         spinlock_t *ptl = NULL;
         swp_entry_t swp_e;
-        u32 svm_id = svm->hproc_id, pte_svm_id;
-        struct mm_struct *mm = svm->mm;
+        u32 hproc_id = hproc->hproc_id, pte_hproc_id;
+        struct mm_struct *mm = hproc->mm;
 
         BUG_ON(!mm);
         down_read(&mm->mmap_sem);
 retry:
-        if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
+        if (unlikely(heca_extract_pte_data(&pd, mm, addr)))
                 goto out;
 
         pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
@@ -313,23 +313,23 @@ retry:
                 goto retry;
         }
 
-        pte_svm_id = dsm_pte_maintainer(swp_e);
-        if (likely(pte_svm_id))
-                svm_id = pte_svm_id;
+        pte_hproc_id = heca_pte_maintainer(swp_e);
+        if (likely(pte_hproc_id))
+                hproc_id = pte_hproc_id;
 
 out:
         if (ptl)
                 spin_unlock(ptl);
         up_read(&mm->mmap_sem);
-        return svm_id;
+        return hproc_id;
 }
 
-static int dsm_extract_read_dsm_pte(struct heca_process *local_svm,
+static int heca_extract_read_hspace_pte(struct heca_process *local_hproc,
                 struct mm_struct *mm, unsigned long addr, pte_t pte_entry,
                 struct heca_pte_data *pd, int *redirect_id)
 {
         swp_entry_t swp_e;
-        struct heca_page_cache *dpc = NULL;
+        struct heca_page_cache *hpc = NULL;
 
         /* page could be swapped to disk */
         swp_e = pte_to_swp_entry(pte_entry);
@@ -342,11 +342,11 @@ static int dsm_extract_read_dsm_pte(struct heca_process *local_svm,
         }
 
         /* we check if we are already pulling */
-        dpc = dsm_cache_get(local_svm, addr);
-        if (dpc)
+        hpc = heca_cache_get(local_hproc, addr);
+        if (hpc)
                 goto fail;
 
-        *redirect_id = dsm_pte_maintainer(swp_e);
+        *redirect_id = heca_pte_maintainer(swp_e);
         if (unlikely(!(*redirect_id)))
                 goto fail;
 
@@ -357,7 +357,7 @@ fail:
         return -EFAULT;
 }
 
-int dsm_pte_present(struct mm_struct *mm, unsigned long addr)
+int heca_pte_present(struct mm_struct *mm, unsigned long addr)
 {
         struct heca_pte_data pd;
         int r;
@@ -367,11 +367,11 @@ int dsm_pte_present(struct mm_struct *mm, unsigned long addr)
          * isn't freed while we're inspecting it (see gup.c).
          */
         local_irq_disable();
-        r = dsm_extract_pte_data(&pd, mm, addr);
+        r = heca_extract_pte_data(&pd, mm, addr);
         local_irq_enable();
 
         if (unlikely(r)) {
-                trace_extract_pte_data_err(r);
+                trace_heca_extract_pte_data_err(r);
                 return 0;
         }
 
@@ -379,22 +379,22 @@ int dsm_pte_present(struct mm_struct *mm, unsigned long addr)
 }
 
 /* returns # of pages unmapped (0 or 1) or -EFAULT on failure */
-int dsm_try_unmap_page(struct heca_process *local_svm, unsigned long addr,
-                struct heca_process *remote_svm, int only_unmap)
+int heca_try_unmap_page(struct heca_process *local_hproc, unsigned long addr,
+                struct heca_process *remote_hproc, int only_unmap)
 {
         struct heca_pte_data pd;
         struct page *page;
         spinlock_t *ptl;
         pte_t pte_entry;
         int r, touch_page = 1;
-        struct mm_struct *mm = local_svm->mm;
+        struct mm_struct *mm = local_hproc->mm;
 
         down_read(&mm->mmap_sem);
 
 retry:
-        r = dsm_extract_pte_data(&pd, mm, addr);
+        r = heca_extract_pte_data(&pd, mm, addr);
         if (unlikely(r)) {
-                trace_extract_pte_data_err(r);
+                trace_heca_extract_pte_data_err(r);
                 goto out_mm;
         }
 
@@ -413,7 +413,7 @@ retry:
          * trying to invalidate read-copies (in which case we can't answer). no need
          * to differentiate between these two, just don't answer.
          */
-        if (unlikely(dsm_cache_get(local_svm, addr))) {
+        if (unlikely(heca_cache_get(local_hproc, addr))) {
                 r = -EEXIST;
                 goto out;
         }
@@ -421,20 +421,20 @@ retry:
         /* first access to page */
         if (pte_none(pte_entry)) {
                 set_pte_at(mm, addr, pd.pte,
-                                dsm_descriptor_to_pte(
-                                        remote_svm->descriptor, 0));
+                                heca_descriptor_to_pte(
+                                        remote_hproc->descriptor, 0));
                 goto out;
         }
 
         /* page already unmapped somewhere, update the entry */
         if (!pte_present(pte_entry)) {
                 if (!only_unmap) {
-                        pte_t new_pte = dsm_descriptor_to_pte(
-                                        remote_svm->descriptor, 0);
+                        pte_t new_pte = heca_descriptor_to_pte(
+                                        remote_hproc->descriptor, 0);
                         if (!pte_same(pte_entry, new_pte)) {
-                                if (unlikely(!is_dsm_entry(pte_to_swp_entry(pte_entry)))) {
+                                if (unlikely(!is_heca_entry(pte_to_swp_entry(pte_entry)))) {
                                         pte_unmap_unlock(pd.pte, ptl);
-                                        dsm_initiate_fault_fast(mm, addr, 1);
+                                        heca_initiate_fault_fast(mm, addr, 1);
                                         goto retry;
                                 }
 
@@ -442,8 +442,8 @@ retry:
                                 goto unmap;
                         }
                 }
-                /* TODO: If pte isn't dsm, gup or defer_gup (it should be dsm); If pte
-                 * is dsm, validate descriptor == remote_dsm->descriptor
+                /* TODO: If pte isn't heca, gup or defer_gup (it should be heca); If pte
+                 * is heca, validate descriptor == remote_hspace->descriptor
                  */
                 r = -EEXIST;
                 goto out;
@@ -457,7 +457,7 @@ retry:
 
         page = vm_normal_page(pd.vma, addr, pte_entry);
         if (!page) {
-                /* DSM3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */
+                /* HECA3 : follow_page uses - goto bad_page; when !ZERO_PAGE..? wtf */
                 if (pte_pfn(*(pd.pte)) == (unsigned long) (void *) ZERO_PAGE(0))
                         goto out;
 
@@ -475,8 +475,8 @@ retry:
 
         if (unlikely(PageKsm(page))) {
                 pte_unmap_unlock(pd.pte, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1)) {
-                        r = -EFAULT;  /* DSM1 : better ksm error handling required. */
+                if (!heca_initiate_fault(mm, addr, 1)) {
+                        r = -EFAULT;  /* HECA1 : better ksm error handling required. */
                         goto out;
                 }
         }
@@ -485,7 +485,7 @@ unmap:
         flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
         ptep_clear_flush(pd.vma, addr, pd.pte);
         set_pte_at(mm, addr, pd.pte,
-                        dsm_descriptor_to_pte(remote_svm->descriptor, 0));
+                        heca_descriptor_to_pte(remote_hproc->descriptor, 0));
 
         if (touch_page) {
                 page_remove_rmap(page);
@@ -508,10 +508,10 @@ out_mm:
 }
 
 /* we arrive with mm semaphore held */
-static int dsm_extract_page(struct heca_process *local_svm,
-                struct heca_process *remote_svm,
+static int heca_extract_page(struct heca_process *local_hproc,
+                struct heca_process *remote_hproc,
                 struct mm_struct *mm, unsigned long addr,
-                pte_t *return_pte, u32 *svm_id, int deferred,
+                pte_t *return_pte, u32 *hproc_id, int deferred,
                 struct page **page, struct heca_memory_region *mr, int read_copy)
 {
         spinlock_t *ptl;
@@ -523,11 +523,11 @@ static int dsm_extract_page(struct heca_process *local_svm,
 retry:
         r = 0;
         *page = NULL;
-        r = dsm_extract_pte_data(&pd, mm, addr);
+        r = heca_extract_pte_data(&pd, mm, addr);
         if (unlikely(r)) {
-                trace_extract_pte_data_err(r);
+                trace_heca_extract_pte_data_err(r);
                 if (likely(deferred && r != -1)) {
-                        if (dsm_initiate_fault_fast(mm, addr, 1))
+                        if (heca_initiate_fault_fast(mm, addr, 1))
                                 goto retry;
                 }
                 goto out;
@@ -536,7 +536,7 @@ retry:
 
         /* first time dealing with this addr? */
         if (pte_none(pte_entry)) {
-                if (!dsm_initiate_fault_fast(mm, addr, 1))
+                if (!heca_initiate_fault_fast(mm, addr, 1))
                         goto out;
                 goto retry;
         }
@@ -548,15 +548,15 @@ retry:
         }
 
         if (unlikely(!pte_present(pte_entry))) {
-                /* try and redirect, according to a dsm pte */
-                if (!dsm_extract_read_dsm_pte(local_svm, mm, addr, pte_entry,
-                                        &pd, svm_id)) {
+                /* try and redirect, according to a heca pte */
+                if (!heca_extract_read_hspace_pte(local_hproc, mm, addr, pte_entry,
+                                        &pd, hproc_id)) {
                         res = HECA_EXTRACT_REDIRECT;
 
                         /* it's time to fault the page in... */
                 } else if (deferred) {
                         pte_unmap_unlock(pd.pte, ptl);
-                        if (!dsm_initiate_fault_fast(mm, addr, 1))
+                        if (!heca_initiate_fault_fast(mm, addr, 1))
                                 goto out;
                         goto retry;
                 }
@@ -564,16 +564,16 @@ retry:
         }
 
         /* we only have a read-copy, so we redirect to the maintainer */
-        maintainer_id = dsm_lookup_page_read(local_svm, addr);
+        maintainer_id = heca_lookup_page_read(local_hproc, addr);
         if (unlikely(maintainer_id)) {
-                *svm_id = maintainer_id;
+                *hproc_id = maintainer_id;
                 res = HECA_EXTRACT_REDIRECT;
                 goto no_page;
         }
 
         *page = vm_normal_page(pd.vma, addr, *(pd.pte));
         if (!(*page)) {
-                /* DSM3 : follow_page uses - goto no_page; when !ZERO_PAGE..? wtf */
+                /* HECA3 : follow_page uses - goto no_page; when !ZERO_PAGE..? wtf */
                 if (pte_pfn(*(pd.pte)) == (unsigned long) (void *) ZERO_PAGE(0))
                         goto no_page;
 
@@ -591,7 +591,7 @@ retry:
 
         if (unlikely(PageKsm(*page))) {
                 pte_unmap_unlock(pd.pte, ptl);
-                if (!dsm_initiate_fault_fast(mm, addr, 1))
+                if (!heca_initiate_fault_fast(mm, addr, 1))
                         goto out;
                 goto retry;
         }
@@ -604,15 +604,15 @@ retry:
                 ptep_clear_flush(pd.vma, addr, pd.pte);
                 if (read_copy) {
                         pte_entry = pte_mkclean(pte_wrprotect(pte_entry));
-                        dsm_add_reader(local_svm, addr, remote_svm->hproc_id);
+                        heca_add_reader(local_hproc, addr, remote_hproc->hproc_id);
                 } else {
-                        pte_entry = dsm_descriptor_to_pte(remote_svm->descriptor,
+                        pte_entry = heca_descriptor_to_pte(remote_hproc->descriptor,
                         		HECA_INFLIGHT);
                         page_remove_rmap(*page);
                         dec_mm_counter(mm, MM_ANONPAGES);
                         /* FIXME: the following line might_sleep, as it sends msgs */
-                        dsm_invalidate_readers(local_svm,
-                                        addr, remote_svm->hproc_id);
+                        heca_invalidate_readers(local_hproc,
+                                        addr, remote_hproc->hproc_id);
                 }
                 set_pte_at(mm, addr, pd.pte, pte_entry);
         }
@@ -632,11 +632,11 @@ out:
         return res;
 }
 
-static int try_dsm_extract_page(struct heca_process *local_svm,
-                struct heca_process *remote_svm, struct mm_struct *mm,
+static int heca_try_extract_page(struct heca_process *local_hproc,
+                struct heca_process *remote_hproc, struct mm_struct *mm,
                 unsigned long addr, pte_t *return_pte, struct page **page)
 {
-        struct heca_page_cache *dpc = NULL;
+        struct heca_page_cache *hpc = NULL;
         pte_t pte_entry;
         struct heca_pte_data pd;
         int clear_pte_flag = 0;
@@ -644,17 +644,17 @@ static int try_dsm_extract_page(struct heca_process *local_svm,
 
 retry:
         *page = NULL;
-        if (unlikely(dsm_extract_pte_data(&pd, mm, addr)))
+        if (unlikely(heca_extract_pte_data(&pd, mm, addr)))
                 goto fail;
 
         pte_entry = *(pd.pte);
-        if (likely(!dpc)) {
-                dpc = dsm_push_cache_get(local_svm, addr, remote_svm);
-                if (unlikely(!dpc))
+        if (likely(!hpc)) {
+                hpc = heca_push_cache_get(local_hproc, addr, remote_hproc);
+                if (unlikely(!hpc))
                         goto fail;
         }
 
-        *page = dpc->pages[0];
+        *page = hpc->pages[0];
         BUG_ON(!(*page));
 
         /* first response to arrive and grab the pte lock */
@@ -672,12 +672,12 @@ retry:
 
                 flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
                 ptep_clear_flush(pd.vma, addr, pd.pte);
-                if (dpc->hprocs.num > 1) {
+                if (hpc->hprocs.num > 1) {
                         pte_flag = HECA_PUSHING;
                         clear_pte_flag = 1; /* race condition */
                 }
                 set_pte_at(mm, addr, pd.pte,
-                                dsm_descriptor_to_pte(dpc->tag, pte_flag));
+                                heca_descriptor_to_pte(hpc->tag, pte_flag));
                 page_remove_rmap(*page);
                 dec_mm_counter(mm, MM_ANONPAGES);
                 pte_unmap_unlock(pd.pte, ptl);
@@ -694,13 +694,13 @@ retry:
                 clear_pte_flag = 1;
         }
 
-        atomic_dec(&dpc->nproc);
-        if (find_first_bit(&dpc->bitmap, dpc->hprocs.num) >= dpc->hprocs.num &&
-                        atomic_cmpxchg(&dpc->nproc, 1, 0) == 1) {
+        atomic_dec(&hpc->nproc);
+        if (find_first_bit(&hpc->bitmap, hpc->hprocs.num) >= hpc->hprocs.num &&
+                        atomic_cmpxchg(&hpc->nproc, 1, 0) == 1) {
                 if (clear_pte_flag)
-                        dsm_clear_swp_entry_flag(mm, addr, *(pd.pte),
+                        heca_clear_swp_entry_flag(mm, addr, *(pd.pte),
                                         HECA_PUSHING_BITPOS);
-                dsm_push_cache_release(local_svm, &dpc, 1);
+                heca_push_cache_release(local_hproc, &hpc, 1);
         }
 
         *return_pte = *(pd.pte);
@@ -710,7 +710,7 @@ fail:
         return HECA_EXTRACT_FAIL;
 }
 
-void dsm_invalidate_readers(struct heca_process *svm, unsigned long addr,
+void heca_invalidate_readers(struct heca_process *hproc, unsigned long addr,
                 u32 exclude_id)
 {
         /*
@@ -718,56 +718,56 @@ void dsm_invalidate_readers(struct heca_process *svm, unsigned long addr,
          * since after we will release it, the page could still be transferred
          * anywhere, and any read-copies could be re-created...
          */
-        struct heca_page_reader *dpr = dsm_delete_readers(svm, addr);
+        struct heca_page_reader *hpr = heca_delete_readers(hproc, addr);
 
-        while (dpr) {
-                struct heca_page_reader *tmp = dpr;
-                struct heca_process *remote_svm;
+        while (hpr) {
+                struct heca_page_reader *tmp = hpr;
+                struct heca_process *remote_hproc;
                 struct heca_memory_region *mr;
 
-                if (dpr->hproc_id != exclude_id) {
-                        remote_svm = find_svm(svm->hspace, dpr->hproc_id);
-                        if (likely(remote_svm)) {
-                                mr = search_mr_by_addr(svm, addr);
+                if (hpr->hproc_id != exclude_id) {
+                        remote_hproc = find_hproc(hproc->hspace, hpr->hproc_id);
+                        if (likely(remote_hproc)) {
+                                mr = search_heca_mr_by_addr(hproc, addr);
                                 if (likely(mr))
-                                        dsm_claim_page(svm, remote_svm, mr,
+                                        heca_claim_page(hproc, remote_hproc, mr,
                                                         addr, NULL, 0);
-                                release_svm(remote_svm);
+                                release_hproc(remote_hproc);
                         }
                 }
 
-                dpr = dpr->next;
-                dsm_free_page_reader(tmp);
+                hpr = hpr->next;
+                heca_free_page_reader(tmp);
         }
 }
 
-int dsm_extract_page_from_remote(struct heca_process *local_svm,
-                struct heca_process *remote_svm,
+int heca_extract_page_from_remote(struct heca_process *local_hproc,
+                struct heca_process *remote_hproc,
                 unsigned long addr, u16 tag,
-                pte_t *pte, struct page **page, u32 *svm_id, int deferred,
+                pte_t *pte, struct page **page, u32 *hproc_id, int deferred,
                 struct heca_memory_region *mr)
 {
         struct mm_struct *mm;
         int res = 0;
 
-        BUG_ON(!local_svm);
+        BUG_ON(!local_hproc);
 
-        mm = local_svm->mm;
+        mm = local_hproc->mm;
         BUG_ON(!mm);
 
         down_read(&mm->mmap_sem);
         switch (tag) {
         case MSG_REQ_PAGE_TRY:
-                res = try_dsm_extract_page(local_svm, remote_svm,
+                res = heca_try_extract_page(local_hproc, remote_hproc,
                                 mm, addr, pte, page);
                 break;
         case MSG_REQ_PAGE:
-                res = dsm_extract_page(local_svm, remote_svm, mm, addr, pte,
-                                svm_id, deferred, page, mr, 0);
+                res = heca_extract_page(local_hproc, remote_hproc, mm, addr, pte,
+                                hproc_id, deferred, page, mr, 0);
                 break;
         case MSG_REQ_READ:
-                res = dsm_extract_page(local_svm, remote_svm, mm, addr, pte,
-                                svm_id, deferred, page, mr, 1);
+                res = heca_extract_page(local_hproc, remote_hproc, mm, addr, pte,
+                                hproc_id, deferred, page, mr, 1);
                 break;
         default:
                 BUG();
@@ -778,14 +778,14 @@ int dsm_extract_page_from_remote(struct heca_process *local_svm,
 }
 
 /* this function is purely for development, used in the PUSH ioctl */
-struct page *dsm_find_normal_page(struct mm_struct *mm, unsigned long addr)
+struct page *heca_find_normal_page(struct mm_struct *mm, unsigned long addr)
 {
         struct page *page = NULL;
         struct heca_pte_data pd;
         pte_t pte_entry, *pte;
         spinlock_t *ptl;
 
-        if (dsm_extract_pte_data(&pd, mm, addr))
+        if (heca_extract_pte_data(&pd, mm, addr))
                 goto out;
 
         pte_entry = *(pd.pte);
@@ -805,34 +805,34 @@ out:
         return page;
 }
 
-int dsm_prepare_page_for_push(struct heca_process *local_svm,
-                struct heca_process_list svms, struct page *page, unsigned long addr,
+int heca_prepare_page_for_push(struct heca_process *local_hproc,
+                struct heca_process_list hprocs, struct page *page, unsigned long addr,
                 struct mm_struct *mm, u32 descriptor)
 {
         struct heca_pte_data pd;
-        struct heca_page_cache *dpc = NULL;
+        struct heca_page_cache *hpc = NULL;
         pte_t pte_entry, *pte;
         spinlock_t *ptl;
         int i, r;
 
-        BUG_ON(!local_svm);
+        BUG_ON(!local_hproc);
 
         /*
          * We only change pte when the first response returns, in order to keep the
          * page accessible; therefore someone might ask us to re-push a page before
          * any response has even returned.
          */
-        if (dsm_push_cache_lookup(local_svm, addr))
+        if (heca_push_cache_lookup(local_hproc, addr))
                 return -EEXIST;
 
 
-        dpc = dsm_alloc_dpc(local_svm, addr, svms, 1, descriptor);
-        if (unlikely(!dpc))
+        hpc = heca_alloc_hpc(local_hproc, addr, hprocs, 1, descriptor);
+        if (unlikely(!hpc))
                 return -ENOMEM;
 retry:
         /* we're trying to swap out an active page, everything should be here */
         /* we lock the pte to avoid racing with an incoming page request */
-        dsm_extract_pte_data(&pd, mm, addr);
+        heca_extract_pte_data(&pd, mm, addr);
         BUG_ON(!pd.pte);
         pte_entry = *(pd.pte);
         if (unlikely(!pte_present(pte_entry)))
@@ -852,27 +852,27 @@ retry:
 
         if (unlikely(PageKsm(page))) {
                 pte_unmap_unlock(pd.pte, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1))
+                if (!heca_initiate_fault(mm, addr, 1))
                         goto bad_page;
                 goto retry;
         }
 
-        r = dsm_push_cache_add(dpc, local_svm, addr);
+        r = heca_push_cache_add(hpc, local_hproc, addr);
         if (unlikely(r))
                 goto bad_page_unlock;
 
-        dpc->bitmap = 0;
-        dpc->pages[0] = page;
+        hpc->bitmap = 0;
+        hpc->pages[0] = page;
 
         /*
          * refcount is as follows:
          *  1 for being in dpc (released upon dealloc)
-         *  1 for every svm sent to (released on dsm_ppe_clear_release)
+         *  1 for every hproc sent to (released on heca_ppe_clear_release)
          */
         page_cache_get(page);
-        for_each_valid_hproc(svms, i) {
+        for_each_valid_hproc(hprocs, i) {
                 page_cache_get(page);
-                dpc->bitmap += (1 << i);
+                hpc->bitmap += (1 << i);
         }
 
         /*
@@ -887,19 +887,19 @@ retry:
         congestion++;
 
         /* may happen outside the lock, but before we return */
-        dsm_invalidate_readers(local_svm, addr, 0);
+        heca_invalidate_readers(local_hproc, addr, 0);
 
         return 0;
 
 bad_page_unlock:
         pte_unmap_unlock(pte, ptl);
 bad_page:
-        dsm_dealloc_dpc(&dpc);
+        heca_dealloc_hpc(&hpc);
         return -EFAULT;
 }
 
 /* we arrive from shrink_page_list with page already locked */
-static int dsm_try_discard_read_copy(struct heca_process *svm,
+static int heca_try_discard_read_copy(struct heca_process *hproc,
                 unsigned long addr, struct page *page,
                 struct vm_area_struct *vma,
                 struct heca_memory_region *mr)
@@ -913,14 +913,14 @@ static int dsm_try_discard_read_copy(struct heca_process *svm,
         struct heca_process *maintainer;
 
 retry:
-        if (!dsm_lookup_page_read(svm, addr))
+        if (!heca_lookup_page_read(hproc, addr))
                 return -EEXIST;
 
-        dsm_extract_pte_data(&pd, mm, addr);
+        heca_extract_pte_data(&pd, mm, addr);
 
         ptep = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
 
-        maintainer_id = dsm_extract_page_read(svm, addr);
+        maintainer_id = heca_extract_page_read(hproc, addr);
         if (unlikely(!maintainer_id)) {
                 ret = -EEXIST;
                 goto unlock;
@@ -941,16 +941,16 @@ retry:
 
         if (unlikely(PageKsm(page))) {
                 pte_unmap_unlock(ptep, ptl);
-                if (!dsm_initiate_fault(mm, addr, 1))
+                if (!heca_initiate_fault(mm, addr, 1))
                         return -EFAULT;
                 goto retry;
         }
 
-        /* lockless, much faster than dsm_get_descriptor */
-        maintainer = find_svm(svm->hspace, maintainer_id);
+        /* lockless, much faster than heca_get_descriptor */
+        maintainer = find_hproc(hproc->hspace, maintainer_id);
         if (likely(maintainer)) {
                 descriptor = maintainer->descriptor;
-                release_svm(maintainer);
+                release_hproc(maintainer);
         } else {
                 descriptor = mr->descriptor;
         }
@@ -958,13 +958,13 @@ retry:
         flush_cache_page(pd.vma, addr, pte_pfn(*ptep));
         ptep_clear_flush(pd.vma, addr, pd.pte);
         release = 1;
-        set_pte_at(mm, addr, ptep, dsm_descriptor_to_pte(descriptor, 0));
+        set_pte_at(mm, addr, ptep, heca_descriptor_to_pte(descriptor, 0));
         page_remove_rmap(page);
         dec_mm_counter(mm, MM_ANONPAGES);
         if (unlikely(PageSwapCache(page)))
                 try_to_free_swap(page);
         unlock_page(page);
-        trace_dsm_discard_read_copy(svm->hspace->hspace_id, svm->hproc_id,
+        trace_heca_discard_read_copy(hproc->hspace->hspace_id, hproc->hproc_id,
                         maintainer_id, mr->hmr_id, addr, addr-mr->addr, 0);
 unlock:
         pte_unmap_unlock(ptep, ptl);
@@ -975,38 +975,38 @@ unlock:
         return ret;
 }
 
-int dsm_cancel_page_push(struct heca_process *svm, unsigned long addr,
+int heca_cancel_page_push(struct heca_process *hproc, unsigned long addr,
                 struct page *page)
 {
-        struct heca_page_cache *dpc = dsm_push_cache_get(svm, addr, NULL);
+        struct heca_page_cache *hpc = heca_push_cache_get(hproc, addr, NULL);
         int i;
 
-        if (unlikely(!dpc))
+        if (unlikely(!hpc))
                 return -1;
 
-        /* svm_list could have changed in the meanwhile, we rely on bitmap */
-        for (i = 0; i < dpc->hprocs.num; i++) {
-                if (test_bit(i, &dpc->bitmap))
-                        page_cache_release(dpc->pages[0]);
+        /* hproc_list could have changed in the meanwhile, we rely on bitmap */
+        for (i = 0; i < hpc->hprocs.num; i++) {
+                if (test_bit(i, &hpc->bitmap))
+                        page_cache_release(hpc->pages[0]);
         }
-        dsm_push_cache_release(svm, &dpc, 1);
+        heca_push_cache_release(hproc, &hpc, 1);
 
         return 0;
 }
 
 /*
- * Return 0 => page dsm or not dsm_remote => try to swap out
- * Return 1 => page is dsm => do not swap out (not necessarily scheduled yet to
+ * Return 0 => page heca or not heca_remote => try to swap out
+ * Return 1 => page is heca => do not swap out (not necessarily scheduled yet to
  *             be pushed back, could also be done in next cycle)
  */
-int push_back_if_remote_dsm_page(struct page *page)
+int push_back_if_remote_heca_page(struct page *page)
 {
         struct anon_vma *anon_vma;
         pgoff_t pgoff;
         struct anon_vma_chain *avc;
         int ret = 0;
 
-        if (!get_dsm_module_state())
+        if (!get_heca_module_state())
                 goto out;
 
         /* don't push pages that belong to more than one process, avoid pitfalls */
@@ -1023,7 +1023,7 @@ int push_back_if_remote_dsm_page(struct page *page)
         {
                 struct vm_area_struct *vma = avc->vma;
                 unsigned long address;
-                struct heca_process *svm;
+                struct heca_process *hproc;
                 struct heca_memory_region *mr;
                 int discarded = 0;
 
@@ -1031,25 +1031,25 @@ int push_back_if_remote_dsm_page(struct page *page)
                 if (address == -EFAULT)
                         continue;
 
-                svm = find_local_svm_from_mm(vma->vm_mm);
-                if (!svm)
+                hproc = find_local_hproc_from_mm(vma->vm_mm);
+                if (!hproc)
                         continue;
 
                 /* lookup a remote mr owner, to push the page to */
-                mr = search_mr_by_addr(svm, address);
+                mr = search_heca_mr_by_addr(hproc, address);
                 if (!mr || mr->flags & (MR_LOCAL | MR_COPY_ON_ACCESS)) {
-                        release_svm(svm);
+                        release_hproc(hproc);
                         continue;
                 }
                 /* we need to unlock the VMA before doing and Heca operation
                  * (split_huge_page and other try to try to grab the vma lock) */
                 page_unlock_anon_vma_read(anon_vma);
                 /* if we have a read-copy, try to discard it without any networking */
-                discarded = dsm_try_discard_read_copy(svm, address,
+                discarded = heca_try_discard_read_copy(hproc, address,
                                 page, vma, mr);
                 if (discarded < 0) {
                         if (discarded == -EEXIST) {
-                                dsm_request_page_pull(svm->hspace, svm, page,
+                                heca_request_page_pull(hproc->hspace, hproc, page,
                                                 address, vma->vm_mm, mr);
                         }
                         if (unlikely(PageSwapCache(page)))
@@ -1057,7 +1057,7 @@ int push_back_if_remote_dsm_page(struct page *page)
                         unlock_page(page);
                 }
 
-                release_svm(svm);
+                release_hproc(hproc);
                 ret = 1;
                 goto out;
         }
@@ -1068,7 +1068,7 @@ out:
 }
 
 /* no locks are held when calling this function */
-int dsm_flag_page_remote(struct mm_struct *mm, struct heca_space *dsm, u32 descriptor,
+int hproc_flag_page_remote(struct mm_struct *mm, struct heca_space *hspace, u32 descriptor,
                 unsigned long request_addr)
 {
         spinlock_t *ptl;
@@ -1098,7 +1098,7 @@ retry:
 
         pgd = pgd_offset(mm, addr);
         if (unlikely(!pgd_present(*pgd))) {
-                if (!dsm_initiate_fault_fast(mm, addr, 0)){
+                if (!heca_initiate_fault_fast(mm, addr, 0)){
                         heca_printk(KERN_ERR "no pgd");
                         r = -EFAULT;
                         goto out;
@@ -1108,7 +1108,7 @@ retry:
 
         pud = pud_offset(pgd, addr);
         if (unlikely(!pud_present(*pud))) {
-                if (!dsm_initiate_fault_fast(mm, addr, 0)) {
+                if (!heca_initiate_fault_fast(mm, addr, 0)) {
                         heca_printk(KERN_ERR "no pud");
                         r = -EFAULT;
                         goto out;
@@ -1150,7 +1150,7 @@ retry:
         if (!pte_present(pte_entry)) {
                 if (pte_none(pte_entry)) {
                         set_pte_at(mm, addr, pte,
-                                        dsm_descriptor_to_pte(descriptor, 0));
+                                        heca_descriptor_to_pte(descriptor, 0));
                         goto out_pte_unlock;
                 } else {
                         swp_e = pte_to_swp_entry(pte_entry);
@@ -1165,7 +1165,7 @@ retry:
                                 }
                         } else {
                                 pte_unmap_unlock(pte, ptl);
-                                if (!dsm_initiate_fault_fast(mm, addr, 0)) {
+                                if (!heca_initiate_fault_fast(mm, addr, 0)) {
                                         heca_printk(KERN_ERR "failed at faulting");
                                         r = -EFAULT;
                                         goto out;
@@ -1177,7 +1177,7 @@ retry:
         } else {
                 page = vm_normal_page(vma, request_addr, *pte);
                 if (unlikely(!page)) {
-                        //DSM1 we need to test if the pte is not null
+                        //HECA1 we need to test if the pte is not null
                         page = pte_page(*pte);
                 }
         }
@@ -1193,9 +1193,9 @@ retry:
         if (PageKsm(page)) {
                 heca_printk(KERN_ERR "KSM page");
                 pte_unmap_unlock(pte, ptl);
-                if (!dsm_initiate_fault_fast(mm, addr, 0)) {
+                if (!heca_initiate_fault_fast(mm, addr, 0)) {
                         heca_printk(KERN_ERR "ksm_madvise ret : %d", r);
-                        // DSM1 : better ksm error handling required.
+                        // HECA1 : better ksm error handling required.
                         r = -EFAULT;
                         goto out;
                 }
@@ -1210,7 +1210,7 @@ retry:
 
         flush_cache_page(vma, addr, pte_pfn(*pte));
         ptep_clear_flush(vma, addr, pte);
-        set_pte_at(mm, addr, pte, dsm_descriptor_to_pte(descriptor, 0));
+        set_pte_at(mm, addr, pte, heca_descriptor_to_pte(descriptor, 0));
         page_remove_rmap(page);
 
         dec_mm_counter(mm, MM_ANONPAGES);

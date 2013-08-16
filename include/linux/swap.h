@@ -71,17 +71,17 @@ static inline int current_is_kswapd(void)
 #endif
 
 /*
- * DSM support
+ * HECA support
  */
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-#define SWP_DSM_NUM 1
-#define SWP_DSM (MAX_SWAPFILES + SWP_HWPOISON_NUM + SWP_MIGRATION_NUM)
+#define SWP_HECA_NUM 1
+#define SWP_HECA (MAX_SWAPFILES + SWP_HWPOISON_NUM + SWP_MIGRATION_NUM)
 #else
-#define SWP_DSM_NUM 0
+#define SWP_HECA_NUM 0
 #endif
 
 #define MAX_SWAPFILES \
-        ((1 << MAX_SWAPFILES_SHIFT) - SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - SWP_DSM_NUM)
+        ((1 << MAX_SWAPFILES_SHIFT) - SWP_MIGRATION_NUM - SWP_HWPOISON_NUM - SWP_HECA_NUM)
 /*
  * Magic header for a swap area. The first part of the union is
  * what the swap magic looks like for the old (limited to 128MB)

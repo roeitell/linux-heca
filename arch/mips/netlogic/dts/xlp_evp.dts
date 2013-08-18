@@ -20,7 +20,7 @@
 		#address-cells = <2>;
 		#size-cells = <1>;
 		compatible = "simple-bus";
-		ranges = <0 0  0 0x18000000  0x04000000	  // PCIe CFG
+		ranges = <0 0  0 0x18000000  0x04000000   // PCIe CFG
 			  1 0  0 0x16000000  0x01000000>; // GBU chipselects
 
 		serial0: serial@30000 {
@@ -76,10 +76,11 @@
 			};
 		};
 		pic: pic@4000 {
-			interrupt-controller;
+			compatible = "netlogic,xlp-pic";
 			#address-cells = <0>;
 			#interrupt-cells = <1>;
 			reg = <0 0x4000 0x200>;
+			interrupt-controller;
 		};
 
 		nor_flash@1,0 {

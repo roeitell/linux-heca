@@ -231,7 +231,7 @@ extern void init_idle_bootup_task(struct task_struct *idle);
 
 extern int runqueue_is_locked(int cpu);
 
-#if defined(CONFIG_SMP) && defined(CONFIG_NO_HZ)
+#if defined(CONFIG_SMP) && defined(CONFIG_NO_HZ_COMMON)
 extern void nohz_balance_enter_idle(int cpu);
 extern void set_cpu_sd_state_idle(void);
 extern int get_nohz_timer_target(void);
@@ -313,8 +313,6 @@ extern void schedule_preempt_disabled(void);
 struct nsproxy;
 struct user_namespace;
 
-#include <linux/aio.h>
-
 #ifdef CONFIG_MMU
 extern void arch_pick_mmap_layout(struct mm_struct *mm);
 extern unsigned long
@@ -324,8 +322,6 @@ extern unsigned long
 arch_get_unmapped_area_topdown(struct file *filp, unsigned long addr,
 			  unsigned long len, unsigned long pgoff,
 			  unsigned long flags);
-extern void arch_unmap_area(struct mm_struct *, unsigned long);
-extern void arch_unmap_area_topdown(struct mm_struct *, unsigned long);
 #else
 static inline void arch_pick_mmap_layout(struct mm_struct *mm) {}
 #endif
@@ -595,6 +591,7 @@ struct signal_struct {
 #endif
 #ifdef CONFIG_AUDIT
 	unsigned audit_tty;
+	unsigned audit_tty_log_passwd;
 	struct tty_audit_buf *tty_audit_buf;
 #endif
 #ifdef CONFIG_CGROUPS
@@ -925,7 +922,7 @@ struct load_weight {
 struct sched_avg {
 	/*
 	 * These sums represent an infinite geometric series and so are bound
-	 * above by 1024/(1-y).  Thus we only need a u32 to store them for for all
+	 * above by 1024/(1-y).  Thus we only need a u32 to store them for all
 	 * choices of y < 1-2^(-32)*1024.
 	 */
 	u32 runnable_avg_sum, runnable_avg_period;
@@ -995,12 +992,7 @@ struct sched_entity {
 	struct cfs_rq		*my_q;
 #endif
 
-/*
- * Load-tracking only depends on SMP, FAIR_GROUP_SCHED dependency below may be
- * removed when useful for applications beyond shares distribution (e.g.
- * load-balance).
- */
-#if defined(CONFIG_SMP) && defined(CONFIG_FAIR_GROUP_SCHED)
+#ifdef CONFIG_SMP
 	/* Per-entity load-tracking */
 	struct sched_avg	avg;
 #endif
@@ -1407,11 +1399,12 @@ struct task_struct {
 	} memcg_batch;
 	unsigned int memcg_kmem_skip_account;
 #endif
-#ifdef CONFIG_HAVE_HW_BREAKPOINT
-	atomic_t ptrace_bp_refcnt;
-#endif
 #ifdef CONFIG_UPROBES
 	struct uprobe_task *utask;
+#endif
+#if defined(CONFIG_BCACHE) || defined(CONFIG_BCACHE_MODULE)
+	unsigned int	sequential_io;
+	unsigned int	sequential_io_avg;
 #endif
 };
 
@@ -1635,6 +1628,7 @@ extern void thread_group_cputime_adjusted(struct task_struct *p, cputime_t *ut, 
 #define PF_MEMPOLICY	0x10000000	/* Non-default NUMA mempolicy */
 #define PF_MUTEX_TESTER	0x20000000	/* Thread belongs to the rt mutex tester */
 #define PF_FREEZER_SKIP	0x40000000	/* Freezer should not count it as freezable */
+#define PF_SUSPEND_TASK 0x80000000      /* this thread called freeze_processes and should not be frozen */
 
 /*
  * Only the _current_ task can read/write to tsk->flags, but other
@@ -1764,13 +1758,13 @@ static inline int set_cpus_allowed_ptr(struct task_struct *p,
 }
 #endif
 
-#ifdef CONFIG_NO_HZ
+#ifdef CONFIG_NO_HZ_COMMON
 void calc_load_enter_idle(void);
 void calc_load_exit_idle(void);
 #else
 static inline void calc_load_enter_idle(void) { }
 static inline void calc_load_exit_idle(void) { }
-#endif /* CONFIG_NO_HZ */
+#endif /* CONFIG_NO_HZ_COMMON */
 
 #ifndef CONFIG_CPUMASK_OFFSTACK
 static inline int set_cpus_allowed(struct task_struct *p, cpumask_t new_mask)
@@ -1856,10 +1850,17 @@ extern void idle_task_exit(void);
 static inline void idle_task_exit(void) {}
 #endif
 
-#if defined(CONFIG_NO_HZ) && defined(CONFIG_SMP)
-extern void wake_up_idle_cpu(int cpu);
+#if defined(CONFIG_NO_HZ_COMMON) && defined(CONFIG_SMP)
+extern void wake_up_nohz_cpu(int cpu);
 #else
-static inline void wake_up_idle_cpu(int cpu) { }
+static inline void wake_up_nohz_cpu(int cpu) { }
+#endif
+
+#ifdef CONFIG_NO_HZ_FULL
+extern bool sched_can_stop_tick(void);
+extern u64 scheduler_tick_max_deferment(void);
+#else
+static inline bool sched_can_stop_tick(void) { return false; }
 #endif
 
 #ifdef CONFIG_SCHED_AUTOGROUP
@@ -1944,8 +1945,6 @@ extern struct pid_namespace init_pid_ns;
 extern struct task_struct *find_task_by_vpid(pid_t nr);
 extern struct task_struct *find_task_by_pid_ns(pid_t nr,
 		struct pid_namespace *ns);
-
-extern void __set_special_pids(struct pid *pid);
 
 /* per-UID process charging. */
 extern struct user_struct * alloc_uid(kuid_t);
@@ -2433,6 +2432,15 @@ extern int __cond_resched_softirq(void);
 	__might_sleep(__FILE__, __LINE__, SOFTIRQ_DISABLE_OFFSET);	\
 	__cond_resched_softirq();					\
 })
+
+static inline void cond_resched_rcu(void)
+{
+#if defined(CONFIG_DEBUG_ATOMIC_SLEEP) || !defined(CONFIG_PREEMPT_RCU)
+	rcu_read_unlock();
+	cond_resched();
+	rcu_read_lock();
+#endif
+}
 
 /*
  * Does a critical section need to be broken due to another

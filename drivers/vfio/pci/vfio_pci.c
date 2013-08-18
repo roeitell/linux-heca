@@ -137,8 +137,27 @@ static void vfio_pci_disable(struct vfio_pci_device *vdev)
 	 */
 	pci_write_config_word(pdev, PCI_COMMAND, PCI_COMMAND_INTX_DISABLE);
 
-	if (vdev->reset_works)
-		__pci_reset_function(pdev);
+	/*
+	 * Careful, device_lock may already be held.  This is the case if
+	 * a driver unbind is blocked.  Try to get the locks ourselves to
+	 * prevent a deadlock.
+	 */
+	if (vdev->reset_works) {
+		bool reset_done = false;
+
+		if (pci_cfg_access_trylock(pdev)) {
+			if (device_trylock(&pdev->dev)) {
+				__pci_reset_function_locked(pdev);
+				reset_done = true;
+				device_unlock(&pdev->dev);
+			}
+			pci_cfg_access_unlock(pdev);
+		}
+
+		if (!reset_done)
+			pr_warn("%s: Unable to acquire locks for reset of %s\n",
+				__func__, dev_name(&pdev->dev));
+	}
 
 	pci_restore_state(pdev);
 }
@@ -201,7 +220,9 @@ static int vfio_pci_get_irq_count(struct vfio_pci_device *vdev, int irq_type)
 
 			return (flags & PCI_MSIX_FLAGS_QSIZE) + 1;
 		}
-	}
+	} else if (irq_type == VFIO_PCI_ERR_IRQ_INDEX)
+		if (pci_is_pcie(vdev->pdev))
+			return 1;
 
 	return 0;
 }
@@ -316,6 +337,17 @@ static long vfio_pci_ioctl(void *device_data,
 
 		if (info.argsz < minsz || info.index >= VFIO_PCI_NUM_IRQS)
 			return -EINVAL;
+
+		switch (info.index) {
+		case VFIO_PCI_INTX_IRQ_INDEX ... VFIO_PCI_MSIX_IRQ_INDEX:
+			break;
+		case VFIO_PCI_ERR_IRQ_INDEX:
+			if (pci_is_pcie(vdev->pdev))
+				break;
+		/* pass thru to return error */
+		default:
+			return -EINVAL;
+		}
 
 		info.flags = VFIO_IRQ_INFO_EVENTFD;
 
@@ -486,7 +518,6 @@ static int vfio_pci_mmap(void *device_data, struct vm_area_struct *vma)
 	}
 
 	vma->vm_private_data = vdev;
-	vma->vm_flags |= VM_IO | VM_DONTEXPAND | VM_DONTDUMP;
 	vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
 	vma->vm_pgoff = (pci_resource_start(pdev, index) >> PAGE_SHIFT) + pgoff;
 
@@ -552,11 +583,40 @@ static void vfio_pci_remove(struct pci_dev *pdev)
 	kfree(vdev);
 }
 
+static pci_ers_result_t vfio_pci_aer_err_detected(struct pci_dev *pdev,
+						  pci_channel_state_t state)
+{
+	struct vfio_pci_device *vdev;
+	struct vfio_device *device;
+
+	device = vfio_device_get_from_dev(&pdev->dev);
+	if (device == NULL)
+		return PCI_ERS_RESULT_DISCONNECT;
+
+	vdev = vfio_device_data(device);
+	if (vdev == NULL) {
+		vfio_device_put(device);
+		return PCI_ERS_RESULT_DISCONNECT;
+	}
+
+	if (vdev->err_trigger)
+		eventfd_signal(vdev->err_trigger, 1);
+
+	vfio_device_put(device);
+
+	return PCI_ERS_RESULT_CAN_RECOVER;
+}
+
+static struct pci_error_handlers vfio_err_handlers = {
+	.error_detected = vfio_pci_aer_err_detected,
+};
+
 static struct pci_driver vfio_pci_driver = {
 	.name		= "vfio-pci",
 	.id_table	= NULL, /* only dynamic ids */
 	.probe		= vfio_pci_probe,
 	.remove		= vfio_pci_remove,
+	.err_handler	= &vfio_err_handlers,
 };
 
 static void __exit vfio_pci_cleanup(void)

@@ -137,6 +137,7 @@ static inline void make_migration_entry_read(swp_entry_t *entry)
 
 extern void migration_entry_wait(struct mm_struct *mm, pmd_t *pmd,
 					unsigned long address);
+extern void migration_entry_wait_huge(struct mm_struct *mm, pte_t *pte);
 #else
 
 #define make_migration_entry(page, write) swp_entry(0, 0)
@@ -148,6 +149,8 @@ static inline int is_migration_entry(swp_entry_t swp)
 static inline void make_migration_entry_read(swp_entry_t *entryp) { }
 static inline void migration_entry_wait(struct mm_struct *mm, pmd_t *pmd,
 					 unsigned long address) { }
+static inline void migration_entry_wait_huge(struct mm_struct *mm,
+					pte_t *pte) { }
 static inline int is_write_migration_entry(swp_entry_t entry)
 {
 	return 0;
@@ -195,32 +198,32 @@ static inline int non_swap_entry(swp_entry_t entry)
 #endif
 
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-static inline int is_dsm_entry(swp_entry_t entry)
+static inline int is_heca_entry(swp_entry_t entry)
 {
-	return swp_type(entry) == SWP_DSM;
+	return swp_type(entry) == SWP_HECA;
 }
 
-static inline swp_entry_t val_to_dsm_entry(unsigned long val)
+static inline swp_entry_t val_to_heca_entry(unsigned long val)
 {
-    return swp_entry(SWP_DSM, val);
+    return swp_entry(SWP_HECA, val);
 }
 
-static inline unsigned long dsm_entry_to_val(swp_entry_t entry)
+static inline unsigned long heca_entry_to_val(swp_entry_t entry)
 {
     return swp_offset(entry);
 }
 #else
-static inline int is_dsm_entry(swp_entry_t entry)
+static inline int is_heca_entry(swp_entry_t entry)
 {
 	return 0;
 }
 
-static inline swp_entry_t val_to_dsm_entry(unsigned long val)
+static inline swp_entry_t val_to_heca_entry(unsigned long val)
 {
 	return swp_entry(0, 0);
 }
 
-static inline unsigned long dsm_entry_to_val(swp_entry_t entry) 
+static inline unsigned long heca_entry_to_val(swp_entry_t entry)
 {
     return 0;
 }

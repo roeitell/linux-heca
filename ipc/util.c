@@ -246,9 +246,8 @@ int ipc_get_maxid(struct ipc_ids *ids)
  *	is returned. The 'new' entry is returned in a locked state on success.
  *	On failure the entry is not locked and a negative err-code is returned.
  *
- *	Called with ipc_ids.rw_mutex held as a writer.
+ *	Called with writer ipc_ids.rw_mutex held.
  */
- 
 int ipc_addid(struct ipc_ids* ids, struct kern_ipc_perm* new, int size)
 {
 	kuid_t euid;
@@ -466,50 +465,10 @@ void ipc_free(void* ptr, int size)
 		kfree(ptr);
 }
 
-/*
- * rcu allocations:
- * There are three headers that are prepended to the actual allocation:
- * - during use: ipc_rcu_hdr.
- * - during the rcu grace period: ipc_rcu_grace.
- * - [only if vmalloc]: ipc_rcu_sched.
- * Their lifetime doesn't overlap, thus the headers share the same memory.
- * Unlike a normal union, they are right-aligned, thus some container_of
- * forward/backward casting is necessary:
- */
-struct ipc_rcu_hdr
-{
-	atomic_t refcount;
-	int is_vmalloc;
-	void *data[0];
-};
-
-
-struct ipc_rcu_grace
-{
+struct ipc_rcu {
 	struct rcu_head rcu;
-	/* "void *" makes sure alignment of following data is sane. */
-	void *data[0];
-};
-
-struct ipc_rcu_sched
-{
-	struct work_struct work;
-	/* "void *" makes sure alignment of following data is sane. */
-	void *data[0];
-};
-
-#define HDRLEN_KMALLOC		(sizeof(struct ipc_rcu_grace) > sizeof(struct ipc_rcu_hdr) ? \
-					sizeof(struct ipc_rcu_grace) : sizeof(struct ipc_rcu_hdr))
-#define HDRLEN_VMALLOC		(sizeof(struct ipc_rcu_sched) > HDRLEN_KMALLOC ? \
-					sizeof(struct ipc_rcu_sched) : HDRLEN_KMALLOC)
-
-static inline int rcu_use_vmalloc(int size)
-{
-	/* Too big for a single page? */
-	if (HDRLEN_KMALLOC + size > PAGE_SIZE)
-		return 1;
-	return 0;
-}
+	atomic_t refcount;
+} ____cacheline_aligned_in_smp;
 
 /**
  *	ipc_rcu_alloc	-	allocate ipc and rcu space 
@@ -520,74 +479,43 @@ static inline int rcu_use_vmalloc(int size)
  */
 void *ipc_rcu_alloc(int size)
 {
-	void *out;
-
 	/*
-	 * We prepend the allocation with the rcu struct, and
-	 * workqueue if necessary (for vmalloc).
+	 * We prepend the allocation with the rcu struct
 	 */
-	if (rcu_use_vmalloc(size)) {
-		out = vmalloc(HDRLEN_VMALLOC + size);
-		if (!out)
-			goto done;
-
-		out += HDRLEN_VMALLOC;
-		container_of(out, struct ipc_rcu_hdr, data)->is_vmalloc = 1;
-	} else {
-		out = kmalloc(HDRLEN_KMALLOC + size, GFP_KERNEL);
-		if (!out)
-			goto done;
-
-		out += HDRLEN_KMALLOC;
-		container_of(out, struct ipc_rcu_hdr, data)->is_vmalloc = 0;
-	}
-
-	/* set reference counter no matter what kind of allocation was done */
-	atomic_set(&container_of(out, struct ipc_rcu_hdr, data)->refcount, 1);
-done:
-	return out;
+	struct ipc_rcu *out = ipc_alloc(sizeof(struct ipc_rcu) + size);
+	if (unlikely(!out))
+		return NULL;
+	atomic_set(&out->refcount, 1);
+	return out + 1;
 }
 
 int ipc_rcu_getref(void *ptr)
 {
-	return atomic_inc_not_zero(&container_of(ptr, struct ipc_rcu_hdr, data)->refcount);
-}
+	struct ipc_rcu *p = ((struct ipc_rcu *)ptr) - 1;
 
-static void ipc_do_vfree(struct work_struct *work)
-{
-	vfree(container_of(work, struct ipc_rcu_sched, work));
+	return atomic_inc_not_zero(&p->refcount);
 }
 
 /**
  * ipc_schedule_free - free ipc + rcu space
  * @head: RCU callback structure for queued work
- * 
- * Since RCU callback function is called in bh,
- * we need to defer the vfree to schedule_work().
  */
 static void ipc_schedule_free(struct rcu_head *head)
 {
-	struct ipc_rcu_grace *grace;
-	struct ipc_rcu_sched *sched;
-
-	grace = container_of(head, struct ipc_rcu_grace, rcu);
-	sched = container_of(&(grace->data[0]), struct ipc_rcu_sched,
-				data[0]);
-
-	INIT_WORK(&sched->work, ipc_do_vfree);
-	schedule_work(&sched->work);
+	vfree(container_of(head, struct ipc_rcu, rcu));
 }
 
 void ipc_rcu_putref(void *ptr)
 {
-	if (!atomic_dec_and_test(&container_of(ptr, struct ipc_rcu_hdr, data)->refcount))
+	struct ipc_rcu *p = ((struct ipc_rcu *)ptr) - 1;
+
+	if (!atomic_dec_and_test(&p->refcount))
 		return;
 
-	if (container_of(ptr, struct ipc_rcu_hdr, data)->is_vmalloc) {
-		call_rcu(&container_of(ptr, struct ipc_rcu_grace, data)->rcu,
-				ipc_schedule_free);
+	if (is_vmalloc_addr(ptr)) {
+		call_rcu(&p->rcu, ipc_schedule_free);
 	} else {
-		kfree_rcu(container_of(ptr, struct ipc_rcu_grace, data), rcu);
+		kfree_rcu(p, rcu);
 	}
 }
 
@@ -818,8 +746,10 @@ int ipc_update_perm(struct ipc64_perm *in, struct kern_ipc_perm *out)
  * It must be called without any lock held and
  *  - retrieves the ipc with the given id in the given table.
  *  - performs some audit and permission check, depending on the given cmd
- *  - returns the ipc with both ipc and rw_mutex locks held in case of success
+ *  - returns the ipc with the ipc lock held in case of success
  *    or an err-code without any lock held otherwise.
+ *
+ * Call holding the both the rw_mutex and the rcu read lock.
  */
 struct kern_ipc_perm *ipcctl_pre_down(struct ipc_namespace *ns,
 				      struct ipc_ids *ids, int id, int cmd,
@@ -844,13 +774,10 @@ struct kern_ipc_perm *ipcctl_pre_down_nolock(struct ipc_namespace *ns,
 	int err = -EPERM;
 	struct kern_ipc_perm *ipcp;
 
-	down_write(&ids->rw_mutex);
-	rcu_read_lock();
-
 	ipcp = ipc_obtain_object_check(ids, id);
 	if (IS_ERR(ipcp)) {
 		err = PTR_ERR(ipcp);
-		goto out_up;
+		goto err;
 	}
 
 	audit_ipc_obj(ipcp);
@@ -861,16 +788,8 @@ struct kern_ipc_perm *ipcctl_pre_down_nolock(struct ipc_namespace *ns,
 	euid = current_euid();
 	if (uid_eq(euid, ipcp->cuid) || uid_eq(euid, ipcp->uid)  ||
 	    ns_capable(ns->user_ns, CAP_SYS_ADMIN))
-		return ipcp;
-
-out_up:
-	/*
-	 * Unsuccessful lookup, unlock and return
-	 * the corresponding error.
-	 */
-	rcu_read_unlock();
-	up_write(&ids->rw_mutex);
-
+		return ipcp; /* successful lookup */
+err:
 	return ERR_PTR(err);
 }
 

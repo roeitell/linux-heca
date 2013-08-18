@@ -101,9 +101,6 @@ config GENERIC_CALIBRATE_DELAY
 config HAVE_SETUP_PER_CPU_AREA
 	def_bool y
 
-config GENERIC_GPIO
-	bool
-
 config DMI
 	bool
 	default y
@@ -379,7 +376,6 @@ config NR_CPUS
 config HOTPLUG_CPU
 	bool "Support for hot-pluggable CPUs"
 	depends on SMP
-	select HOTPLUG
 	default n
 	---help---
 	  Say Y here to experiment with turning CPUs off and on.  CPUs

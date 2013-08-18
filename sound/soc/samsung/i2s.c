@@ -742,12 +742,12 @@ static int config_setup(struct i2s_dai *i2s)
 		return -EAGAIN;
 	}
 
-	/* Don't bother RFS, BFS & PSR in Slave mode */
-	if (is_slave(i2s))
-		return 0;
-
 	set_bfs(i2s, bfs);
 	set_rfs(i2s, rfs);
+
+	/* Don't bother with PSR in Slave mode */
+	if (is_slave(i2s))
+		return 0;
 
 	if (!(i2s->quirks & QUIRK_NO_MUXPSR)) {
 		psr = i2s->rclk_srcrate / i2s->frmclk / rfs;
@@ -963,6 +963,10 @@ static const struct snd_soc_dai_ops samsung_i2s_dai_ops = {
 	.delay = i2s_delay,
 };
 
+static const struct snd_soc_component_driver samsung_i2s_component = {
+	.name		= "samsung-i2s",
+};
+
 #define SAMSUNG_I2S_RATES	SNDRV_PCM_RATE_8000_96000
 
 #define SAMSUNG_I2S_FMTS	(SNDRV_PCM_FMTBIT_S8 | \
@@ -1011,52 +1015,6 @@ static struct i2s_dai *i2s_alloc_dai(struct platform_device *pdev, bool sec)
 
 	return i2s;
 }
-
-#ifdef CONFIG_OF
-static int samsung_i2s_parse_dt_gpio(struct i2s_dai *i2s)
-{
-	struct device *dev = &i2s->pdev->dev;
-	int index, gpio, ret;
-
-	for (index = 0; index < 7; index++) {
-		gpio = of_get_gpio(dev->of_node, index);
-		if (!gpio_is_valid(gpio)) {
-			dev_err(dev, "invalid gpio[%d]: %d\n", index, gpio);
-			goto free_gpio;
-		}
-
-		ret = gpio_request(gpio, dev_name(dev));
-		if (ret) {
-			dev_err(dev, "gpio [%d] request failed\n", gpio);
-			goto free_gpio;
-		}
-		i2s->gpios[index] = gpio;
-	}
-	return 0;
-
-free_gpio:
-	while (--index >= 0)
-		gpio_free(i2s->gpios[index]);
-	return -EINVAL;
-}
-
-static void samsung_i2s_dt_gpio_free(struct i2s_dai *i2s)
-{
-	unsigned int index;
-	for (index = 0; index < 7; index++)
-		gpio_free(i2s->gpios[index]);
-}
-#else
-static int samsung_i2s_parse_dt_gpio(struct i2s_dai *dai)
-{
-	return -EINVAL;
-}
-
-static void samsung_i2s_dt_gpio_free(struct i2s_dai *dai)
-{
-}
-
-#endif
 
 static const struct of_device_id exynos_i2s_match[];
 
@@ -1114,8 +1072,9 @@ static int samsung_i2s_probe(struct platform_device *pdev)
 			dev_err(&pdev->dev, "Unable to get drvdata\n");
 			return -EFAULT;
 		}
-		snd_soc_register_dai(&sec_dai->pdev->dev,
-			&sec_dai->i2s_dai_drv);
+		snd_soc_register_component(&sec_dai->pdev->dev,
+					   &samsung_i2s_component,
+					   &sec_dai->i2s_dai_drv, 1);
 		asoc_dma_platform_register(&pdev->dev);
 		return 0;
 	}
@@ -1230,21 +1189,14 @@ static int samsung_i2s_probe(struct platform_device *pdev)
 		pri_dai->sec_dai = sec_dai;
 	}
 
-	if (np) {
-		if (samsung_i2s_parse_dt_gpio(pri_dai)) {
-			dev_err(&pdev->dev, "Unable to configure gpio\n");
-			ret = -EINVAL;
-			goto err;
-		}
-	} else {
-		if (i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev)) {
-			dev_err(&pdev->dev, "Unable to configure gpio\n");
-			ret = -EINVAL;
-			goto err;
-		}
+	if (i2s_pdata && i2s_pdata->cfg_gpio && i2s_pdata->cfg_gpio(pdev)) {
+		dev_err(&pdev->dev, "Unable to configure gpio\n");
+		ret = -EINVAL;
+		goto err;
 	}
 
-	snd_soc_register_dai(&pri_dai->pdev->dev, &pri_dai->i2s_dai_drv);
+	snd_soc_register_component(&pri_dai->pdev->dev, &samsung_i2s_component,
+				   &pri_dai->i2s_dai_drv, 1);
 
 	pm_runtime_enable(&pdev->dev);
 
@@ -1261,13 +1213,9 @@ static int samsung_i2s_remove(struct platform_device *pdev)
 {
 	struct i2s_dai *i2s, *other;
 	struct resource *res;
-	struct s3c_audio_pdata *i2s_pdata = pdev->dev.platform_data;
 
 	i2s = dev_get_drvdata(&pdev->dev);
 	other = i2s->pri_dai ? : i2s->sec_dai;
-
-	if (!i2s_pdata->cfg_gpio && pdev->dev.of_node)
-		samsung_i2s_dt_gpio_free(i2s->pri_dai);
 
 	if (other) {
 		other->pri_dai = NULL;
@@ -1283,7 +1231,7 @@ static int samsung_i2s_remove(struct platform_device *pdev)
 	i2s->sec_dai = NULL;
 
 	asoc_dma_platform_unregister(&pdev->dev);
-	snd_soc_unregister_dai(&pdev->dev);
+	snd_soc_unregister_component(&pdev->dev);
 
 	return 0;
 }
@@ -1298,7 +1246,7 @@ static struct platform_device_id samsung_i2s_driver_ids[] = {
 	},
 	{},
 };
-MODULE_DEVICE_TABLE(platform, samsung-i2s-driver-ids);
+MODULE_DEVICE_TABLE(platform, samsung_i2s_driver_ids);
 
 #ifdef CONFIG_OF
 static struct samsung_i2s_dai_data samsung_i2s_dai_data_array[] = {

@@ -28,6 +28,7 @@
 #include <linux/gfp.h>
 #include <linux/oom.h>
 #include <linux/smpboot.h>
+#include <linux/tick.h>
 
 #define RCU_KTHREAD_PRIO 1
 
@@ -52,58 +53,57 @@ static char __initdata nocb_buf[NR_CPUS * 5];
 static void __init rcu_bootup_announce_oddness(void)
 {
 #ifdef CONFIG_RCU_TRACE
-	printk(KERN_INFO "\tRCU debugfs-based tracing is enabled.\n");
+	pr_info("\tRCU debugfs-based tracing is enabled.\n");
 #endif
 #if (defined(CONFIG_64BIT) && CONFIG_RCU_FANOUT != 64) || (!defined(CONFIG_64BIT) && CONFIG_RCU_FANOUT != 32)
-	printk(KERN_INFO "\tCONFIG_RCU_FANOUT set to non-default value of %d\n",
+	pr_info("\tCONFIG_RCU_FANOUT set to non-default value of %d\n",
 	       CONFIG_RCU_FANOUT);
 #endif
 #ifdef CONFIG_RCU_FANOUT_EXACT
-	printk(KERN_INFO "\tHierarchical RCU autobalancing is disabled.\n");
+	pr_info("\tHierarchical RCU autobalancing is disabled.\n");
 #endif
 #ifdef CONFIG_RCU_FAST_NO_HZ
-	printk(KERN_INFO
-	       "\tRCU dyntick-idle grace-period acceleration is enabled.\n");
+	pr_info("\tRCU dyntick-idle grace-period acceleration is enabled.\n");
 #endif
 #ifdef CONFIG_PROVE_RCU
-	printk(KERN_INFO "\tRCU lockdep checking is enabled.\n");
+	pr_info("\tRCU lockdep checking is enabled.\n");
 #endif
 #ifdef CONFIG_RCU_TORTURE_TEST_RUNNABLE
-	printk(KERN_INFO "\tRCU torture testing starts during boot.\n");
+	pr_info("\tRCU torture testing starts during boot.\n");
 #endif
 #if defined(CONFIG_TREE_PREEMPT_RCU) && !defined(CONFIG_RCU_CPU_STALL_VERBOSE)
-	printk(KERN_INFO "\tDump stacks of tasks blocking RCU-preempt GP.\n");
+	pr_info("\tDump stacks of tasks blocking RCU-preempt GP.\n");
 #endif
 #if defined(CONFIG_RCU_CPU_STALL_INFO)
-	printk(KERN_INFO "\tAdditional per-CPU info printed with stalls.\n");
+	pr_info("\tAdditional per-CPU info printed with stalls.\n");
 #endif
 #if NUM_RCU_LVL_4 != 0
-	printk(KERN_INFO "\tFour-level hierarchy is enabled.\n");
+	pr_info("\tFour-level hierarchy is enabled.\n");
 #endif
 	if (rcu_fanout_leaf != CONFIG_RCU_FANOUT_LEAF)
-		printk(KERN_INFO "\tExperimental boot-time adjustment of leaf fanout to %d.\n", rcu_fanout_leaf);
+		pr_info("\tBoot-time adjustment of leaf fanout to %d.\n", rcu_fanout_leaf);
 	if (nr_cpu_ids != NR_CPUS)
-		printk(KERN_INFO "\tRCU restricting CPUs from NR_CPUS=%d to nr_cpu_ids=%d.\n", NR_CPUS, nr_cpu_ids);
+		pr_info("\tRCU restricting CPUs from NR_CPUS=%d to nr_cpu_ids=%d.\n", NR_CPUS, nr_cpu_ids);
 #ifdef CONFIG_RCU_NOCB_CPU
 #ifndef CONFIG_RCU_NOCB_CPU_NONE
 	if (!have_rcu_nocb_mask) {
-		alloc_bootmem_cpumask_var(&rcu_nocb_mask);
+		zalloc_cpumask_var(&rcu_nocb_mask, GFP_KERNEL);
 		have_rcu_nocb_mask = true;
 	}
 #ifdef CONFIG_RCU_NOCB_CPU_ZERO
-	pr_info("\tExperimental no-CBs CPU 0\n");
+	pr_info("\tOffload RCU callbacks from CPU 0\n");
 	cpumask_set_cpu(0, rcu_nocb_mask);
 #endif /* #ifdef CONFIG_RCU_NOCB_CPU_ZERO */
 #ifdef CONFIG_RCU_NOCB_CPU_ALL
-	pr_info("\tExperimental no-CBs for all CPUs\n");
+	pr_info("\tOffload RCU callbacks from all CPUs\n");
 	cpumask_setall(rcu_nocb_mask);
 #endif /* #ifdef CONFIG_RCU_NOCB_CPU_ALL */
 #endif /* #ifndef CONFIG_RCU_NOCB_CPU_NONE */
 	if (have_rcu_nocb_mask) {
 		cpulist_scnprintf(nocb_buf, sizeof(nocb_buf), rcu_nocb_mask);
-		pr_info("\tExperimental no-CBs CPUs: %s.\n", nocb_buf);
+		pr_info("\tOffload RCU callbacks from CPUs: %s.\n", nocb_buf);
 		if (rcu_nocb_poll)
-			pr_info("\tExperimental polled no-CBs CPUs.\n");
+			pr_info("\tPoll for callbacks from no-CBs CPUs.\n");
 	}
 #endif /* #ifdef CONFIG_RCU_NOCB_CPU */
 }
@@ -122,7 +122,7 @@ static int rcu_preempted_readers_exp(struct rcu_node *rnp);
  */
 static void __init rcu_bootup_announce(void)
 {
-	printk(KERN_INFO "Preemptible hierarchical RCU implementation.\n");
+	pr_info("Preemptible hierarchical RCU implementation.\n");
 	rcu_bootup_announce_oddness();
 }
 
@@ -489,13 +489,13 @@ static void rcu_print_detail_task_stall(struct rcu_state *rsp)
 
 static void rcu_print_task_stall_begin(struct rcu_node *rnp)
 {
-	printk(KERN_ERR "\tTasks blocked on level-%d rcu_node (CPUs %d-%d):",
+	pr_err("\tTasks blocked on level-%d rcu_node (CPUs %d-%d):",
 	       rnp->level, rnp->grplo, rnp->grphi);
 }
 
 static void rcu_print_task_stall_end(void)
 {
-	printk(KERN_CONT "\n");
+	pr_cont("\n");
 }
 
 #else /* #ifdef CONFIG_RCU_CPU_STALL_INFO */
@@ -525,7 +525,7 @@ static int rcu_print_task_stall(struct rcu_node *rnp)
 	t = list_entry(rnp->gp_tasks,
 		       struct task_struct, rcu_node_entry);
 	list_for_each_entry_continue(t, &rnp->blkd_tasks, rcu_node_entry) {
-		printk(KERN_CONT " P%d", t->pid);
+		pr_cont(" P%d", t->pid);
 		ndetected++;
 	}
 	rcu_print_task_stall_end();
@@ -932,6 +932,24 @@ static void __init __rcu_init_preempt(void)
 	rcu_init_one(&rcu_preempt_state, &rcu_preempt_data);
 }
 
+/*
+ * Check for a task exiting while in a preemptible-RCU read-side
+ * critical section, clean up if so.  No need to issue warnings,
+ * as debug_check_no_locks_held() already does this if lockdep
+ * is enabled.
+ */
+void exit_rcu(void)
+{
+	struct task_struct *t = current;
+
+	if (likely(list_empty(&current->rcu_node_entry)))
+		return;
+	t->rcu_read_lock_nesting = 1;
+	barrier();
+	t->rcu_read_unlock_special = RCU_READ_UNLOCK_BLOCKED;
+	__rcu_read_unlock();
+}
+
 #else /* #ifdef CONFIG_TREE_PREEMPT_RCU */
 
 static struct rcu_state *rcu_state = &rcu_sched_state;
@@ -941,7 +959,7 @@ static struct rcu_state *rcu_state = &rcu_sched_state;
  */
 static void __init rcu_bootup_announce(void)
 {
-	printk(KERN_INFO "Hierarchical RCU implementation.\n");
+	pr_info("Hierarchical RCU implementation.\n");
 	rcu_bootup_announce_oddness();
 }
 
@@ -1097,6 +1115,14 @@ EXPORT_SYMBOL_GPL(rcu_barrier);
  * Because preemptible RCU does not exist, it need not be initialized.
  */
 static void __init __rcu_init_preempt(void)
+{
+}
+
+/*
+ * Because preemptible RCU does not exist, tasks cannot possibly exit
+ * while in preemptible RCU read-side critical sections.
+ */
+void exit_rcu(void)
 {
 }
 
@@ -1326,7 +1352,7 @@ static void rcu_preempt_boost_start_gp(struct rcu_node *rnp)
  * already exist.  We only create this kthread for preemptible RCU.
  * Returns zero if all is well, a negated errno otherwise.
  */
-static int __cpuinit rcu_spawn_one_boost_kthread(struct rcu_state *rsp,
+static int rcu_spawn_one_boost_kthread(struct rcu_state *rsp,
 						 struct rcu_node *rnp)
 {
 	int rnp_index = rnp - &rsp->node[0];
@@ -1481,7 +1507,7 @@ static int __init rcu_spawn_kthreads(void)
 }
 early_initcall(rcu_spawn_kthreads);
 
-static void __cpuinit rcu_prepare_kthreads(int cpu)
+static void rcu_prepare_kthreads(int cpu)
 {
 	struct rcu_data *rdp = per_cpu_ptr(rcu_state->rda, cpu);
 	struct rcu_node *rnp = rdp->mynode;
@@ -1523,7 +1549,7 @@ static int __init rcu_scheduler_really_started(void)
 }
 early_initcall(rcu_scheduler_really_started);
 
-static void __cpuinit rcu_prepare_kthreads(int cpu)
+static void rcu_prepare_kthreads(int cpu)
 {
 }
 
@@ -1628,7 +1654,7 @@ static bool rcu_try_advance_all_cbs(void)
 		 */
 		if (rdp->completed != rnp->completed &&
 		    rdp->nxttail[RCU_DONE_TAIL] != rdp->nxttail[RCU_NEXT_TAIL])
-			rcu_process_gp_end(rsp, rdp);
+			note_gp_changes(rsp, rdp);
 
 		if (cpu_has_callbacks_ready_to_invoke(rdp))
 			cbs_ready = true;
@@ -1666,7 +1692,7 @@ int rcu_needs_cpu(int cpu, unsigned long *dj)
 	rdtp->last_accelerate = jiffies;
 
 	/* Request timer delay depending on laziness, and round. */
-	if (rdtp->all_lazy) {
+	if (!rdtp->all_lazy) {
 		*dj = round_up(rcu_idle_gp_delay + jiffies,
 			       rcu_idle_gp_delay) - jiffies;
 	} else {
@@ -1705,7 +1731,7 @@ static void rcu_prepare_for_idle(int cpu)
 		return;
 
 	/* If this is a no-CBs CPU, no callbacks, just return. */
-	if (is_nocb_cpu(cpu))
+	if (rcu_is_nocb_cpu(cpu))
 		return;
 
 	/*
@@ -1747,7 +1773,7 @@ static void rcu_cleanup_after_idle(int cpu)
 	struct rcu_data *rdp;
 	struct rcu_state *rsp;
 
-	if (is_nocb_cpu(cpu))
+	if (rcu_is_nocb_cpu(cpu))
 		return;
 	rcu_try_advance_all_cbs();
 	for_each_rcu_flavor(rsp) {
@@ -1882,7 +1908,7 @@ static void print_cpu_stall_fast_no_hz(char *cp, int cpu)
 /* Initiate the stall-info list. */
 static void print_cpu_stall_info_begin(void)
 {
-	printk(KERN_CONT "\n");
+	pr_cont("\n");
 }
 
 /*
@@ -1913,7 +1939,7 @@ static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 		ticks_value = rsp->gpnum - rdp->gpnum;
 	}
 	print_cpu_stall_fast_no_hz(fast_no_hz, cpu);
-	printk(KERN_ERR "\t%d: (%lu %s) idle=%03x/%llx/%d softirq=%u/%u %s\n",
+	pr_err("\t%d: (%lu %s) idle=%03x/%llx/%d softirq=%u/%u %s\n",
 	       cpu, ticks_value, ticks_title,
 	       atomic_read(&rdtp->dynticks) & 0xfff,
 	       rdtp->dynticks_nesting, rdtp->dynticks_nmi_nesting,
@@ -1924,7 +1950,7 @@ static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 /* Terminate the stall-info list. */
 static void print_cpu_stall_info_end(void)
 {
-	printk(KERN_ERR "\t");
+	pr_err("\t");
 }
 
 /* Zero ->ticks_this_gp for all flavors of RCU. */
@@ -1947,17 +1973,17 @@ static void increment_cpu_stall_ticks(void)
 
 static void print_cpu_stall_info_begin(void)
 {
-	printk(KERN_CONT " {");
+	pr_cont(" {");
 }
 
 static void print_cpu_stall_info(struct rcu_state *rsp, int cpu)
 {
-	printk(KERN_CONT " %d", cpu);
+	pr_cont(" %d", cpu);
 }
 
 static void print_cpu_stall_info_end(void)
 {
-	printk(KERN_CONT "} ");
+	pr_cont("} ");
 }
 
 static void zero_cpu_stall_ticks(struct rcu_data *rdp)
@@ -2052,7 +2078,7 @@ static void rcu_init_one_nocb(struct rcu_node *rnp)
 }
 
 /* Is the specified CPU a no-CPUs CPU? */
-static bool is_nocb_cpu(int cpu)
+bool rcu_is_nocb_cpu(int cpu)
 {
 	if (have_rcu_nocb_mask)
 		return cpumask_test_cpu(cpu, rcu_nocb_mask);
@@ -2110,7 +2136,7 @@ static bool __call_rcu_nocb(struct rcu_data *rdp, struct rcu_head *rhp,
 			    bool lazy)
 {
 
-	if (!is_nocb_cpu(rdp->cpu))
+	if (!rcu_is_nocb_cpu(rdp->cpu))
 		return 0;
 	__call_rcu_nocb_enqueue(rdp, rhp, &rhp->next, 1, lazy);
 	if (__is_kfree_rcu_offset((unsigned long)rhp->func))
@@ -2134,7 +2160,7 @@ static bool __maybe_unused rcu_nocb_adopt_orphan_cbs(struct rcu_state *rsp,
 	long qll = rsp->qlen_lazy;
 
 	/* If this is not a no-CBs CPU, tell the caller to do it the old way. */
-	if (!is_nocb_cpu(smp_processor_id()))
+	if (!rcu_is_nocb_cpu(smp_processor_id()))
 		return 0;
 	rsp->qlen = 0;
 	rsp->qlen_lazy = 0;
@@ -2306,11 +2332,6 @@ static void rcu_init_one_nocb(struct rcu_node *rnp)
 {
 }
 
-static bool is_nocb_cpu(int cpu)
-{
-	return false;
-}
-
 static bool __call_rcu_nocb(struct rcu_data *rdp, struct rcu_head *rhp,
 			    bool lazy)
 {
@@ -2337,3 +2358,20 @@ static bool init_nocb_callback_list(struct rcu_data *rdp)
 }
 
 #endif /* #else #ifdef CONFIG_RCU_NOCB_CPU */
+
+/*
+ * An adaptive-ticks CPU can potentially execute in kernel mode for an
+ * arbitrarily long period of time with the scheduling-clock tick turned
+ * off.  RCU will be paying attention to this CPU because it is in the
+ * kernel, but the CPU cannot be guaranteed to be executing the RCU state
+ * machine because the scheduling-clock tick has been disabled.  Therefore,
+ * if an adaptive-ticks CPU is failing to respond to the current grace
+ * period and has not be idle from an RCU perspective, kick it.
+ */
+static void rcu_kick_nohz_cpu(int cpu)
+{
+#ifdef CONFIG_NO_HZ_FULL
+	if (tick_nohz_full_cpu(cpu))
+		smp_send_reschedule(cpu);
+#endif /* #ifdef CONFIG_NO_HZ_FULL */
+}

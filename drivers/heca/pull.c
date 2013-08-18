@@ -1316,7 +1316,7 @@ retry:
     page_cache_get(page);
 
     dpc = dsm_cache_get_hold(svm, addr);
-    if (unlikely(dpc)) {
+    if (dpc) {
         /* these should be handled in the first do_dsm_page_fault */
         BUG_ON(dpc->tag == PULL_TRY_TAG);
 

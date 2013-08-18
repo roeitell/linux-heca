@@ -384,7 +384,7 @@ int dsm_cache_add(struct subvirtual_machine *svm, unsigned long addr, int nproc,
             break;
 
         spin_lock_irq(&svm->page_cache_spinlock);
-        r = radix_tree_insert(&svm->page_cache, addr, dpc);
+        r = radix_tree_insert(&svm->page_cache, addr, *dpc);
         spin_unlock_irq(&svm->page_cache_spinlock);
         radix_tree_preload_end();
 

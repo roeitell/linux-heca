@@ -71,12 +71,17 @@ int heca_detach_task(struct task_struct *tsk)
                 hspace = list_entry(pos, struct heca_space, hspace_ptr);
                 list_for_each_safe (it, n, &hspace->hprocs_list) {
                         hproc = list_entry(it, struct heca_process, hproc_ptr);
+
+                        rcu_read_lock();
                         if (tsk == find_task_by_vpid(hproc->pid)) {
-                                heca_printk(KERN_DEBUG "removing HPROC associated with pid %d",
+                                rcu_read_unlock();
+                                heca_printk(KERN_DEBUG "removing HPROC "
+                                                "associated with pid %d",
                                                 hproc->pid);
                                 remove_hproc(hspace->hspace_id,
                                                 hproc->hproc_id);
                         }
+                        rcu_read_unlock();
                 }
         }
         return ret;

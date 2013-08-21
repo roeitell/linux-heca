@@ -2,68 +2,8 @@
 #include <linux/spinlock.h>
 #include <linux/heca_hook.h>
 
-static const struct heca_hook_struct *heca_hook;
-static atomic_t refcount = ATOMIC_INIT(0);
-
-const struct heca_hook_struct *heca_hook_read(void)
-{
-    const struct heca_hook_struct *hook = NULL;
 #if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-    if (!ACCESS_ONCE(heca_hook))
-        return NULL;
-    if (atomic_inc_not_zero(&refcount)) {
-        hook = ACCESS_ONCE(heca_hook);
-        if (unlikely(!hook))
-            atomic_dec(&refcount);
-    }
-#endif
-    return hook;
-}
-EXPORT_SYMBOL(heca_hook_read);
 
-void heca_hook_release(const struct heca_hook_struct *hook)
-{
-#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-    if (hook)
-        atomic_dec(&refcount);
-#endif
-}
-EXPORT_SYMBOL(heca_hook_release);
-
-int heca_hook_register(const struct heca_hook_struct *hook)
-{
-#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-    if (!atomic_cmpxchg(&refcount, 0, -1)) {
-        heca_hook = hook;
-        atomic_add(2, &refcount);
-        return 0;
-    }
-    return -EFAULT;
-#endif
-    return 0;
-}
-EXPORT_SYMBOL(heca_hook_register);
-
-int heca_hook_unregister(void)
-{
-#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-    heca_hook = NULL;
-    might_sleep();
-    for (;;) {
-        if (atomic_cmpxchg(&refcount, 1, 0) == 1) {
-            heca_hook = NULL;
-            return 0;
-        }
-        if (!atomic_read(&refcount))
-            break;
-        cond_resched();
-    }
-#endif
-    return 0;
-}
-EXPORT_SYMBOL(heca_hook_unregister);
-
-#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
 #include <linux/writeback.h>
 EXPORT_SYMBOL(set_page_dirty_balance);
 
@@ -133,6 +73,86 @@ EXPORT_SYMBOL(find_task_by_pid_ns);
 #include "internal.h"
 EXPORT_SYMBOL(munlock_vma_page);
 
+static const struct heca_hook_struct *heca_hook;
+static atomic_t refcount = ATOMIC_INIT(0);
+
+const struct heca_hook_struct *heca_hook_read(void)
+{
+        const struct heca_hook_struct *hook = NULL;
+        unsigned long found;
+
+        /* don't toy with refcount if unregister initiated */
+        smp_mb();
+        if (!heca_hook)
+                return NULL;
+
+retry:
+        found = atomic_read(&refcount);
+        if (found > 0) {
+                if (atomic_cmpxchg(&refcount, found, found+1) != found)
+                        goto retry;
+
+                /*
+                 * again, back away if unregister initiated. smp_mb implied in
+                 * atomic_cmpxchg.
+                 */
+                hook = heca_hook;
+                if (unlikely(!hook))
+                        atomic_dec(&refcount);
+        }
+
+        return hook;
+}
+EXPORT_SYMBOL(heca_hook_read);
+
+void heca_hook_release(const struct heca_hook_struct *hook)
+{
+        if (hook)
+                atomic_dec(&refcount);
+}
+EXPORT_SYMBOL(heca_hook_release);
+
+int heca_hook_register(const struct heca_hook_struct *hook)
+{
+        if (!atomic_cmpxchg(&refcount, 0, -1)) {
+                heca_hook = hook;
+                atomic_add(2, &refcount);
+                return 0;
+        }
+
+        return -EFAULT;
+}
+EXPORT_SYMBOL(heca_hook_register);
+
+int heca_hook_unregister(void)
+{
+        int ret = 0;
+
+        heca_hook = NULL;
+        might_sleep();
+
+        /* block until we release the hook */
+        for (;;) {
+                int found = atomic_cmpxchg(&refcount, 1, 0);
+
+                switch (found) {
+                case 1:
+                        heca_hook = NULL;
+                        goto out;
+                case 0:
+                        ret = -EFAULT;
+                        goto out;
+                default:
+                        cond_resched();
+                }
+        }
+
+out:
+        return ret;
+}
+EXPORT_SYMBOL(heca_hook_unregister);
+
+
 #else
 const struct heca_hook_struct *heca_hook_read(void)
 {
@@ -143,7 +163,11 @@ void heca_hook_release(void)
 {
 }
 
-void heca_hook_write(const struct heca_hook_struct *hook)
+int heca_hook_register(const struct heca_hook_struct *hook)
+{
+}
+
+int heca_hook_unregister(void)
 {
 }
 #endif

@@ -80,8 +80,9 @@ int heca_detach_task(struct task_struct *tsk)
                                                 hproc->pid);
                                 remove_hproc(hspace->hspace_id,
                                                 hproc->hproc_id);
+                        } else {
+                                rcu_read_unlock();
                         }
-                        rcu_read_unlock();
                 }
         }
         return ret;

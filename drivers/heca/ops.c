@@ -20,6 +20,10 @@
  * the same args. if not enough mem to queue the request, we have no choice but
  * to reschedule, in hope an existing tx_e will push a page and free mem. but in
  * this case, when we wake, we might find an available tx_e.
+ *
+ * note: message ordering is not guaranteed. while previous requests are being
+ * flushed, a new msg might take a tx element that has been released in the
+ * meanwhile.
  */
 static int heca_send_msg(struct heca_connection *ele, u32 hspace_id, u32 mr_id,
                 u32 src_id, u32 dest_id, unsigned long local_addr,
@@ -649,9 +653,16 @@ retry:
         tx_e->reply_work_req->mm = local_hproc->mm;
         tx_e->reply_work_req->addr = addr;
 
-        res = heca_extract_page_from_remote(local_hproc, remote_hproc, addr,
-                        msg->type, &tx_e->reply_work_req->pte, &page,
-                        &redirect_id, deferred, mr);
+        if (msg->type == MSG_REQ_PAGE_TRY) {
+                res = heca_lookup_page_in_remote(local_hproc, remote_hproc,
+                                addr, &page);
+                /* TODO: this is for send_msg_handler, easily improvable */
+                tx_e->reply_work_req->pte.pte = 0;
+        } else {
+                res = heca_extract_page_from_remote(local_hproc, remote_hproc,
+                                addr, msg->type, &tx_e->reply_work_req->pte,
+                                &page, &redirect_id, deferred, mr);
+        }
         if (unlikely(res != HECA_EXTRACT_SUCCESS))
                 goto no_page;
 

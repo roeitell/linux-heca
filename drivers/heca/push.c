@@ -22,7 +22,6 @@
 #include "pull.h"
 #include "ops.h"
 
-#define HECA_CONGESTION_THRESHOLD 512
 static unsigned long congestion = 0;
 inline int heca_is_congested(void)
 {
@@ -69,31 +68,6 @@ static int heca_push_cache_add(struct heca_page_cache *hpc,
 out:
         write_sequnlock(&hproc->push_cache_lock);
         return r;
-}
-
-/* FIXME: push_cache lookup needs rcu protection */
-static struct heca_page_cache *heca_push_cache_lookup(
-                struct heca_process *hproc, unsigned long addr)
-{
-        struct heca_page_cache *hpc = NULL;
-        struct rb_node *node;
-        int seq;
-
-        do {
-                seq = read_seqbegin(&hproc->push_cache_lock);
-                for (node = hproc->push_cache.rb_node; node; hpc = NULL) {
-                        hpc = rb_entry(node, struct heca_page_cache, rb_node);
-                        BUG_ON(!hpc);
-                        if (addr < hpc->addr)
-                                node = node->rb_left;
-                        else if (addr > hpc->addr)
-                                node = node->rb_right;
-                        else
-                                break;
-                }
-        } while (read_seqretry(&hproc->push_cache_lock, seq));
-
-        return hpc;
 }
 
 static struct heca_page_cache *heca_push_cache_get(struct heca_process *hproc,
@@ -153,31 +127,6 @@ inline void heca_push_cache_release(struct heca_process *hproc,
         }
         heca_dealloc_hpc(hpc);
         congestion--;
-}
-
-struct heca_page_cache *heca_push_cache_get_remove(struct heca_process *hproc,
-                unsigned long addr)
-{
-        struct heca_page_cache *hpc;
-        struct rb_node *node;
-
-        write_seqlock(&hproc->push_cache_lock);
-        for (node = hproc->push_cache.rb_node; node; hpc = 0) {
-                hpc = rb_entry(node, struct heca_page_cache, rb_node);
-                if (addr < hpc->addr)
-                        node = node->rb_left;
-                else if (addr > hpc->addr)
-                        node = node->rb_right;
-                else
-                        break;
-        }
-        if (likely(hpc)) {
-                rb_erase(&hpc->rb_node, &hproc->push_cache);
-                hpc->bitmap = 0;
-        }
-        write_sequnlock(&hproc->push_cache_lock);
-
-        return hpc;
 }
 
 /* mmap_sem already held for read */
@@ -632,84 +581,6 @@ out:
         return res;
 }
 
-static int heca_try_extract_page(struct heca_process *local_hproc,
-                struct heca_process *remote_hproc, struct mm_struct *mm,
-                unsigned long addr, pte_t *return_pte, struct page **page)
-{
-        struct heca_page_cache *hpc = NULL;
-        pte_t pte_entry;
-        struct heca_pte_data pd;
-        int clear_pte_flag = 0;
-        spinlock_t *ptl = NULL;
-
-retry:
-        *page = NULL;
-        if (unlikely(heca_extract_pte_data(&pd, mm, addr)))
-                goto fail;
-
-        pte_entry = *(pd.pte);
-        if (likely(!hpc)) {
-                hpc = heca_push_cache_get(local_hproc, addr, remote_hproc);
-                if (unlikely(!hpc))
-                        goto fail;
-        }
-
-        *page = hpc->pages[0];
-        BUG_ON(!(*page));
-
-        /* first response to arrive and grab the pte lock */
-        if (pte_present(pte_entry)) {
-                u32 pte_flag = 0;
-
-                /* make sure shrink_page_list is finished with this page */
-                lock_page(*page);
-                pd.pte = pte_offset_map_lock(mm, pd.pmd, addr, &ptl);
-                if (unlikely(!pte_same(*(pd.pte), pte_entry))) {
-                        unlock_page(*page);
-                        pte_unmap_unlock(pd.pte, ptl);
-                        goto retry;
-                }
-
-                flush_cache_page(pd.vma, addr, pte_pfn(*(pd.pte)));
-                ptep_clear_flush(pd.vma, addr, pd.pte);
-                if (hpc->hprocs.num > 1) {
-                        pte_flag = HECA_PUSHING;
-                        clear_pte_flag = 1; /* race condition */
-                }
-                set_pte_at(mm, addr, pd.pte,
-                                heca_descriptor_to_pte(hpc->tag, pte_flag));
-                page_remove_rmap(*page);
-                dec_mm_counter(mm, MM_ANONPAGES);
-                pte_unmap_unlock(pd.pte, ptl);
-                mmu_notifier_invalidate_page(mm, addr);
-                page_cache_release(*page);
-                unlock_page(*page);
-
-                /* racing with the first response */
-        } else if (unlikely(pte_none(pte_entry))) {
-                goto retry;
-
-                /* signal that this is not the first response */
-        } else {
-                clear_pte_flag = 1;
-        }
-
-        atomic_dec(&hpc->nproc);
-        if (find_first_bit(&hpc->bitmap, hpc->hprocs.num) >= hpc->hprocs.num &&
-                        atomic_cmpxchg(&hpc->nproc, 1, 0) == 1) {
-                if (clear_pte_flag)
-                        heca_clear_swp_entry_flag(mm, addr, *(pd.pte),
-                                        HECA_PUSHING_BITPOS);
-                heca_push_cache_release(local_hproc, &hpc, 1);
-        }
-
-        *return_pte = *(pd.pte);
-        return HECA_EXTRACT_SUCCESS;
-
-fail:
-        return HECA_EXTRACT_FAIL;
-}
-
 void heca_invalidate_readers(struct heca_process *hproc, unsigned long addr,
                 u32 exclude_id)
 {
@@ -741,38 +612,42 @@ void heca_invalidate_readers(struct heca_process *hproc, unsigned long addr,
         }
 }
 
+int heca_lookup_page_in_remote(struct heca_process *local_hproc,
+                struct heca_process *remote_hproc, unsigned long addr,
+                struct page **page)
+{
+        struct heca_page_cache *hpc;
+
+        hpc = heca_push_cache_get(local_hproc, addr, remote_hproc);
+        if (unlikely(!hpc))
+                goto fail;
+
+        *page = hpc->pages[0];
+        atomic_dec(&hpc->nproc);
+        if (find_first_bit(&hpc->bitmap, hpc->hprocs.num) >= hpc->hprocs.num &&
+                        atomic_cmpxchg(&hpc->nproc, 1, 0) == 1) {
+                heca_push_cache_release(local_hproc, &hpc, 1);
+        }
+
+        return HECA_EXTRACT_SUCCESS;
+
+fail:
+        return HECA_EXTRACT_FAIL;
+}
+
 int heca_extract_page_from_remote(struct heca_process *local_hproc,
                 struct heca_process *remote_hproc,
                 unsigned long addr, u16 tag,
                 pte_t *pte, struct page **page, u32 *hproc_id, int deferred,
                 struct heca_memory_region *mr)
 {
-        struct mm_struct *mm;
-        int res = 0;
+        int res;
 
-        BUG_ON(!local_hproc);
-
-        mm = local_hproc->mm;
-        BUG_ON(!mm);
-
-        down_read(&mm->mmap_sem);
-        switch (tag) {
-        case MSG_REQ_PAGE_TRY:
-                res = heca_try_extract_page(local_hproc, remote_hproc,
-                                mm, addr, pte, page);
-                break;
-        case MSG_REQ_PAGE:
-                res = heca_extract_page(local_hproc, remote_hproc, mm, addr, pte,
-                                hproc_id, deferred, page, mr, 0);
-                break;
-        case MSG_REQ_READ:
-                res = heca_extract_page(local_hproc, remote_hproc, mm, addr, pte,
-                                hproc_id, deferred, page, mr, 1);
-                break;
-        default:
-                BUG();
-        }
-        up_read(&mm->mmap_sem);
+        down_read(&local_hproc->mm->mmap_sem);
+        res = heca_extract_page(local_hproc, remote_hproc, local_hproc->mm,
+                        addr, pte, hproc_id, deferred, page, mr,
+                        tag == MSG_REQ_READ);
+        up_read(&local_hproc->mm->mmap_sem);
 
         return res;
 }
@@ -815,20 +690,10 @@ int heca_prepare_page_for_push(struct heca_process *local_hproc,
         spinlock_t *ptl;
         int i, r;
 
-        BUG_ON(!local_hproc);
-
-        /*
-         * We only change pte when the first response returns, in order to keep the
-         * page accessible; therefore someone might ask us to re-push a page before
-         * any response has even returned.
-         */
-        if (heca_push_cache_lookup(local_hproc, addr))
-                return -EEXIST;
-
-
         hpc = heca_alloc_hpc(local_hproc, addr, hprocs, 1, descriptor);
         if (unlikely(!hpc))
                 return -ENOMEM;
+
 retry:
         /* we're trying to swap out an active page, everything should be here */
         /* we lock the pte to avoid racing with an incoming page request */
@@ -883,7 +748,16 @@ retry:
         SetPageDirty(page);
         TestSetPageWriteback(page);
 
+        /* unmap the page */
+        flush_cache_page(pd.vma, addr, pte_pfn(pte_entry));
+        ptep_clear_flush(pd.vma, addr, pd.pte);
+        set_pte_at(mm, addr, pd.pte, heca_descriptor_to_pte(hpc->tag, 0));
+        page_remove_rmap(page);
+        dec_mm_counter(mm, MM_ANONPAGES);
+
         pte_unmap_unlock(pte, ptl);
+        mmu_notifier_invalidate_page(mm, addr);
+        page_cache_release(page);
         congestion++;
 
         /* may happen outside the lock, but before we return */

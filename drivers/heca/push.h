@@ -8,8 +8,6 @@
 inline int heca_is_congested(void);
 inline void heca_push_cache_release(struct heca_process *,
                 struct heca_page_cache **, int);
-struct heca_page_cache *heca_push_cache_get_remove(struct heca_process *,
-                unsigned long);
 int heca_extract_pte_data(struct heca_pte_data *, struct mm_struct *,
                 unsigned long);
 int heca_try_unmap_page(struct heca_process *, unsigned long,
@@ -17,6 +15,8 @@ int heca_try_unmap_page(struct heca_process *, unsigned long,
 int heca_extract_page_from_remote(struct heca_process *,
                 struct heca_process *, unsigned long, u16, pte_t *,
                 struct page **, u32 *, int, struct heca_memory_region *);
+int heca_lookup_page_in_remote(struct heca_process *, struct heca_process *,
+                unsigned long, struct page **);
 struct page *heca_find_normal_page(struct mm_struct *, unsigned long);
 int heca_prepare_page_for_push(struct heca_process *,
                 struct heca_process_list, struct page *, unsigned long,

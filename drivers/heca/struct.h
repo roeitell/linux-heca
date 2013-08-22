@@ -39,6 +39,9 @@
 #define IW_MAX_SEND_SGE     2
 #define IW_MAX_RECV_SGE     2
 
+/* FIXME: Should be according to network fabric, connections number etc. */
+#define HECA_CONGESTION_THRESHOLD 8096
+
 #define MAX_HPROCS_PER_PAGE   2
 
 #define GUP_DELAY           HZ*5    /* 5 second */
@@ -89,8 +92,6 @@
  */
 #define HECA_INFLIGHT            0x04
 #define HECA_INFLIGHT_BITPOS     0x02
-#define HECA_PUSHING             0x08
-#define HECA_PUSHING_BITPOS      0x03
 
 /*
  * Useful macro for parsing heca processes

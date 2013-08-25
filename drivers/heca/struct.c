@@ -160,6 +160,7 @@ inline pte_t heca_descriptor_to_pte(u32 hsc, u32 flags)
         return swp_entry_to_pte(swp_e);
 }
 
+/* needs rcu protection! */
 inline struct heca_process_list heca_descriptor_to_hprocs(u32 hsc)
 {
         BUG_ON(hsc < SDSC_MIN || hsc >= shsc_max);

@@ -414,7 +414,7 @@ static int heca_recv_message_handler(struct heca_connection *conn,
                 tx_e->hmsg_buffer->type = MSG_RES_PAGE_FAIL;
                 handle_tx_element(conn, tx_e, process_page_response);
                 break;
-        case MSG_REQ_PAGE_TRY:
+        case MSG_REQ_PUSHED_PAGE:
         case MSG_REQ_PAGE:
         case MSG_REQ_READ:
                 process_page_request_msg(conn, rx_e->hmsg_buffer);
@@ -423,7 +423,7 @@ static int heca_recv_message_handler(struct heca_connection *conn,
         case MSG_REQ_CLAIM_TRY:
                 process_page_claim(conn, rx_e->hmsg_buffer);
                 break;
-        case MSG_REQ_PAGE_PULL:
+        case MSG_REQ_PUSH:
                 process_pull_request(conn, rx_e);
                 ack_msg(conn, rx_e->hmsg_buffer, MSG_RES_ACK);
                 break;
@@ -497,8 +497,8 @@ static int heca_send_message_handler(struct heca_connection *conn,
                 /* we keep the tx_e alive, to process the response */
         case MSG_REQ_PAGE:
         case MSG_REQ_READ:
-        case MSG_REQ_PAGE_TRY:
-        case MSG_REQ_PAGE_PULL:
+        case MSG_REQ_PUSHED_PAGE:
+        case MSG_REQ_PUSH:
         case MSG_REQ_CLAIM:
         case MSG_REQ_CLAIM_TRY:
         case MSG_REQ_QUERY:
@@ -1823,12 +1823,12 @@ int tx_heca_send(struct heca_connection *conn, struct tx_buffer_element *tx_e)
 retry:
         switch (type) {
         case MSG_REQ_PAGE:
-        case MSG_REQ_PAGE_TRY:
+        case MSG_REQ_PUSHED_PAGE:
         case MSG_REQ_READ:
         case MSG_REQ_CLAIM:
         case MSG_REQ_CLAIM_TRY:
         case MSG_REQ_QUERY:
-        case MSG_REQ_PAGE_PULL:
+        case MSG_REQ_PUSH:
         case MSG_RES_PAGE_REDIRECT:
         case MSG_RES_PAGE_FAIL:
         case MSG_RES_HPROC_FAIL:

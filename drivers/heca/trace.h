@@ -15,22 +15,22 @@
 { PULL_TAG,                 "PULL_TAG" }, \
 { PREFETCH_TAG,             "PREFETCH_TAG" }, \
 { PUSH_TAG,                 "PUSH_TAG" }, \
-{ PULL_TRY_TAG,             "PULL_TRY_TAG" }, \
+{ PUSH_RES_TAG,             "PUSH_RES_TAG" }, \
 { CLAIM_TAG,                "CLAIM_TAG" }, \
 { READ_TAG,                 "READ_TAG" }
 
 #define msg_type_strings \
 { MSG_REQ_PAGE,                 "MSG_REQ_PAGE" }, \
-{ MSG_REQ_PAGE_TRY,             "MSG_REQ_PAGE_TRY" }, \
+{ MSG_REQ_PUSHED_PAGE,          "MSG_REQ_PUSHED_PAGE" }, \
 { MSG_REQ_READ,                 "MSG_REQ_READ" }, \
-{ MSG_REQ_PAGE_PULL,            "MSG_REQ_PAGE_PULL" }, \
+{ MSG_REQ_PUSH,                 "MSG_REQ_PUSH" }, \
 { MSG_REQ_CLAIM,                "MSG_REQ_CLAIM" }, \
 { MSG_REQ_CLAIM_TRY,            "MSG_REQ_CLAIM_TRY" }, \
 { MSG_REQ_QUERY,                "MSG_REQ_QUERY" }, \
 { MSG_RES_PAGE,                 "MSG_RES_PAGE" }, \
 { MSG_RES_PAGE_REDIRECT,        "MSG_RES_PAGE_REDIRECT" }, \
 { MSG_RES_PAGE_FAIL,            "MSG_RES_PAGE_FAIL" }, \
-{ MSG_RES_HPROC_FAIL,             "MSG_RES_HPROC_FAIL" }, \
+{ MSG_RES_HPROC_FAIL,           "MSG_RES_HPROC_FAIL" }, \
 { MSG_RES_ACK,                  "MSG_RES_ACK" }, \
 { MSG_RES_ACK_FAIL,             "MSG_RES_ACK_FAIL" }, \
 { MSG_RES_QUERY,                "MSG_RES_QUERY" }

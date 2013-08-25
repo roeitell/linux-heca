@@ -8,7 +8,7 @@
 #define PULL_TAG        (1 << 0)  /* pulling the page */
 #define PREFETCH_TAG    (1 << 1)  /* pulling the page for prefetch */
 #define PUSH_TAG        (1 << 2)  /* pushing the page */
-#define PULL_TRY_TAG    (1 << 3)  /* pulling the page by request */
+#define PUSH_RES_TAG    (1 << 3)  /* pulling the page by request */
 #define CLAIM_TAG       (1 << 4)  /* reclaiming a page */
 #define READ_TAG        (1 << 5)  /* pulling the page for read */
 

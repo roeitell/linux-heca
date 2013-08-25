@@ -39,8 +39,12 @@
 #define IW_MAX_SEND_SGE     2
 #define IW_MAX_RECV_SGE     2
 
-/* FIXME: Should be according to network fabric, connections number etc. */
-#define HECA_CONGESTION_THRESHOLD 8096
+/*
+ * TODO: This should be user-configurable using sysfs or via the ioctl. It is
+ * a trade-off between performance and the risk of oom-ing. Users disabling
+ * oom should set HECA_CONGESTION_THRESHOLD=0.
+ */
+#define HECA_CONGESTION_THRESHOLD 0
 
 #define MAX_HPROCS_PER_PAGE   2
 
@@ -60,9 +64,9 @@
  * HECA Messages
  */
 #define MSG_REQ_PAGE                (1 << 0)
-#define MSG_REQ_PAGE_TRY            (1 << 1)
+#define MSG_REQ_PUSHED_PAGE         (1 << 1)
 #define MSG_REQ_READ                (1 << 2)
-#define MSG_REQ_PAGE_PULL           (1 << 3)
+#define MSG_REQ_PUSH                (1 << 3)
 #define MSG_REQ_CLAIM               (1 << 4)
 #define MSG_REQ_CLAIM_TRY           (1 << 5)
 #define MSG_REQ_QUERY               (1 << 6)

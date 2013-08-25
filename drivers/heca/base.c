@@ -564,7 +564,7 @@ static void release_hproc_tx_elements(struct heca_process *hproc,
         for (i = 0; i < conn->tx_buffer.len; i++) {
                 struct tx_buffer_element *tx_e = &tx_buf[i];
                 struct heca_message *msg = tx_e->hmsg_buffer;
-                int types = MSG_REQ_PAGE | MSG_REQ_PAGE_TRY |
+                int types = MSG_REQ_PAGE | MSG_REQ_PUSHED_PAGE |
                         MSG_RES_PAGE_FAIL | MSG_REQ_READ;
 
                 if (msg->type & types && msg->hspace_id == hproc->hspace->hspace_id

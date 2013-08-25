@@ -25,8 +25,12 @@
 static unsigned long congestion = 0;
 inline int heca_is_congested(void)
 {
-        trace_heca_is_congested(congestion);
-        return congestion > HECA_CONGESTION_THRESHOLD;
+        if (HECA_CONGESTION_THRESHOLD) {
+                trace_heca_is_congested(congestion);
+                return congestion > HECA_CONGESTION_THRESHOLD;
+        } else {
+                return 0;
+        }
 }
 
 static inline void heca_push_finish_notify(struct page *page)
@@ -502,7 +506,7 @@ retry:
                                         &pd, hproc_id)) {
                         res = HECA_EXTRACT_REDIRECT;
 
-                        /* it's time to fault the page in... */
+                /* it's time to fault the page in... */
                 } else if (deferred) {
                         pte_unmap_unlock(pd.pte, ptl);
                         if (!heca_initiate_fault_fast(mm, addr, 1))
@@ -549,6 +553,7 @@ retry:
         page_cache_get(*page);
 
         if (!(mr->flags & MR_COPY_ON_ACCESS)) {
+                /* FIXME: Should we not lock the page here?! */
                 flush_cache_page(pd.vma, addr, pte_pfn(pte_entry));
                 ptep_clear_flush(pd.vma, addr, pd.pte);
                 if (read_copy) {

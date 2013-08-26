@@ -876,7 +876,7 @@ static int heca_maintain_notify(struct heca_process *hproc,
         return r;
 }
 
-static int do_heca_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
+int heca_do_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
                 unsigned long address, pte_t *page_table, pmd_t *pmd,
                 unsigned int flags, pte_t orig_pte, swp_entry_t entry)
 {
@@ -895,7 +895,6 @@ static int do_heca_page_fault(struct mm_struct *mm, struct vm_area_struct *vma,
         unsigned long shared_addr; /* used only for trace record later */
         struct heca_space *hspace;
 
-retry:
         /* if the data in the swp_entry is invalid, we have nothing to do */
         if (swp_entry_to_heca_data(entry, &hsd) < 0)
                 return VM_FAULT_ERROR;
@@ -917,6 +916,7 @@ retry:
         if ((fault_mr->flags & MR_SHARED) && ~flags & FAULT_FLAG_WRITE)
                 read_fault = 1;
 
+        /* these scalars are for tracing */
         hspace_id = hspace->hspace_id;
         hproc_id = fault_hproc->hproc_id;
         mr_id = fault_mr->hmr_id;
@@ -1146,21 +1146,6 @@ out_no_dpc:
         return ret;
 }
 
-int heca_swap_wrapper(struct mm_struct *mm, struct vm_area_struct *vma,
-                unsigned long address, pte_t *page_table, pmd_t *pmd,
-                unsigned int flags, pte_t orig_pte, swp_entry_t entry)
-{
-
-#if defined(CONFIG_HECA) || defined(CONFIG_HECA_MODULE)
-        return do_heca_page_fault(mm, vma, address, page_table, pmd, flags,
-                        orig_pte, entry);
-
-#else
-        return 0;
-#endif
-
-}
-
 int heca_trigger_page_pull(struct heca_space *hspace,
                 struct heca_process *local_hproc, struct heca_memory_region *mr,
                 unsigned long norm_addr)
@@ -1168,6 +1153,14 @@ int heca_trigger_page_pull(struct heca_space *hspace,
         int r = 0;
         struct mm_struct *mm = local_hproc->mm;
 
+        /*
+         * FIXME: There is a possible yet very unlikely edge case here. If a
+         * page is faulted-in to us, we extract it and then it is pushed to us,
+         * the original hpc might still be in the tree due to some slow
+         * operation (slow hpc release, slow answering RRAIM node). In this case
+         * the push will silently fail and we will lose the page and have a
+         * memleak on the remote node.
+         */
         down_read(&mm->mmap_sem);
         r = get_heca_page(mm, norm_addr + mr->addr, local_hproc, mr,
                         PUSH_RES_TAG);

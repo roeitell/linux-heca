@@ -301,7 +301,7 @@ static struct miscdevice heca_misc = {
 
 const struct heca_hook_struct my_heca_hook = {
         .name = "HECA",
-        .fetch_page = heca_swap_wrapper,
+        .fetch_page = heca_do_page_fault,
         .pushback_page = push_back_if_remote_heca_page,
         .is_congested = heca_is_congested,
         .write_fault = heca_write_fault,

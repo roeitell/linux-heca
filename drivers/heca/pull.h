@@ -21,7 +21,7 @@ inline void heca_release_pull_hpc(struct heca_page_cache **);
 void dequeue_and_gup_cleanup(struct heca_process *);
 void delayed_gup_work_fn(struct work_struct *);
 int heca_pull_req_failure(struct heca_page_cache *);
-int heca_swap_wrapper(struct mm_struct *, struct vm_area_struct *,
+int heca_do_page_fault(struct mm_struct *, struct vm_area_struct *,
                 unsigned long, pte_t *, pmd_t *, unsigned int, pte_t,
                 swp_entry_t);
 int heca_trigger_page_pull(struct heca_space *, struct heca_process *,

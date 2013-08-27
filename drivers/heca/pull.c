@@ -481,15 +481,25 @@ unlock:
                 unlock_page(hpc->pages[0]);
                 lru_add_drain();
 
-                /* try to delay faulting pages that were prefetched or pushed to us */
+                /*
+                 * Try to delay faulting pages that were prefetched or pushed to 
+                 * us, to be processed async. This is both to speed up
+                 * processing of the msg queue; and to avoid a deadlock when
+                 * a write fault has preceded us, sent a claim request, locked
+                 * the page and is now waiting for the claim ack that we are
+                 * blocking in queue.
+                 */
                 if (hpc->tag & (PREFETCH_TAG | PUSH_RES_TAG)) {
                         struct heca_delayed_fault *hdf;
 
                         hdf = alloc_heca_delayed_fault_cache_elm(hpc->addr);
-                        if (likely(hdf))
+                        if (likely(hdf)) {
                                 queue_ddf_for_delayed_gup(hdf, hpc->hproc);
-                        else
+                        } else {
+                                heca_printk(KERN_ERR "[%lu] Could not delay "
+                                                "fault, risking deadlock.\n");
                                 heca_initiate_pull_gup(hpc, 0);
+                        }
                 }
         }
 
@@ -1202,7 +1212,7 @@ int heca_write_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 retry:
         pte = *ptep;
         if (unlikely(pte_write(pte))) {
-                pte_unmap_unlock(ptep, ptl);
+                spin_unlock(ptl);
                 goto out;
         }
 
@@ -1211,7 +1221,7 @@ retry:
                  * this only happens on retries, and means someone else has requested
                  * the page before us. so we do a full regular write fault.
                  */
-                pte_unmap_unlock(ptep, ptl);
+                spin_unlock(ptl);
                 get_user_pages(current, mm, addr, 1, 1, 0, NULL, NULL);
                 goto out;
         }
@@ -1227,7 +1237,7 @@ retry:
                 BUG_ON(hpc->tag == PUSH_RES_TAG);
 
                 if (hpc->tag == CLAIM_TAG) {
-                        pte_unmap_unlock(ptep, ptl);
+                        spin_unlock(ptl);
                         goto wait;
                 }
 
@@ -1249,9 +1259,11 @@ retry:
                  * if we can't lock the page, unlock the pte and resched. since we hold
                  * the mmap_sem, the ptl will stay there and wait for us.
                  */
-                pte_unmap_unlock(ptep, ptl);
+                spin_unlock(ptl);
                 page_cache_release(page);
                 heca_release_pull_hpc(&hpc);
+                if (!hpc)
+                        heca_cache_release(hproc, addr);
                 might_sleep();
                 cond_resched();
                 spin_lock(ptl);
@@ -1267,7 +1279,7 @@ retry:
          * any subsequent write-fault will now encounter the CLAIM_TAG hpc and
          * know it can back away.
          */
-        pte_unmap_unlock(ptep, ptl);
+        spin_unlock(ptl);
 
         /*
          * this races with try_discard_read_copy (which locks the page and checks
@@ -1333,6 +1345,8 @@ write:
         if (unlikely(!pte_same(*ptep, pte))) {
                 page_cache_release(page);
                 heca_release_pull_hpc(&hpc);
+                if (!hpc)
+                        heca_cache_release(hproc, addr);
                 goto retry;
         }
         pte = pte_mkyoung(maybe_mkwrite(pte_mkdirty(pte), vma));
